@@ -1,0 +1,1322 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#F5FBF6">
+<title>NextTodo 原型</title>
+<style>
+:root {
+  --primary: #1B6B51; --on-primary: #FFFFFF;
+  --primary-container: #A6F2D1; --on-primary-container: #002116;
+  --secondary-container: #CEE9DB; --on-secondary-container: #082016;
+  --surface: #F5FBF6; --group-bg: #FFFFFF;
+  --surface-low: #EFF5F0; --surface-container: #E9EFEA; --surface-high: #E4EAE5; --surface-highest: #DEE4DF;
+  --on-surface: #171D1A; --on-surface-variant: #404944;
+  --outline: #707973; --outline-variant: #BFC9C2;
+  --error: #BA1A1A; --warn: #8A5100;
+  --inverse-surface: #2C322E; --inverse-on-surface: #ECF2ED; --inverse-primary: #8BD6B6;
+  --bar-bg: rgba(245, 251, 246, .8);
+  --press: rgba(23, 29, 26, .06);
+  --seg-on: #FFFFFF; --rail: #BFC9C2;
+  --shadow-1: 0 1px 2px rgba(23, 29, 26, .08), 0 1px 3px rgba(23, 29, 26, .06);
+  --shadow-3: 0 4px 8px rgba(23, 29, 26, .10), 0 2px 3px rgba(23, 29, 26, .08);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "MiSans", "HarmonyOS Sans SC", "Noto Sans SC", Roboto, "Segoe UI", sans-serif;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --tabbar-h: calc(64px + var(--safe-bottom));
+  --ease: cubic-bezier(.2, .9, .25, 1);
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --primary: #8BD6B6; --on-primary: #003827;
+  --primary-container: #00513B; --on-primary-container: #A6F2D1;
+  --secondary-container: #334B40; --on-secondary-container: #CEE9DB;
+  --surface: #0F1512; --group-bg: #1B211E;
+  --surface-low: #171D1A; --surface-container: #222825; --surface-high: #2A302D; --surface-highest: #343A37;
+  --on-surface: #DEE4DF; --on-surface-variant: #BFC9C2;
+  --outline: #89938D; --outline-variant: #3F4944;
+  --error: #FFB4AB; --warn: #FFB870;
+  --inverse-surface: #DEE4DF; --inverse-on-surface: #2C322E; --inverse-primary: #1B6B51;
+  --bar-bg: rgba(15, 21, 18, .78);
+  --press: rgba(222, 228, 223, .08);
+  --seg-on: #3A413D; --rail: #56605A;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-3: 0 6px 16px rgba(0, 0, 0, .45);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; scrollbar-width: none; }
+*::-webkit-scrollbar { display: none; }
+html, body { margin: 0; height: 100%; background: var(--surface); color: var(--on-surface); }
+body { font: 16px/1.4 var(--font); -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
+button, input, textarea { font: inherit; color: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
+[data-action] { cursor: pointer; }
+.scrim, .modal-scrim, .dialog-scrim { cursor: default; }
+svg { display: block; flex: none; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.muted { color: var(--outline); }
+#app { position: relative; height: 100dvh; overflow: hidden; }
+
+/* ---------- phone shell ---------- */
+.screen { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--surface); }
+.screen.anim-push { animation: push-in .36s var(--ease); }
+.screen.anim-pop { animation: pop-in .36s var(--ease); }
+@keyframes push-in { from { transform: translateX(100%); box-shadow: -20px 0 40px rgba(0,0,0,.12); } }
+@keyframes pop-in { from { transform: translateX(-28%); opacity: .6; } }
+
+.nav { position: absolute; z-index: 5; top: 0; left: 0; right: 0; height: calc(56px + var(--safe-top)); padding: var(--safe-top) 8px 0;
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; transition: background .2s, box-shadow .2s; }
+.screen.scrolled .nav { background: var(--bar-bg); -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6); box-shadow: 0 .5px 0 var(--outline-variant); }
+.nav-title { font-size: 18px; font-weight: 600; opacity: 0; transition: opacity .2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 56vw; }
+.screen.scrolled .nav-title { opacity: 1; }
+.nav-actions { justify-self: end; display: flex; gap: 4px; }
+.back { display: inline-flex; align-items: center; gap: 2px; height: 44px; padding: 0 8px 0 2px; color: var(--primary); font-size: 17px; justify-self: start; }
+.icon-btn { width: 40px; height: 40px; border-radius: 20px; display: grid; place-items: center; color: var(--on-surface-variant); }
+.icon-btn:active { background: var(--press); }
+.icon-btn.sm { width: 32px; height: 32px; }
+
+.scroll { flex: 1; overflow-y: auto; padding-top: calc(56px + var(--safe-top)); padding-bottom: calc(var(--tabbar-h) + 84px); }
+.hero { display: flex; align-items: flex-end; justify-content: space-between; padding: 4px 20px 0; }
+.large-title { margin: 0; font-size: 32px; line-height: 1.2; font-weight: 700; letter-spacing: -.01em; }
+.subtitle { margin: 4px 20px 6px; font-size: 15px; color: var(--on-surface-variant); }
+.avatar { width: 36px; height: 36px; border-radius: 18px; background: var(--primary); color: var(--on-primary); font-weight: 600; font-size: 15px; display: grid; place-items: center; margin-bottom: 4px; }
+.tab .avatar { width: 26px; height: 26px; font-size: 12px; margin: 0; }
+
+/* ---------- tab bar ---------- */
+.tabbar { position: absolute; z-index: 6; left: 0; right: 0; bottom: 0; height: var(--tabbar-h); padding-bottom: var(--safe-bottom);
+  display: grid; grid-template-columns: repeat(3, 1fr); background: var(--bar-bg); -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6); box-shadow: 0 -.5px 0 var(--outline-variant); }
+.tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 12px; font-weight: 500; color: var(--on-surface-variant); }
+.tab-ic { width: 56px; height: 30px; border-radius: 15px; display: grid; place-items: center; transition: background .25s; }
+.tab.on { color: var(--on-surface); }
+.tab.on .tab-ic { background: var(--secondary-container); color: var(--on-secondary-container); }
+
+/* ---------- grouped lists ---------- */
+.group-title { margin: 22px 32px 8px; font-size: 13px; font-weight: 600; color: var(--on-surface-variant); display: flex; justify-content: space-between; }
+.group-title.overdue { color: var(--error); }
+.group-title.today { color: var(--warn); }
+.group { margin: 0 16px; background: var(--group-bg); border-radius: 14px; overflow: hidden; position: relative; }
+.row { position: relative; display: block; width: 100%; }
+.row + .row::before, .rail-list + .row::before { content: ""; position: absolute; z-index: 3; top: 0; right: 0; left: var(--sep-left, 52px); height: .5px; background: var(--outline-variant); }
+.row-inner { position: relative; display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 16px; background: var(--group-bg); transition: transform .25s var(--ease); }
+.row:active > .row-inner, .row.pressed > .row-inner { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 6%); }
+.row.selected > .row-inner { background: var(--secondary-container); }
+.swipe-bg { position: absolute; inset: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; font-size: 14px; font-weight: 600; }
+.swipe-bg span { display: inline-flex; align-items: center; gap: 6px; }
+.row.swiping .swipe-bg { background: linear-gradient(90deg, var(--primary) 50%, var(--error) 50%); color: var(--on-primary); }
+.row.swiping .row-inner { transition: none; }
+:root[data-theme="dark"] .row.swiping .swipe-bg { color: var(--surface); }
+
+.check { position: relative; width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--outline); display: grid; place-items: center; color: transparent; flex: none; background: var(--group-bg); transition: background .2s, border-color .2s; }
+.check::before { content: ""; position: absolute; inset: -10px; }
+.check.ready { border-color: var(--primary); }
+.check.waiting { border: 2px dashed var(--rail); }
+.check.done { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.check.pop { animation: pop .35s var(--ease); }
+@keyframes pop { 40% { transform: scale(1.22); } }
+@media (hover: hover) { .check.ready:hover { color: var(--primary); } }
+.check.lg { width: 30px; height: 30px; }
+
+.task-main { min-width: 0; flex: 1; }
+.task-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task.waiting .task-title { color: var(--on-surface-variant); }
+.task.done .task-title { color: var(--outline); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--outline), transparent 40%); }
+.task-meta { display: flex; gap: 10px; margin-top: 2px; font-size: 13px; color: var(--on-surface-variant); white-space: nowrap; overflow: hidden; }
+.task-meta > span { display: inline-flex; align-items: center; gap: 3px; }
+.m-path { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; display: inline-block !important; }
+.overdue { color: var(--error); }
+.today { color: var(--warn); }
+.m-unlock { color: var(--primary); font-weight: 500; }
+.task.unlocked > .row-inner { animation: unlock 1.6s ease-out; }
+.task.unlocked .check { animation: ring 1s ease-out; }
+@keyframes unlock { 0%, 30% { background: var(--primary-container); } }
+@keyframes ring { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary), transparent 30%); } 100% { box-shadow: 0 0 0 12px transparent; } }
+
+/* rail list: the dependency gutter */
+.rail-list { position: relative; }
+.rail-list .row-inner { height: 64px; min-height: 0; padding-left: var(--gutter); }
+.rail-list .check { position: absolute; z-index: 2; top: 20px; }
+.rail { position: absolute; z-index: 1; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.rail path { fill: none; stroke: var(--rail); stroke-width: 2; stroke-linecap: round; }
+.rail path.live { stroke: color-mix(in srgb, var(--primary), transparent 35%); }
+
+.folder-row .row-inner { gap: 12px; }
+.folder-ic { width: 30px; height: 30px; border-radius: 8px; background: var(--primary-container); color: var(--on-primary-container); display: grid; place-items: center; flex: none; }
+.folder-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.folder-sub { font-size: 13px; color: var(--on-surface-variant); }
+.chev { color: var(--outline); }
+.done-toggle .row-inner { color: var(--on-surface-variant); font-size: 15px; min-height: 48px; }
+.done-toggle .chev { transition: transform .2s; margin-left: auto; }
+.done-toggle.open .chev { transform: rotate(90deg); }
+.empty { margin: 8px 32px; color: var(--on-surface-variant); font-size: 15px; line-height: 1.6; }
+
+/* segmented control */
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 2px; border-radius: 10px; background: var(--surface-container); }
+.seg button { height: 30px; border-radius: 8px; font-size: 14px; font-weight: 500; color: var(--on-surface-variant); display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 10px; }
+.seg button.on { background: var(--seg-on); color: var(--on-surface); box-shadow: var(--shadow-1); }
+.seg.sm button { height: 26px; font-size: 13px; }
+.view-seg { margin: 14px 16px 4px; }
+
+/* quick add */
+.quick-add { position: absolute; z-index: 4; left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 10px); height: 50px; border-radius: 25px; display: flex; align-items: center; gap: 4px; padding: 0 6px 0 16px;
+  background: var(--group-bg); box-shadow: var(--shadow-3); }
+.quick-add .plus { color: var(--primary); }
+.quick-add input { flex: 1; min-width: 0; height: 100%; border: 0; background: none; outline: none; font-size: 16px; padding: 0 6px; }
+.quick-add input::placeholder { color: var(--outline); }
+.qa-btn { height: 36px; border-radius: 18px; padding: 0 12px; display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 500; color: var(--on-surface-variant); background: var(--surface-container); white-space: nowrap; }
+.qa-btn.on { background: var(--primary); color: var(--on-primary); }
+
+/* chips & fab */
+.graph-tools { display: flex; gap: 8px; padding: 10px 16px 8px; overflow-x: auto; flex: none; }
+.chip { height: 32px; border-radius: 8px; padding: 0 12px; border: 1px solid var(--outline-variant); display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; color: var(--on-surface-variant); white-space: nowrap; }
+.chip.on { background: var(--secondary-container); border-color: transparent; color: var(--on-secondary-container); }
+.fab { position: absolute; z-index: 4; right: 16px; bottom: calc(var(--tabbar-h) + 16px); height: 56px; border-radius: 16px; padding: 0 20px 0 16px; display: inline-flex; align-items: center; gap: 8px;
+  background: var(--primary-container); color: var(--on-primary-container); font-size: 15px; font-weight: 600; box-shadow: var(--shadow-3); }
+.fab.on { background: var(--primary); color: var(--on-primary); }
+
+/* graph */
+.graph-area { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.graph-wrap { position: relative; flex: 1; overflow: hidden; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none;
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--outline-variant), transparent 30%) 1px, transparent 1.2px); background-size: 22px 22px; }
+.graph-wrap:active { cursor: grabbing; }
+.graph { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+.edges { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+.edges path { fill: none; stroke: var(--outline); stroke-opacity: .55; stroke-width: 1.6; transition: stroke-opacity .2s; }
+.edges path.hl { stroke: var(--primary); stroke-opacity: 1; stroke-width: 2.2; }
+.edges path.dim { stroke-opacity: .12; }
+.edges path.hit { stroke: transparent; stroke-width: 18; pointer-events: stroke; cursor: pointer; }
+.node { position: absolute; border-radius: 14px; padding: 8px 12px; display: flex; flex-direction: column; justify-content: center; gap: 2px; text-align: left;
+  background: var(--group-bg); border: 1px solid var(--outline-variant); color: var(--on-surface); transition: opacity .2s, box-shadow .2s; }
+.node.ready { background: var(--primary-container); color: var(--on-primary-container); border-color: transparent; }
+.node.done { background: var(--surface-container); border-color: transparent; color: var(--outline); }
+.node.done .n-title { text-decoration: line-through; }
+.node.ghost { background: color-mix(in srgb, var(--surface), transparent 20%); border: 1.5px dashed var(--outline); color: var(--on-surface-variant); }
+.node.sel { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--primary); }
+.node.dim { opacity: .28; }
+.node.source { animation: source 1.2s ease-in-out infinite; }
+@keyframes source { 50% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 6px color-mix(in srgb, var(--primary), transparent 40%); } }
+.n-title { font-size: 14px; font-weight: 500; line-height: 1.3; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.node.has-meta .n-title { -webkit-line-clamp: 1; }
+.n-meta, .n-folder { font-size: 12px; display: flex; align-items: center; gap: 3px; opacity: .85; white-space: nowrap; overflow: hidden; }
+.node.ready .n-meta { opacity: .75; }
+.connect-banner { position: absolute; z-index: 3; top: 56px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 20px;
+  background: var(--inverse-surface); color: var(--inverse-on-surface); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: var(--shadow-3); }
+
+/* ---------- sheets, dialogs, snackbar ---------- */
+.scrim { position: absolute; z-index: 20; inset: 0; background: rgba(0, 0, 0, .36); transition: opacity .3s; }
+.scrim.half { opacity: 0; pointer-events: none; }
+.scrim.enter { animation: fade .3s; }
+@keyframes fade { from { opacity: 0; } }
+.sheet { position: absolute; z-index: 21; left: 0; right: 0; bottom: 0; height: calc(100dvh - var(--safe-top) - 10px); display: flex; flex-direction: column;
+  background: var(--surface-low); border-radius: 28px 28px 0 0; box-shadow: 0 -8px 32px rgba(0, 0, 0, .14); transition: transform .38s var(--ease); }
+.sheet.half { transform: translateY(calc(100% - 60dvh)); }
+.sheet.enter { animation: sheet-in .42s var(--ease); }
+@keyframes sheet-in { from { transform: translateY(100%); } }
+.sheet.dragging { transition: none; }
+.sheet-grab { flex: none; height: 26px; display: grid; place-items: center; touch-action: none; cursor: grab; }
+.handle { width: 36px; height: 5px; border-radius: 3px; background: var(--outline-variant); }
+.sheet-scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding-bottom: calc(24px + var(--safe-bottom)); }
+/* in the half state the lower part of the sheet is off screen; pad so the content can still scroll fully into view */
+.sheet.half .sheet-scroll { padding-bottom: calc(40dvh - var(--safe-top) + 14px + var(--safe-bottom)); }
+
+.detail { padding-bottom: 8px; }
+.d-head { display: flex; align-items: flex-start; gap: 14px; padding: 6px 12px 14px 20px; touch-action: none; }
+.d-head .check { margin-top: 3px; }
+.d-title-wrap { flex: 1; min-width: 0; }
+.d-title { margin: 0; font-size: 22px; line-height: 1.3; font-weight: 600; }
+.d-status { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 13px; color: var(--on-surface-variant); }
+.pill { height: 22px; border-radius: 11px; padding: 0 9px; display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; }
+.pill.ready { background: var(--primary-container); color: var(--on-primary-container); }
+.pill.waiting { background: var(--surface-highest); color: var(--on-surface-variant); }
+.pill.done { background: var(--surface-highest); color: var(--outline); }
+.prop .row-inner { min-height: 50px; gap: 12px; }
+.prop svg { color: var(--on-surface-variant); }
+.prop .value { margin-left: auto; color: var(--on-surface-variant); text-align: right; }
+.d-sec { margin: 22px 32px 8px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.d-sec h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--on-surface-variant); }
+.d-sec p { margin: 2px 0 0; font-size: 12px; color: var(--outline); }
+.d-sec .seg { width: 120px; }
+.md { padding: 14px 16px; font-size: 15px; line-height: 1.65; }
+.md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+.md h4 { margin: 12px 0 4px; font-size: 16px; }
+.md p { margin: 6px 0; }
+.md ul { margin: 6px 0; padding-left: 20px; }
+.md ul.checks { list-style: none; padding-left: 0; }
+.md li.ck { display: flex; gap: 10px; align-items: flex-start; padding: 3px 0; cursor: pointer; }
+.md li.ck .box { width: 18px; height: 18px; margin-top: 4px; border-radius: 5px; border: 1.8px solid var(--outline); display: grid; place-items: center; color: transparent; flex: none; }
+.md li.ck.on .box { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.md li.ck.on .txt { color: var(--outline); text-decoration: line-through; }
+.md blockquote { margin: 8px 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--primary-container); color: var(--on-surface-variant); }
+.md code { font: 13px ui-monospace, Menlo, monospace; background: var(--surface-container); padding: 1px 5px; border-radius: 5px; }
+.md-edit { display: block; width: 100%; min-height: 200px; border: 0; outline: none; resize: vertical; padding: 14px 16px; background: var(--group-bg); font: 14px/1.6 ui-monospace, Menlo, monospace; }
+.dep .row-inner { min-height: 52px; gap: 12px; }
+.dot { width: 10px; height: 10px; border-radius: 5px; border: 2px solid var(--outline); flex: none; margin: 0 7px; }
+.dot.ready { border-color: var(--primary); } .dot.done { background: var(--primary); border-color: var(--primary); } .dot.waiting { border-style: dashed; border-color: var(--outline-variant); }
+.dep-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dep-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dep.done .dep-title { color: var(--outline); text-decoration: line-through; }
+.dep-path { font-size: 12px; color: var(--on-surface-variant); }
+.add-row .row-inner { color: var(--primary); font-weight: 500; min-height: 48px; }
+.provenance { margin: 18px 32px 0; font-size: 12px; color: var(--outline); display: flex; align-items: center; gap: 6px; }
+
+.modal-scrim { position: absolute; z-index: 30; inset: 0; background: rgba(0, 0, 0, .36); }
+.modal-scrim.enter { animation: fade .25s; }
+.modal { position: absolute; z-index: 31; left: 0; right: 0; bottom: 0; max-height: 86dvh; display: flex; flex-direction: column; background: var(--surface-low); border-radius: 28px 28px 0 0; padding-bottom: calc(16px + var(--safe-bottom)); }
+.modal.enter { animation: sheet-in .38s var(--ease); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 12px 10px 24px; }
+.modal-head h3 { margin: 0; font-size: 18px; font-weight: 600; }
+.modal-body { overflow-y: auto; padding-bottom: 8px; }
+.search { margin: 0 16px 12px; height: 40px; border-radius: 12px; background: var(--surface-container); display: flex; align-items: center; gap: 8px; padding: 0 12px; color: var(--on-surface-variant); }
+.search input { flex: 1; border: 0; background: none; outline: none; font-size: 16px; color: var(--on-surface); min-width: 0; }
+.picker .row.disabled { opacity: .45; pointer-events: none; }
+.danger .row-inner { color: var(--error); justify-content: center; font-weight: 500; }
+.token-ic { width: 30px; height: 30px; border-radius: 8px; background: var(--surface-container); display: grid; place-items: center; color: var(--on-surface-variant); flex: none; }
+.dialog-scrim { position: absolute; z-index: 40; inset: 0; background: rgba(0, 0, 0, .4); display: grid; place-items: center; padding: 24px; }
+.dialog-scrim.enter { animation: fade .2s; }
+.dialog { width: min(320px, 100%); background: var(--surface-high); border-radius: 28px; padding: 24px 24px 16px; }
+.dialog-scrim.enter .dialog { animation: dialog-in .25s var(--ease); }
+@keyframes dialog-in { from { transform: scale(.92); opacity: 0; } }
+.dialog h3 { margin: 0 0 12px; font-size: 22px; font-weight: 500; }
+.dialog p { margin: 0 0 20px; font-size: 14px; line-height: 1.55; color: var(--on-surface-variant); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.text-btn { height: 40px; padding: 0 14px; border-radius: 20px; color: var(--primary); font-size: 14px; font-weight: 600; }
+.text-btn.danger-text { color: var(--error); }
+.text-btn:active { background: var(--press); }
+
+.snackbar { position: absolute; z-index: 50; left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 72px); min-height: 48px; padding: 6px 8px 6px 16px; border-radius: 12px;
+  display: flex; align-items: center; gap: 8px; background: var(--inverse-surface); color: var(--inverse-on-surface); font-size: 14px; box-shadow: var(--shadow-3); }
+.snackbar.enter { animation: snack-in .3s var(--ease); }
+@keyframes snack-in { from { transform: translateY(16px); opacity: 0; } }
+.snackbar span { flex: 1; }
+.snackbar button { height: 36px; padding: 0 12px; border-radius: 18px; color: var(--inverse-primary); font-weight: 600; }
+
+/* ---------- desktop ---------- */
+.desk { --side-w: 272px; --pane-w: 400px; display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr) var(--pane-w); height: 100dvh; transition: grid-template-columns .32s var(--ease); }
+.desk.side-closed { --side-w: 0px; }
+.desk.pane-closed { --pane-w: 0px; }
+.sidebar { background: var(--surface-low); border-right: 1px solid var(--outline-variant); overflow: hidden; min-width: 0; transition: border-color .32s; }
+.sb-inner { width: 272px; height: 100%; display: flex; flex-direction: column; }
+.desk.side-closed .sidebar { border-right-color: transparent; }
+.sb-foot { padding: 8px; border-top: 1px solid var(--outline-variant); }
+.sb-user { width: 100%; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 12px; }
+.sb-user:hover { background: var(--press); }
+.sb-user .avatar { width: 32px; height: 32px; margin: 0; font-size: 14px; }
+.sb-user .folder-main > span:first-child { font-size: 14px; font-weight: 600; }
+.sb-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 16px 12px 20px; }
+.brand { font-size: 17px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.brand-mark { width: 26px; height: 26px; border-radius: 8px; background: var(--primary); color: var(--on-primary); display: grid; place-items: center; }
+.sidebar .search { margin: 0 12px 10px; height: 36px; }
+.sb-scroll { flex: 1; overflow-y: auto; padding: 0 8px 16px; }
+.sb-item { width: 100%; height: 36px; border-radius: 10px; display: flex; align-items: center; gap: 8px; padding: 0 10px; font-size: 14px; color: var(--on-surface); }
+.sb-item:hover { background: var(--press); }
+.sb-item.on { background: var(--secondary-container); color: var(--on-secondary-container); font-weight: 600; }
+.sb-item .count { margin-left: auto; font-size: 13px; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+.sb-item .tw { width: 16px; display: grid; place-items: center; color: var(--outline); transition: transform .15s; }
+.sb-item .tw.open { transform: rotate(90deg); }
+.sb-label { margin: 18px 10px 6px; font-size: 12px; font-weight: 600; color: var(--on-surface-variant); }
+.sb-label button { color: inherit; font: inherit; }
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+.main-tools { display: flex; justify-content: space-between; padding: 10px 14px 0; flex: none; }
+.main-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 2px 28px 14px; flex: none; }
+.crumbs { font-size: 13px; color: var(--on-surface-variant); margin-bottom: 2px; min-height: 18px; }
+.main-title { margin: 0; font-size: 28px; font-weight: 700; line-height: 1.2; }
+.main-head .seg { width: 200px; }
+.main-scroll { flex: 1; overflow-y: auto; padding: 0 12px 40px; }
+.main-scroll .group-title:first-child { margin-top: 6px; }
+.desk .quick-add { position: static; margin: 4px 28px 6px; box-shadow: none; border: 1px solid var(--outline-variant); height: 46px; }
+.desk .graph-tools { padding: 0 28px 10px; }
+.desk .graph-tools .spacer { flex: 1; }
+.desk .connect-banner { top: 12px; }
+.detail-pane { background: var(--surface-low); border-left: 1px solid var(--outline-variant); overflow: hidden; min-width: 0; transition: border-color .32s; }
+.pane-inner { width: 400px; height: 100%; overflow-y: auto; padding: 20px 0 32px; }
+.desk.pane-closed .detail-pane { border-left-color: transparent; }
+.detail-empty { height: 100%; display: grid; place-items: center; color: var(--outline); font-size: 14px; text-align: center; padding: 32px; }
+.desk .modal { left: 0; right: 0; margin: 0 auto; bottom: auto; top: 12vh; width: 440px; border-radius: 28px; max-height: 76vh; padding-bottom: 12px; }
+.desk .modal.enter { animation: dialog-in .25s var(--ease); }
+.desk .snackbar { left: 0; right: 0; margin: 0 auto; bottom: 24px; width: 440px; }
+.desk .row:hover > .row-inner { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 4%); }
+.desk .row.selected > .row-inner { background: var(--secondary-container); }
+
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .3s; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ---------- icons ----------
+const ICONS = {
+  chevR: '<path d="M9.5 6l6 6-6 6"/>',
+  chevL: '<path d="M15 5.5L8.5 12l6.5 6.5"/>',
+  check: '<path d="M5.5 12.5l4.2 4.2L18.5 7.5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  folder: '<path d="M3.5 7.5a2 2 0 0 1 2-2h3.6c.5 0 1 .2 1.3.6l1.4 1.6h6.7a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
+  next: '<circle cx="12" cy="12" r="8.5"/><path d="M8.6 12.2l2.3 2.3 4.6-4.8"/>',
+  list: '<path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.5" cy="6.5" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="17.5" r="1"/>',
+  graph: '<rect x="3.5" y="4" width="7" height="5" rx="1.5"/><rect x="13.5" y="9.5" width="7" height="5" rx="1.5"/><rect x="3.5" y="15" width="7" height="5" rx="1.5"/><path d="M10.5 6.5h1.5a1.5 1.5 0 0 1 1.5 1.5v2M10.5 17.5h1.5a1.5 1.5 0 0 0 1.5-1.5v-1.5"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  calendar: '<rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>',
+  clock: '<circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/>',
+  bell: '<path d="M6.5 16V11a5.5 5.5 0 0 1 11 0v5l1.5 1.5H5z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>',
+  more: '<circle cx="6" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="18" cy="12" r="1.3" fill="currentColor"/>',
+  close: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
+  outbound: '<path d="M5 5v6a4 4 0 0 0 4 4h10"/><path d="M15.5 11.5L19 15l-3.5 3.5"/>',
+  inbound: '<path d="M19 5v6a4 4 0 0 1-4 4H5"/><path d="M8.5 11.5L5 15l3.5 3.5"/>',
+  chain: '<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5v3.5a3 3 0 0 0 3 3h6a3 3 0 0 1 3 3v-2.5"/>',
+  key: '<circle cx="8" cy="15" r="3.5"/><path d="M10.5 12.5L19 4M16 7l2.2 2.2"/>',
+  person: '<circle cx="12" cy="8.5" r="3.5"/><path d="M5 19.5a7 7 0 0 1 14 0"/>',
+  trash: '<path d="M5 7h14M10 4.5h4M7 7l.9 12.1a1.5 1.5 0 0 0 1.5 1.4h5.2a1.5 1.5 0 0 0 1.5-1.4L17 7"/>',
+  mail: '<rect x="3.5" y="5.5" width="17" height="13" rx="2.5"/><path d="M4 7l8 6 8-6"/>',
+  sideLeft: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/>',
+  sideRight: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M14.5 4.5v15"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/>',
+};
+const icon = (n, s = 20, w = 1.8) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ---------- sample data ----------
+const NOW = new Date(2026, 10, 2, 10, 30);
+const D = (m, d, h = 0, mi = 0, y = 2026) => new Date(y, m - 1, d, h, mi);
+const folders = [
+  { id: 'study', parent: null, name: '学习' },
+  { id: 'thesis', parent: 'study', name: '毕业论文' },
+  { id: 'defense', parent: 'thesis', name: '答辩准备' },
+  { id: 'work', parent: null, name: '工作' },
+  { id: 'eduwork', parent: 'work', name: 'EduWork 改版' },
+  { id: 'job', parent: 'work', name: '求职' },
+  { id: 'life', parent: null, name: '生活' },
+  { id: 'move', parent: 'life', name: '搬家' },
+];
+const SURVEY = `#### 目标
+本科生和研究生两组样本，每组不少于 **200 份**。
+
+- [x] 参考往届同类问卷
+- [ ] 写题目初稿
+- [ ] 找 3 位同学试填，改掉有歧义的题
+
+> 平台用问卷星，导出 Excel 后直接进数据分析。`;
+const T = (id, folder, title, extra = {}) => ({ id, folder, title, desc: '', done: false, due: null, remind: null, by: '你', at: D(10, 20, 9, 12), ...extra });
+let tasks = [
+  T('r1', null, '交电费', { due: D(11, 1, 20) }),
+  T('r2', null, '给爸妈打个电话'),
+  T('t1', 'thesis', '确定选题', { done: true }),
+  T('t2', 'thesis', '文献综述', { done: true }),
+  T('t3', 'thesis', '设计问卷', { due: D(11, 2, 18), remind: 60, by: 'Claude Code', at: D(10, 30, 21, 14), desc: SURVEY }),
+  T('t4', 'thesis', '发放问卷，收集数据', { due: D(11, 20) }),
+  T('t5', 'thesis', '搭建实验环境', { desc: '- [ ] 申请实验室的 GPU\n- [ ] 配好 Python 环境' }),
+  T('t6', 'thesis', '跑对比实验'),
+  T('t7', 'thesis', '数据分析'),
+  T('t8', 'thesis', '写初稿', { due: D(3, 15, 0, 0, 2027) }),
+  T('t9', 'thesis', '导师审阅'),
+  T('t10', 'thesis', '查重'),
+  T('t11', 'thesis', '提交终稿', { due: D(5, 20, 0, 0, 2027), remind: 1440 }),
+  T('d1', 'defense', '做答辩 PPT'),
+  T('d2', 'defense', '预约答辩教室', { due: D(4, 30, 0, 0, 2027) }),
+  T('d3', 'defense', '模拟答辩'),
+  T('e1', 'eduwork', '整理首页需求'),
+  T('e2', 'eduwork', '画首页原型'),
+  T('e3', 'eduwork', '前端实现'),
+  T('e4', 'eduwork', '后端接口'),
+  T('e5', 'eduwork', '联调上线', { due: D(11, 28) }),
+  T('j1', 'job', '更新简历', { due: D(11, 6, 23), by: 'Claude Code', at: D(11, 2, 10, 29) }),
+  T('j2', 'job', '整理作品集', { by: 'Claude Code', at: D(11, 2, 10, 29) }),
+  T('j3', 'job', '投递 5 家公司', { by: 'Claude Code', at: D(11, 2, 10, 29) }),
+  T('j4', 'job', '刷 30 道算法题', { by: 'Claude Code', at: D(11, 2, 10, 29) }),
+  T('m1', 'move', '联系房东看房', { due: D(11, 2, 19, 30) }),
+  T('m2', 'move', '签租房合同'),
+  T('m3', 'move', '打包行李'),
+  T('m4', 'move', '预约搬家公司'),
+  T('m5', 'move', '搬家', { due: D(11, 29) }),
+  T('m6', 'move', '退旧房押金'),
+];
+tasks.forEach((t, i) => { t.n = i + 1; t.o = i; });
+let deps = [
+  ['t1', 't2'], ['t1', 't3'], ['t1', 't5'], ['t3', 't4'], ['t5', 't6'], ['t4', 't7'], ['t6', 't7'], ['t2', 't8'], ['t7', 't8'],
+  ['t8', 't9'], ['t8', 't10'], ['t9', 't11'], ['t10', 't11'], ['t8', 'd1'], ['d1', 'd3'],
+  ['e1', 'e2'], ['e2', 'e3'], ['e1', 'e4'], ['e3', 'e5'], ['e4', 'e5'],
+  ['j1', 'j3'], ['j2', 'j3'],
+  ['m1', 'm2'], ['m2', 'm4'], ['m3', 'm5'], ['m4', 'm5'], ['m5', 'm6'],
+];
+
+// ---------- domain ----------
+const byId = id => tasks.find(t => t.id === id);
+const folderById = id => folders.find(f => f.id === id);
+const preds = id => deps.filter(([, b]) => b === id).map(([a]) => a);
+const succs = id => deps.filter(([a]) => a === id).map(([, b]) => b);
+const status = t => t.done ? 'done' : preds(t.id).every(p => byId(p).done) ? 'ready' : 'waiting';
+const STATUS_LABEL = { ready: '可做', waiting: '等待中', done: '已完成' };
+const openPreds = t => preds(t.id).filter(p => !byId(p).done).length;
+const unlockCount = t => succs(t.id).filter(s => !byId(s).done && preds(s).every(p => p === t.id || byId(p).done)).length;
+const readyIds = () => tasks.filter(t => status(t) === 'ready').map(t => t.id);
+const folderPath = fid => { const parts = []; for (let f = folderById(fid); f; f = folderById(f.parent)) parts.unshift(f.name); return parts.join(' / '); };
+const childFolders = fid => folders.filter(f => f.parent === fid);
+const descendants = fid => childFolders(fid).flatMap(f => [f.id, ...descendants(f.id)]);
+const treeOrder = (() => { const out = []; const walk = p => childFolders(p).forEach(f => { out.push(f.id); walk(f.id); }); walk(null); return out; })();
+
+function reachable(edges, from, to) {
+  const seen = new Set([from]), stack = [from];
+  while (stack.length) {
+    const n = stack.pop();
+    if (n === to) return true;
+    for (const [a, b] of edges) if (a === n && !seen.has(b)) { seen.add(b); stack.push(b); }
+  }
+  return false;
+}
+function findPath(from, to) {
+  const prev = new Map([[from, null]]), queue = [from];
+  while (queue.length) {
+    const n = queue.shift();
+    if (n === to) break;
+    for (const s of succs(n)) if (!prev.has(s)) { prev.set(s, n); queue.push(s); }
+  }
+  const path = [];
+  for (let n = to; n; n = prev.get(n)) path.unshift(n);
+  return path;
+}
+// hide A→C when A→B→C exists
+const reduce = edges => edges.filter(([a, b]) => !edges.some(([x, y]) => x === a && y !== b && reachable(edges, y, b)));
+function topo(list) {
+  const ids = new Set(list.map(t => t.id));
+  const es = deps.filter(([a, b]) => ids.has(a) && ids.has(b));
+  const indeg = new Map(list.map(t => [t.id, 0]));
+  es.forEach(([, b]) => indeg.set(b, indeg.get(b) + 1));
+  const out = [], avail = list.filter(t => indeg.get(t.id) === 0);
+  while (avail.length) {
+    avail.sort((x, y) => x.o - y.o);
+    const t = avail.shift();
+    out.push(t);
+    es.filter(([a]) => a === t.id).forEach(([, b]) => { indeg.set(b, indeg.get(b) - 1); if (!indeg.get(b)) avail.push(byId(b)); });
+  }
+  return out;
+}
+
+// ---------- dates ----------
+const pad = n => String(n).padStart(2, '0');
+const allDay = d => !d.getHours() && !d.getMinutes();
+const dayStart = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const dayDiff = d => Math.round((dayStart(d) - dayStart(NOW)) / 864e5);
+const dueEnd = d => allDay(d) ? new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59) : d;
+const WEEK = '日一二三四五六';
+function fmtDue(d) {
+  const hm = allDay(d) ? '' : ` ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const diff = dayDiff(d);
+  if (diff === 0) return '今天' + hm;
+  if (diff === -1) return '昨天' + hm;
+  if (diff === 1) return '明天' + hm;
+  const mondayDiff = (NOW.getDay() + 6) % 7;
+  if (diff > 1 && diff < 7 - mondayDiff) return '周' + WEEK[d.getDay()] + hm;
+  if (d.getFullYear() === NOW.getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日` + hm;
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+}
+const fmtDate = d => `${d.getMonth() + 1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+function dueKind(d) {
+  if (dueEnd(d) < NOW) return 'overdue';
+  const diff = dayDiff(d);
+  return diff === 0 ? 'today' : diff <= 7 ? 'week' : 'later';
+}
+const dueCls = t => { if (t.done || !t.due) return ''; const k = dueKind(t.due); return k === 'overdue' || k === 'today' ? k : ''; };
+const remindLabel = m => m == null ? '不提醒' : m === 0 ? '截止时' : m < 60 ? `提前 ${m} 分钟` : m < 1440 ? `提前 ${m / 60} 小时` : `提前 ${m / 1440} 天`;
+
+// ---------- state ----------
+const app = document.getElementById('app');
+const wide = matchMedia('(min-width: 1000px)');
+const sysDark = matchMedia('(prefers-color-scheme: dark)');
+const state = {
+  tab: 'next', stack: [], view: 'list', sel: null, sheet: 'half',
+  loc: 'thesis', collapsed: new Set(), sideOpen: true, paneOpen: true,
+  showDone: false, includeSub: false, connect: null, graphSel: null, gv: null,
+  doneOpen: new Set(), flash: new Set(), linger: new Set(), pop: null,
+  query: '', pickQuery: '', addTarget: null, chain: false, lastAdded: null, refocus: false,
+  editDesc: false, modal: null, dialog: null, snack: null, theme: 'system', anim: null,
+};
+if (wide.matches) state.sel = 't3';
+// ?theme=dark&tab=folders&folder=thesis&view=graph&sel=t3 opens a specific screen
+const params = new URLSearchParams(location.search);
+if (params.has('theme')) state.theme = params.get('theme');
+if (params.has('tab')) state.tab = params.get('tab');
+if (params.has('view')) state.view = params.get('view');
+if (params.has('folder')) { const f = params.get('folder'); state.loc = f; state.tab = 'folders'; for (let x = folderById(f); x; x = folderById(x.parent)) state.stack.unshift(x.id); }
+if (params.has('sel')) { state.sel = params.get('sel'); state.sheet = params.get('sheet') || 'half'; }
+
+// cross-fade the whole page instead of letting each element's own transition run at its own speed
+const switchTheme = fn => document.startViewTransition ? document.startViewTransition(fn) : fn();
+function applyTheme() {
+  const dark = state.theme === 'dark' || (state.theme === 'system' && sysDark.matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.querySelector('meta[name="theme-color"]').content = dark ? '#0F1512' : '#F5FBF6';
+}
+
+let snackTimer;
+function snack(text, action, onAction, ms = 5000) {
+  state.snack = { text, action, onAction, fresh: true };
+  clearTimeout(snackTimer);
+  snackTimer = setTimeout(() => { state.snack = null; render(); }, ms);
+}
+
+// ---------- shared pieces ----------
+function taskRow(t, { path = false, rail = null } = {}) {
+  const st = status(t), meta = [];
+  if (path && t.folder) meta.push(`<span class="m-path">${esc(folderPath(t.folder))}</span>`);
+  if (t.due) meta.push(`<span class="${dueCls(t)}">${icon('clock', 14)}${fmtDue(t.due)}</span>`);
+  if (st === 'waiting') meta.push(`<span>${icon('inbound', 14)}等 ${openPreds(t)} 项</span>`);
+  const unlocks = st === 'ready' ? unlockCount(t) : 0;
+  if (unlocks) meta.push(`<span class="m-unlock">${icon('outbound', 14)}解锁 ${unlocks} 项</span>`);
+  const cls = ['row', 'task', st, state.flash.has(t.id) && 'unlocked', state.sel === t.id && 'selected'].filter(Boolean).join(' ');
+  return `<div class="${cls}" data-action="open" data-id="${t.id}" data-swipe>
+    <div class="swipe-bg"><span>${icon('check', 18)}完成</span><span>删除${icon('trash', 18)}</span></div>
+    <div class="row-inner">
+      <button class="check ${st}${state.pop === t.id ? ' pop' : ''}" data-action="toggle" data-id="${t.id}" aria-label="${t.done ? '标为待办' : '标为完成'}"${rail ? ` style="left:${rail.x - 12}px"` : ''}>${icon('check', 15, 2.6)}</button>
+      <div class="task-main"><div class="task-title">${esc(t.title)}</div>${meta.length ? `<div class="task-meta">${meta.join('')}</div>` : ''}</div>
+    </div></div>`;
+}
+
+const RAIL_ROW = 64, LANE = 24;
+const laneX = c => 28 + c * LANE;
+// git-graph style lanes: each edge occupies a lane from its source row to its target row
+function railList(list) {
+  const ids = new Set(list.map(t => t.id));
+  const index = new Map(list.map((t, i) => [t.id, i]));
+  const edges = reduce(deps.filter(([a, b]) => ids.has(a) && ids.has(b)));
+  const lanes = [], col = new Map(), edgeLane = new Map();
+  const free = () => { const i = lanes.findIndex(l => !l); return i < 0 ? lanes.length : i; };
+  let width = 1;
+  for (const t of list) {
+    const incoming = lanes.flatMap((l, i) => l && l.to === t.id ? [i] : []);
+    const c = incoming.length ? Math.min(...incoming) : free();
+    col.set(t.id, c);
+    incoming.forEach(i => { lanes[i] = null; });
+    edges.filter(([a]) => a === t.id).sort((x, y) => index.get(x[1]) - index.get(y[1])).forEach(([, to], k) => {
+      const l = k === 0 && !lanes[c] ? c : free();
+      lanes[l] = { to };
+      edgeLane.set(t.id + '>' + to, l);
+    });
+    width = Math.max(width, lanes.length, c + 1);
+  }
+  const gutter = 16 + width * LANE + 12;
+  const paths = edges.map(([a, b]) => {
+    const xu = laneX(col.get(a)), xl = laneX(edgeLane.get(a + '>' + b)), xv = laneX(col.get(b));
+    const yu = index.get(a) * RAIL_ROW + 32, yv = index.get(b) * RAIL_ROW + 32;
+    let d = `M${xu} ${yu}`;
+    if (xl !== xu) d += ` L${xu} ${yu + 12} C${xu} ${yu + 24} ${xl} ${yu + 20} ${xl} ${yu + 32}`;
+    d += ` L${xl} ${yv - 32}`;
+    if (xl !== xv) d += ` C${xl} ${yv - 20} ${xv} ${yv - 24} ${xv} ${yv - 12}`;
+    d += ` L${xv} ${yv}`;
+    return `<path d="${d}"${status(byId(a)) === 'ready' ? ' class="live"' : ''}/>`;
+  }).join('');
+  return `<div class="rail-list" style="--gutter:${gutter}px;--sep-left:${gutter}px">
+    <svg class="rail" width="${gutter}" height="${list.length * RAIL_ROW}">${paths}</svg>
+    ${list.map(t => taskRow(t, { rail: { x: laneX(col.get(t.id)) } })).join('')}</div>`;
+}
+
+function folderRow(f) {
+  const own = tasks.filter(t => t.folder === f.id && !t.done);
+  const ready = own.filter(t => status(t) === 'ready').length;
+  const sub = own.length ? `${ready} 项可做，共 ${own.length} 项待办` : `${childFolders(f.id).length} 个文件夹`;
+  return `<button class="row folder-row" data-action="folder" data-id="${f.id}"><div class="row-inner">
+    <span class="folder-ic">${icon('folder', 18)}</span>
+    <span class="folder-main"><span>${esc(f.name)}</span><span class="folder-sub">${sub}</span></span>
+    <span class="chev">${icon('chevR', 18)}</span></div></button>`;
+}
+
+function nextGroups() {
+  const g = { overdue: [], today: [], week: [], later: [], none: [] };
+  tasks.filter(t => status(t) === 'ready' || state.linger.has(t.id)).forEach(t => g[t.due ? dueKind(t.due) : 'none'].push(t));
+  const byDue = (a, b) => a.due - b.due;
+  const tree = t => t.folder ? treeOrder.indexOf(t.folder) : -1;
+  ['overdue', 'today', 'week', 'later'].forEach(k => g[k].sort(byDue));
+  g.none.sort((a, b) => tree(a) - tree(b) || a.o - b.o);
+  return [['overdue', '已逾期', 'overdue'], ['today', '今天', 'today'], ['week', '7 天内', ''], ['later', '以后', ''], ['none', '没有截止时间', '']]
+    .filter(([k]) => g[k].length).map(([k, label, cls]) => ({ label, cls, items: g[k] }));
+}
+function nextBody() {
+  const groups = nextGroups();
+  if (!groups.length) return '<p class="empty">现在没有能做的事。去文件夹里添加，或者让 agent 帮你拆一个计划。</p>';
+  return groups.map(g => `<h2 class="group-title ${g.cls}">${g.label}</h2><div class="group">${g.items.map(t => taskRow(t, { path: true })).join('')}</div>`).join('');
+}
+
+function folderListBody(fid) {
+  const subs = childFolders(fid);
+  const own = tasks.filter(t => t.folder === fid);
+  const open = topo(own.filter(t => !t.done || state.linger.has(t.id)));
+  const done = own.filter(t => t.done && !state.linger.has(t.id));
+  let html = '';
+  if (subs.length) html += `<h2 class="group-title">文件夹</h2><div class="group">${subs.map(folderRow).join('')}</div>`;
+  if (open.length || done.length) {
+    html += `<h2 class="group-title"><span>事项</span><span>${open.filter(t => status(t) === 'ready').length} 项可做</span></h2><div class="group">${open.length ? railList(open) : ''}`;
+    if (done.length) {
+      const isOpen = state.doneOpen.has(fid);
+      html += `<button class="row done-toggle${isOpen ? ' open' : ''}" data-action="doneToggle" data-id="${fid}"><div class="row-inner">已完成 ${done.length} 项<span class="chev">${icon('chevR', 18)}</span></div></button>`;
+      if (isOpen) html += done.map(t => taskRow(t)).join('');
+    }
+    html += '</div>';
+  } else if (!subs.length) {
+    html += '<p class="empty">还没有事项。在下面输入，或者让 agent 帮你拆一个计划。</p>';
+  }
+  return html;
+}
+
+function rootBody() {
+  const own = topo(tasks.filter(t => !t.folder && (!t.done || state.linger.has(t.id))));
+  return `<h2 class="group-title">文件夹</h2><div class="group">${childFolders(null).map(folderRow).join('')}</div>
+    ${own.length ? `<h2 class="group-title">不在文件夹里</h2><div class="group">${own.map(t => taskRow(t)).join('')}</div>` : ''}`;
+}
+function searchResults() {
+  const q = state.query.trim();
+  const hits = tasks.filter(t => (t.title + t.desc).includes(q));
+  if (!hits.length) return `<p class="empty">没有找到包含“${esc(q)}”的事项。</p>`;
+  return `<h2 class="group-title">${hits.length} 个结果</h2><div class="group">${hits.map(t => taskRow(t, { path: true })).join('')}</div>`;
+}
+
+function quickAdd(fid) {
+  const target = fid === undefined ? state.addTarget : fid;
+  return `<form class="quick-add" data-form="add" data-folder="${target || ''}">
+    <span class="plus">${icon('plus', 22, 2)}</span>
+    <input name="title" placeholder="${target ? '添加事项' : '记一件事'}" autocomplete="off" enterkeyhint="done" aria-label="新事项标题">
+    ${fid === undefined
+      ? `<button type="button" class="qa-btn" data-action="pickTarget">${icon('folder', 16)}${target ? esc(folderById(target).name) : '根目录'}</button>`
+      : `<button type="button" class="qa-btn${state.chain ? ' on' : ''}" data-action="chain" aria-pressed="${state.chain}">${icon('chain', 16)}依次排队</button>`}
+  </form>`;
+}
+const seg = (items, cur, action, cls = '') => `<div class="seg ${cls}" role="tablist">${items.map(([v, label, ic]) =>
+  `<button role="tab" aria-selected="${v === cur}" class="${v === cur ? 'on' : ''}" data-action="${action}" data-v="${v}">${ic ? icon(ic, 16) : ''}${label}</button>`).join('')}</div>`;
+
+// ---------- graph ----------
+function graphData(fid) {
+  const scope = new Set([fid, ...(state.includeSub ? descendants(fid) : [])]);
+  const visible = t => state.showDone || !t.done;
+  const nodes = tasks.filter(t => scope.has(t.folder) && visible(t));
+  const ids = new Set(nodes.map(t => t.id));
+  const ghosts = new Set();
+  deps.forEach(([a, b]) => {
+    if (ids.has(a) && !scope.has(byId(b).folder) && visible(byId(b))) ghosts.add(b);
+    if (ids.has(b) && !scope.has(byId(a).folder) && visible(byId(a))) ghosts.add(a);
+  });
+  const all = [...nodes, ...[...ghosts].map(byId)];
+  const allIds = new Set(all.map(t => t.id));
+  return { nodes: all, ghosts, edges: reduce(deps.filter(([a, b]) => allIds.has(a) && allIds.has(b))) };
+}
+// Layered (Sugiyama-style) layout. Longest-path layering keeps everything doable now on the first layer;
+// an edge spanning several layers gets a dummy point on each layer in between, so it runs in its own lane
+function graphLayout(nodes, edges, lr) {
+  const order = topo(nodes), layer = new Map(), L = [], up = new Map(), down = new Map(), chains = new Map();
+  const place = (id, li) => { layer.set(id, li); (L[li] ||= []).push(id); up.set(id, []); down.set(id, []); };
+  order.forEach(t => {
+    const ps = edges.filter(([, b]) => b === t.id).map(([a]) => layer.get(a));
+    place(t.id, ps.length ? Math.max(...ps) + 1 : 0);
+  });
+  edges.forEach(([a, b]) => {
+    const chain = [a];
+    for (let li = layer.get(a) + 1; li < layer.get(b); li++) { const d = `~${a}>${b}@${li}`; place(d, li); chain.push(d); }
+    chain.push(b);
+    chain.forEach((id, i) => { if (i) { down.get(chain[i - 1]).push(id); up.get(id).push(chain[i - 1]); } });
+    chains.set(a + '>' + b, chain);
+  });
+  const dummy = id => id[0] === '~';
+  const sweeps = n => Array.from({ length: n }, (_, i) => i % 2 ? [L.slice(0, -1).reverse(), down] : [L.slice(1), up]);
+  // fewer crossings: order each layer by the mean position of its neighbours in the layer just placed
+  for (const [rows, nb] of sweeps(4)) for (const row of rows) {
+    const pos = new Map(L.flatMap(r => r.map((id, i) => [id, i])));
+    const key = new Map(row.map(id => { const n = nb.get(id); return [id, n.length ? n.reduce((s, x) => s + pos.get(x), 0) / n.length : pos.get(id)]; }));
+    row.sort((a, b) => key.get(a) - key.get(b));
+  }
+  const P = 24, realWidest = Math.max(1, ...L.map(r => r.filter(id => !dummy(id)).length));
+  const [w, h, gapMain, gapCross] = lr ? [184, 60, 64, 16] : [Math.max(104, Math.min(146, (innerWidth - P * 2 - (realWidest - 1) * 12) / realWidest)), 60, 44, 12];
+  const extent = id => dummy(id) ? 0 : lr ? h : w;
+  const sep = (a, b) => (extent(a) + extent(b)) / 2 + (dummy(a) || dummy(b) ? 18 : gapCross);
+  // cross-axis position: pull each node toward its neighbours while keeping order and spacing, a few rounds
+  const c = new Map();
+  L.forEach(row => { let x = 0; row.forEach((id, i) => { if (i) x += sep(row[i - 1], id); c.set(id, x); }); row.forEach(id => c.set(id, c.get(id) - x / 2)); });
+  for (const [rows, nb] of sweeps(8)) for (const row of rows) {
+    const want = row.map(id => { const n = nb.get(id); return n.length ? n.reduce((s, x) => s + c.get(x), 0) / n.length : c.get(id); });
+    const got = [];
+    row.forEach((id, i) => { got[i] = i ? Math.max(want[i], got[i - 1] + sep(row[i - 1], id)) : want[i]; });
+    const shift = want.reduce((s, x, i) => s + x - got[i], 0) / row.length;
+    row.forEach((id, i) => c.set(id, got[i] + shift));
+  }
+  const ids = [...c.keys()];
+  const lo = Math.min(...ids.map(id => c.get(id) - extent(id) / 2)), hi = Math.max(...ids.map(id => c.get(id) + extent(id) / 2));
+  const len = lr ? w : h;
+  const at = id => c.get(id) - lo + P;
+  const start = li => P + (lr ? 0 : 40) + li * (len + gapMain);
+  const box = new Map(order.map(t => { const m = start(layer.get(t.id)), k = at(t.id); return [t.id, lr ? { x: m, y: k - h / 2, w, h } : { x: k - w / 2, y: m, w, h }]; }));
+  // routes: a curve between layers, a straight run through each dummy's layer
+  const pt = (m, k) => lr ? [m, k] : [k, m];
+  const curve = ([x1, y1], [x2, y2]) => lr ? ` C${(x1 + x2) / 2} ${y1} ${(x1 + x2) / 2} ${y2} ${x2} ${y2}` : ` C${x1} ${(y1 + y2) / 2} ${x2} ${(y1 + y2) / 2} ${x2} ${y2}`;
+  const routes = new Map([...chains].map(([key, chain]) => {
+    const pts = [pt(start(layer.get(chain[0])) + len, at(chain[0]))];
+    chain.slice(1, -1).forEach(d => pts.push(pt(start(layer.get(d)), at(d)), pt(start(layer.get(d)) + len, at(d))));
+    pts.push(pt(start(layer.get(chain.at(-1))) - 4, at(chain.at(-1))));
+    return [key, pts.reduce((d, p, i) => i ? d + (i % 2 ? curve(pts[i - 1], p) : ` L${p[0]} ${p[1]}`) : `M${p[0]} ${p[1]}`, '')];
+  }));
+  const span = hi - lo + P * 2, depth = start(L.length) - gapMain + P;
+  return { box, routes, W: lr ? depth : span, H: lr ? span : depth };
+}
+function graphBody(fid, lr) {
+  const { nodes, ghosts, edges } = graphData(fid);
+  if (!nodes.length) return '<p class="empty">这个文件夹里没有待办事项。</p>';
+  const { box, routes, W, H } = graphLayout(nodes, edges, lr);
+  const sel = state.graphSel && box.has(state.graphSel) ? state.graphSel : null;
+  let up = new Set(), down = new Set();
+  if (sel) {
+    const walk = (id, dir, acc) => edges.forEach(([a, b]) => { const [from, to] = dir ? [a, b] : [b, a]; if (from === id && !acc.has(to)) { acc.add(to); walk(to, dir, acc); } });
+    walk(sel, true, down); walk(sel, false, up);
+  }
+  const inChain = id => !sel || id === sel || up.has(id) || down.has(id);
+  const edgeHl = (a, b) => sel && (((up.has(a) || a === sel) && (up.has(b) || b === sel)) || ((down.has(a) || a === sel) && (down.has(b) || b === sel)));
+  const pathD = ([a, b]) => routes.get(a + '>' + b);
+  const svg = `<svg class="edges" width="${W}" height="${H}">
+    <defs>${['n', 'h'].map(k => `<marker id="arr-${k}" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1.5L8 5 1 8.5" fill="none" stroke="${k === 'h' ? 'var(--primary)' : 'var(--outline)'}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></marker>`).join('')}</defs>
+    ${edges.map(e => { const hl = edgeHl(...e); return `<path d="${pathD(e)}" class="${hl ? 'hl' : sel ? 'dim' : ''}" marker-end="url(#arr-${hl ? 'h' : 'n'})"/>`; }).join('')}
+    ${edges.map(([a, b]) => `<path class="hit" d="${pathD([a, b])}" data-action="edge" data-a="${a}" data-b="${b}"/>`).join('')}
+  </svg>`;
+  const html = nodes.map(t => {
+    const b = box.get(t.id), st = status(t), ghost = ghosts.has(t.id);
+    const meta = t.due ? `<span class="n-meta ${dueCls(t)}">${icon('clock', 12)}${fmtDue(t.due)}</span>` : st === 'waiting' && !ghost ? `<span class="n-meta">${icon('inbound', 12)}等 ${openPreds(t)} 项</span>` : '';
+    const cls = ['node', ghost ? 'ghost' : st, (meta || ghost) && 'has-meta', t.id === sel && 'sel', !inChain(t.id) && 'dim', state.connect?.from === t.id && 'source'].filter(Boolean).join(' ');
+    return `<button class="${cls}" data-action="node" data-id="${t.id}" style="left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px">
+      ${ghost ? `<span class="n-folder">${icon('folder', 12)}${esc(folderById(t.folder)?.name ?? '根目录')}</span>` : ''}
+      <span class="n-title">${esc(t.title)}</span>${ghost ? '' : meta}</button>`;
+  }).join('');
+  return `<div class="graph-wrap" data-action="graphBg"><div class="graph" data-w="${W}" data-h="${H}" style="width:${W}px;height:${H}px">${svg}${html}</div></div>`;
+}
+function connectBanner() {
+  if (!state.connect) return '';
+  const from = state.connect.from && byId(state.connect.from);
+  return `<div class="connect-banner" role="status">${from ? `再点后续事项，接在“${esc(from.title)}”后面` : '先点前置事项'}</div>`;
+}
+const graphChips = () => `<button class="chip${state.showDone ? ' on' : ''}" data-action="showDone" aria-pressed="${state.showDone}">${state.showDone ? icon('check', 16) : ''}显示已完成</button>
+  <button class="chip${state.includeSub ? ' on' : ''}" data-action="includeSub" aria-pressed="${state.includeSub}">${state.includeSub ? icon('check', 16) : ''}包含子文件夹</button>`;
+
+// ---------- detail ----------
+function md(src, id) {
+  if (!src.trim()) return '<p class="muted">没有描述</p>';
+  const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`(.+?)`/g, '<code>$1</code>');
+  const lines = src.split('\n'), out = [];
+  let list = null;
+  const close = () => { if (list) { out.push('</ul>'); list = null; } };
+  lines.forEach((line, i) => {
+    let m;
+    if ((m = line.match(/^- \[( |x)\] (.*)/))) {
+      if (list !== 'checks') { close(); out.push('<ul class="checks">'); list = 'checks'; }
+      out.push(`<li class="ck${m[1] === 'x' ? ' on' : ''}" data-action="mdcheck" data-id="${id}" data-line="${i}"><span class="box">${icon('check', 12, 3)}</span><span class="txt">${inline(m[2])}</span></li>`);
+    } else if ((m = line.match(/^- (.*)/))) {
+      if (list !== 'ul') { close(); out.push('<ul>'); list = 'ul'; }
+      out.push(`<li>${inline(m[1])}</li>`);
+    } else {
+      close();
+      if ((m = line.match(/^#{1,4} (.*)/))) out.push(`<h4>${inline(m[1])}</h4>`);
+      else if ((m = line.match(/^> (.*)/))) out.push(`<blockquote>${inline(m[1])}</blockquote>`);
+      else if (line.trim()) out.push(`<p>${inline(line)}</p>`);
+    }
+  });
+  close();
+  return out.join('');
+}
+const prop = (ic, label, value, cls = '') => `<div class="row prop"><div class="row-inner">${icon(ic)}<span>${label}</span><span class="value ${cls}">${value}</span></div></div>`;
+function depRow(other, a, b) {
+  const st = status(other);
+  return `<div class="row dep ${st}" data-action="open" data-id="${other.id}"><div class="row-inner">
+    <span class="dot ${st}"></span>
+    <span class="dep-main"><span class="dep-title">${esc(other.title)}</span><span class="dep-path">${other.folder ? esc(folderPath(other.folder)) : '根目录'}</span></span>
+    <button class="icon-btn sm" data-action="rmDep" data-a="${a}" data-b="${b}" aria-label="移除这条依赖">${icon('close', 16)}</button></div></div>`;
+}
+function detail(t, closable) {
+  const st = status(t), ps = preds(t.id).map(byId), ss = succs(t.id).map(byId);
+  return `<div class="detail">
+    <div class="d-head" data-drag="sheet">
+      <button class="check lg ${st}${state.pop === t.id ? ' pop' : ''}" data-action="toggle" data-id="${t.id}" aria-label="${t.done ? '标为待办' : '标为完成'}">${icon('check', 18, 2.6)}</button>
+      <div class="d-title-wrap"><h2 class="d-title">${esc(t.title)}</h2>
+        <div class="d-status"><span class="pill ${st}">${STATUS_LABEL[st]}</span>${st === 'waiting' ? `<span>还差 ${openPreds(t)} 项前置</span>` : ''}<span>#${t.n}</span></div></div>
+      ${closable ? `<button class="icon-btn" data-action="closeSheet" aria-label="关闭">${icon('close')}</button>` : ''}
+    </div>
+    <div class="group">
+      ${prop('folder', '文件夹', t.folder ? esc(folderPath(t.folder)) : '根目录')}
+      ${prop('calendar', '截止', t.due ? fmtDue(t.due) : '未设置', t.due ? dueCls(t) : 'muted')}
+      ${t.due ? prop('bell', '提醒', remindLabel(t.remind), t.remind == null ? 'muted' : '') : ''}
+    </div>
+    <div class="d-sec"><h3>描述</h3>${seg([['view', '预览'], ['edit', '编辑']], state.editDesc ? 'edit' : 'view', 'editDesc', 'sm')}</div>
+    <div class="group">${state.editDesc ? `<textarea class="md-edit" data-input="desc" data-id="${t.id}" placeholder="支持 Markdown，- [ ] 开头是清单">${esc(t.desc)}</textarea>` : `<div class="md">${md(t.desc, t.id)}</div>`}</div>
+    <div class="d-sec"><div><h3>前置</h3><p>这些做完，才能开始这一项</p></div></div>
+    <div class="group">${ps.map(p => depRow(p, p.id, t.id)).join('')}<button class="row add-row" data-action="addDep" data-dir="pred" data-id="${t.id}"><div class="row-inner">${icon('plus')}添加前置</div></button></div>
+    <div class="d-sec"><div><h3>后续</h3><p>这一项做完，才能开始这些</p></div></div>
+    <div class="group">${ss.map(s => depRow(s, t.id, s.id)).join('')}<button class="row add-row" data-action="addDep" data-dir="succ" data-id="${t.id}"><div class="row-inner">${icon('plus')}添加后续</div></button></div>
+    <p class="provenance">${icon(t.by === '你' ? 'person' : 'key', 14)}${t.by === '你' ? '你' : esc(t.by)}创建于 ${fmtDate(t.at)}</p>
+  </div>`;
+}
+
+// ---------- modals ----------
+function folderOptions(cur) {
+  const depth = id => { let n = 0; for (let f = folderById(id); f?.parent; f = folderById(f.parent)) n++; return n; };
+  const row = (id, name, d) => `<button class="row" data-action="setTarget" data-id="${id ?? ''}"><div class="row-inner" style="padding-left:${16 + d * 22}px">
+    <span class="folder-ic">${icon('folder', 18)}</span><span class="folder-main">${name}</span>${cur === id ? `<span style="color:var(--primary)">${icon('check')}</span>` : ''}</div></button>`;
+  return row(null, '根目录', 0) + treeOrder.map(id => row(id, esc(folderById(id).name), depth(id))).join('');
+}
+function pickerRows() {
+  const { id, dir } = state.modal, q = state.pickQuery.trim();
+  const linked = new Set([id, ...(dir === 'pred' ? preds(id) : succs(id))]);
+  return tasks.filter(t => !linked.has(t.id) && !t.done && t.title.includes(q)).map(t => {
+    const cycle = dir === 'pred' ? reachable(deps, id, t.id) : reachable(deps, t.id, id);
+    return `<button class="row dep${cycle ? ' disabled' : ''}" data-action="pickTask" data-id="${t.id}"><div class="row-inner">
+      <span class="dot ${status(t)}"></span><span class="dep-main"><span class="dep-title">${esc(t.title)}</span><span class="dep-path">${cycle ? '加上会形成循环' : t.folder ? esc(folderPath(t.folder)) : '根目录'}</span></span></div></button>`;
+  }).join('') || '<p class="empty">没有可选的事项。</p>';
+}
+let shownModal = null, shownDialog = null;
+function modal() {
+  const m = state.modal, d = state.dialog;
+  const modalEnter = m && m !== shownModal ? ' enter' : '', dialogEnter = d && d !== shownDialog ? ' enter' : '';
+  shownModal = m;
+  shownDialog = d;
+  let html = '';
+  if (m) {
+    let title, body;
+    if (m.type === 'target') { title = '记到哪里'; body = `<div class="group">${folderOptions(state.addTarget)}</div>`; }
+    if (m.type === 'picker') {
+      title = m.dir === 'pred' ? '添加前置' : '添加后续';
+      body = `<label class="search">${icon('search', 18)}<input data-input="pick" placeholder="搜索事项" value="${esc(state.pickQuery)}" autocomplete="off"></label><div class="group picker" data-picker>${pickerRows()}</div>`;
+    }
+    if (m.type === 'settings') {
+      title = '设置';
+      body = `<div class="group"><div class="row"><div class="row-inner"><span class="avatar" style="margin:0">J</span><span class="folder-main"><span>Junie</span><span class="folder-sub">用户名 junie</span></span></div></div>
+          <button class="row"><div class="row-inner"><span>修改密码</span><span class="chev" style="margin-left:auto">${icon('chevR', 18)}</span></div></button></div>
+        <h2 class="group-title"><span>令牌</span><span>给 agent 和命令行用</span></h2>
+        <div class="group">
+          <div class="row"><div class="row-inner"><span class="token-ic">${icon('key', 18)}</span><span class="folder-main"><span>Claude Code</span><span class="folder-sub">读写，2 分钟前用过</span></span></div></div>
+          <div class="row"><div class="row-inner"><span class="token-ic">${icon('key', 18)}</span><span class="folder-main"><span>Codex</span><span class="folder-sub">只读，昨天用过</span></span></div></div>
+          <button class="row add-row"><div class="row-inner">${icon('plus')}生成令牌</div></button></div>
+        <h2 class="group-title"><span>邀请朋友</span><span>每个邀请码只能注册一次</span></h2>
+        <div class="group"><button class="row add-row"><div class="row-inner">${icon('mail')}生成邀请码</div></button></div>
+        <h2 class="group-title">外观</h2>
+        <div style="margin:0 16px">${seg([['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']], state.theme, 'theme')}</div>
+        <div class="group danger" style="margin-top:24px"><button class="row"><div class="row-inner">退出登录</div></button></div>`;
+    }
+    html += `<div class="modal-scrim${modalEnter}" data-action="closeModal"></div><div class="modal${modalEnter}" role="dialog" aria-label="${title}">
+      <div class="modal-head"><h3>${title}</h3><button class="icon-btn" data-action="closeModal" aria-label="关闭">${icon('close')}</button></div>
+      <div class="modal-body">${body}</div></div>`;
+  }
+  if (d) html += `<div class="dialog-scrim${dialogEnter}" data-action="dialogCancel"><div class="dialog" role="alertdialog"><h3>${d.title}</h3><p>${d.body}</p>
+    <div class="dialog-actions"><button class="text-btn" data-action="dialogCancel">取消</button><button class="text-btn${d.danger ? ' danger-text' : ''}" data-action="dialogOk">${d.ok}</button></div></div></div>`;
+  if (state.snack) {
+    html += `<div class="snackbar${state.snack.fresh ? ' enter' : ''}" role="status"><span>${state.snack.text}</span>${state.snack.action ? `<button data-action="snackAction">${state.snack.action}</button>` : ''}</div>`;
+    state.snack.fresh = false;
+  }
+  return html;
+}
+
+// ---------- phone ----------
+const anim = () => state.anim ? ` anim-${state.anim}` : '';
+function phoneNext() {
+  const count = readyIds().length;
+  return `<section class="screen${anim()}">
+    <header class="nav"><span></span><span class="nav-title">接下来</span><span></span></header>
+    <div class="scroll" data-scroll="next">
+      <div class="hero"><h1 class="large-title">接下来</h1></div>
+      <p class="subtitle">${NOW.getMonth() + 1}月${NOW.getDate()}日 星期${WEEK[NOW.getDay()]}，${count} 项可做</p>
+      ${nextBody()}
+    </div>${quickAdd()}</section>`;
+}
+function phoneFolders() {
+  return `<section class="screen${anim()}">
+    <header class="nav"><span></span><span class="nav-title">文件夹</span><span></span></header>
+    <div class="scroll" data-scroll="folders">
+      <div class="hero"><h1 class="large-title">文件夹</h1></div>
+      <label class="search" style="margin-top:12px">${icon('search', 18)}<input data-input="search" placeholder="搜索全部事项" value="${esc(state.query)}" autocomplete="off"></label>
+      <div data-results>${state.query.trim() ? searchResults() : rootBody()}</div>
+    </div></section>`;
+}
+function phoneFolder(fid) {
+  const f = folderById(fid), parent = f.parent ? folderById(f.parent).name : '文件夹';
+  const nav = `<header class="nav"><button class="back" data-action="back">${icon('chevL', 22)}<span>${esc(parent)}</span></button><span class="nav-title">${esc(f.name)}</span><span class="nav-actions"><button class="icon-btn" aria-label="更多操作">${icon('more')}</button></span></header>`;
+  const viewSeg = `<div class="view-seg">${seg([['list', '列表', 'list'], ['graph', '关系图', 'graph']], state.view, 'view')}</div>`;
+  if (state.view === 'graph') {
+    return `<section class="screen scrolled${anim()}">${nav}<div style="height:calc(56px + var(--safe-top))"></div>${viewSeg}
+      <div class="graph-area"><div class="graph-tools">${graphChips()}</div>${connectBanner()}${graphBody(fid, false)}</div>
+      <button class="fab${state.connect ? ' on' : ''}" data-action="connect">${icon(state.connect ? 'close' : 'link')}${state.connect ? '取消连线' : '连线'}</button></section>`;
+  }
+  return `<section class="screen${anim()}">${nav}
+    <div class="scroll" data-scroll="f-${fid}"><div class="hero"><h1 class="large-title">${esc(f.name)}</h1></div>${viewSeg}${folderListBody(fid)}</div>
+    ${quickAdd(fid)}</section>`;
+}
+function renderPhone() {
+  const screen = state.tab === 'next' ? phoneNext() : state.stack.length ? phoneFolder(state.stack.at(-1)) : phoneFolders();
+  const tab = (id, label, ic) => `<button class="tab${state.tab === id ? ' on' : ''}" data-action="tab" data-v="${id}"><span class="tab-ic">${icon(ic, 22)}</span>${label}</button>`;
+  let html = screen + `<nav class="tabbar">${tab('next', '接下来', 'next')}${tab('folders', '文件夹', 'folder')}
+    <button class="tab" data-action="settings"><span class="tab-ic"><span class="avatar">J</span></span>设置</button></nav>`;
+  const t = state.sel && byId(state.sel);
+  if (t) {
+    const enter = state.anim === 'sheet' ? ' enter' : '';
+    html += `<div class="scrim ${state.sheet}${enter}" data-action="closeSheet"></div>
+      <div class="sheet ${state.sheet}${enter}" role="dialog" aria-label="事项详情"><div class="sheet-grab" data-drag="sheet"><span class="handle"></span></div>
+      <div class="sheet-scroll" data-scroll="sheet-${t.id}">${detail(t, true)}</div></div>`;
+  }
+  return html + modal();
+}
+
+// ---------- desktop ----------
+function sidebar() {
+  const tree = (parent, depth) => childFolders(parent).map(f => {
+    const kids = childFolders(f.id).length, open = !state.collapsed.has(f.id);
+    const count = tasks.filter(t => t.folder === f.id && !t.done).length;
+    return `<button class="sb-item${state.loc === f.id ? ' on' : ''}" data-action="loc" data-v="${f.id}" style="padding-left:${10 + depth * 18}px">
+      <span class="tw${kids && open ? ' open' : ''}" ${kids ? `data-action="treeToggle" data-id="${f.id}"` : ''}>${kids ? icon('chevR', 14, 2.2) : ''}</span>
+      ${icon('folder', 18)}<span>${esc(f.name)}</span><span class="count">${count || ''}</span></button>${kids && open ? tree(f.id, depth + 1) : ''}`;
+  }).join('');
+  return `<nav class="sidebar"><div class="sb-inner"><div class="sb-head"><span class="brand"><span class="brand-mark">${icon('next', 18, 2)}</span>NextTodo</span></div>
+    <label class="search">${icon('search', 18)}<input data-input="search" placeholder="搜索" value="${esc(state.query)}" autocomplete="off"></label>
+    <div class="sb-scroll">
+      <button class="sb-item${state.loc === 'next' ? ' on' : ''}" data-action="loc" data-v="next"><span class="tw"></span>${icon('next', 18)}<span>接下来</span><span class="count">${readyIds().length}</span></button>
+      <div class="sb-label"><button data-action="loc" data-v="root">文件夹</button></div>${tree(null, 0)}
+    </div>
+    <div class="sb-foot"><button class="sb-user" data-action="settings"><span class="avatar">J</span><span class="folder-main"><span>Junie</span><span class="folder-sub">设置和令牌</span></span></button></div></div></nav>`;
+}
+function deskMain() {
+  if (state.query.trim()) return `<header class="main-head"><div><div class="crumbs"></div><h1 class="main-title">搜索</h1></div></header><div class="main-scroll" data-scroll="d-search" data-results>${searchResults()}</div>`;
+  if (state.loc === 'next') return `<header class="main-head"><div><div class="crumbs">${NOW.getMonth() + 1}月${NOW.getDate()}日 星期${WEEK[NOW.getDay()]}</div><h1 class="main-title">接下来</h1></div></header>
+    ${quickAdd()}<div class="main-scroll" data-scroll="d-next">${nextBody()}</div>`;
+  if (state.loc === 'root') return `<header class="main-head"><div><div class="crumbs"></div><h1 class="main-title">文件夹</h1></div></header><div class="main-scroll" data-scroll="d-root">${rootBody()}</div>`;
+  const f = folderById(state.loc);
+  const head = `<header class="main-head"><div><div class="crumbs">${f.parent ? esc(folderPath(f.parent)) : ''}</div><h1 class="main-title">${esc(f.name)}</h1></div>
+    ${seg([['list', '列表', 'list'], ['graph', '关系图', 'graph']], state.view, 'view')}</header>`;
+  if (state.view === 'graph') return `${head}<div class="graph-tools">${graphChips()}<span class="spacer"></span>
+      <button class="chip${state.connect ? ' on' : ''}" data-action="connect">${icon(state.connect ? 'close' : 'link', 16)}${state.connect ? '取消连线' : '连线'}</button></div>
+    <div class="graph-area">${connectBanner()}${graphBody(f.id, true)}</div>`;
+  return `${head}${quickAdd(f.id)}<div class="main-scroll" data-scroll="d-${f.id}">${folderListBody(f.id)}</div>`;
+}
+function renderDesk() {
+  const t = state.sel && byId(state.sel);
+  const tool = (action, ic, open, label) => `<button class="icon-btn" data-action="${action}" aria-pressed="${open}" aria-label="${open ? '收起' : '展开'}${label}" title="${open ? '收起' : '展开'}${label}">${icon(ic)}</button>`;
+  return `${sidebar()}<main class="main"><div class="main-tools">${tool('toggleSide', 'sideLeft', state.sideOpen, '左侧栏')}${tool('togglePane', 'sideRight', state.paneOpen, '详情栏')}</div>${deskMain()}</main>
+    <aside class="detail-pane"><div class="pane-inner" data-scroll="pane-${state.sel}">${t ? detail(t, false) : '<div class="detail-empty">选一个事项，在这里查看和编辑</div>'}</div></aside>${modal()}`;
+}
+
+// ---------- render ----------
+function render() {
+  const scrolls = {};
+  app.querySelectorAll('[data-scroll]').forEach(el => { scrolls[el.dataset.scroll] = [el.scrollTop, el.scrollLeft]; });
+  app.className = wide.matches ? `desk${state.sideOpen ? '' : ' side-closed'}${state.paneOpen ? '' : ' pane-closed'}` : 'phone';
+  app.innerHTML = wide.matches ? renderDesk() : renderPhone();
+  app.querySelectorAll('[data-scroll]').forEach(el => {
+    const s = scrolls[el.dataset.scroll];
+    if (s) [el.scrollTop, el.scrollLeft] = s;
+    if (el.classList.contains('scroll')) el.closest('.screen').classList.toggle('scrolled', el.scrollTop > 36);
+  });
+  const wrap = app.querySelector('.graph-wrap');
+  if (wrap && !state.gv) {
+    const W = +wrap.firstElementChild.dataset.w, H = +wrap.firstElementChild.dataset.h;
+    state.gv = { x: (wrap.clientWidth - W) / 2, y: wide.matches ? Math.max(0, (wrap.clientHeight - H) / 2) : 0, s: 1 };
+    if (wide.matches) state.gv.x = Math.max(0, state.gv.x);
+  }
+  applyGV();
+  if (state.refocus) { app.querySelector('.quick-add input')?.focus(); state.refocus = false; }
+  state.anim = null;
+  state.pop = null;
+}
+
+// ---------- actions ----------
+function toggleDone(id, force) {
+  const t = byId(id);
+  if (!t.done && status(t) === 'waiting' && !force) {
+    state.dialog = { title: '前置还没做完', body: `“${esc(t.title)}”还有 ${openPreds(t)} 项前置没完成，仍然标为完成吗？`, ok: '标为完成', onOk: () => toggleDone(id, true) };
+    return;
+  }
+  const before = new Set(readyIds());
+  t.done = !t.done;
+  state.pop = id;
+  if (t.done) {
+    state.linger.add(id);
+    setTimeout(() => { state.linger.delete(id); render(); }, 900);
+    const unlocked = readyIds().filter(x => !before.has(x));
+    unlocked.forEach(x => state.flash.add(x));
+    if (unlocked.length) setTimeout(() => { unlocked.forEach(x => state.flash.delete(x)); render(); }, 1700);
+    const text = unlocked.length === 1 ? `解锁了“${esc(byId(unlocked[0]).title)}”` : unlocked.length ? `解锁了 ${unlocked.length} 项` : `已完成“${esc(t.title)}”`;
+    snack(text, '撤销', () => { t.done = false; });
+  }
+}
+function addDep(a, b) {
+  if (a === b) return;
+  if (deps.some(([x, y]) => x === a && y === b)) { snack('已经有这条依赖了'); return; }
+  if (reachable(deps, b, a)) {
+    const loop = [...findPath(b, a), b].map(id => `“${esc(byId(id).title)}”`).join(' → ');
+    snack(`会形成循环：${loop}`, null, null, 6000);
+    return;
+  }
+  deps.push([a, b]);
+  snack(`“${esc(byId(b).title)}”现在接在“${esc(byId(a).title)}”后面`, '撤销', () => { deps = deps.filter(([x, y]) => !(x === a && y === b)); });
+}
+function removeDep(a, b) {
+  deps = deps.filter(([x, y]) => !(x === a && y === b));
+  snack('已移除依赖', '撤销', () => deps.push([a, b]));
+}
+function openTask(id) {
+  if (!wide.matches && !state.sel) { state.anim = 'sheet'; state.sheet = 'half'; }
+  state.sel = id;
+  state.editDesc = false;
+}
+
+const actions = {
+  tab: v => { state.tab = v; state.sel = null; state.connect = null; },
+  folder: (_, el) => { const id = el.dataset.id; state.gv = null; if (wide.matches) { state.loc = id; state.query = ''; } else { state.stack.push(id); state.anim = 'push'; state.graphSel = null; state.connect = null; } },
+  back: () => { state.stack.pop(); state.anim = 'pop'; state.gv = null; state.connect = null; state.graphSel = null; },
+  open: (_, el) => openTask(el.dataset.id),
+  toggle: (_, el) => toggleDone(el.dataset.id),
+  closeSheet: () => { state.sel = null; },
+  view: v => { state.view = v; state.connect = null; state.gv = null; },
+  showDone: () => { state.showDone = !state.showDone; },
+  includeSub: () => { state.includeSub = !state.includeSub; },
+  connect: () => { state.connect = state.connect ? null : { from: null }; state.graphSel = null; },
+  node: (_, el) => {
+    const id = el.dataset.id;
+    if (state.connect) {
+      if (!state.connect.from) state.connect.from = id;
+      else if (state.connect.from !== id) { addDep(state.connect.from, id); state.connect = null; }
+      return;
+    }
+    state.graphSel = id;
+    openTask(id);
+  },
+  graphBg: () => { state.graphSel = null; },
+  edge: (_, el) => {
+    const { a, b } = el.dataset;
+    state.dialog = { title: '删除这条依赖？', body: `删除后，“${esc(byId(b).title)}”不再需要等“${esc(byId(a).title)}”完成。`, ok: '删除', danger: true, onOk: () => removeDep(a, b) };
+  },
+  doneToggle: (_, el) => { const id = el.dataset.id; state.doneOpen.has(id) ? state.doneOpen.delete(id) : state.doneOpen.add(id); },
+  chain: () => { state.chain = !state.chain; state.lastAdded = null; },
+  pickTarget: () => { state.modal = { type: 'target' }; },
+  setTarget: (_, el) => { state.addTarget = el.dataset.id || null; state.modal = null; },
+  settings: () => { state.modal = { type: 'settings' }; },
+  theme: v => switchTheme(() => { state.theme = v; applyTheme(); render(); }),
+  addDep: (_, el) => { state.modal = { type: 'picker', id: el.dataset.id, dir: el.dataset.dir }; state.pickQuery = ''; },
+  pickTask: (_, el) => { const { id, dir } = state.modal; state.modal = null; dir === 'pred' ? addDep(el.dataset.id, id) : addDep(id, el.dataset.id); },
+  rmDep: (_, el) => removeDep(el.dataset.a, el.dataset.b),
+  mdcheck: (_, el) => {
+    const t = byId(el.dataset.id), lines = t.desc.split('\n'), i = +el.dataset.line;
+    lines[i] = lines[i].replace(/^- \[( |x)\]/, (_, c) => `- [${c === 'x' ? ' ' : 'x'}]`);
+    t.desc = lines.join('\n');
+  },
+  editDesc: v => { state.editDesc = v === 'edit'; },
+  closeModal: () => { state.modal = null; },
+  dialogOk: () => { const d = state.dialog; state.dialog = null; d.onOk(); },
+  dialogCancel: (_, el, e) => { if (e.target === el) state.dialog = null; },
+  snackAction: () => { const s = state.snack; state.snack = null; s.onAction(); },
+  loc: (v, el, e) => { if (e.target.closest('[data-action="treeToggle"]')) return; state.loc = v; state.query = ''; state.connect = null; state.graphSel = null; state.gv = null; },
+  treeToggle: (_, el) => { const id = el.dataset.id; state.collapsed.has(id) ? state.collapsed.delete(id) : state.collapsed.add(id); },
+  toggleSide: () => { state.sideOpen = !state.sideOpen; },
+  togglePane: () => { state.paneOpen = !state.paneOpen; },
+};
+
+app.addEventListener('click', e => {
+  if (swipeConsumed) { swipeConsumed = false; return; }
+  if (graphMoved && e.target.closest('.graph-wrap')) { graphMoved = false; return; }
+  const el = e.target.closest('[data-action]');
+  if (!el || !actions[el.dataset.action]) return;
+  if (el.dataset.action === 'graphBg' && e.target.closest('.node')) return;
+  e.preventDefault();
+  actions[el.dataset.action](el.dataset.v, el, e);
+  render();
+});
+app.addEventListener('submit', e => {
+  e.preventDefault();
+  const form = e.target, title = form.title.value.trim();
+  if (!title) return;
+  const folder = form.dataset.folder || null;
+  const t = { id: 'n' + Date.now(), folder, title, desc: '', done: false, due: null, remind: null, by: '你', at: new Date(NOW), n: tasks.length + 1, o: tasks.length };
+  tasks.push(t);
+  const prev = state.chain && state.lastAdded && byId(state.lastAdded);
+  if (prev && prev.folder === folder) deps.push([prev.id, t.id]);
+  if (state.chain) state.lastAdded = t.id;
+  snack(prev ? `已添加，接在“${esc(prev.title)}”后面` : `已添加“${esc(title)}”`);
+  state.refocus = true;
+  render();
+});
+app.addEventListener('input', e => {
+  const kind = e.target.dataset.input;
+  if (kind === 'desc') byId(e.target.dataset.id).desc = e.target.value;
+  if (kind === 'search') {
+    state.query = e.target.value;
+    const box = app.querySelector('[data-results]');
+    if (box && !wide.matches) box.innerHTML = state.query.trim() ? searchResults() : rootBody();
+    else { render(); const input = app.querySelector('[data-input="search"]'); input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+  }
+  if (kind === 'pick') { state.pickQuery = e.target.value; app.querySelector('[data-picker]').innerHTML = pickerRows(); }
+});
+app.addEventListener('scroll', e => {
+  const el = e.target;
+  if (el.classList?.contains('scroll')) el.closest('.screen').classList.toggle('scrolled', el.scrollTop > 36);
+}, true);
+
+// sheet drag: snap to half / full, or close. Touch can start anywhere on the sheet:
+// in the content it drags only when the content is scrolled to the top, or upward from the half state
+let drag = null, sheetTouch = null;
+function dragStart(sheet, y) {
+  drag = { sheet, startY: y, startTop: sheet.getBoundingClientRect().top, fullTop: innerHeight - sheet.offsetHeight, top: null, v: 0, lastY: y, lastT: performance.now() };
+  sheet.classList.add('dragging');
+}
+function dragMove(y) {
+  const now = performance.now();
+  drag.v = (y - drag.lastY) / Math.max(1, now - drag.lastT);
+  drag.lastY = y;
+  drag.lastT = now;
+  drag.top = Math.max(drag.fullTop, drag.startTop + y - drag.startY);
+  drag.sheet.style.transform = `translateY(${drag.top - drag.fullTop}px)`;
+}
+function dragEnd() {
+  const { sheet, top, v } = drag;
+  drag = null;
+  sheet.classList.remove('dragging');
+  sheet.style.transform = '';
+  if (top == null) return;
+  if (v > .6) { if (sheet.classList.contains('full')) state.sheet = 'half'; else state.sel = null; }
+  else if (v < -.6) state.sheet = 'full';
+  else if (top > innerHeight * .72) state.sel = null;
+  else state.sheet = top < innerHeight * .3 ? 'full' : 'half';
+  render();
+}
+app.addEventListener('pointerdown', e => {
+  const grab = e.target.closest('[data-drag="sheet"]');
+  if (e.pointerType === 'touch' || !grab || e.target.closest('button')) return;
+  dragStart(grab.closest('.sheet'), e.clientY);
+});
+app.addEventListener('pointermove', e => { if (drag && e.pointerType !== 'touch') dragMove(e.clientY); });
+app.addEventListener('pointerup', e => { if (drag && e.pointerType !== 'touch') dragEnd(); });
+app.addEventListener('touchstart', e => {
+  const sheet = e.target.closest('.sheet');
+  if (!sheet || e.touches.length !== 1 || e.target.closest('textarea, input')) return;
+  sheetTouch = { sheet, y: e.touches[0].clientY, scroller: sheet.querySelector('.sheet-scroll'), mode: null };
+}, { passive: true });
+app.addEventListener('touchmove', e => {
+  if (!sheetTouch) return;
+  const y = e.touches[0].clientY, dy = y - sheetTouch.y;
+  if (!sheetTouch.mode) {
+    if (Math.abs(dy) < 3) return;
+    const { sheet, scroller } = sheetTouch;
+    const pull = !scroller.contains(e.target) || (dy > 0 && scroller.scrollTop <= 0) || (dy < 0 && sheet.classList.contains('half'));
+    sheetTouch.mode = pull ? 'drag' : 'scroll';
+    if (pull) dragStart(sheet, sheetTouch.y);
+  }
+  if (sheetTouch.mode === 'drag') { e.preventDefault(); dragMove(y); }
+}, { passive: false });
+app.addEventListener('touchend', () => {
+  if (sheetTouch?.mode === 'drag') {
+    dragEnd();
+    swipeConsumed = true;
+    setTimeout(() => { swipeConsumed = false; }, 50);
+  }
+  sheetTouch = null;
+});
+
+// swipe rows: right to complete, left to delete
+let swipe = null, swipeConsumed = false;
+app.addEventListener('touchstart', e => {
+  const row = e.target.closest('[data-swipe]');
+  if (row && e.touches.length === 1) swipe = { row, x: e.touches[0].clientX, y: e.touches[0].clientY, dx: 0, active: false };
+}, { passive: true });
+app.addEventListener('touchmove', e => {
+  if (!swipe) return;
+  const dx = e.touches[0].clientX - swipe.x, dy = e.touches[0].clientY - swipe.y;
+  if (!swipe.active) {
+    if (Math.abs(dy) > 10) { swipe = null; return; }
+    if (Math.abs(dx) < 12) return;
+    swipe.active = true;
+    swipe.row.classList.add('swiping');
+  }
+  swipe.dx = dx;
+  swipe.row.querySelector('.row-inner').style.transform = `translateX(${dx}px)`;
+}, { passive: true });
+app.addEventListener('touchend', () => {
+  if (!swipe) return;
+  const { row, dx, active } = swipe;
+  swipe = null;
+  if (!active) return;
+  swipeConsumed = true;
+  setTimeout(() => { swipeConsumed = false; }, 50);
+  row.classList.remove('swiping');
+  row.querySelector('.row-inner').style.transform = '';
+  const id = row.dataset.id;
+  if (dx > 90) { toggleDone(id); render(); }
+  else if (dx < -90) {
+    const t = byId(id), removed = deps.filter(([a, b]) => a === id || b === id);
+    tasks = tasks.filter(x => x !== t);
+    deps = deps.filter(d => !removed.includes(d));
+    if (state.sel === id) state.sel = null;
+    snack(`已删除“${esc(t.title)}”`, '撤销', () => { tasks.push(t); deps.push(...removed); });
+    render();
+  }
+});
+
+// graph canvas: one finger or mouse drag pans, two fingers pan and pinch-zoom; trackpad scroll pans, pinch / ctrl+wheel zooms
+const pointers = new Map();
+let gesture = null, graphMoved = false;
+function applyGV() {
+  const g = app.querySelector('.graph');
+  if (!g || !state.gv) return;
+  const { x, y, s } = state.gv;
+  g.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  g.parentElement.style.backgroundSize = `${22 * s}px ${22 * s}px`;
+  g.parentElement.style.backgroundPosition = `${x}px ${y}px`;
+}
+function zoomAt(px, py, s, from) {
+  s = Math.min(2.5, Math.max(.35, s));
+  const k = s / from.s;
+  return { s, x: px - (px - from.x) * k, y: py - (py - from.y) * k };
+}
+const localPoints = wrap => { const r = wrap.getBoundingClientRect(); return [...pointers.values()].map(p => ({ x: p.x - r.left, y: p.y - r.top })); };
+const beginGesture = wrap => { gesture = { wrap, gv: { ...state.gv }, pts: localPoints(wrap) }; };
+app.addEventListener('pointerdown', e => {
+  const wrap = e.target.closest('.graph-wrap');
+  if (!wrap || !state.gv) return;
+  if (!pointers.size) graphMoved = false;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  beginGesture(wrap);
+});
+app.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const [a0, b0] = gesture.pts, [a, b] = localPoints(gesture.wrap), from = gesture.gv;
+  if (!b) {
+    if (!graphMoved && Math.hypot(a.x - a0.x, a.y - a0.y) < 6) return;
+    state.gv = { ...from, x: from.x + a.x - a0.x, y: from.y + a.y - a0.y };
+  } else {
+    const mid0 = { x: (a0.x + b0.x) / 2, y: (a0.y + b0.y) / 2 }, mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const z = zoomAt(mid0.x, mid0.y, from.s * Math.hypot(a.x - b.x, a.y - b.y) / Math.hypot(a0.x - b0.x, a0.y - b0.y), from);
+    state.gv = { s: z.s, x: z.x + mid.x - mid0.x, y: z.y + mid.y - mid0.y };
+  }
+  graphMoved = true;
+  applyGV();
+});
+const endPointer = e => {
+  if (!pointers.delete(e.pointerId)) return;
+  if (pointers.size) beginGesture(gesture.wrap);
+  else gesture = null;
+};
+app.addEventListener('pointerup', endPointer);
+app.addEventListener('pointercancel', endPointer);
+app.addEventListener('wheel', e => {
+  const wrap = e.target.closest('.graph-wrap');
+  if (!wrap || !state.gv) return;
+  e.preventDefault();
+  const r = wrap.getBoundingClientRect(), gv = state.gv;
+  state.gv = e.ctrlKey ? zoomAt(e.clientX - r.left, e.clientY - r.top, gv.s * Math.exp(-e.deltaY / 100), gv) : { ...gv, x: gv.x - e.deltaX, y: gv.y - e.deltaY };
+  applyGV();
+}, { passive: false });
+
+wide.addEventListener('change', render);
+sysDark.addEventListener('change', () => switchTheme(() => { applyTheme(); render(); }));
+applyTheme();
+render();
+setTimeout(() => {
+  const batch = ['j1', 'j2', 'j3', 'j4'];
+  snack('Claude Code 在“求职”里添加了 4 项', '撤销', () => {
+    const removed = tasks.filter(t => batch.includes(t.id));
+    tasks = tasks.filter(t => !batch.includes(t.id));
+    deps = deps.filter(([a, b]) => !batch.includes(a) && !batch.includes(b));
+    if (batch.includes(state.sel)) state.sel = null;
+    snack(`已撤销，移除了 ${removed.length} 项`);
+  }, 8000);
+  render();
+}, 1200);
+</script>
+</body>
+</html>

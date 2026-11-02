@@ -1,0 +1,19 @@
+# On the server, in /opt/1panel/www/sites/NextTodo next to `data/`. deploy.sh copies it there and
+# sets NEXTTODO_TAG and NEXTTODO_PORT in `.env`.
+services:
+  nexttodo:
+    image: nexttodo:${NEXTTODO_TAG}
+    restart: unless-stopped
+    # Only the reverse proxy on this machine reaches it.
+    ports:
+      - "127.0.0.1:${NEXTTODO_PORT}:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      RUST_LOG: info
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

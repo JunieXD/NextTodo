@@ -2,7 +2,7 @@
 
 import { ChevronRight, Copy, KeyRound, Mail, Monitor, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
-import { ApiError, api, native, serverUrl } from "../api/http";
+import { ApiError, api, app, serverUrl } from "../api/http";
 import type { CreatedToken } from "../api/types/CreatedToken";
 import type { Invite } from "../api/types/Invite";
 import type { Scope } from "../api/types/Scope";
@@ -16,6 +16,7 @@ import { Seg } from "../ui/controls";
 import { Modal, useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { BackgroundSettings } from "./Background";
+import { StartAtLogin } from "./StartAtLogin";
 
 /** The link that opens registration with an invite code: on the server, which in the app is not
  * where the page comes from. */
@@ -184,7 +185,8 @@ export function Settings({ onClose, onSignOut }: { onClose(): void; onSignOut():
         </>
       )}
 
-      {native && <BackgroundSettings />}
+      {app === "android" && <BackgroundSettings />}
+      {app === "macos" && <StartAtLogin />}
 
       <h2 className="group-title">外观</h2>
       <div style={{ margin: "0 16px" }}>

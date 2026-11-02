@@ -3,7 +3,7 @@
 // holds.
 
 import { createContext, useContext, useSyncExternalStore } from "react";
-import { ApiError, api, dropSession, native, syncToken, syncUrl } from "./api/http";
+import { ApiError, api, app, dropSession, native, syncToken, syncUrl } from "./api/http";
 import type { Effect } from "./api/types/Effect";
 import type { ErrorBody } from "./api/types/ErrorBody";
 import type { LogEntry } from "./api/types/LogEntry";
@@ -13,7 +13,8 @@ import type { Op } from "./api/types/Op";
 import type { SeqSnapshot } from "./api/types/SeqSnapshot";
 import type { User } from "./api/types/User";
 import { Rejected } from "./domain/apply";
-import { clear, watch } from "./native";
+import * as android from "./android";
+import * as macos from "./macos";
 import { type Saver, forget, forgetCopy, forgetOthers, load, saver } from "./sync/persist";
 import { type Connection, Socket } from "./sync/socket";
 import { type Saved, Store } from "./sync/store";
@@ -82,7 +83,7 @@ export interface Listeners {
   arrived(entries: LogEntry[]): void;
   /** Saving on this device failed; changes still go to the server. */
   unsaved(): void;
-  /** In the app: the reminders or the widget could not be brought up to date. */
+  /** In the app: the reminders, or on Android the widget, could not be brought up to date. */
   appFailed(e: unknown): void;
   /** The session has ended elsewhere, and here too now. */
   signedOut(): void;
@@ -139,7 +140,7 @@ export class Session {
     });
     this.socket.start();
     tabs.addEventListener("message", this.heard);
-    if (native) this.unwatch = watch(this.store, (e) => this.listeners.appFailed(e));
+    if (app) this.unwatch = (app === "android" ? android : macos).watch(this.store, (e) => this.listeners.appFailed(e));
   }
 
   private readonly heard = ({ data }: MessageEvent<Message>) => {
@@ -196,8 +197,8 @@ export class Session {
   /** The session this device was in last time, if any. */
   static async resume(): Promise<Session | null> {
     // In the app, the session is the token kept on the device: without one, what the widget and the
-    // reminders show is no one's.
-    if (native && !syncToken()) await clear();
+    // reminders show is no one's. On the Mac they last only while the app runs.
+    if (app === "android" && !syncToken()) await android.clear();
     const copy = crypto.randomUUID();
     const found = await turn(async () => {
       const out = pendingSignOut();
@@ -223,7 +224,7 @@ export class Session {
         // In the app, the token goes too, as when a session ends.
         if (native) {
           await dropSession();
-          await clear();
+          if (app === "android") await android.clear();
         }
         return null;
       }
@@ -336,10 +337,11 @@ async function forgetUser(user: User) {
 async function finishSignOut(out: Login) {
   await forgetUser(out.user);
   const loggedOut = await logout();
-  // In the app, the token goes too, and then what the widget and the reminders show.
+  // In the app, the token goes too, and then what the widget and the reminders show; on the Mac
+  // reminders last only while the app runs.
   if (native) {
     await dropSession();
-    await clear();
+    if (app === "android") await android.clear();
   }
   if (loggedOut) localStorage.removeItem(SIGNED_OUT);
 }

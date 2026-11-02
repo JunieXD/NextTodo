@@ -2,6 +2,7 @@
   "name": "@nexttodo/web",
   "version": "0.1.0",
   "private": true,
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,6 +18,9 @@
     "@capacitor/core": "8.6.0",
     "@capacitor/local-notifications": "8.3.1",
     "@capacitor/preferences": "8.0.1",
+    "@tauri-apps/api": "2.12.4",
+    "@tauri-apps/plugin-autostart": "2.7.0",
+    "@tauri-apps/plugin-http": "2.8.3",
     "@xyflow/react": "12.12.0",
     "elkjs": "0.12.1",
     "fractional-indexing": "4.0.0",

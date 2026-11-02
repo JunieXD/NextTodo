@@ -2,7 +2,7 @@
 
 import { LocalNotifications } from "@capacitor/local-notifications";
 import { useEffect, useState } from "react";
-import { NextTodo } from "../native";
+import { NextTodo } from "../android";
 
 const TIP_SEEN = "nexttodo.backgroundTip";
 

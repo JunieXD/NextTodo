@@ -1,13 +1,18 @@
 // Requests to the server. The web app is served by the server and signs in with an HttpOnly cookie,
-// so it handles no token. The Android app talks to the server it was told about and signs in with a
-// token, both kept in Capacitor Preferences, where the widget reads them too. See docs/android.md.
+// so it handles no token. The Android and macOS apps talk to the server they were told about and sign
+// in with a token, both kept in Capacitor Preferences (`localStorage` outside Capacitor), where the
+// Android widget reads them too. See docs/android.md and docs/macos.md.
 
 import { Capacitor } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { ErrorBody } from "./types/ErrorBody";
 
-/** Running in the Android app rather than a browser. */
-export const native = Capacitor.isNativePlatform();
+/** The app this runs in, if any. */
+export const app = Capacitor.isNativePlatform() ? "android" : "__TAURI_INTERNALS__" in globalThis ? "macos" : null;
+
+/** Running in an app rather than a browser. */
+export const native = app !== null;
 
 export const DEFAULT_SERVER = "https://todo.juniexd.cn";
 
@@ -74,7 +79,9 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
   try {
     const headers: Record<string, string> = body === undefined ? {} : { "Content-Type": "application/json" };
     if (server.token) headers.Authorization = `Bearer ${server.token}`;
-    res = await fetch(`${server.url}/api/v1${path}`, {
+    // From another origin than the server's: the Android app's fetch goes through CapacitorHttp, the
+    // macOS app's through Tauri's HTTP plugin, so that the server needs no CORS.
+    res = await (app === "macos" ? tauriFetch : fetch)(`${server.url}/api/v1${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -102,7 +109,7 @@ function parseError(text: string): Partial<ErrorBody> {
 
 /** How this browser shows up among the user's devices, such as `Chrome · macOS`. */
 export function deviceName(): string {
-  if (native) return "NextTodo App · Android";
+  if (app) return app === "android" ? "NextTodo App · Android" : "NextTodo App · macOS";
   const ua = navigator.userAgent;
   const browser = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "浏览器";
   const os = /iPhone|iPad/.test(ua) ? "iOS" : /Android/.test(ua) ? "Android" : /Mac OS/.test(ua) ? "macOS" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : "";

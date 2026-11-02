@@ -12,7 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-/** What the web app asks of Android beyond the stock plugins: see `apps/web/src/native.ts`. */
+/** What the web app asks of Android beyond the stock plugins: see `apps/web/src/android.ts`. */
 @CapacitorPlugin(name = "NextTodo")
 class NextTodoPlugin : Plugin() {
     @PluginMethod

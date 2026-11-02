@@ -1,0 +1,29 @@
+[package]
+name = "nexttodo-desktop"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# A workspace of its own: the root one's `cargo test` would build Tauri every time otherwise.
+[workspace]
+
+[lib]
+name = "nexttodo_desktop"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2.12.5", features = ["tray-icon", "image-png"] }
+tauri-plugin-autostart = "2.7.0"
+tauri-plugin-global-shortcut = "2.4.1"
+tauri-plugin-http = "2.8.3"
+tauri-plugin-notification = "2.8.0"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

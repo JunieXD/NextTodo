@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "NextTodo",
+  "version": "../../web/package.json",
+  "identifier": "cn.juniexd.nexttodo",
+  "build": {
+    "frontendDist": "../../web/dist",
+    "beforeBuildCommand": "cd ../web && pnpm exec tsc && pnpm exec vite build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "NextTodo",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 360,
+        "minHeight": 560,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "category": "Productivity",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns"],
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "13.0"
+    }
+  }
+}

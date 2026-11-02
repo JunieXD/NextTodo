@@ -1,0 +1,135 @@
+//! Mutations: what clients submit to change data. See `docs/api.md`.
+
+use serde::{Deserialize, Deserializer, Serialize};
+
+use crate::model::{Description, Due, FolderId, MutationId, Name, SortKey, TaskId, Title};
+
+pub const MAX_OPS: usize = 1000;
+
+/// One or more operations applied together: all of them take effect, or none.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(try_from = "MutationFields")]
+pub struct Mutation {
+    pub id: MutationId,
+    pub ops: Vec<Op>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MutationFields {
+    id: MutationId,
+    ops: Vec<Op>,
+}
+
+impl TryFrom<MutationFields> for Mutation {
+    type Error = String;
+
+    fn try_from(f: MutationFields) -> Result<Self, String> {
+        match f.ops.len() {
+            0 => Err("改动里至少要有一个操作".into()),
+            n if n > MAX_OPS => Err(format!("一个改动最多 {MAX_OPS} 个操作")),
+            _ => Ok(Mutation { id: f.id, ops: f.ops }),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "op", deny_unknown_fields)]
+pub enum Op {
+    #[serde(rename = "folder.create")]
+    FolderCreate {
+        id: FolderId,
+        name: Name,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent_id: Option<FolderId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sort_key: Option<SortKey>,
+    },
+    #[serde(rename = "folder.update")]
+    FolderUpdate {
+        id: FolderId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<Name>,
+        /// `Some(None)` moves the folder to the root.
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        parent_id: Option<Option<FolderId>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sort_key: Option<SortKey>,
+    },
+    #[serde(rename = "folder.delete")]
+    FolderDelete { id: FolderId },
+    #[serde(rename = "task.create")]
+    TaskCreate {
+        id: TaskId,
+        title: Title,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        folder_id: Option<FolderId>,
+        #[serde(default, skip_serializing_if = "is_empty")]
+        description: Description,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        due: Option<Due>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sort_key: Option<SortKey>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        done: bool,
+    },
+    #[serde(rename = "task.update")]
+    TaskUpdate {
+        id: TaskId,
+        /// `Some(None)` moves the task to the root.
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        folder_id: Option<Option<FolderId>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<Title>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        description: Option<Description>,
+        /// `Some(None)` clears the due date.
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        due: Option<Option<Due>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sort_key: Option<SortKey>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        done: Option<bool>,
+    },
+    #[serde(rename = "task.delete")]
+    TaskDelete { id: TaskId },
+    #[serde(rename = "dep.add")]
+    DepAdd { before: TaskId, after: TaskId },
+    #[serde(rename = "dep.remove")]
+    DepRemove { before: TaskId, after: TaskId },
+    #[serde(rename = "undo")]
+    Undo { mutation: MutationId },
+}
+
+/// Tells a missing field (`None`) from an explicit `null` (`Some(None)`).
+fn nullable<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<Option<T>>, D::Error> {
+    Option::<T>::deserialize(d).map(Some)
+}
+
+fn is_empty(d: &Description) -> bool {
+    d.as_str().is_empty()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{from_value, json};
+
+    const ID: &str = "019a4b2c-0000-7000-8000-000000000001";
+
+    #[test]
+    fn tells_null_from_missing() {
+        let op: Op = from_value(json!({ "op": "task.update", "id": ID, "due": null })).unwrap();
+        let Op::TaskUpdate { due, folder_id, .. } = op else { panic!() };
+        assert_eq!(due, Some(None));
+        assert_eq!(folder_id, None);
+    }
+
+    #[test]
+    fn rejects_unknown_fields_and_empty_mutations() {
+        assert!(from_value::<Op>(json!({ "op": "folder.create", "id": ID, "name": "x", "parent": ID })).is_err());
+        assert!(from_value::<Op>(json!({ "op": "task.archive", "id": ID })).is_err());
+        assert!(from_value::<Mutation>(json!({ "id": ID, "ops": [] })).is_err());
+        assert!(from_value::<Mutation>(json!({ "id": ID, "ops": [{ "op": "task.delete", "id": ID }] })).is_ok());
+    }
+}

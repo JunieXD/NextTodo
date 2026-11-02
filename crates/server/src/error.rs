@@ -1,0 +1,119 @@
+//! The error shape of the API (`{code, message, details?}`) and a JSON extractor that reports
+//! which field was wrong.
+
+use axum::body::Bytes;
+use axum::extract::{FromRequest, Request};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use nexttodo_core::model::TaskId;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use serde_json::{Value, json};
+
+#[derive(Debug)]
+pub struct ApiError {
+    status: StatusCode,
+    code: &'static str,
+    message: String,
+    details: Option<Value>,
+}
+
+impl ApiError {
+    fn new(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
+        ApiError { status, code, message: message.into(), details: None }
+    }
+
+    pub fn invalid(message: impl Into<String>, field: Option<String>) -> Self {
+        let mut e = Self::new(StatusCode::BAD_REQUEST, "invalid", message);
+        e.details = field.map(|f| json!({ "field": f }));
+        e
+    }
+
+    pub fn unauthenticated(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::UNAUTHORIZED, "unauthenticated", message)
+    }
+
+    pub fn forbidden(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::FORBIDDEN, "forbidden", message)
+    }
+
+    pub fn not_found(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::NOT_FOUND, "not_found", message)
+    }
+
+    pub fn conflict(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::CONFLICT, "conflict", message)
+    }
+
+    /// `path` goes around the cycle and ends where it starts.
+    pub fn cycle(path: Vec<TaskId>) -> Self {
+        let mut e = Self::new(StatusCode::CONFLICT, "cycle", "加上这条依赖会形成循环");
+        e.details = Some(json!({ "path": path }));
+        e
+    }
+
+    pub fn folder_cycle() -> Self {
+        Self::new(StatusCode::CONFLICT, "folder_cycle", "文件夹不能移到自己或自己的子文件夹里")
+    }
+
+    pub fn resync() -> Self {
+        Self::new(StatusCode::GONE, "resync", "本地数据太旧，需要重新下载")
+    }
+}
+
+impl std::fmt::Display for ApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ApiError {}
+
+impl From<rusqlite::Error> for ApiError {
+    fn from(e: rusqlite::Error) -> Self {
+        tracing::error!(error = %e, "database error");
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal", "服务器出错了，请稍后再试")
+    }
+}
+
+impl From<serde_json::Error> for ApiError {
+    fn from(e: serde_json::Error) -> Self {
+        tracing::error!(error = %e, "stored JSON error");
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal", "服务器出错了，请稍后再试")
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let mut body = json!({ "code": self.code, "message": self.message });
+        if let Some(details) = self.details {
+            body["details"] = details;
+        }
+        (self.status, axum::Json(body)).into_response()
+    }
+}
+
+/// JSON body extractor and response. Bad input becomes a 400 naming the field, like `ops[0].due`.
+pub struct Json<T>(pub T);
+
+impl<S: Send + Sync, T: DeserializeOwned> FromRequest<S> for Json<T> {
+    type Rejection = ApiError;
+
+    async fn from_request(req: Request, state: &S) -> Result<Self, ApiError> {
+        let bytes = Bytes::from_request(req, state).await.map_err(|e| ApiError::invalid(e.body_text(), None))?;
+        let de = &mut serde_json::Deserializer::from_slice(&bytes);
+        serde_path_to_error::deserialize(de).map(Json).map_err(|e| {
+            let path = e.path().to_string();
+            let message = e.inner().to_string();
+            // serde_json appends the position, which means nothing to the user
+            let message = message.rsplit_once(" at line ").map_or(message.as_str(), |(m, _)| m).to_owned();
+            ApiError::invalid(message, (path != ".").then_some(path))
+        })
+    }
+}
+
+impl<T: Serialize> IntoResponse for Json<T> {
+    fn into_response(self) -> Response {
+        axum::Json(self.0).into_response()
+    }
+}

@@ -208,7 +208,7 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 | 核心库 `crates/core` | Rust：数据模型、依赖图算法（判环、拓扑排序、派生状态） |
 | 服务端 `crates/server` | Rust：axum、tokio、rusqlite（SQLite，WAL 模式）、rmcp（MCP）、argon2 |
 | 命令行 `crates/cli` | Rust：clap、ureq（HTTP）、serde-saphyr（读 YAML 计划） |
-| 前端 `apps/web` | React、Vite、TypeScript、Tailwind CSS、Radix、Motion、React Flow + elkjs、react-markdown + remark-gfm、vite-plugin-pwa、Lucide（图标） |
+| 前端 `apps/web` | React、Vite、TypeScript、Tailwind CSS、Radix、React Flow + elkjs、react-markdown + remark-gfm、vite-plugin-pwa、Lucide（图标）；动效用 CSS 动画 |
 | Android `apps/android` | Capacitor，小组件用 Kotlin + Jetpack Glance |
 | macOS `apps/desktop` | Tauri 2 |
 | 类型共享 | ts-rs 从 Rust 类型生成 TypeScript 类型 |

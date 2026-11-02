@@ -4,15 +4,19 @@
 
 ## 结构
 
-| 目录 | 内容 |
+| 位置 | 内容 |
 |---|---|
-| `src/api/` | HTTP 请求；`types/` 是从 Rust 生成的类型，不手改 |
-| `src/domain/` | 派生状态和排序（`board.ts`，与 `crates/core/src/board.rs` 一致）、本地应用操作（`apply.ts`）、日期显示（`dates.ts`） |
+| `src/api/` | HTTP 请求（`http.ts`）；`types/` 是从 Rust 生成的类型，不手改 |
+| `src/domain/` | 派生状态和排序（`board.ts`，与 `crates/core/src/board.rs` 一致）、本地应用操作（`apply.ts`）、日期显示（`dates.ts`）、文本校验（`text.ts`，与服务端规则一致） |
 | `src/sync/` | 本地副本和待发队列（`store.ts`）、WebSocket 连接（`socket.ts`）、IndexedDB 持久化（`persist.ts`） |
-| `src/ui/` | 通用组件：图标、勾选圈、底部面板、对话框、提示条、分段控件等 |
-| `src/views/` | 页面：登录、接下来、文件夹、详情、搜索、设置 |
+| `src/session.tsx` | 登录状态：启动时先用本机数据，再向服务端确认；本地副本和连接的创建 |
+| `src/ui/` | 通用组件：图标、勾选圈、分段控件、底部面板、弹窗和对话框、提示条、Markdown 描述 |
+| `src/views/` | 页面：登录、手机和电脑两种布局、接下来、文件夹、搜索、详情、设置、各种选择面板 |
+| `src/index.css` | 样式：原型的样式原样放在 `components` 层，Tailwind 提供基础样式和颜色工具类 |
 
 技术选型见[总体设计](design.md#技术栈)；路由用 wouter，IndexedDB 用 idb，顺序键用 fractional-indexing，ID 用 uuid（v7）。
+
+选中的事项写在地址的 `?t=<id>` 里：打开详情会加一条历史记录，返回键（包括 Android 的）关掉详情。
 
 ## 数据
 

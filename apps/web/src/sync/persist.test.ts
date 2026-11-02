@@ -6,14 +6,20 @@ import { type Saved, Store } from "./store";
 
 const USER = "019a4b2c-0000-7000-8000-000000000001";
 const mutation = (n: number) => ({ mutation: { id: `019a4b2c-0000-7000-8000-00000000010${n}`, ops: [] }, at: n });
-const copy = (seq: number, outbox: number[]): Saved => ({ ...Store.empty(), seq, outbox: outbox.map(mutation) });
+const copy = (seq: number, outbox: number[], log: number[] = []): Saved => ({
+  ...Store.empty(),
+  seq,
+  outbox: outbox.map(mutation),
+  log: log.map((n) => [mutation(n).mutation.id, []]),
+});
 
-test("opening merges what every tab saved: the newest base and all unsent changes, once each", async () => {
+test("opening merges what every tab saved: the newest base and the unsent changes it lacks, once each", async () => {
   expect(await load(USER)).toBeUndefined(); // which also sets the database up
-  // What two other tabs left, written as they would have.
-  const db = await openDB("nexttodo", 2);
-  await db.put("copies", copy(5, [1, 3]), [USER, "tab-a"]);
-  await db.put("copies", copy(9, [2, 3]), [USER, "tab-b"]);
+  // What two other tabs left, written as they would have: the second one's base has the first
+  // one's change 5 already.
+  const db = await openDB("nexttodo", 1);
+  await db.put("copies", copy(5, [1, 3, 5]), [USER, "tab-a"]);
+  await db.put("copies", copy(9, [2, 3], [5]), [USER, "tab-b"]);
   await db.put("copies", copy(1, [4]), ["someone-else", "tab-a"]);
 
   const merged = await load(USER);

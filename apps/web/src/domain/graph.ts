@@ -8,26 +8,29 @@ import type { Board } from "./board";
 
 export type Edge = [before: TaskId, after: TaskId];
 
-/** Leaves out A → C when A → B → C is there too. */
+/** Leaves out A → C when A → B → C is there too. Dependencies have no cycles. */
 export function reduce(edges: Edge[]): Edge[] {
   const next = new Map<TaskId, TaskId[]>();
-  for (const [a, b] of edges) next.set(a, [...(next.get(a) ?? []), b]);
-  const reaches = (from: TaskId, to: TaskId) => {
-    const seen = new Set([from]);
-    const stack = [from];
-    while (stack.length) {
-      const n = stack.pop()!;
-      if (n === to) return true;
-      for (const m of next.get(n) ?? []) {
-        if (!seen.has(m)) {
-          seen.add(m);
-          stack.push(m);
-        }
-      }
+  for (const [a, b] of edges) {
+    const list = next.get(a);
+    if (list) list.push(b);
+    else next.set(a, [b]);
+  }
+  // For each task, everything after it, and everything after the tasks right after it: an edge to
+  // one of those is implied by a longer path.
+  const memo = new Map<TaskId, { after: Set<TaskId>; implied: Set<TaskId> }>();
+  const walk = (n: TaskId) => {
+    let m = memo.get(n);
+    if (!m) {
+      const direct = next.get(n) ?? [];
+      const implied = new Set<TaskId>();
+      for (const d of direct) for (const x of walk(d).after) implied.add(x);
+      m = { after: new Set([...implied, ...direct]), implied };
+      memo.set(n, m);
     }
-    return false;
+    return m;
   };
-  return edges.filter(([a, b]) => !(next.get(a) ?? []).some((y) => y !== b && reaches(y, b)));
+  return edges.filter(([a, b]) => !walk(a).implied.has(b));
 }
 
 /** The dependencies among `tasks`, without redundant ones. */

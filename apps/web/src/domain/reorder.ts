@@ -39,8 +39,9 @@ export function range(board: Board, list: Task[], from: number): Range {
   return { min: above + 1, max: below < 0 ? rest.length : below, above: above < 0 ? undefined : rest[above], below: below < 0 ? undefined : rest[below] };
 }
 
-/** New sort keys that keep `list` in this order: for `moved`, and for as few others as possible.
- * With keys increasing down a list that respects the dependencies, the list orders itself this way. */
+/** New sort keys that keep `list` in this order. With keys increasing down a list that respects the
+ * dependencies, the list orders itself this way, and so does anything else ordered by key alone.
+ * The tasks whose keys already increase, as many as possible, keep them. */
 export function rekey(list: Task[], moved: TaskId): { id: TaskId; sort_key: string }[] {
   const keep = new Set(increasing(list.filter((t) => t.id !== moved)).map((t) => t.id));
   const keys: { id: TaskId; sort_key: string }[] = [];
@@ -52,7 +53,7 @@ export function rekey(list: Task[], moved: TaskId): { id: TaskId; sort_key: stri
     let j = i;
     while (j < list.length && !keep.has(list[j].id)) j++;
     const between = generateNKeysBetween(i > 0 ? list[i - 1].sort_key : null, j < list.length ? list[j].sort_key : null, j - i);
-    for (let k = i; k < j; k++) keys.push({ id: list[k].id, sort_key: between[k - i] });
+    for (let k = i; k < j; k++) if (between[k - i] !== list[k].sort_key) keys.push({ id: list[k].id, sort_key: between[k - i] });
     i = j;
   }
   return keys;

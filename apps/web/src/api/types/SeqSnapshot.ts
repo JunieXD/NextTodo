@@ -3,4 +3,9 @@ import type { Dependency } from "./Dependency";
 import type { Folder } from "./Folder";
 import type { Task } from "./Task";
 
-export type SeqSnapshot = { seq: number, folders: Array<Folder>, tasks: Array<Task>, dependencies: Array<Dependency>, };
+export type SeqSnapshot = { 
+/**
+ * Whose data this is: a browser that switched accounts meanwhile must not take it for the
+ * previous account's.
+ */
+user: string, seq: number, folders: Array<Folder>, tasks: Array<Task>, dependencies: Array<Dependency>, };

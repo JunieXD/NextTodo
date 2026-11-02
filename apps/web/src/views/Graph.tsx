@@ -19,7 +19,7 @@ import {
 } from "@xyflow/react";
 import "./graph.css";
 import { Check as CheckIcon, Clock, Folder as FolderIcon, Link, X } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { FolderId } from "../api/types/FolderId";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
@@ -64,13 +64,14 @@ function Canvas({ folder, across, now }: { folder: FolderId; across: boolean; no
   const [picked, setPicked] = useState<TaskId | null>(null);
   const [connect, setConnect] = useState<{ from: TaskId | null } | null>(null);
 
-  const s = scene(board, folder, { done, sub });
-  const ids = s.tasks.map((t) => t.id);
-  const n = widest(ids, s.edges);
+  const s = useMemo(() => scene(board, folder, { done, sub }), [board, folder, done, sub]);
+  const ids = s.tasks.map((t) => t.id).sort();
+  const sorted = s.edges.toSorted((a, b) => (edgeKey(a) < edgeKey(b) ? -1 : 1));
+  const n = widest(ids, sorted);
   const node: Size = { width: across ? 184 : Math.floor(Math.max(104, Math.min(146, (innerWidth - 48 - (n - 1) * 12) / n))), height: NODE_HEIGHT };
 
-  // Lay out again only when the shape changes, not when a title or a status does.
-  const shape = JSON.stringify([ids, s.edges, node]);
+  // Lay out again only when the shape changes, not when a title, a status or the list order does.
+  const shape = JSON.stringify([ids, sorted, node]);
   const [laid, setLaid] = useState<Layout | null>(null);
   useEffect(() => {
     let current = true;
@@ -98,14 +99,16 @@ function Canvas({ folder, across, now }: { folder: FolderId; across: boolean; no
   const onSide = (side: Set<TaskId>, id: TaskId) => id === hl || side.has(id);
   const lit = ([a, b]: Edge) => !!chain && ((onSide(chain.up, a) && onSide(chain.up, b)) || (onSide(chain.down, a) && onSide(chain.down, b)));
 
+  // The task picked first when linking, as long as it is still shown.
+  const source = connect?.from && s.tasks.some((t) => t.id === connect.from) ? connect.from : null;
   const tap = (t: Task) => {
     if (!connect) {
       setPicked(t.id);
       actions.open(t);
-    } else if (!connect.from) {
+    } else if (!source) {
       setConnect({ from: t.id });
-    } else if (connect.from !== t.id) {
-      actions.link(connect.from, t.id);
+    } else if (source !== t.id) {
+      actions.link(source, t.id);
       setConnect(null);
     }
   };
@@ -121,6 +124,7 @@ function Canvas({ folder, across, now }: { folder: FolderId; across: boolean; no
     { type: "source", position: Position.Bottom, x: 0, y: 0 },
   ];
   const nodes: TaskNode[] = [];
+  // Until a new layout is ready, tasks it doesn't have yet wait, and the rest keep their places and size.
   for (const t of s.tasks) {
     const at = laid?.at.get(t.id);
     if (!at) continue;
@@ -142,11 +146,11 @@ function Canvas({ folder, across, now }: { folder: FolderId; across: boolean; no
         </span>
       );
     }
-    const className = ["node", outside ? "ghost" : status, (meta || outside) && "has-meta", t.id === hl && "sel", !inChain(t.id) && "dim", connect?.from === t.id && "source", flash.has(t.id) && "unlocked"]
+    const className = ["node", outside ? "ghost" : status, (meta || outside) && "has-meta", t.id === hl && "sel", !inChain(t.id) && "dim", source === t.id && "source", flash.has(t.id) && "unlocked"]
       .filter(Boolean)
       .join(" ");
     const folder = outside ? (t.folder_id ? board.folder(t.folder_id)!.name : "根目录") : undefined;
-    nodes.push({ id: t.id, type: "task", position: at, ...node, handles, data: { task: t, className, folder, meta, onClick: () => tap(t) } });
+    nodes.push({ id: t.id, type: "task", position: at, ...laid!.node, handles, data: { task: t, className, folder, meta, onClick: () => tap(t) } });
   }
   const edges: DepEdge[] = s.edges.flatMap((e) => {
     const d = laid?.paths.get(edgeKey(e));
@@ -165,7 +169,7 @@ function Canvas({ folder, across, now }: { folder: FolderId; across: boolean; no
     setConnect(connect ? null : { from: null });
     setPicked(null);
   };
-  const from = connect?.from ? board.task(connect.from) : undefined;
+  const from = source ? board.task(source) : undefined;
   return (
     <>
       <div className="graph-area">

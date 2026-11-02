@@ -11,11 +11,12 @@ const SCROLL_STEP = 8;
 export interface Drag {
   /** Where the row at `from` may go, as places in the list without it. */
   range(from: number): { min: number; max: number };
-  /** The row was let go at `to`; `blocked` when it was dragged further up or down than it may go. */
-  drop(from: number, to: number, blocked: "up" | "down" | null): void;
+  /** The row at `from` was let go at place `to` in the list without it, which may be further up or
+   * down than it may go. */
+  drop(from: number, to: number): void;
 }
 
-/** Rows are `height` tall. */
+/** Rows are `height` tall. A drag stops without a drop when rows come, go or move meanwhile. */
 export function useRowDrag(list: RefObject<HTMLDivElement | null>, height: number, drag: Drag) {
   const latest = useRef(drag);
   useEffect(() => {
@@ -24,18 +25,19 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, height: numbe
   useEffect(() => {
     const el = list.current!;
     const scroller = el.closest<HTMLElement>(".scroll, .main-scroll")!;
-    let dropped = false;
+    // The pointer whose press became a drag: letting it go is not also a tap.
+    let spent: number | null = null;
     let press: { id: number; x: number; y: number; row: HTMLElement; timer: ReturnType<typeof setTimeout> } | null = null;
-    let lifted: { id: number; row: HTMLElement; rows: HTMLElement[]; from: number; startY: number; startScroll: number; y: number; min: number; max: number; to: number; blocked: "up" | "down" | null; frame: number } | null = null;
+    let lifted: { id: number; row: HTMLElement; rows: HTMLElement[]; from: number; startY: number; startScroll: number; y: number; min: number; max: number; target: number; frame: number } | null = null;
 
+    // The other rows make way where the row may go; it follows the pointer anyway.
     const layout = () => {
       const l = lifted!;
       const dy = l.y - l.startY + scroller.scrollTop - l.startScroll;
-      const target = Math.min(Math.max(l.from + Math.round(dy / height), 0), l.rows.length - 1);
-      l.to = Math.min(Math.max(target, l.min), l.max);
-      l.blocked = target < l.min ? "up" : target > l.max ? "down" : null;
+      l.target = Math.min(Math.max(l.from + Math.round(dy / height), 0), l.rows.length - 1);
+      const to = Math.min(Math.max(l.target, l.min), l.max);
       l.rows.forEach((r, i) => {
-        const shift = i === l.from ? dy : l.from < i && i <= l.to ? -height : l.to <= i && i < l.from ? height : 0;
+        const shift = i === l.from ? dy : l.from < i && i <= to ? -height : to <= i && i < l.from ? height : 0;
         r.style.transform = shift ? `translateY(${shift}px)` : "";
       });
     };
@@ -56,7 +58,7 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, height: numbe
       const rows = [...el.querySelectorAll<HTMLElement>(":scope > .row")];
       const from = rows.indexOf(row);
       const { min, max } = latest.current.range(from);
-      lifted = { id, row, rows, from, startY: y, startScroll: scroller.scrollTop, y, min, max, to: from, blocked: null, frame: 0 };
+      lifted = { id, row, rows, from, startY: y, startScroll: scroller.scrollTop, y, min, max, target: from, frame: 0 };
       row.dataset.lifted = "";
       el.classList.add("reordering");
       row.setPointerCapture(id);
@@ -67,12 +69,29 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, height: numbe
       if (press) clearTimeout(press.timer);
       press = null;
     };
+    /** Puts the row back; `drop` when it was let go, rather than the drag cut short. */
+    const end = (drop: boolean) => {
+      cancelPress();
+      if (!lifted) return;
+      const { id, row, rows, from, target, frame } = lifted;
+      lifted = null;
+      spent = id;
+      cancelAnimationFrame(frame);
+      delete row.dataset.lifted;
+      el.classList.remove("reordering");
+      for (const r of rows) r.style.transform = "";
+      if (drop) latest.current.drop(from, target);
+    };
+    const rowsChanged = new MutationObserver(() => end(false));
+    rowsChanged.observe(el, { childList: true });
 
     const down = (e: PointerEvent) => {
       const row = (e.target as Element).closest<HTMLElement>(".row.task");
       if (!e.isPrimary || e.button !== 0 || !row || row.parentElement !== el || lifted) return;
+      spent = null;
       press = { id: e.pointerId, x: e.clientX, y: e.clientY, row, timer: setTimeout(lift, HOLD_MS) };
     };
+    // Moves and the release are heard wherever they happen, also outside the list.
     const move = (e: PointerEvent) => {
       if (press?.id === e.pointerId && Math.hypot(e.clientX - press.x, e.clientY - press.y) > SLOP) cancelPress();
       if (lifted?.id !== e.pointerId) return;
@@ -80,18 +99,11 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, height: numbe
       layout();
     };
     const up = (e: PointerEvent) => {
-      if (press?.id === e.pointerId) cancelPress();
-      if (lifted?.id !== e.pointerId) return;
-      const { row, rows, from, to, blocked, frame } = lifted;
-      lifted = null;
-      cancelAnimationFrame(frame);
-      delete row.dataset.lifted;
-      el.classList.remove("reordering");
-      for (const r of rows) r.style.transform = "";
-      dropped = true;
-      setTimeout(() => (dropped = false), 50);
-      if (e.type === "pointerup") latest.current.drop(from, to, blocked);
+      if (press?.id === e.pointerId || lifted?.id === e.pointerId) end(e.type === "pointerup");
+      // The click comes right after.
+      if (spent === e.pointerId) setTimeout(() => (spent = null), 50);
     };
+    const blur = () => end(false);
     // Once a row is up, the finger moves it instead of scrolling the page.
     const touchMove = (e: TouchEvent) => {
       if (lifted) e.preventDefault();
@@ -99,24 +111,26 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, height: numbe
     const menu = (e: Event) => {
       if (press || lifted) e.preventDefault();
     };
-    // Letting go of a row is not also a tap on it.
     const click = (e: Event) => {
-      if (dropped) e.stopPropagation();
+      if (spent !== null) e.stopPropagation();
     };
     el.addEventListener("pointerdown", down);
-    el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", up);
-    el.addEventListener("pointercancel", up);
+    addEventListener("pointermove", move);
+    addEventListener("pointerup", up);
+    addEventListener("pointercancel", up);
+    addEventListener("blur", blur);
     el.addEventListener("touchmove", touchMove, { passive: false });
     el.addEventListener("contextmenu", menu);
     el.addEventListener("click", click, true);
     return () => {
       cancelPress();
       if (lifted) cancelAnimationFrame(lifted.frame);
+      rowsChanged.disconnect();
       el.removeEventListener("pointerdown", down);
-      el.removeEventListener("pointermove", move);
-      el.removeEventListener("pointerup", up);
-      el.removeEventListener("pointercancel", up);
+      removeEventListener("pointermove", move);
+      removeEventListener("pointerup", up);
+      removeEventListener("pointercancel", up);
+      removeEventListener("blur", blur);
       el.removeEventListener("touchmove", touchMove);
       el.removeEventListener("contextmenu", menu);
       el.removeEventListener("click", click, true);

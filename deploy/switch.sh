@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Run on the server by deploy.sh, with the new compose.yaml uploaded next to the running one as
+# compose.yaml.new: switches to the new version, and back to the one before when it doesn't answer.
+#
+#   ssh rcvps bash -s -- <directory> <tag> <port> < deploy/switch.sh
+set -euo pipefail
+cd "$1"
+
+# The container runs as 65534; files restored or created by root would keep it from writing.
+mkdir -p data
+chown -R 65534:65534 data
+
+printf 'NEXTTODO_TAG=%s\nNEXTTODO_PORT=%s\n' "$2" "$3" > .env.new
+docker compose --env-file .env.new -f compose.yaml.new config -q
+if [[ -f .env ]]; then
+  cp compose.yaml compose.yaml.prev
+  cp .env .env.prev
+fi
+mv compose.yaml.new compose.yaml
+mv .env.new .env
+
+# Started, and answering on its port.
+up() {
+  docker compose up -d || return 1
+  local port
+  port=$(sed -n 's/^NEXTTODO_PORT=//p' .env)
+  for _ in $(seq 30); do
+    curl -fsS -o /dev/null "http://127.0.0.1:$port/" && return 0
+    sleep 1
+  done
+  return 1
+}
+
+if up; then
+  rm -f compose.yaml.prev .env.prev
+  exit 0
+fi
+docker compose logs --tail 50
+if [[ -f .env.prev ]]; then
+  echo "新版本没有启动起来，换回上一个版本" >&2
+  mv compose.yaml.prev compose.yaml
+  mv .env.prev .env
+  up || echo "上一个版本也没有启动起来" >&2
+fi
+exit 1

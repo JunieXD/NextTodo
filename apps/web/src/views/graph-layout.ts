@@ -14,6 +14,8 @@ export interface Size {
 }
 
 export interface Layout extends Size {
+  /** The size of every task. */
+  node: Size;
   /** Top-left corners of the tasks. */
   at: Map<TaskId, { x: number; y: number }>;
   /** SVG paths of the dependencies, by `before>after`. */
@@ -55,7 +57,7 @@ export async function layout(tasks: TaskId[], edges: Edge[], node: Size, across:
       return [e.id, d];
     }),
   );
-  return { width: graph.width!, height: graph.height!, at: new Map(graph.children!.map((n) => [n.id, { x: n.x!, y: n.y! }])), paths };
+  return { width: graph.width!, height: graph.height!, node, at: new Map(graph.children!.map((n) => [n.id, { x: n.x!, y: n.y! }])), paths };
 }
 
 /** The most tasks side by side in one layer, which sets how wide nodes can be on a phone. */

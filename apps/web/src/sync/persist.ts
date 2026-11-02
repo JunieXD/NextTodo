@@ -9,10 +9,8 @@ import type { Saved } from "./store";
 const TAB = crypto.randomUUID();
 
 const db = () =>
-  openDB("nexttodo", 2, {
+  openDB("nexttodo", 1, {
     upgrade(db) {
-      // Version 1 kept one copy per user, shared by all tabs.
-      if (db.objectStoreNames.contains("users")) db.deleteObjectStore("users");
       // Keyed by [user id, tab].
       db.createObjectStore("copies");
     },
@@ -22,15 +20,16 @@ const db = () =>
 const copies = (userId: string) => IDBKeyRange.bound([userId], [userId, []]);
 
 /** The user's data saved on this device: the newest base, with the unsent changes of every copy in
- * the order they were made (mutation ids are UUIDv7). It becomes this tab's copy, replacing the
- * others; a tab still open saves its own again with its next change, and a change sent twice is
- * applied once. */
+ * the order they were made (mutation ids are UUIDv7), less those the base is known to include. It
+ * becomes this tab's copy, replacing the others; a tab still open saves its own again with its next
+ * change, and a change sent twice is applied once. */
 export async function load(userId: string): Promise<Saved | undefined> {
   const tx = (await db()).transaction("copies", "readwrite");
   const all: Saved[] = await tx.store.getAll(copies(userId));
   if (!all.length) return undefined;
   const newest = all.reduce((a, b) => (b.seq > a.seq ? b : a));
-  const outbox = new Map(all.flatMap((c) => c.outbox).map((p) => [p.mutation.id, p]));
+  const included = new Set(newest.log.map(([id]) => id));
+  const outbox = new Map(all.flatMap((c) => c.outbox).filter((p) => !included.has(p.mutation.id)).map((p) => [p.mutation.id, p]));
   const merged = { ...newest, outbox: [...outbox.values()].sort((a, b) => (a.mutation.id < b.mutation.id ? -1 : 1)) };
   await tx.store.delete(copies(userId));
   await tx.store.put(merged, [userId, TAB]);

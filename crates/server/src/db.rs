@@ -75,29 +75,32 @@ pub fn prune(conn: &mut Connection, cutoff: i64) -> rusqlite::Result<usize> {
 /// Writes a consistent copy of the database at `db` to `dir/snapshot-<unix seconds>.db` and deletes
 /// all but the newest `keep` copies. Uses a connection of its own, so requests don't wait for it. The
 /// copy is written under a temporary name first, so that a crash never leaves a half-written
-/// snapshot that looks complete. The directory holds nothing else.
+/// snapshot that looks complete. Other files in the directory are left alone.
 pub fn snapshot(db: &Path, dir: &Path, now_ms: i64, keep: usize) -> anyhow::Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
-    let files = |ext: &str| -> std::io::Result<Vec<PathBuf>> {
+    // The files named like snapshots, oldest first.
+    let files = |suffix: &str| -> std::io::Result<Vec<PathBuf>> {
         let mut found = Vec::new();
         for entry in std::fs::read_dir(dir)? {
-            let p = entry?.path();
-            if p.extension().is_some_and(|e| e == ext) {
-                found.push(p);
+            let entry = entry?;
+            let name = entry.file_name();
+            let secs = name.to_str().and_then(|n| n.strip_prefix("snapshot-")?.strip_suffix(suffix));
+            if secs.is_some_and(|s| s.len() == 10 && s.bytes().all(|b| b.is_ascii_digit())) && entry.file_type()?.is_file() {
+                found.push(entry.path());
             }
         }
         found.sort();
         Ok(found)
     };
     // Left over from a crash: never complete, and VACUUM INTO refuses to overwrite.
-    for p in files("partial")? {
+    for p in files(".db.partial")? {
         std::fs::remove_file(p)?;
     }
     let path = dir.join(format!("snapshot-{:010}.db", now_ms / 1000));
     let partial = path.with_extension("db.partial");
     Connection::open(db)?.execute("VACUUM INTO ?1", [partial.to_str().expect("data directory path is UTF-8")])?;
     std::fs::rename(&partial, &path)?;
-    let all = files("db")?;
+    let all = files(".db")?;
     for p in &all[..all.len().saturating_sub(keep)] {
         std::fs::remove_file(p)?;
     }

@@ -35,7 +35,7 @@ if [[ ${1:-} == --build ]]; then
 fi
 
 docker save "nexttodo:$TAG" | gzip | ssh "$HOST" 'gunzip | docker load'
-ssh "$HOST" "mkdir -p $DIR/data && chown 65534:65534 $DIR/data"
-scp deploy/compose.yaml "$HOST:$DIR/compose.yaml"
-ssh "$HOST" "cd $DIR && printf 'NEXTTODO_TAG=%s\nNEXTTODO_PORT=%s\n' '$TAG' '$PORT' > .env && docker compose up -d"
+ssh "$HOST" "mkdir -p $DIR"
+scp deploy/compose.yaml "$HOST:$DIR/compose.yaml.new"
+ssh "$HOST" bash -s -- "$DIR" "$TAG" "$PORT" < deploy/switch.sh
 echo "已部署 nexttodo:$TAG 到 $HOST（127.0.0.1:$PORT）"

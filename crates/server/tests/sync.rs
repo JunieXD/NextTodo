@@ -142,6 +142,7 @@ async fn a_client_too_far_behind_is_told_to_resync() {
     assert_eq!(c.recv().await, None, "it reconnects after downloading the snapshot");
     let snap = t.call("GET", "/snapshot", Some(&s), None).await;
     assert_eq!(snap.status, StatusCode::OK);
+    assert_eq!(snap.body["user"], me.as_str(), "it says whose data it is");
     let mut again = Client::connect(addr, Some(&s)).await;
     assert_eq!(again.hello(&me, None, snap.body["seq"].as_i64().unwrap()).await["changes"], json!([]));
 }

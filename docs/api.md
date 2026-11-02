@@ -28,7 +28,7 @@
 | DELETE | `/tokens/{id}` | 注销会话或删除令牌 |
 | GET | `/invites` | 管理员：自己生成的邀请码 |
 | POST | `/invites` | 管理员：生成一个邀请码 |
-| GET | `/snapshot` | 完整数据：`{seq, folders, tasks, dependencies}` |
+| GET | `/snapshot` | 完整数据：`{user, seq, folders, tasks, dependencies}`，`user` 是数据所属用户的 ID |
 | GET | `/changes?since=<seq>` | 增量：`{seq, changes}`；`since` 早于保留期时返回 410 |
 | POST | `/mutations` | 提交一个改动，见下文 |
 | GET | `/sync` | WebSocket，见[同步协议](#同步协议) |

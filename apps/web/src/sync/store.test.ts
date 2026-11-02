@@ -100,7 +100,7 @@ test("a refused change is not queued", () => {
 test("a fresh copy keeps the queued changes on top", () => {
   const { store, titles } = setup({ ...Store.empty(), seq: 3, base: { folders: [], tasks: [task(1, "旧")], dependencies: [] } });
   store.commit([{ op: "task.create", id: id(2), title: "新", sort_key: "a2" }]);
-  store.resync({ seq: 90, folders: [], tasks: [task(3, "服务器上的")], dependencies: [] });
+  store.resync({ user: "u", seq: 90, folders: [], tasks: [task(3, "服务器上的")], dependencies: [] });
   expect(titles()).toEqual(["新", "服务器上的"]);
   expect(store.since).toBe(90);
 });
@@ -109,7 +109,7 @@ test("a change the fresh copy already has leaves the queue when the server ackno
   const { store, sent, titles } = setup();
   store.commit([{ op: "task.create", id: id(1), title: "交电费", sort_key: "a1" }]);
   // The server applied it at 5, but the reply was lost; later the copy was too old and downloaded afresh.
-  store.resync({ seq: 9, folders: [], tasks: [task(1, "交电费")], dependencies: [] });
+  store.resync({ user: "u", seq: 9, folders: [], tasks: [task(1, "交电费")], dependencies: [] });
   expect(store.getView().stuck.has(sent[0].id)).toBe(true);
   store.acked(sent[0].id, 12);
   expect(store.unconfirmed).toHaveLength(1);

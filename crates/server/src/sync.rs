@@ -18,6 +18,9 @@ use crate::store;
 #[derive(Serialize, TS)]
 #[ts(export)]
 pub struct SeqSnapshot {
+    /// Whose data this is: a browser that switched accounts meanwhile must not take it for the
+    /// previous account's.
+    user: String,
     seq: i64,
     #[serde(flatten)]
     snapshot: Snapshot,
@@ -25,7 +28,9 @@ pub struct SeqSnapshot {
 
 pub async fn snapshot(State(st): State<AppState>, auth: Auth) -> Result<Json<SeqSnapshot>, ApiError> {
     st.db
-        .call(move |c| Ok(SeqSnapshot { seq: store::latest_seq(c, &auth.user_id)?, snapshot: store::snapshot(c, &auth.user_id)? }))
+        .call(move |c| {
+            Ok(SeqSnapshot { seq: store::latest_seq(c, &auth.user_id)?, snapshot: store::snapshot(c, &auth.user_id)?, user: auth.user_id })
+        })
         .await
         .map(Json)
 }

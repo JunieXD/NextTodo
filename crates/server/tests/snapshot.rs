@@ -9,9 +9,13 @@ async fn snapshots_hold_the_data_and_only_the_newest_are_kept() {
     let state = AppState::new(Db::open(&file).unwrap(), Clock::system());
     auth::create_admin(&state, "junie".into(), "Junie".into(), "correct horse".into()).await.unwrap();
     let snapshots = dir.join("snapshots");
-    // A partial copy left by a crash doesn't get in the way.
+    // A partial copy left by a crash doesn't get in the way; files put there by hand stay.
     std::fs::create_dir_all(&snapshots).unwrap();
     std::fs::write(snapshots.join("snapshot-0000000009.db.partial"), "half").unwrap();
+    let mine = ["before-upgrade.db", "notes.partial"];
+    for name in mine {
+        std::fs::write(snapshots.join(name), "mine").unwrap();
+    }
 
     let mut last = None;
     for day in 1..=9 {
@@ -20,7 +24,9 @@ async fn snapshots_hold_the_data_and_only_the_newest_are_kept() {
 
     let mut names: Vec<String> = std::fs::read_dir(&snapshots).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
     names.sort();
-    let expected: Vec<String> = (3..=9).map(|day| format!("snapshot-{:010}.db", day * 86_400)).collect();
+    let mut expected: Vec<String> = (3..=9).map(|day| format!("snapshot-{:010}.db", day * 86_400)).collect();
+    expected.extend(mine.map(String::from));
+    expected.sort();
     assert_eq!(names, expected);
     let copy = Connection::open(last.unwrap()).unwrap();
     let user: String = copy.query_row("SELECT username FROM users", [], |r| r.get(0)).unwrap();

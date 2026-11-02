@@ -20,6 +20,10 @@ import { useFeedback } from "./ui/feedback";
 
 const USER = "nexttodo.user";
 
+/** Tells the other tabs when a session ends in one of them: they hold the same user's data, and
+ * would save it again. */
+const tabs = new BroadcastChannel("nexttodo.ended");
+
 /** What the UI wants to hear about; set once it is on screen. */
 export interface Listeners {
   rejected(m: Mutation, e: ErrorBody): void;
@@ -49,7 +53,7 @@ export class Session {
     this.socket = new Socket(this.store, {
       url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/v1/sync`,
       user: user.id,
-      resync: async () => this.store.resync(await api<SeqSnapshot>("GET", "/snapshot")),
+      resync: async () => this.store.resync(await download(user.id)),
       signedOut: () => this.listeners.signedOut(),
       status: (c) => {
         this.connection = c;
@@ -57,7 +61,12 @@ export class Session {
       },
     });
     this.socket.start();
+    tabs.addEventListener("message", this.endedElsewhere);
   }
+
+  private readonly endedElsewhere = (e: MessageEvent) => {
+    if (e.data === this.user.id) this.listeners.signedOut();
+  };
 
   listen(listeners: Listeners) {
     this.listeners = listeners;
@@ -81,7 +90,10 @@ export class Session {
   /** Signs in as `user`, from the copy on this device or a fresh one from the server. */
   static async open(user: User): Promise<Session> {
     localStorage.setItem(USER, JSON.stringify(user));
-    return new Session(user, (await load(user.id)) ?? (await download()));
+    const saved = await load(user.id);
+    if (saved) return new Session(user, saved);
+    const { seq, folders, tasks, dependencies } = await download(user.id);
+    return new Session(user, { ...Store.empty(), seq, base: { folders, tasks, dependencies } });
   }
 
   /** The session this device was in last time, if any. */
@@ -116,10 +128,12 @@ export class Session {
 
   /** Forgets everything about the user on this device. */
   async close() {
+    tabs.removeEventListener("message", this.endedElsewhere);
     this.socket.stop();
     await this.saver.close();
     localStorage.removeItem(USER);
     await forget(this.user.id);
+    tabs.postMessage(this.user.id);
   }
 
   async signOut() {
@@ -130,9 +144,11 @@ export class Session {
   }
 }
 
-async function download(): Promise<Saved> {
-  const { seq, ...base } = await api<SeqSnapshot>("GET", "/snapshot");
-  return { ...Store.empty(), seq, base };
+/** The user's data from the server, unless this browser has signed in as someone else by now. */
+async function download(user: string): Promise<SeqSnapshot> {
+  const snapshot = await api<SeqSnapshot>("GET", "/snapshot");
+  if (snapshot.user !== user) throw new ApiError(401, "unauthenticated", "这台设备上登录的账号已经换了，请重新登录");
+  return snapshot;
 }
 
 export const SessionContext = createContext<Session>(null!);

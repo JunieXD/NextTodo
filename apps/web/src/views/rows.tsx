@@ -236,11 +236,11 @@ export function RailList({ tasks, board, now, selected, actions }: { tasks: Task
   const list = useRef<HTMLDivElement>(null);
   useRowDrag(list, RAIL_ROW, {
     range: (from) => range(board, tasks, from),
-    drop(from, to, blocked) {
+    drop(from, to) {
       const t = tasks[from];
-      const { above, below } = range(board, tasks, from);
-      if (blocked === "up") snack(`“${t.title}”要等“${above!.title}”做完，只能排在它后面`);
-      else if (blocked === "down") snack(`“${below!.title}”要等“${t.title}”做完，“${t.title}”只能排在它前面`);
+      const { min, max, above, below } = range(board, tasks, from);
+      if (to < min) snack(`“${t.title}”要等“${above!.title}”做完，只能排在它后面`);
+      else if (to > max) snack(`“${below!.title}”要等“${t.title}”做完，“${t.title}”只能排在它前面`);
       else if (to !== from) {
         const wanted = tasks.filter((x) => x !== t);
         wanted.splice(to, 0, t);

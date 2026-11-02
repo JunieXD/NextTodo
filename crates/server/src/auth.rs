@@ -53,10 +53,16 @@ static DUMMY_HASH: LazyLock<String> = LazyLock::new(|| hash_password(&random_str
 /// to log in, so only this many run at once and the rest wait their turn.
 static HASHING: Semaphore = Semaphore::const_new(2);
 
-/// Runs password hashing or verification on a blocking thread, a few at a time.
+/// Runs password hashing or verification on a blocking thread, a few at a time. The permit stays
+/// with the work, so a request that is cancelled midway still counts until its hashing is done.
 async fn hashing<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
-    let _permit = HASHING.acquire().await.expect("the semaphore is never closed");
-    tokio::task::spawn_blocking(f).await.expect("hashing task panicked")
+    let permit = HASHING.acquire().await.expect("the semaphore is never closed");
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        f()
+    })
+    .await
+    .expect("hashing task panicked")
 }
 
 macro_rules! field {
@@ -270,8 +276,9 @@ pub async fn login(State(st): State<AppState>, Json(req): Json<Login>) -> Result
                 .optional()?)
         })
         .await?;
-    let (password, hash) = (req.password, found.as_ref().map_or_else(|| DUMMY_HASH.clone(), |(_, h)| h.clone()));
-    let matches = hashing(move || verify_password(&password, &hash)).await;
+    let (password, stored) = (req.password, found.as_ref().map(|(_, h)| h.clone()));
+    // The dummy hash is made on first use, so that goes inside the limit too.
+    let matches = hashing(move || verify_password(&password, stored.as_deref().unwrap_or(&DUMMY_HASH))).await;
     let Some((user_id, _)) = found.filter(|_| matches) else {
         return Err(ApiError::unauthenticated("用户名或密码不对"));
     };

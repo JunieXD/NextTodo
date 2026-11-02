@@ -99,14 +99,12 @@ fn increment(int: &str) -> Option<String> {
     Some(std::iter::once(head).chain(digits).map(char::from).collect())
 }
 
-/// A fraction after `a` (with nothing above it).
+/// A fraction after `a` (with nothing above it): `a`'s leading top digits, then the digit halfway
+/// between the next one and the top.
 fn midpoint_after(a: &str) -> String {
-    let digit_a = a.bytes().next().map_or(0, digit);
-    if DIGITS.len() - digit_a > 1 {
-        char::from(DIGITS[(digit_a + DIGITS.len()).div_ceil(2)]).to_string()
-    } else {
-        format!("{}{}", char::from(DIGITS[digit_a]), midpoint_after(&a[1..]))
-    }
+    let top = a.bytes().take_while(|&c| digit(c) == DIGITS.len() - 1).count();
+    let next = a.as_bytes().get(top).copied().map_or(0, digit);
+    format!("{}{}", &a[..top], char::from(DIGITS[(next + DIGITS.len()).div_ceil(2)]))
 }
 
 #[cfg(test)]
@@ -128,8 +126,9 @@ mod tests {
         let largest = format!("z{}", "z".repeat(26));
         assert_eq!(after(&largest), format!("{largest}V"));
         // keys only ever get longer here; whatever is generated must read back
-        let long = format!("{largest}{}", "z".repeat(200));
+        let long = format!("{largest}{}", "z".repeat(100_000));
         assert_eq!(after(&long), format!("{long}V"));
+        assert_eq!(after(&format!("{largest}zzA")), format!("{largest}zza"));
     }
 
     #[test]

@@ -51,6 +51,18 @@ pub fn apply(conn: &mut Connection, actor: &Actor, m: &Mutation, now: i64) -> Re
     Ok(Applied { seq, effects })
 }
 
+/// `cur` with the fields that changed from `before` to `after` set back to `before`, so that undoing
+/// a change leaves later changes to other fields alone.
+macro_rules! restore {
+    ($cur:expr, $before:expr, $after:expr, $($field:ident),*) => {{
+        let mut restored = $cur.clone();
+        $(if $before.$field != $after.$field {
+            restored.$field = $before.$field.clone();
+        })*
+        restored
+    }};
+}
+
 struct Cx<'a> {
     c: &'a Connection,
     owner: &'a str,
@@ -301,9 +313,9 @@ impl Cx<'_> {
                         self.create_folder(Folder { updated_at: self.now, ..f })?;
                     }
                 }
-                Effect::Folder(Change::Updated { before: b, .. }) => {
+                Effect::Folder(Change::Updated { before: b, after: a }) => {
                     if let Some(cur) = store::load_folder(self.c, self.owner, b.id)? {
-                        let restored = Folder { parent_id: b.parent_id, name: b.name, sort_key: b.sort_key, ..cur.clone() };
+                        let restored = restore!(cur, b, a, parent_id, name, sort_key);
                         self.update_folder(cur, restored)?;
                     }
                 }
@@ -322,18 +334,9 @@ impl Cx<'_> {
                         self.create_task(Task { updated_at: self.now, updated_via: self.via.clone(), ..*t })?;
                     }
                 }
-                Effect::Task(Change::Updated { before: b, .. }) => {
+                Effect::Task(Change::Updated { before: b, after: a }) => {
                     if let Some(cur) = store::load_task(self.c, self.owner, b.id)? {
-                        let b = *b;
-                        let restored = Task {
-                            folder_id: b.folder_id,
-                            title: b.title,
-                            description: b.description,
-                            done_at: b.done_at,
-                            due: b.due,
-                            sort_key: b.sort_key,
-                            ..cur.clone()
-                        };
+                        let restored = restore!(cur, b, a, folder_id, title, description, done_at, due, sort_key);
                         self.update_task(cur, restored)?;
                     }
                 }

@@ -384,10 +384,25 @@ async fn undoing_an_update_keeps_what_the_update_did_not_touch() {
     t.mutate(&s, json!([{ "op": "task.delete", "id": a }])).await;
     t.mutate(&s, json!([{ "op": "task.create", "id": a, "title": "重建" }])).await;
 
+    t.mutate(&s, json!([{ "op": "task.update", "id": a, "description": "后来写的", "done": true }])).await;
+
     let undo = t.mutate(&s, json!([{ "op": "undo", "mutation": update }])).await.body;
     let task = t.snapshot(&s).await["tasks"][0].clone();
     assert_eq!((task["title"].as_str(), task["number"].as_i64()), (Some("初稿"), Some(2)));
+    assert_eq!((task["description"].as_str(), task["done_at"].is_null()), (Some("后来写的"), false), "later edits stay");
     assert_eq!(undo["effects"][0]["after"], task, "the recorded change matches the stored task");
+
+    let (top, other) = (id(), id());
+    t.mutate(&s, json!([{ "op": "folder.create", "id": top, "name": "旧名" }, { "op": "folder.create", "id": other, "name": "别处" }]))
+        .await;
+    let rename = id();
+    t.call("POST", "/mutations", Some(&s), Some(json!({ "id": rename, "ops": [{ "op": "folder.update", "id": top, "name": "新名" }] })))
+        .await;
+    t.mutate(&s, json!([{ "op": "folder.update", "id": top, "parent_id": other }])).await;
+    t.mutate(&s, json!([{ "op": "undo", "mutation": rename }])).await;
+    let folders = t.snapshot(&s).await["folders"].clone();
+    let folder = folders.as_array().unwrap().iter().find(|f| f["id"] == top.as_str()).unwrap();
+    assert_eq!((folder["name"].as_str(), folder["parent_id"].as_str()), (Some("旧名"), Some(other.as_str())));
 }
 
 #[tokio::test]

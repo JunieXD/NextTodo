@@ -164,6 +164,27 @@ async fn a_revoked_token_stops_getting_changes() {
 }
 
 #[tokio::test]
+async fn a_change_after_the_session_ended_is_not_turned_down() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let me = t.me(&s).await;
+    let addr = serve(&t).await;
+    let mut web = Client::connect(addr, Some(&s)).await;
+    web.hello(&me, None, 0).await;
+    // Signed out a moment ago, before the connection heard of it.
+    t.state.db.call(|c| Ok(c.execute("DELETE FROM tokens", [])?)).await.unwrap();
+    web.send(json!({ "type": "mutate", "mutation": { "id": id(), "ops": [{ "op": "task.create", "id": id(), "title": "交电费" }] } }))
+        .await;
+    let reply = web.recv().await.unwrap();
+    assert_eq!(
+        (&reply["type"], &reply["code"]),
+        (&json!("error"), &json!("unauthenticated")),
+        "the change stays queued for the next session"
+    );
+    assert_eq!(web.recv().await, None);
+}
+
+#[tokio::test]
 async fn the_cookie_only_counts_from_this_site() {
     let t = TestApp::new();
     let s = t.admin().await;

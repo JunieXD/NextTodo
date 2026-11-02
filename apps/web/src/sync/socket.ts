@@ -109,6 +109,7 @@ export class Socket {
         // The server closes the connection; reconnect from the new copy at once.
         this.ws?.close();
         this.ws = null;
+        this.synced = false;
         this.resyncing = true;
         this.opts
           .resync()

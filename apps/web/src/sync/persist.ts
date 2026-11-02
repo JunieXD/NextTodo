@@ -50,8 +50,8 @@ export async function load(userId: string, copyId: string): Promise<Saved | unde
 export interface Saver {
   /** Saves the copy and the changes that joined and left the outbox. Writes go one at a time: one
    * waiting for its turn takes the latest copy and everything since the last write. Resolves once
-   * the write it went into is done, or has failed: then `failed` hears of it, and what it held goes
-   * with the next write. */
+   * written, or once a write has failed: then `failed` hears of it, and what is not written yet goes
+   * with the next save. */
   save(copy: Copy, queued: Pending[], settled: MutationId[]): Promise<void>;
   /** Stops saving, once what was saved so far is written; a failed write gets one more try. */
   close(): Promise<void>;
@@ -66,26 +66,38 @@ export function saver(userId: string, copyId: string, failed: (e: unknown) => vo
   let writing: Promise<void> | null = null;
   let closed = false;
 
+  /** Takes everything saved since the last write. */
+  const take = (c: Copy) => {
+    const batch = { copy: c, queued: [...queued.values()], settled: [...settled], gathered };
+    copy = undefined;
+    queued.clear();
+    settled.clear();
+    gathered = undefined;
+    return batch;
+  };
+
   const write = () =>
     (writing ??= (async () => {
       while (copy) {
-        const batch = { copy, queued: [...queued.values()], settled: [...settled], gathered };
-        copy = undefined;
-        queued.clear();
-        settled.clear();
-        gathered = undefined;
+        const batch = take(copy);
         try {
           const tx = (await db()).transaction(["copies", "outbox"], "readwrite");
-          tx.objectStore("copies").put(batch.copy, [userId, copyId]);
           const outbox = tx.objectStore("outbox");
-          for (const p of batch.queued) outbox.put(p, [userId, p.mutation.id]);
-          for (const id of batch.settled) outbox.delete([userId, id]);
-          await tx.done;
+          await Promise.all([
+            tx.objectStore("copies").put(batch.copy, [userId, copyId]),
+            ...batch.queued.map((p) => outbox.put(p, [userId, p.mutation.id])),
+            ...batch.settled.map((id) => outbox.delete([userId, id])),
+            tx.done,
+          ]);
         } catch (e) {
           copy ??= batch.copy;
           for (const p of batch.queued) if (!settled.has(p.mutation.id)) queued.set(p.mutation.id, p);
           for (const id of batch.settled) settled.add(id);
           failed(e);
+          // Saves waiting for the next write hear of the failure too, instead of waiting for a save
+          // that may not come.
+          gathered?.resolve();
+          gathered = undefined;
           break;
         } finally {
           batch.gathered?.resolve();

@@ -111,7 +111,9 @@ export class Session {
 
   setUser(user: User) {
     this.user = user;
-    if (cachedLogin()?.id === this.login) localStorage.setItem(LOGIN, JSON.stringify({ id: this.login, user }));
+    void turn(async () => {
+      if (cachedLogin()?.id === this.login) localStorage.setItem(LOGIN, JSON.stringify({ id: this.login, user }));
+    });
   }
 
   watchConnection = (w: () => void) => {

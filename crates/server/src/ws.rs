@@ -193,7 +193,8 @@ async fn push(st: &AppState, ws: &mut WebSocket, auth: &Auth, sent: &mut i64, al
 }
 
 /// Handles a message after `hello`. A mutation is acknowledged or rejected; anything that is not a
-/// mutation carrying an id cannot be answered and ends the connection.
+/// mutation carrying an id cannot be answered and ends the connection, as does a mutation after the
+/// session ended: that is no fault of the change, which may still go through in the next session.
 async fn handle(st: &AppState, ws: &mut WebSocket, secret: &str, text: &str) -> Result<Result<(), ApiError>, axum::Error> {
     let Ok(ClientMessage::Mutate { mutation }) = serde_json::from_str::<ClientMessage>(text) else {
         return Ok(Err(ApiError::invalid("无法识别的消息", None)));
@@ -203,6 +204,7 @@ async fn handle(st: &AppState, ws: &mut WebSocket, secret: &str, text: &str) -> 
     };
     let reply = match apply(st, secret, mutation).await {
         Ok(seq) => ServerMessage::Ack { id, seq },
+        Err(e) if e.code() == "unauthenticated" => return Ok(Err(e)),
         Err(e) => ServerMessage::Reject { id, error: e.body() },
     };
     send(ws, reply).await?;

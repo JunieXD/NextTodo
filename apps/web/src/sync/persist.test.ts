@@ -50,11 +50,11 @@ test("a failed write is reported, and what it held goes with the next", async ()
   await load(u, "here");
   const failed: unknown[] = [];
   const save = saver(u, "here", (e) => failed.push(e));
-  // A function cannot be stored.
-  await save.save({ ...copy(1), base: { ...copy(1).base, folders: [() => {}] as never } }, [pending(1)], []);
+  // A function cannot be stored; the second save waits for the first write.
+  await Promise.all([save.save({ ...copy(1), base: { ...copy(1).base, folders: [() => {}] as never } }, [pending(1)], []), save.save(copy(2), [pending(2)], [])]);
   expect([failed.length, await outbox(u)]).toEqual([1, []]);
-  await save.save(copy(2), [pending(2)], []);
-  expect([failed.length, await outbox(u)]).toEqual([1, [1, 2]]);
+  await save.save(copy(3), [pending(3)], []);
+  expect([failed.length, await outbox(u)]).toEqual([1, [1, 2, 3]]);
 });
 
 test("a closed saver writes nothing more, and forgetting deletes what is left", async () => {

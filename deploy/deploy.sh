@@ -27,7 +27,7 @@ rm -rf "$stage"
 mkdir -p "$stage"
 cp "target/$TARGET/release/nexttodo-server" deploy/Dockerfile "$stage/"
 cp -R apps/web/dist "$stage/web"
-docker build --platform linux/amd64 -t "nexttodo:$TAG" "$stage"
+docker build --platform linux/amd64 --provenance=false -t "nexttodo:$TAG" "$stage"
 
 if [[ ${1:-} == --build ]]; then
   echo "已构建 nexttodo:$TAG"

@@ -13,3 +13,7 @@
 | 创建管理员 | `cargo run -p nexttodo-server -- --data .dev-data create-admin <用户名>` |
 | 安装命令行 `nexttodo` | `cargo install --path crates/cli` |
 | 命令行连开发版 | `nexttodo login --url http://127.0.0.1:8080` |
+| 网页端开发（`127.0.0.1:5173`，转发到开发版服务端） | `cd apps/web && pnpm install && pnpm dev` |
+| 网页端检查 | `cd apps/web && pnpm check` |
+| 在本机构建部署镜像 | `deploy/deploy.sh --build` |
+| 部署到 rcvps | `deploy/deploy.sh` |

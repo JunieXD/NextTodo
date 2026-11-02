@@ -38,7 +38,11 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))).init();
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        // no colour codes in container logs
+        .with_ansi(std::io::stdout().is_terminal())
+        .init();
     let cli = Cli::parse();
     std::fs::create_dir_all(&cli.data)?;
     let state = AppState::new(Db::open(&cli.data.join(DB_FILE))?, Clock::system());

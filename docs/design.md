@@ -227,7 +227,7 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 - 服务器目录 `/opt/1panel/www/sites/NextTodo/`：`compose.yaml` 和 `data/`（SQLite 数据库和快照）。只监听 `127.0.0.1`。
 - 域名 `todo.juniexd.cn`：由 1Panel 反向代理，开启 WebSocket，使用 `*.juniexd.cn` 证书。反向代理要把原来的 `Host` 传过去（或设 `X-Forwarded-Host`），网页的同步连接靠它确认是同源页面。
 - 服务端启动时和之后每天用 `VACUUM INTO` 做一次数据库快照，放在 `data/snapshots/snapshot-<Unix 秒>.db`，保留最近 7 份。恢复时停掉服务，用快照替换 `data/nexttodo.db`（并删掉旁边的 `-wal`、`-shm` 文件）再启动。
-- 部署用一条命令完成。
+- 部署用一条命令完成：`deploy/deploy.sh`（`--build` 只在本机构建镜像）。镜像里只有服务端和网页文件，容器以 65534 用户运行，`data/` 归这个用户所有；服务端端口默认映射到 `127.0.0.1:8790`，第一次部署前确认服务器上没被占用。
 - 替换 Vikunja：NextTodo 上线后，把 `/opt/1panel/www/sites/vikunja` 备份到外接盘 `Backups/`，停掉并删除 Vikunja，再把 `todo.juniexd.cn` 的反向代理指向 NextTodo。
 
 ## 性能目标

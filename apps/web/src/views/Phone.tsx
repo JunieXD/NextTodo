@@ -11,8 +11,8 @@ import { Icon } from "../ui/icons";
 import { Sheet } from "../ui/Sheet";
 import { Detail } from "./Detail";
 import { FolderMenu } from "./FolderMenu";
-import { FolderBody, NextBody, QuickAdd, RootBody, SearchResults } from "./lists";
-import { folderUrl, useSelection } from "./nav";
+import { FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, RootBody, SearchResults } from "./lists";
+import { folderUrl, useFolderView, useSelection } from "./nav";
 import { ConnectionNote } from "./status";
 
 export function Phone({ onSettings }: { onSettings(): void }) {
@@ -123,6 +123,7 @@ function FoldersScreen({ anim, now }: { anim: string; now: Date }) {
 function FolderScreen({ folder, anim, now }: { folder: FolderId; anim: string; now: Date }) {
   const { board } = useView();
   const [, navigate] = useLocation();
+  const [view] = useFolderView();
   const f = board.folder(folder)!;
   const parent = f.parent_id ? board.folder(f.parent_id)!.name : "文件夹";
   const nav = (
@@ -131,11 +132,32 @@ function FolderScreen({ folder, anim, now }: { folder: FolderId; anim: string; n
       <span>{parent}</span>
     </button>
   );
+  if (view === "graph") {
+    return (
+      <section className={`screen scrolled${anim}`}>
+        <header className="nav">
+          {nav}
+          <span className="nav-title">{f.name}</span>
+          <span className="nav-actions">
+            <FolderMenu folder={folder} />
+          </span>
+        </header>
+        <div className="nav-space" />
+        <div className="view-seg">
+          <FolderViewSeg />
+        </div>
+        <FolderGraph folder={folder} across={false} now={now} />
+      </section>
+    );
+  }
   return (
     <Screen title={f.name} nav={nav} anim={anim} after={<QuickAdd folder={folder} />}>
       <div className="hero">
         <h1 className="large-title">{f.name}</h1>
         <FolderMenu folder={folder} />
+      </div>
+      <div className="view-seg">
+        <FolderViewSeg />
       </div>
       <FolderBody folder={folder} now={now} />
     </Screen>

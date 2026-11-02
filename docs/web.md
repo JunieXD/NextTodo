@@ -7,11 +7,11 @@
 | 位置 | 内容 |
 |---|---|
 | `src/api/` | HTTP 请求（`http.ts`）；`types/` 是从 Rust 生成的类型，不手改 |
-| `src/domain/` | 派生状态和排序（`board.ts`，与 `crates/core/src/board.rs` 一致）、本地应用操作（`apply.ts`）、日期显示（`dates.ts`）、文本校验（`text.ts`，与服务端规则一致） |
+| `src/domain/` | 派生状态和排序（`board.ts`，与 `crates/core/src/board.rs` 一致）、本地应用操作（`apply.ts`）、关系图和轨道画哪些事项和依赖（`graph.ts`）、日期显示（`dates.ts`）、文本校验（`text.ts`，与服务端规则一致） |
 | `src/sync/` | 本地副本和待发队列（`store.ts`）、WebSocket 连接（`socket.ts`）、IndexedDB 持久化（`persist.ts`） |
 | `src/session.tsx` | 登录状态：启动时先用本机数据，再向服务端确认；本地副本和连接的创建 |
 | `src/ui/` | 通用组件：图标、勾选圈、分段控件、底部面板、弹窗和对话框、提示条、Markdown 描述 |
-| `src/views/` | 页面：登录、手机和电脑两种布局、接下来、文件夹、搜索、详情、设置、各种选择面板 |
+| `src/views/` | 页面：登录、手机和电脑两种布局、接下来、文件夹、关系图（`Graph.tsx`，布局在 `graph-layout.ts`）、搜索、详情、设置、各种选择面板 |
 | `src/index.css` | 样式：原型的样式原样放在 `components` 层，Tailwind 提供基础样式和颜色工具类 |
 
 技术选型见[总体设计](design.md#技术栈)；路由用 wouter，IndexedDB 用 idb，顺序键用 fractional-indexing，ID 用 uuid（v7）。
@@ -44,6 +44,18 @@
 基线、`seq` 和待发队列每次变化后写入 IndexedDB，按用户 ID 分开存。每个标签页存自己的一份，互不覆盖；打开应用时把这个用户的所有副本合并成一份：取 `seq` 最新的基线，待发队列取所有副本的并集（按改动 ID 去重、按提交先后排列），合并结果成为当前标签页的副本。还开着的标签页下次改动时会再存它自己的一份；同一项改动发两次，服务端只生效一次。
 
 另一个标签页换了账号时，这个标签页启动时的 `/me` 检查或下次连接的 `hello` 会发现，于是退出到登录页。退出登录时先停掉保存、等正在进行的写入完成，再清空这个用户的所有副本。
+
+## 关系图
+
+文件夹页面可以在列表和关系图之间切换，选择记在本机。关系图第一次打开时才加载 React Flow 和 ELK，不拖慢首屏。
+
+- **布局**：ELK Layered 在 Web Worker 里计算，只在事项或依赖增减、节点尺寸变化时重新计算，改标题和完成状态不会让图跳动。参数是用几份真实计划（毕业论文、搬家、求职，以及 40 个事项的随机计划）对比后选的：
+  - 分层 `LONGEST_PATH_SOURCE`，连通分量不分开排：可做的事项都在第一层，包括和其他事项无关的。
+  - 节点放置 `NETWORK_SIMPLEX`：比默认的 `BRANDES_KOEPF` 更紧凑，链条更直。
+  - 连线 `SPLINES` 的 `CONSERVATIVE` 模式：曲线绕开节点；`SLOPPY` 模式会斜穿空白，交叉更多。
+- **平移和缩放**：React Flow 负责；单指或鼠标拖动平移，捏合或 Ctrl + 滚轮缩放，触控板双指滑动平移。第一屏按原大小显示，缩小到 0.8 倍能放下就缩小，放得下就居中，放不下从第一层开始。
+- **画法**：节点和连线由应用自己画，连线直接用 ELK 算出的路径；React Flow 的连接点只是摆设，藏起来。
+- React Flow 的署名链接保留在画布右上角：隐藏它需要订阅 React Flow Pro。
 
 ## 登录
 

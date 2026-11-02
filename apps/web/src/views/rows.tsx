@@ -8,6 +8,7 @@ import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
 import { dueKind, formatDue } from "../domain/dates";
+import { edgesAmong } from "../domain/graph";
 import { Check } from "../ui/controls";
 import { Icon, Inbound, Outbound } from "../ui/icons";
 import { useMarks } from "./marks";
@@ -180,35 +181,11 @@ const RAIL_ROW = 64;
 const LANE = 24;
 const laneX = (c: number) => 28 + c * LANE;
 
-type Edge = [TaskId, TaskId];
-
-/** Leaves out A → C when A → B → C is there too. */
-function reduce(edges: Edge[]): Edge[] {
-  const next = new Map<TaskId, TaskId[]>();
-  for (const [a, b] of edges) next.set(a, [...(next.get(a) ?? []), b]);
-  const reaches = (from: TaskId, to: TaskId) => {
-    const seen = new Set([from]);
-    const stack = [from];
-    while (stack.length) {
-      const n = stack.pop()!;
-      if (n === to) return true;
-      for (const m of next.get(n) ?? []) {
-        if (!seen.has(m)) {
-          seen.add(m);
-          stack.push(m);
-        }
-      }
-    }
-    return false;
-  };
-  return edges.filter(([a, b]) => !(next.get(a) ?? []).some((y) => y !== b && reaches(y, b)));
-}
-
 /** Lanes like a git commit graph: each dependency runs in a lane from its first task's row to the
  * second's, and parallel branches take separate lanes. */
 export function railLayout(list: Task[], board: Board) {
   const index = new Map(list.map((t, i) => [t.id, i]));
-  const edges = reduce(list.flatMap((t) => board.after(t).filter((a) => index.has(a.id)).map((a): Edge => [t.id, a.id])));
+  const edges = edgesAmong(board, list);
   const lanes: ({ to: TaskId } | null)[] = [];
   const col = new Map<TaskId, number>();
   const edgeLane = new Map<string, number>();

@@ -1,8 +1,8 @@
 // The bodies of the main pages: what is next, a folder, the folder root, search results; and the
 // quick-add bar.
 
-import { ChevronRight, Folder as FolderIcon, FolderPlus, Plus } from "lucide-react";
-import { useRef, useState } from "react";
+import { ChevronRight, Folder as FolderIcon, FolderPlus, List, Plus, Workflow } from "lucide-react";
+import { lazy, Suspense, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
@@ -15,10 +15,11 @@ import { type DueKind, dueKind } from "../domain/dates";
 import { checkFolderName, checkTitle } from "../domain/text";
 import { useCommit, useSession, useView } from "../session";
 import { useFeedback } from "../ui/feedback";
+import { Seg } from "../ui/controls";
 import { Chain, Icon } from "../ui/icons";
 import { useTaskActions } from "./actions";
 import { useMarks } from "./marks";
-import { folderUrl, useSelection } from "./nav";
+import { folderUrl, useFolderView, useSelection } from "./nav";
 import { FolderPicker } from "./pickers";
 import { FolderRow, RailList, TaskRow } from "./rows";
 
@@ -111,6 +112,31 @@ export function FolderBody({ folder, now }: { folder: FolderId; now: Date }) {
         subs.length === 0 && <p className="empty">还没有事项。在下面输入，或者让 agent 帮你拆一个计划。</p>
       )}
     </>
+  );
+}
+
+export function FolderViewSeg() {
+  const [view, setView] = useFolderView();
+  return (
+    <Seg
+      items={[
+        ["list", "列表", List],
+        ["graph", "关系图", Workflow],
+      ]}
+      value={view}
+      onChange={setView}
+    />
+  );
+}
+
+// The graph pulls in React Flow and ELK, so it loads when first shown.
+const Graph = lazy(() => import("./Graph"));
+
+export function FolderGraph(props: { folder: FolderId; across: boolean; now: Date }) {
+  return (
+    <Suspense fallback={<div className="graph-area" />}>
+      <Graph key={props.folder} {...props} />
+    </Suspense>
   );
 }
 

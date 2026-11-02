@@ -10,6 +10,8 @@
     "gen": "cd ../.. && cargo test -q export_bindings"
   },
   "dependencies": {
+    "@xyflow/react": "12.12.0",
+    "elkjs": "0.12.1",
     "fractional-indexing": "4.0.0",
     "idb": "8.0.4",
     "lucide-react": "1.66.0",

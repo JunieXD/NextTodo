@@ -11,8 +11,8 @@ import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { Detail } from "./Detail";
 import { FolderMenu } from "./FolderMenu";
-import { FolderBody, NextBody, QuickAdd, RootBody, SearchResults } from "./lists";
-import { folderUrl, useSelection } from "./nav";
+import { FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, RootBody, SearchResults } from "./lists";
+import { folderUrl, useFolderView, useSelection } from "./nav";
 import { place } from "./rows";
 
 export function Desktop({ sideOpen, paneOpen, toggleSide, togglePane, onSettings }: { sideOpen: boolean; paneOpen: boolean; toggleSide(): void; togglePane(): void; onSettings(): void }) {
@@ -21,6 +21,7 @@ export function Desktop({ sideOpen, paneOpen, toggleSide, togglePane, onSettings
   const { selected } = useSelection();
   const now = useNow();
   const [query, setQuery] = useState("");
+  const [view] = useFolderView();
   const folder = location.match(/^\/folders\/([^/]+)$/)?.[1] ?? null;
   const at = location.startsWith("/folders") ? (folder ?? "root") : "next";
 
@@ -47,11 +48,23 @@ export function Desktop({ sideOpen, paneOpen, toggleSide, togglePane, onSettings
     main = <Redirect to="/folders" replace />;
   } else {
     const f = board.folder(at)!;
-    main = (
-      <Page title={f.name} crumbs={f.parent_id ? place(board, f.parent_id) : ""} actions={<FolderMenu folder={f.id} />} add={<QuickAdd folder={f.id} />}>
-        <FolderBody key={f.id} folder={f.id} now={now} />
-      </Page>
+    const actions = (
+      <div className="head-actions">
+        <FolderViewSeg />
+        <FolderMenu folder={f.id} />
+      </div>
     );
+    const crumbs = f.parent_id ? place(board, f.parent_id) : "";
+    main =
+      view === "graph" ? (
+        <Page title={f.name} crumbs={crumbs} actions={actions} scroll={false}>
+          <FolderGraph folder={f.id} across now={now} />
+        </Page>
+      ) : (
+        <Page title={f.name} crumbs={crumbs} actions={actions} add={<QuickAdd folder={f.id} />}>
+          <FolderBody key={f.id} folder={f.id} now={now} />
+        </Page>
+      );
   }
 
   const tool = (onClick: () => void, icon: typeof PanelLeft, open: boolean, label: string) => (
@@ -76,7 +89,7 @@ export function Desktop({ sideOpen, paneOpen, toggleSide, togglePane, onSettings
   );
 }
 
-function Page({ title, crumbs = "", actions, add, children }: { title: string; crumbs?: string; actions?: ReactNode; add?: ReactNode; children: ReactNode }) {
+function Page({ title, crumbs = "", actions, add, scroll = true, children }: { title: string; crumbs?: string; actions?: ReactNode; add?: ReactNode; scroll?: boolean; children: ReactNode }) {
   return (
     <>
       <header className="main-head">
@@ -87,7 +100,7 @@ function Page({ title, crumbs = "", actions, add, children }: { title: string; c
         {actions}
       </header>
       {add}
-      <div className="main-scroll">{children}</div>
+      {scroll ? <div className="main-scroll">{children}</div> : children}
     </>
   );
 }

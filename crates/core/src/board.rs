@@ -5,11 +5,13 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::model::{Dependency, Folder, FolderId, SortKey, Task, TaskId};
 
 /// All of a user's data.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Snapshot {
     pub folders: Vec<Folder>,
     pub tasks: Vec<Task>,

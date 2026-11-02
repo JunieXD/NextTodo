@@ -1,0 +1,5 @@
+[env]
+# TypeScript types made from the Rust ones by `cargo test`, for the web app
+TS_RS_EXPORT_DIR = { value = "apps/web/src/api/types", relative = true }
+# Timestamps and sequence numbers are i64 but stay far below 2^53, and JSON gives JS plain numbers.
+TS_RS_LARGE_INT = "number"

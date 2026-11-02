@@ -394,3 +394,33 @@ async fn bad_input_names_the_field() {
     let ok = t.app.clone().oneshot(raw("application/json; charset=utf-8", login)).await.unwrap();
     assert_eq!(ok.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn changing_the_password_signs_out_other_devices() {
+    let t = TestApp::new();
+    let here = t.admin().await;
+    let phone = t.login("junie", "correct horse").await.body["secret"].as_str().unwrap().to_owned();
+    let token = t.call("POST", "/tokens", Some(&here), Some(json!({ "name": "Claude Code", "scope": "write" }))).await.body;
+    let agent = token["secret"].as_str().unwrap();
+
+    let wrong =
+        t.call("POST", "/auth/password", Some(&here), Some(json!({ "old_password": "nope", "new_password": "new password" }))).await;
+    assert_eq!((wrong.status, wrong.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("old_password")));
+    let by_agent = t
+        .call("POST", "/auth/password", Some(agent), Some(json!({ "old_password": "correct horse", "new_password": "agent password" })))
+        .await;
+    assert_eq!(by_agent.status, StatusCode::FORBIDDEN);
+    let ok = t
+        .call("POST", "/auth/password", Some(&here), Some(json!({ "old_password": "correct horse", "new_password": "new password" })))
+        .await;
+    assert_eq!(ok.status, StatusCode::NO_CONTENT);
+
+    assert_eq!(t.call("GET", "/me", Some(&here), None).await.status, StatusCode::OK, "this device stays signed in");
+    assert_eq!(t.call("GET", "/me", Some(&phone), None).await.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(t.call("GET", "/me", Some(agent), None).await.status, StatusCode::OK, "API tokens keep working");
+    assert_eq!(t.login("junie", "correct horse").await.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(t.login("junie", "new password").await.status, StatusCode::OK);
+
+    let renamed = t.call("PATCH", "/me", Some(&here), Some(json!({ "display_name": "小 J" }))).await;
+    assert_eq!(renamed.body["display_name"], "小 J");
+}

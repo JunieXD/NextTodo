@@ -2,12 +2,14 @@
 //! strings, and a new key can always be made between two others without touching them.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 const DIGITS: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const SMALLEST_INTEGER: &str = "A00000000000000000000000000";
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, TS)]
 #[serde(try_from = "String", into = "String")]
+#[ts(export, type = "string")]
 pub struct SortKey(String);
 
 impl SortKey {

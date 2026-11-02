@@ -175,7 +175,7 @@ tasks:
 
 ### 传输
 
-- WebSocket 开启 permessage-deflate 压缩，HTTP 响应用 brotli 或 zstd 压缩。数据格式用 JSON。
+- WebSocket 上只传小的增量，不压缩；完整数据走 HTTP，用 brotli 或 zstd 压缩。数据格式用 JSON。
 - App 的前端资源打包在安装包里；网页版通过 PWA 缓存资源。之后打开只同步数据。
 
 ## 各端
@@ -222,7 +222,7 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 
 ## 部署
 
-- 服务端是一个进程、一个端口：同时提供 API、WebSocket、MCP 和网页静态文件。静态文件在构建时预先压缩好。
+- 服务端是一个进程、一个端口：同时提供 API、WebSocket、MCP 和网页静态文件。静态文件在构建时预先压缩好，放在镜像里，见[网页端](web.md#部署)。
 - 在本机用 `cargo-zigbuild` 交叉编译 x86_64 Linux 静态二进制，打成基于 `scratch` 的镜像，通过 `docker save | ssh rcvps docker load` 传到服务器。服务器上不编译。
 - 服务器目录 `/opt/1panel/www/sites/NextTodo/`：`compose.yaml` 和 `data/`（SQLite 数据库和快照）。只监听 `127.0.0.1`。
 - 域名 `todo.juniexd.cn`：由 1Panel 反向代理，开启 WebSocket，使用 `*.juniexd.cn` 证书。

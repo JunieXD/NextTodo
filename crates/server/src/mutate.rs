@@ -6,6 +6,7 @@ use nexttodo_core::model::{Change, Dependency, Effect, Folder, FolderId, Link, M
 use nexttodo_core::ops::{Mutation, Op};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
+use ts_rs::TS;
 
 use crate::error::ApiError;
 use crate::store;
@@ -18,7 +19,8 @@ pub struct Actor<'a> {
     pub via: Option<&'a str>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct Applied {
     pub seq: i64,
     pub effects: Vec<Effect>,

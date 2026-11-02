@@ -21,6 +21,8 @@
 | POST | `/auth/login` | `{username, password, device}` → `{secret, user}`，同时设置 Cookie |
 | POST | `/auth/logout` | 注销当前会话，清除 Cookie；API 令牌调用返回 403 |
 | GET | `/me` | 当前用户 |
+| PATCH | `/me` | 改显示名：`{display_name}` → 用户 |
+| POST | `/auth/password` | 改密码：`{old_password, new_password}`；只能用会话，成功后注销这个用户的其他会话 |
 | GET | `/tokens` | 当前用户的会话和 API 令牌（不含明文）。令牌和邀请码只能用会话管理，API 令牌调用返回 403 |
 | POST | `/tokens` | 生成 API 令牌：`{name, scope}` → `{token, secret}` |
 | DELETE | `/tokens/{id}` | 注销会话或删除令牌 |
@@ -109,13 +111,17 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 
 ## 同步协议
 
-`GET /sync` 升级为 WebSocket，消息都是 JSON，开启 permessage-deflate。
+`GET /sync` 升级为 WebSocket，消息都是 JSON。消息是小的增量，不压缩；完整数据走 `/snapshot`。客户端的用法见[网页端](web.md#同步)。
 
 | 方向 | 消息 | 说明 |
 |---|---|---|
-| 客户端 → 服务端 | `{type: "hello", token?, since}` | 连接后的第一条。网页靠 Cookie 认证可以不带 `token`；App 的 WebView 不能给 WebSocket 加请求头，所以带在这里 |
-| 服务端 → 客户端 | `{type: "changes", changes}` | 先补发 `since` 之后的改动，之后每有新改动就推送，包括本连接自己提交的 |
+| 客户端 → 服务端 | `{type: "hello", token?, since}` | 连接后 10 秒内必须发的第一条。网页靠 Cookie 认证可以不带 `token`；App 的 WebView 不能给 WebSocket 加请求头，所以带在这里 |
+| 服务端 → 客户端 | `{type: "changes", seq, changes}` | 收到 `hello` 后先补发 `since` 之后的变化（没有也发一条空的，表示已经同步到最新），之后每有新改动就推送，包括本连接自己提交的。`seq` 是这批之后的最新序号，每条变化的格式同 `/changes` |
 | 服务端 → 客户端 | `{type: "resync"}` | `since` 超出保留期，客户端重新下载 `/snapshot` |
 | 客户端 → 服务端 | `{type: "mutate", mutation}` | 提交改动，格式同 `POST /mutations` |
 | 服务端 → 客户端 | `{type: "ack", id, seq}` | 改动已生效 |
-| 服务端 → 客户端 | `{type: "reject", id, code, message, details?}` | 改动被拒绝，客户端撤回它的本地效果 |
+| 服务端 → 客户端 | `{type: "reject", id, code, message, details?}` | 改动被拒绝（包括格式不对），客户端撤回它的本地效果 |
+| 服务端 → 客户端 | `{type: "error", code, message}` | 认证失败或消息无法识别，随后服务端关闭连接 |
+
+- 每次 `mutate` 都重新检查令牌，令牌被注销后提交会被拒绝；只读令牌的提交被拒绝。
+- 服务端每 30 秒发一次 ping，反向代理不会因为空闲断开连接。

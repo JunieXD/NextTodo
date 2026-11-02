@@ -81,7 +81,7 @@ NextTodo 是以先后关系为核心的待办应用：事项之间可以设依�
 
 ## 文档
 
-- 项目文档：[总体设计](docs/design.md)、[界面](docs/ui.md)、[数据模型](docs/data-model.md)、[API](docs/api.md)、[agent 接入](docs/agent.md)。
+- 项目文档：[总体设计](docs/design.md)、[界面](docs/ui.md)、[数据模型](docs/data-model.md)、[API](docs/api.md)、[agent 接入](docs/agent.md)、[网页端](docs/web.md)。
 - 写现状和决定，不写讨论过程和改动历史。
 - 同一件事只在一处写细节，别处链接过去。
 - 行为或决定变了，在同一个改动里更新文档。

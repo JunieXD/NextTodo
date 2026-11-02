@@ -35,7 +35,7 @@ impl TestApp {
     pub fn new() -> Self {
         let time = Arc::new(AtomicI64::new(1_762_000_000_000));
         let t = time.clone();
-        let state = AppState { db: Db::open_in_memory().unwrap(), clock: Clock(Arc::new(move || t.load(Ordering::SeqCst))) };
+        let state = AppState::new(Db::open_in_memory().unwrap(), Clock(Arc::new(move || t.load(Ordering::SeqCst))));
         TestApp { app: app(state.clone()), state, time }
     }
 

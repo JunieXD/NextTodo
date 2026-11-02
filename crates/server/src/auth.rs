@@ -15,6 +15,7 @@ use rusqlite::{Connection, OptionalExtension, ToSql, params};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::Semaphore;
+use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::AppState;
@@ -67,8 +68,9 @@ async fn hashing<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T
 
 macro_rules! field {
     ($name:ident, $check:expr) => {
-        #[derive(Deserialize)]
+        #[derive(Deserialize, TS)]
         #[serde(try_from = "String")]
+        #[ts(type = "string")]
         pub struct $name(String);
 
         impl TryFrom<String> for $name {
@@ -94,8 +96,9 @@ field!(TokenName, |s| line(s, "令牌名", 50));
 
 macro_rules! sql_enum {
     ($name:ident { $($variant:ident = $text:literal),* }) => {
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
         #[serde(rename_all = "lowercase")]
+        #[ts(export)]
         pub enum $name { $($variant),* }
 
         impl ToSql for $name {
@@ -145,7 +148,7 @@ impl Auth {
     }
 }
 
-fn presented_secret(headers: &HeaderMap) -> Option<String> {
+pub fn presented_secret(headers: &HeaderMap) -> Option<String> {
     let bearer = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()).and_then(|v| v.strip_prefix("Bearer "));
     if let Some(secret) = bearer {
         return Some(secret.trim().to_owned());
@@ -164,39 +167,45 @@ impl FromRequestParts<AppState> for Auth {
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
         let secret = presented_secret(&parts.headers).ok_or_else(|| ApiError::unauthenticated("请先登录"))?;
-        let now = state.clock.now();
-        state
-            .db
-            .call(move |c| {
-                let (auth, last_used): (Auth, Option<i64>) = c
-                    .query_row(
-                        "SELECT t.id, t.user_id, t.kind, t.scope, t.name, u.is_admin, t.last_used_at
-                         FROM tokens t JOIN users u ON u.id = t.user_id WHERE t.secret_hash = ?1",
-                        [secret_hash(&secret)],
-                        |r| {
-                            let auth = Auth {
-                                token_id: r.get(0)?,
-                                user_id: r.get(1)?,
-                                kind: r.get(2)?,
-                                scope: r.get(3)?,
-                                name: r.get(4)?,
-                                is_admin: r.get(5)?,
-                            };
-                            Ok((auth, r.get(6)?))
-                        },
-                    )
-                    .optional()?
-                    .ok_or_else(|| ApiError::unauthenticated("登录已失效，请重新登录"))?;
-                if last_used.is_none_or(|t| now - t >= LAST_USED_RESOLUTION_MS) {
-                    c.execute("UPDATE tokens SET last_used_at = ?1 WHERE id = ?2", params![now, auth.token_id])?;
-                }
-                Ok(auth)
-            })
-            .await
+        authenticate(state, secret).await
     }
 }
 
-#[derive(Serialize)]
+/// The caller holding this token secret.
+pub async fn authenticate(state: &AppState, secret: String) -> Result<Auth, ApiError> {
+    let now = state.clock.now();
+    state
+        .db
+        .call(move |c| {
+            let (auth, last_used): (Auth, Option<i64>) = c
+                .query_row(
+                    "SELECT t.id, t.user_id, t.kind, t.scope, t.name, u.is_admin, t.last_used_at
+                         FROM tokens t JOIN users u ON u.id = t.user_id WHERE t.secret_hash = ?1",
+                    [secret_hash(&secret)],
+                    |r| {
+                        let auth = Auth {
+                            token_id: r.get(0)?,
+                            user_id: r.get(1)?,
+                            kind: r.get(2)?,
+                            scope: r.get(3)?,
+                            name: r.get(4)?,
+                            is_admin: r.get(5)?,
+                        };
+                        Ok((auth, r.get(6)?))
+                    },
+                )
+                .optional()?
+                .ok_or_else(|| ApiError::unauthenticated("登录已失效，请重新登录"))?;
+            if last_used.is_none_or(|t| now - t >= LAST_USED_RESOLUTION_MS) {
+                c.execute("UPDATE tokens SET last_used_at = ?1 WHERE id = ?2", params![now, auth.token_id])?;
+            }
+            Ok(auth)
+        })
+        .await
+}
+
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct User {
     id: String,
     username: String,
@@ -240,7 +249,8 @@ pub async fn create_admin(state: &AppState, username: String, display_name: Stri
     state.db.call(move |c| create_user(c, &username.0, &display_name.0, &hash, true, now).map(drop)).await
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 struct Session {
     secret: String,
     user: User,
@@ -260,8 +270,9 @@ fn with_session_cookie(session: Session) -> Response {
     ([(header::SET_COOKIE, HeaderValue::from_str(&cookie).expect("cookie is ASCII"))], Json(session)).into_response()
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, TS)]
 #[serde(deny_unknown_fields)]
+#[ts(export)]
 pub struct Login {
     username: String,
     password: String,
@@ -294,8 +305,9 @@ pub async fn login(State(st): State<AppState>, Json(req): Json<Login>) -> Result
     Ok(with_session_cookie(session))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, TS)]
 #[serde(deny_unknown_fields)]
+#[ts(export)]
 pub struct Register {
     invite: String,
     username: Username,
@@ -347,7 +359,57 @@ pub async fn me(State(st): State<AppState>, auth: Auth) -> Result<Json<User>, Ap
     st.db.call(move |c| Ok(load_user(c, &auth.user_id)?)).await.map(Json)
 }
 
-#[derive(Serialize)]
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export)]
+pub struct Profile {
+    display_name: DisplayName,
+}
+
+pub async fn update_me(State(st): State<AppState>, auth: Auth, Json(req): Json<Profile>) -> Result<Json<User>, ApiError> {
+    auth.require_session()?;
+    st.db
+        .call(move |c| {
+            c.execute("UPDATE users SET display_name = ?1 WHERE id = ?2", params![req.display_name.0, auth.user_id])?;
+            Ok(load_user(c, &auth.user_id)?)
+        })
+        .await
+        .map(Json)
+}
+
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export)]
+pub struct NewPassword {
+    old_password: String,
+    new_password: Password,
+}
+
+/// Changes the password and signs out the user's other devices; API tokens keep working.
+pub async fn change_password(State(st): State<AppState>, auth: Auth, Json(req): Json<NewPassword>) -> Result<StatusCode, ApiError> {
+    auth.require_session()?;
+    let user_id = auth.user_id.clone();
+    let stored: String =
+        st.db.call(move |c| Ok(c.query_row("SELECT password_hash FROM users WHERE id = ?1", [user_id], |r| r.get(0))?)).await?;
+    let NewPassword { old_password, new_password } = req;
+    let hash = hashing(move || verify_password(&old_password, &stored).then(|| hash_password(&new_password.0))).await;
+    let hash = hash.ok_or_else(|| ApiError::invalid("原密码不对", Some("old_password".into())))?;
+    st.db
+        .call(move |c| {
+            let tx = c.transaction()?;
+            tx.execute("UPDATE users SET password_hash = ?1 WHERE id = ?2", params![hash, auth.user_id])?;
+            tx.execute(
+                "DELETE FROM tokens WHERE user_id = ?1 AND kind = ?2 AND id <> ?3",
+                params![auth.user_id, TokenKind::Session, auth.token_id],
+            )?;
+            tx.commit()?;
+            Ok(StatusCode::NO_CONTENT)
+        })
+        .await
+}
+
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct TokenInfo {
     id: String,
     kind: TokenKind,
@@ -383,14 +445,16 @@ pub async fn list_tokens(State(st): State<AppState>, auth: Auth) -> Result<Json<
         .map(Json)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, TS)]
 #[serde(deny_unknown_fields)]
+#[ts(export)]
 pub struct NewToken {
     name: TokenName,
     scope: Scope,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct CreatedToken {
     token: TokenInfo,
     secret: String,
@@ -431,7 +495,8 @@ pub async fn delete_token(State(st): State<AppState>, auth: Auth, Path(id): Path
         .await
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct Invite {
     code: String,
     created_at: i64,

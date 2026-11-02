@@ -8,7 +8,19 @@ use axum::response::{IntoResponse, Response};
 use nexttodo_core::model::TaskId;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use serde_json::{Value, json};
+use serde_json::Value;
+use ts_rs::TS;
+
+/// How errors look in responses and sync messages.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct ErrorBody {
+    pub code: &'static str,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub details: Option<Value>,
+}
 
 #[derive(Debug)]
 pub struct ApiError {
@@ -25,7 +37,7 @@ impl ApiError {
 
     pub fn invalid(message: impl Into<String>, field: Option<String>) -> Self {
         let mut e = Self::new(StatusCode::BAD_REQUEST, "invalid", message);
-        e.details = field.map(|f| json!({ "field": f }));
+        e.details = field.map(|f| serde_json::json!({ "field": f }));
         e
     }
 
@@ -48,7 +60,7 @@ impl ApiError {
     /// `path` goes around the cycle and ends where it starts; `titles` spells it out for the user.
     pub fn cycle(path: Vec<TaskId>, titles: &str) -> Self {
         let mut e = Self::new(StatusCode::CONFLICT, "cycle", format!("加上这条依赖会形成循环：{titles}"));
-        e.details = Some(json!({ "path": path }));
+        e.details = Some(serde_json::json!({ "path": path }));
         e
     }
 
@@ -93,14 +105,28 @@ impl From<serde_json::Error> for ApiError {
     }
 }
 
+impl ApiError {
+    pub fn code(&self) -> &'static str {
+        self.code
+    }
+
+    pub fn body(&self) -> ErrorBody {
+        ErrorBody { code: self.code, message: self.message.clone(), details: self.details.clone() }
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let mut body = json!({ "code": self.code, "message": self.message });
-        if let Some(details) = self.details {
-            body["details"] = details;
-        }
-        (self.status, axum::Json(body)).into_response()
+        (self.status, axum::Json(self.body())).into_response()
     }
+}
+
+/// Reads a value that came from outside; bad input becomes a 400 naming the field.
+pub fn from_value<T: DeserializeOwned>(value: Value) -> Result<T, ApiError> {
+    serde_path_to_error::deserialize(value).map_err(|e| {
+        let path = e.path().to_string();
+        ApiError::invalid(e.inner().to_string(), (path != ".").then_some(path))
+    })
 }
 
 /// JSON body extractor and response. Bad input becomes a 400 naming the field, like `ops[0].due`.

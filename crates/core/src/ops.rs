@@ -1,14 +1,16 @@
 //! Mutations: what clients submit to change data. See `docs/api.md`.
 
 use serde::{Deserialize, Deserializer, Serialize};
+use ts_rs::TS;
 
 use crate::model::{Description, Due, FolderId, MutationId, Name, SortKey, TaskId, Title};
 
 pub const MAX_OPS: usize = 1000;
 
 /// One or more operations applied together: all of them take effect, or none.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(try_from = "MutationFields")]
+#[ts(export)]
 pub struct Mutation {
     pub id: MutationId,
     pub ops: Vec<Op>,
@@ -33,27 +35,33 @@ impl TryFrom<MutationFields> for Mutation {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "op", deny_unknown_fields)]
+#[ts(export)]
 pub enum Op {
     #[serde(rename = "folder.create")]
     FolderCreate {
         id: FolderId,
         name: Name,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         parent_id: Option<FolderId>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         sort_key: Option<SortKey>,
     },
     #[serde(rename = "folder.update")]
     FolderUpdate {
         id: FolderId,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         name: Option<Name>,
-        /// `Some(None)` moves the folder to the root.
+        /// `null` moves the folder to the root.
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         parent_id: Option<Option<FolderId>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         sort_key: Option<SortKey>,
     },
     #[serde(rename = "folder.delete")]
@@ -63,32 +71,43 @@ pub enum Op {
         id: TaskId,
         title: Title,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         folder_id: Option<FolderId>,
         #[serde(default, skip_serializing_if = "is_empty")]
+        #[ts(as = "Option<Description>", optional)]
         description: Description,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         due: Option<Due>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         sort_key: Option<SortKey>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        #[ts(as = "Option<bool>", optional)]
         done: bool,
     },
     #[serde(rename = "task.update")]
     TaskUpdate {
         id: TaskId,
-        /// `Some(None)` moves the task to the root.
+        /// `null` moves the task to the root.
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         folder_id: Option<Option<FolderId>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         title: Option<Title>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         description: Option<Description>,
-        /// `Some(None)` clears the due date.
+        /// `null` clears the due date.
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         due: Option<Option<Due>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         sort_key: Option<SortKey>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         done: Option<bool>,
     },
     #[serde(rename = "task.delete")]

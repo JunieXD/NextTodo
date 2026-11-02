@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
-use nexttodo_server::{AppState, Clock, Db, MUTATION_RETENTION_MS, app, auth, db};
+use nexttodo_server::{AppState, Clock, Db, MUTATION_RETENTION_MS, app, auth, db, with_web};
 use tokio::signal::unix::{SignalKind, signal};
 use tracing_subscriber::EnvFilter;
 
@@ -20,10 +20,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Serve the API
+    /// Serve the API, and the web app when given its files
     Serve {
         #[arg(long, env = "NEXTTODO_LISTEN", default_value = "127.0.0.1:8080")]
         listen: SocketAddr,
+        /// Directory with the built web app (`apps/web/dist`)
+        #[arg(long, env = "NEXTTODO_WEB")]
+        web: Option<PathBuf>,
     },
     /// Create an administrator account; asks for the password, or reads it from stdin
     CreateAdmin {
@@ -38,9 +41,9 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))).init();
     let cli = Cli::parse();
     std::fs::create_dir_all(&cli.data)?;
-    let state = AppState { db: Db::open(&cli.data.join("nexttodo.db"))?, clock: Clock::system() };
+    let state = AppState::new(Db::open(&cli.data.join("nexttodo.db"))?, Clock::system());
     match cli.command {
-        Command::Serve { listen } => serve(state, listen).await,
+        Command::Serve { listen, web } => serve(state, listen, web).await,
         Command::CreateAdmin { username, display_name } => {
             let password = read_password()?;
             let display_name = display_name.unwrap_or_else(|| username.clone());
@@ -65,11 +68,15 @@ fn read_password() -> anyhow::Result<String> {
     Ok(password)
 }
 
-async fn serve(state: AppState, listen: SocketAddr) -> anyhow::Result<()> {
+async fn serve(state: AppState, listen: SocketAddr, web: Option<PathBuf>) -> anyhow::Result<()> {
     tokio::spawn(prune_daily(state.clone()));
+    let router = match &web {
+        Some(dir) => with_web(app(state), dir),
+        None => app(state),
+    };
     let listener = tokio::net::TcpListener::bind(listen).await?;
     tracing::info!(%listen, "listening");
-    axum::serve(listener, app(state)).with_graceful_shutdown(shutdown()).await?;
+    axum::serve(listener, router).with_graceful_shutdown(shutdown()).await?;
     Ok(())
 }
 

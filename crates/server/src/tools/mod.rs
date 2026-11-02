@@ -16,12 +16,11 @@ use rmcp::handler::server::common::schema_for_type;
 use rmcp::model::JsonObject;
 use rusqlite::Connection;
 use serde::Serialize;
-use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::AppState;
 use crate::auth::Auth;
-use crate::error::{ApiError, Json};
+use crate::error::{ApiError, Json, from_value};
 use args::*;
 use write::{Write, WriteCx};
 
@@ -72,7 +71,7 @@ macro_rules! tools {
         fn parse_call(name: &str, args: Value) -> Result<Call, ApiError> {
             match name {
                 $($name => {
-                    let args: $args = parse(args)?;
+                    let args: $args = from_value(args)?;
                     Ok(tools!(@call $kind, $run, args))
                 })*
                 _ => Err(ApiError::not_found(format!("没有叫 {name} 的工具"))),
@@ -114,13 +113,6 @@ fn find_task<'a>(b: &Board<'a>, number: i64) -> Result<&'a Task, ApiError> {
     b.task_by_number(number).ok_or_else(|| ApiError::not_found(format!("没有 #{number} 这个事项")))
 }
 
-fn parse<T: DeserializeOwned>(args: Value) -> Result<T, ApiError> {
-    serde_path_to_error::deserialize(args).map_err(|e| {
-        let path = e.path().to_string();
-        ApiError::invalid(e.inner().to_string(), (path != ".").then_some(path))
-    })
-}
-
 /// Runs a tool. `id` makes a write idempotent: the same id returns the first result.
 pub async fn call(st: &AppState, auth: Auth, name: &str, args: Value, id: Option<MutationId>) -> Result<Output, ApiError> {
     let now = st.clock.now();
@@ -128,7 +120,10 @@ pub async fn call(st: &AppState, auth: Auth, name: &str, args: Value, id: Option
         Call::Read(run) => st.db.call(move |c| run(c, &Cx { owner: &auth.user_id, now })).await,
         Call::Write(build) => {
             auth.require_write()?;
-            st.db.call(move |c| write::run(c, &auth, id, now, build)).await
+            let owner = auth.user_id.clone();
+            let output = st.db.call(move |c| write::run(c, &auth, id, now, build)).await?;
+            st.hub.changed(&owner);
+            Ok(output)
         }
     }
 }

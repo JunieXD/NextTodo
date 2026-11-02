@@ -1,6 +1,7 @@
 //! Entities and the validated values they are made of.
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use uuid::Uuid;
 
 pub use crate::sort_key::SortKey;
@@ -8,8 +9,9 @@ pub use crate::sort_key::SortKey;
 /// Ids are UUIDv7, so they sort by creation time.
 macro_rules! id_type {
     ($($name:ident),*) => {$(
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
         #[serde(try_from = "Uuid", into = "Uuid")]
+        #[ts(export, type = "string")]
         pub struct $name(pub Uuid);
 
         impl TryFrom<Uuid> for $name {
@@ -54,8 +56,9 @@ id_type!(FolderId, TaskId, MutationId);
 macro_rules! text_type {
     ($(#[$doc:meta])* $name:ident, $check:expr) => {
         $(#[$doc])*
-        #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+        #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
         #[serde(try_from = "String", into = "String")]
+        #[ts(export, type = "string")]
         pub struct $name(String);
 
         impl $name {
@@ -167,8 +170,9 @@ text_type!(
 );
 
 /// When a task is due: a date, optionally with a time and a reminder.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(try_from = "DueFields", into = "DueFields")]
+#[ts(export, as = "DueFields")]
 pub struct Due {
     pub date: Date,
     pub at: Option<DueAt>,
@@ -183,13 +187,17 @@ pub struct DueAt {
 
 pub const MAX_REMIND_BEFORE: u32 = 30 * 24 * 60;
 
-#[derive(Serialize, Deserialize)]
+/// How `Due` looks in JSON.
+#[derive(Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
-struct DueFields {
+#[ts(rename = "DueFields")]
+pub struct DueFields {
     date: Date,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     time: Option<Time>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     remind_before: Option<u32>,
 }
 
@@ -222,7 +230,8 @@ impl From<Due> for DueFields {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Folder {
     pub id: FolderId,
     pub parent_id: Option<FolderId>,
@@ -232,7 +241,8 @@ pub struct Folder {
     pub updated_at: i64,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Task {
     pub id: TaskId,
     pub number: i64,
@@ -250,7 +260,8 @@ pub struct Task {
 }
 
 /// `before` must be done before `after` can start.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Dependency {
     pub before: TaskId,
     pub after: TaskId,
@@ -259,16 +270,18 @@ pub struct Dependency {
 
 /// One entity change made by a mutation. In JSON it is `{kind, before, after}`, where `before` is
 /// `null` for a creation and `after` is `null` for a deletion.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[ts(export)]
 pub enum Effect {
     Folder(Change<Folder>),
     Task(Change<Box<Task>>),
     Dependency(Link<Dependency>),
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(try_from = "Sides<T>", into = "Sides<T>")]
+#[ts(as = "Sides<T>")]
 pub enum Change<T: Clone> {
     Created(T),
     Updated { before: T, after: T },
@@ -276,15 +289,18 @@ pub enum Change<T: Clone> {
 }
 
 /// Dependencies are only ever added or removed, never changed.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(try_from = "Sides<T>", into = "Sides<T>")]
+#[ts(as = "Sides<T>")]
 pub enum Link<T: Clone> {
     Added(T),
     Removed(T),
 }
 
-#[derive(Serialize, Deserialize)]
-struct Sides<T> {
+/// How `Change` and `Link` look in JSON: `before` is `null` for a creation, `after` for a deletion.
+#[derive(Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Sides<T> {
     before: Option<T>,
     after: Option<T>,
 }

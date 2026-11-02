@@ -13,7 +13,7 @@ import type { Op } from "./api/types/Op";
 import type { SeqSnapshot } from "./api/types/SeqSnapshot";
 import type { User } from "./api/types/User";
 import { Rejected } from "./domain/apply";
-import { forget, load, saver } from "./sync/persist";
+import { type Saver, forget, load, saver } from "./sync/persist";
 import { type Connection, Socket } from "./sync/socket";
 import { type Saved, Store } from "./sync/store";
 import { useFeedback } from "./ui/feedback";
@@ -29,6 +29,7 @@ export interface Listeners {
 
 export class Session {
   readonly store: Store;
+  private readonly saver: Saver;
   private readonly socket: Socket;
   connection: Connection = "connecting";
   private readonly watchers = new Set<() => void>();
@@ -38,15 +39,16 @@ export class Session {
     public user: User,
     saved: Saved,
   ) {
-    const save = saver(user.id);
+    this.saver = saver(user.id);
     this.store = new Store(saved, {
-      save,
+      save: (s) => this.saver.save(s),
       send: (m) => this.socket.send(m),
       rejected: (m, e) => this.listeners.rejected(m, e),
       arrived: (entries) => this.listeners.arrived(entries),
     });
     this.socket = new Socket(this.store, {
       url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/v1/sync`,
+      user: user.id,
       resync: async () => this.store.resync(await api<SeqSnapshot>("GET", "/snapshot")),
       signedOut: () => this.listeners.signedOut(),
       status: (c) => {
@@ -101,7 +103,10 @@ export class Session {
   /** Asks the server whether the session still holds, and refreshes the user's details. */
   async check(): Promise<boolean> {
     try {
-      this.setUser(await api<User>("GET", "/me"));
+      const me = await api<User>("GET", "/me");
+      // Someone else signed in meanwhile, in another tab: this copy is not theirs.
+      if (me.id !== this.user.id) return false;
+      this.setUser(me);
       return true;
     } catch (e) {
       // Offline, or the server is down: carry on with the local copy.
@@ -112,6 +117,7 @@ export class Session {
   /** Forgets everything about the user on this device. */
   async close() {
     this.socket.stop();
+    await this.saver.close();
     localStorage.removeItem(USER);
     await forget(this.user.id);
   }

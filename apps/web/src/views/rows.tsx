@@ -92,10 +92,11 @@ export function TaskRow({
       </div>
       <div className="row-inner" ref={inner}>
         <Check status={status} pop={marks.pop === t.id} left={railX === undefined ? undefined : railX - 12} onToggle={() => actions.toggle(t)} />
-        <div className="task-main">
-          <div className="task-title">{t.title}</div>
-          {meta.length > 0 && <div className="task-meta">{meta}</div>}
-        </div>
+        {/* The whole row opens the task; this button is how keyboards and screen readers get there. */}
+        <button type="button" className="task-main">
+          <span className="task-title">{t.title}</span>
+          {meta.length > 0 && <span className="task-meta">{meta}</span>}
+        </button>
       </div>
     </div>
   );

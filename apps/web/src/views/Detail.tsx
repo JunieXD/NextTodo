@@ -138,8 +138,10 @@ function Title({ task, onSave }: { task: Task; onSave(title: string): void }) {
   const { snack } = useFeedback();
   if (draft === null) {
     return (
-      <h2 className="d-title" onClick={() => setDraft(task.title)}>
-        {task.title}
+      <h2 className="d-title">
+        <button type="button" onClick={() => setDraft(task.title)}>
+          {task.title}
+        </button>
       </h2>
     );
   }
@@ -238,10 +240,10 @@ function Links({ board, list, onOpen, onRemove, onAdd, add }: { board: Board; li
           <div key={o.id} className={`row dep ${status}`} onClick={() => onOpen(o)}>
             <div className="row-inner">
               <span className={`dot ${status}`} />
-              <span className="dep-main">
+              <button type="button" className="dep-main">
                 <span className="dep-title">{o.title}</span>
                 <span className="dep-path">{place(board, o.folder_id)}</span>
-              </span>
+              </button>
               <button
                 className="icon-btn sm"
                 aria-label="移除这条依赖"

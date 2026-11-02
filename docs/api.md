@@ -115,14 +115,14 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 
 | 方向 | 消息 | 说明 |
 |---|---|---|
-| 客户端 → 服务端 | `{type: "hello", token?, since}` | 连接后 10 秒内必须发的第一条。网页靠 Cookie 认证可以不带 `token`；App 的 WebView 不能给 WebSocket 加请求头，所以带在这里 |
+| 客户端 → 服务端 | `{type: "hello", token?, since, user}` | 连接后 10 秒内必须发的第一条。网页靠 Cookie 认证可以不带 `token`；App 的 WebView 不能给 WebSocket 加请求头，所以带在这里。`user` 是本地副本所属的用户 ID：登录的已经是别人（比如在另一个标签页换了账号）时，连接以 `unauthenticated` 失败，这份副本不会收到别人的数据，也不会把改动提交到别人名下 |
 | 服务端 → 客户端 | `{type: "changes", seq, changes}` | 收到 `hello` 后先补发 `since` 之后的变化（没有也发一条空的，表示已经同步到最新），之后每有新改动就推送，包括本连接自己提交的。`seq` 是这批之后的最新序号，每条变化的格式同 `/changes` |
 | 服务端 → 客户端 | `{type: "resync"}` | `since` 超出保留期，客户端重新下载 `/snapshot` |
 | 客户端 → 服务端 | `{type: "mutate", mutation}` | 提交改动，格式同 `POST /mutations` |
-| 服务端 → 客户端 | `{type: "ack", id, seq}` | 改动已生效 |
+| 服务端 → 客户端 | `{type: "ack", id, seq}` | 改动已生效，`seq` 是它的序号（重复提交时是第一次生效时的序号） |
 | 服务端 → 客户端 | `{type: "reject", id, code, message, details?}` | 改动被拒绝（包括格式不对），客户端撤回它的本地效果 |
 | 服务端 → 客户端 | `{type: "error", code, message}` | 认证失败或消息无法识别，随后服务端关闭连接 |
 
 - 每次 `mutate` 和每次推送前都重新检查令牌：令牌删除、会话退出或改密码登出其他设备后，已有的连接马上收到 `unauthenticated` 错误并关闭，不再收到数据；只读令牌的提交被拒绝。
-- Cookie 只在页面与服务端同源时有效（请求的 `Origin` 与 `Host` 或 `X-Forwarded-Host` 一致），以免同一站点下的其他页面借用 Cookie 建立连接。不带 `Origin` 的客户端（App）用 `hello` 里的 `token`。
+- Cookie 只在页面与服务端同源时有效（请求的 `Origin` 与 `Host` 或 `X-Forwarded-Host` 一致，不区分大小写），以免同一站点下的其他页面借用 Cookie 建立连接。浏览器总会带 `Origin`；没有 `Origin` 的连接不认 Cookie，App 用 `hello` 里的 `token`。
 - 服务端每 30 秒发一次 ping，反向代理不会因为空闲断开连接；75 秒内没有收到客户端的任何消息（包括 pong）就关闭连接。

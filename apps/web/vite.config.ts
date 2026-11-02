@@ -29,7 +29,8 @@ export default defineConfig({
       },
       workbox: {
         // The API, sync and MCP never come from the cache.
-        navigateFallbackDenylist: [/^\/api\//, /^\/mcp/],
+        // Matched against the path and query: `/api`, `/api/…`, `/api?…`, and the same for `/mcp`.
+        navigateFallbackDenylist: [/^\/(api|mcp)([/?]|$)/],
         globPatterns: ["**/*.{js,css,html,svg,png,webmanifest}"],
       },
     }),

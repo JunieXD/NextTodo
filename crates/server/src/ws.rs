@@ -1,6 +1,6 @@
 //! Real-time sync over WebSocket. See `docs/api.md#同步协议`.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -12,6 +12,7 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::broadcast::error::RecvError;
+use tokio::time::Instant;
 use ts_rs::TS;
 
 use crate::AppState;
@@ -35,6 +36,9 @@ pub enum ClientMessage {
         #[ts(optional)]
         token: Option<String>,
         since: i64,
+        /// The account the client's local copy belongs to. A different one signed in meanwhile
+        /// (another tab, say) must not receive or change that copy.
+        user: String,
     },
     /// Read in two steps, so that a malformed mutation can still be rejected by its id.
     Mutate {
@@ -74,12 +78,18 @@ pub async fn sync(ws: WebSocketUpgrade, State(st): State<AppState>, headers: Hea
 }
 
 /// Browsers send the session cookie with a WebSocket opened by any page of the same site, so the
-/// cookie only counts when the page is this one. Apps send no `Origin` and sign in with a token.
+/// cookie only counts when the page is this one, which browsers always say in `Origin`. Apps sign in
+/// with a token.
 fn same_origin(headers: &HeaderMap) -> bool {
-    let Some(origin) = headers.get(header::ORIGIN) else { return true };
-    let origin = origin.to_str().ok().and_then(|o| o.split_once("://")).map(|(_, authority)| authority);
+    let Some(origin) =
+        headers.get(header::ORIGIN).and_then(|o| o.to_str().ok()).and_then(|o| o.split_once("://")).map(|(_, authority)| authority)
+    else {
+        return false;
+    };
     // Behind a reverse proxy the page's host may arrive as `X-Forwarded-Host`.
-    ["x-forwarded-host", "host"].iter().any(|name| headers.get(*name).and_then(|h| h.to_str().ok()).is_some_and(|h| Some(h) == origin))
+    ["x-forwarded-host", "host"]
+        .iter()
+        .any(|name| headers.get(*name).and_then(|h| h.to_str().ok()).is_some_and(|h| h.eq_ignore_ascii_case(origin)))
 }
 
 async fn send(ws: &mut WebSocket, msg: ServerMessage) -> Result<(), axum::Error> {
@@ -97,14 +107,15 @@ async fn connection(st: AppState, mut ws: WebSocket, presented: Option<String>) 
         Ok(Some(Ok(Message::Text(text)))) => serde_json::from_str::<ClientMessage>(&text).ok(),
         _ => return Ok(()),
     };
-    let Some(ClientMessage::Hello { token, since }) = hello else {
+    let Some(ClientMessage::Hello { token, since, user }) = hello else {
         return fail(&mut ws, ApiError::invalid("连接后的第一条消息必须是 hello", None)).await;
     };
     let Some(secret) = token.or(presented) else {
         return fail(&mut ws, ApiError::unauthenticated("请先登录")).await;
     };
     let auth = match auth::authenticate(&st, secret.clone()).await {
-        Ok(auth) => auth,
+        Ok(auth) if auth.user_id == user => auth,
+        Ok(_) => return fail(&mut ws, ApiError::unauthenticated("这台设备上登录的账号已经换了，请重新登录")).await,
         Err(e) => return fail(&mut ws, e).await,
     };
     // Subscribed before the first read, so nothing committed in between is missed.
@@ -115,6 +126,7 @@ async fn connection(st: AppState, mut ws: WebSocket, presented: Option<String>) 
     }
     let mut ping = tokio::time::interval(PING_EVERY);
     ping.tick().await;
+    // A client that stopped answering is gone, even if the connection looks open.
     let mut heard = Instant::now();
     loop {
         tokio::select! {
@@ -141,13 +153,8 @@ async fn connection(st: AppState, mut ws: WebSocket, presented: Option<String>) 
                     return Ok(());
                 }
             }
-            _ = ping.tick() => {
-                // A client that stopped answering is gone, even if the connection looks open.
-                if heard.elapsed() > SILENT_LIMIT {
-                    return Ok(());
-                }
-                ws.send(Message::Ping(Default::default())).await?;
-            }
+            _ = tokio::time::sleep_until(heard + SILENT_LIMIT) => return Ok(()),
+            _ = ping.tick() => ws.send(Message::Ping(Default::default())).await?,
         }
     }
 }

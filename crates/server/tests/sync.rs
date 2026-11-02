@@ -24,8 +24,9 @@ async fn serve(t: &TestApp) -> SocketAddr {
 struct Client(WebSocketStream<MaybeTlsStream<TcpStream>>);
 
 impl Client {
+    /// Connects as the web app does, from a page of this server.
     async fn connect(addr: SocketAddr, cookie: Option<&str>) -> Self {
-        Self::from_page(addr, cookie, None).await
+        Self::from_page(addr, cookie, Some(&format!("http://{addr}"))).await
     }
 
     /// Connects as a browser would from a page at `origin`.
@@ -56,9 +57,9 @@ impl Client {
         }
     }
 
-    /// Says hello and returns the first reply.
-    async fn hello(&mut self, token: Option<&str>, since: i64) -> Value {
-        self.send(json!({ "type": "hello", "token": token, "since": since })).await;
+    /// Says hello as `user` and returns the first reply.
+    async fn hello(&mut self, user: &str, token: Option<&str>, since: i64) -> Value {
+        self.send(json!({ "type": "hello", "token": token, "since": since, "user": user })).await;
         self.recv().await.unwrap()
     }
 }
@@ -67,11 +68,12 @@ impl Client {
 async fn every_connection_gets_every_change() {
     let t = TestApp::new();
     let s = t.admin().await;
+    let me = t.me(&s).await;
     let addr = serve(&t).await;
     let mut web = Client::connect(addr, Some(&s)).await;
-    assert_eq!(web.hello(None, 0).await, json!({ "type": "changes", "seq": 0, "changes": [] }), "synced, nothing new");
+    assert_eq!(web.hello(&me, None, 0).await, json!({ "type": "changes", "seq": 0, "changes": [] }), "synced, nothing new");
     let mut app = Client::connect(addr, None).await;
-    app.hello(Some(&s), 0).await;
+    app.hello(&me, Some(&s), 0).await;
 
     let (mutation, task) = (id(), id());
     web.send(json!({ "type": "mutate", "mutation": { "id": mutation, "ops": [{ "op": "task.create", "id": task, "title": "交电费" }] } }))
@@ -89,18 +91,19 @@ async fn every_connection_gets_every_change() {
     }
 
     let mut later = Client::connect(addr, Some(&s)).await;
-    assert_eq!(later.hello(None, 1).await["changes"].as_array().unwrap().len(), 1, "a reconnect gets only what it missed");
+    assert_eq!(later.hello(&me, None, 1).await["changes"].as_array().unwrap().len(), 1, "a reconnect gets only what it missed");
 }
 
 #[tokio::test]
 async fn bad_mutations_are_rejected_and_bad_connections_closed() {
     let t = TestApp::new();
     let s = t.admin().await;
+    let me = t.me(&s).await;
     let token = t.call("POST", "/tokens", Some(&s), Some(json!({ "name": "看板", "scope": "read" }))).await.body;
     let addr = serve(&t).await;
 
     let mut c = Client::connect(addr, Some(&s)).await;
-    c.hello(None, 0).await;
+    c.hello(&me, None, 0).await;
     let bad = id();
     c.send(json!({ "type": "mutate", "mutation": { "id": bad, "ops": [{ "op": "task.create", "id": id(), "title": "  " }] } })).await;
     let reply = c.recv().await.unwrap();
@@ -110,12 +113,12 @@ async fn bad_mutations_are_rejected_and_bad_connections_closed() {
     );
 
     let mut reader = Client::connect(addr, None).await;
-    reader.hello(token["secret"].as_str(), 0).await;
+    reader.hello(&me, token["secret"].as_str(), 0).await;
     reader.send(json!({ "type": "mutate", "mutation": { "id": id(), "ops": [{ "op": "task.create", "id": id(), "title": "x" }] } })).await;
     assert_eq!(reader.recv().await.unwrap()["code"], "forbidden");
 
     let mut nobody = Client::connect(addr, None).await;
-    assert_eq!(nobody.hello(None, 0).await["code"], "unauthenticated");
+    assert_eq!(nobody.hello(&me, None, 0).await["code"], "unauthenticated");
     assert_eq!(nobody.recv().await, None);
     let mut rude = Client::connect(addr, Some(&s)).await;
     rude.send(json!({ "type": "mutate", "mutation": {} })).await;
@@ -127,6 +130,7 @@ async fn bad_mutations_are_rejected_and_bad_connections_closed() {
 async fn a_client_too_far_behind_is_told_to_resync() {
     let t = TestApp::new();
     let s = t.admin().await;
+    let me = t.me(&s).await;
     t.mutate(&s, json!([{ "op": "task.create", "id": id(), "title": "一" }])).await;
     t.advance(MUTATION_RETENTION_MS + 1);
     let cutoff = t.state.clock.now() - MUTATION_RETENTION_MS;
@@ -134,22 +138,23 @@ async fn a_client_too_far_behind_is_told_to_resync() {
     let addr = serve(&t).await;
 
     let mut c = Client::connect(addr, Some(&s)).await;
-    assert_eq!(c.hello(None, 0).await, json!({ "type": "resync" }));
+    assert_eq!(c.hello(&me, None, 0).await, json!({ "type": "resync" }));
     assert_eq!(c.recv().await, None, "it reconnects after downloading the snapshot");
     let snap = t.call("GET", "/snapshot", Some(&s), None).await;
     assert_eq!(snap.status, StatusCode::OK);
     let mut again = Client::connect(addr, Some(&s)).await;
-    assert_eq!(again.hello(None, snap.body["seq"].as_i64().unwrap()).await["changes"], json!([]));
+    assert_eq!(again.hello(&me, None, snap.body["seq"].as_i64().unwrap()).await["changes"], json!([]));
 }
 
 #[tokio::test]
 async fn a_revoked_token_stops_getting_changes() {
     let t = TestApp::new();
     let s = t.admin().await;
+    let me = t.me(&s).await;
     let token = t.call("POST", "/tokens", Some(&s), Some(json!({ "name": "看板", "scope": "read" }))).await.body;
     let addr = serve(&t).await;
     let mut board = Client::connect(addr, None).await;
-    board.hello(token["secret"].as_str(), 0).await;
+    board.hello(&me, token["secret"].as_str(), 0).await;
 
     let path = format!("/tokens/{}", token["token"]["id"].as_str().unwrap());
     assert_eq!(t.call("DELETE", &path, Some(&s), None).await.status, StatusCode::NO_CONTENT);
@@ -161,9 +166,25 @@ async fn a_revoked_token_stops_getting_changes() {
 async fn the_cookie_only_counts_from_this_site() {
     let t = TestApp::new();
     let s = t.admin().await;
+    let me = t.me(&s).await;
     let addr = serve(&t).await;
     let mut other = Client::from_page(addr, Some(&s), Some("https://evil.example.com")).await;
-    assert_eq!(other.hello(None, 0).await["code"], "unauthenticated");
+    assert_eq!(other.hello(&me, None, 0).await["code"], "unauthenticated");
+    let mut no_page = Client::from_page(addr, Some(&s), None).await;
+    assert_eq!(no_page.hello(&me, None, 0).await["code"], "unauthenticated", "browsers always say where the page is");
     let mut own = Client::from_page(addr, Some(&s), Some(&format!("http://{addr}"))).await;
-    assert_eq!(own.hello(None, 0).await["type"], "changes");
+    assert_eq!(own.hello(&me, None, 0).await["type"], "changes");
+}
+
+#[tokio::test]
+async fn a_local_copy_never_meets_another_account() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let me = t.me(&s).await;
+    // Another tab signed in as someone else: the cookie now belongs to them.
+    let other = t.user(&s, "xiaoming").await;
+    let addr = serve(&t).await;
+    let mut c = Client::connect(addr, Some(&other)).await;
+    assert_eq!(c.hello(&me, None, 0).await["code"], "unauthenticated");
+    assert_eq!(c.recv().await, None);
 }

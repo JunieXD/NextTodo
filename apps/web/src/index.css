@@ -126,8 +126,8 @@ svg { display: block; flex: none; }
 @media (hover: hover) { .check.ready:hover { color: var(--primary); } }
 .check.lg { width: 30px; height: 30px; }
 
-.task-main { min-width: 0; flex: 1; }
-.task-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task-main { min-width: 0; flex: 1; display: block; text-align: left; }
+.task-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .task.waiting .task-title { color: var(--on-surface-variant); }
 .task.done .task-title { color: var(--outline); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--outline), transparent 40%); }
 .task-meta { display: flex; gap: 10px; margin-top: 2px; font-size: 13px; color: var(--on-surface-variant); white-space: nowrap; overflow: hidden; }
@@ -233,6 +233,7 @@ svg { display: block; flex: none; }
 .d-head .check { margin-top: 3px; }
 .d-title-wrap { flex: 1; min-width: 0; }
 .d-title { margin: 0; font-size: 22px; line-height: 1.3; font-weight: 600; }
+.d-title button { text-align: left; }
 .d-status { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 13px; color: var(--on-surface-variant); }
 .pill { height: 22px; border-radius: 11px; padding: 0 9px; display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; }
 .pill.ready { background: var(--primary-container); color: var(--on-primary-container); }
@@ -268,7 +269,7 @@ svg { display: block; flex: none; }
 .dep .row-inner { min-height: 52px; gap: 12px; }
 .dot { width: 10px; height: 10px; border-radius: 5px; border: 2px solid var(--outline); flex: none; margin: 0 7px; }
 .dot.ready { border-color: var(--primary); } .dot.done { background: var(--primary); border-color: var(--primary); } .dot.waiting { border-style: dashed; border-color: var(--outline-variant); }
-.dep-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dep-main { flex: 1; min-width: 0; display: flex; flex-direction: column; text-align: left; }
 .dep-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dep.done .dep-title { color: var(--outline); text-decoration: line-through; }
 .dep-path { font-size: 12px; color: var(--on-surface-variant); }

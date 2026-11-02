@@ -66,6 +66,11 @@ impl TestApp {
         self.login("junie", "correct horse").await.body["secret"].as_str().unwrap().to_owned()
     }
 
+    /// The id of the user a session belongs to.
+    pub async fn me(&self, secret: &str) -> String {
+        self.call("GET", "/me", Some(secret), None).await.body["id"].as_str().unwrap().to_owned()
+    }
+
     /// Registers a regular user through an invite from `admin` and returns a session secret.
     pub async fn user(&self, admin: &str, username: &str) -> String {
         let code = self.call("POST", "/invites", Some(admin), None).await.body["code"].as_str().unwrap().to_owned();

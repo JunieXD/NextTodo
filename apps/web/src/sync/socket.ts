@@ -12,6 +12,8 @@ export interface SocketOptions {
   url: string;
   /** For apps that sign in with a token; the web app's cookie goes along by itself. */
   token?: string;
+  /** Whose local copy this is: the server refuses the connection if someone else is signed in. */
+  user: string;
   /** Downloads everything again; called when the server says the local copy is too old. */
   resync(): Promise<void>;
   /** The server no longer accepts the session. */
@@ -67,7 +69,7 @@ export class Socket {
     this.opts.status("connecting");
     const ws = new WebSocket(this.opts.url);
     this.ws = ws;
-    ws.onopen = () => this.write({ type: "hello", token: this.opts.token, since: this.store.since });
+    ws.onopen = () => this.write({ type: "hello", token: this.opts.token, since: this.store.since, user: this.opts.user });
     ws.onmessage = (e) => this.handle(JSON.parse(e.data) as ServerMessage);
     ws.onclose = () => {
       if (this.ws !== ws) return;
@@ -98,7 +100,7 @@ export class Socket {
         }
         return;
       case "ack":
-        // The change itself arrives as `changes`, which is what moves it into the base.
+        this.store.acked(msg.id, msg.seq);
         return;
       case "reject":
         this.store.reject(msg.id, msg);

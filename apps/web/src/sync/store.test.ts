@@ -104,3 +104,16 @@ test("a fresh copy keeps the queued changes on top", () => {
   expect(titles()).toEqual(["新", "服务器上的"]);
   expect(store.since).toBe(90);
 });
+
+test("a change the fresh copy already has leaves the queue when the server acknowledges it again", () => {
+  const { store, sent, titles } = setup();
+  store.commit([{ op: "task.create", id: id(1), title: "交电费", sort_key: "a1" }]);
+  // The server applied it at 5, but the reply was lost; later the copy was too old and downloaded afresh.
+  store.resync({ seq: 9, folders: [], tasks: [task(1, "交电费")], dependencies: [] });
+  expect(store.getView().stuck.has(sent[0].id)).toBe(true);
+  store.acked(sent[0].id, 12);
+  expect(store.unconfirmed).toHaveLength(1);
+  store.acked(sent[0].id, 5);
+  expect([store.unconfirmed.length, store.getView().stuck.size]).toEqual([0, 0]);
+  expect(titles()).toEqual(["交电费"]);
+});

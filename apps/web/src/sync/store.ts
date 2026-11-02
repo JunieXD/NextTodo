@@ -120,6 +120,15 @@ export class Store {
     if (others.length) this.hooks.arrived(others);
   }
 
+  /** The server has a change, as of `seq`. Usually the change itself arrives next as `changes`,
+   * which moves it into the base. But a base that already includes `seq` (downloaded afresh, or
+   * merged from another tab's copy) has it already, and it won't arrive again: drop it here. */
+  acked(id: MutationId, seq: number) {
+    if (seq > this.seq || !this.outbox.some((p) => p.mutation.id === id)) return;
+    this.outbox = this.outbox.filter((p) => p.mutation.id !== id);
+    this.changed();
+  }
+
   /** The server turned a change down: drop it, which takes its effect out of the view. */
   reject(id: MutationId, error: ErrorBody) {
     const pending = this.outbox.find((p) => p.mutation.id === id);

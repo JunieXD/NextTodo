@@ -89,18 +89,18 @@ export function saver(userId: string, copyId: string, failed: (e: unknown) => vo
             ...batch.settled.map((id) => outbox.delete([userId, id])),
             tx.done,
           ]);
+          batch.gathered?.resolve();
         } catch (e) {
           copy ??= batch.copy;
           for (const p of batch.queued) if (!settled.has(p.mutation.id)) queued.set(p.mutation.id, p);
           for (const id of batch.settled) settled.add(id);
           failed(e);
           // Saves waiting for the next write hear of the failure too, instead of waiting for a save
-          // that may not come.
+          // that may not come; in the order they were made, which is the order changes go out in.
+          batch.gathered?.resolve();
           gathered?.resolve();
           gathered = undefined;
           break;
-        } finally {
-          batch.gathered?.resolve();
         }
       }
       writing = null;
@@ -136,6 +136,15 @@ export function saver(userId: string, copyId: string, failed: (e: unknown) => vo
 export async function forget(userId: string) {
   const tx = (await db()).transaction(["copies", "outbox"], "readwrite");
   await Promise.all([tx.objectStore("copies").delete(all(userId)), tx.objectStore("outbox").delete(all(userId)), tx.done]);
+}
+
+/** Deletes everyone's data on this device but the user's: arrays sort after strings, so their keys
+ * lie below `[userId]` or above `[userId, []]`. */
+export async function forgetOthers(userId: string) {
+  const tx = (await db()).transaction(["copies", "outbox"], "readwrite");
+  const [copies, outbox] = [tx.objectStore("copies"), tx.objectStore("outbox")];
+  const others = [IDBKeyRange.upperBound([userId], true), IDBKeyRange.lowerBound([userId, []], true)];
+  await Promise.all([...others.flatMap((r) => [copies.delete(r), outbox.delete(r)]), tx.done]);
 }
 
 /** Deletes one session's copy of the user's data. */

@@ -3,7 +3,7 @@
 // holds.
 
 import { createContext, useContext, useSyncExternalStore } from "react";
-import { ApiError, OFFLINE, api } from "./api/http";
+import { ApiError, api } from "./api/http";
 import type { Effect } from "./api/types/Effect";
 import type { ErrorBody } from "./api/types/ErrorBody";
 import type { LogEntry } from "./api/types/LogEntry";
@@ -13,7 +13,7 @@ import type { Op } from "./api/types/Op";
 import type { SeqSnapshot } from "./api/types/SeqSnapshot";
 import type { User } from "./api/types/User";
 import { Rejected } from "./domain/apply";
-import { type Saver, forget, forgetCopy, load, saver } from "./sync/persist";
+import { type Saver, forget, forgetCopy, forgetOthers, load, saver } from "./sync/persist";
 import { type Connection, Socket } from "./sync/socket";
 import { type Saved, Store } from "./sync/store";
 import { useFeedback } from "./ui/feedback";
@@ -32,6 +32,22 @@ function cachedLogin(): Login | null {
   return cached && JSON.parse(cached);
 }
 
+/** Set while a sign-out has not reached the server: the session lives on there, and its cookie must
+ * not sign the app back in. */
+const SIGNED_OUT = "nexttodo.signedOut";
+
+/** Ends the browser's session on the server. When the server can't be reached, or fails, that is
+ * done the next time the app opens. */
+async function logout() {
+  try {
+    await api("POST", "/auth/logout");
+  } catch (e) {
+    // A 401 means it has ended already.
+    if (!(e instanceof ApiError && e.status === 401)) return localStorage.setItem(SIGNED_OUT, "1");
+  }
+  localStorage.removeItem(SIGNED_OUT);
+}
+
 /** What a tab tells the others: that a sign-in ended, so that its other tabs end too instead of
  * saving its data again; that the server turned a change down, which only the tab that sent it
  * hears, so that tabs that took it from the outbox drop it too. */
@@ -48,6 +64,7 @@ export interface Listeners {
   arrived(entries: LogEntry[]): void;
   /** Saving on this device failed; changes still go to the server. */
   unsaved(): void;
+  /** The session has ended elsewhere, and here too now. */
   signedOut(): void;
 }
 
@@ -59,6 +76,7 @@ export class Session {
   private readonly watchers = new Set<() => void>();
   private listeners: Listeners = { rejected() {}, arrived() {}, unsaved() {}, signedOut() {} };
   private closing?: Promise<void>;
+  private signingOut = false;
 
   constructor(
     public user: User,
@@ -85,7 +103,7 @@ export class Session {
       url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/v1/sync`,
       user: user.id,
       resync: async () => this.store.resync(await download(user.id)),
-      signedOut: () => this.listeners.signedOut(),
+      signedOut: () => this.endedElsewhere(true),
       status: (c) => {
         this.connection = c;
         for (const w of this.watchers) w();
@@ -97,16 +115,20 @@ export class Session {
 
   private readonly heard = ({ data }: MessageEvent<Message>) => {
     if ("rejected" in data) this.store.drop(data.rejected);
-    else if (data.ended === this.login) this.listeners.signedOut();
+    else if (data.ended === this.login) this.endedElsewhere(false);
   };
+
+  /** Ends the session here after it ended elsewhere, and tells the UI. When the server just stopped
+   * accepting it, say because it was signed out on another device, the user's data stays on this
+   * device, changes not sent yet included, for when they sign in again (`keep`). */
+  private endedElsewhere(keep: boolean) {
+    // Signing out here brings the server's word that the session has ended: that is no news.
+    if (this.signingOut) return;
+    void this.end(keep).then(() => this.listeners.signedOut());
+  }
 
   listen(listeners: Listeners) {
     this.listeners = listeners;
-  }
-
-  /** The session has ended elsewhere. */
-  ended() {
-    this.listeners.signedOut();
   }
 
   setUser(user: User) {
@@ -121,12 +143,15 @@ export class Session {
     return () => this.watchers.delete(w);
   };
 
-  /** Signs in as `user`, from the copy on this device or a fresh one from the server. */
+  /** Signs in as `user`, from the copy on this device or a fresh one from the server. Anyone else's
+   * data left on this device goes. */
   static async open(user: User): Promise<Session> {
     const login = crypto.randomUUID();
     const copy = crypto.randomUUID();
     const saved = await turn(async () => {
       localStorage.setItem(LOGIN, JSON.stringify({ id: login, user }));
+      localStorage.removeItem(SIGNED_OUT);
+      await forgetOthers(user.id);
       return load(user.id, copy);
     });
     if (saved) return new Session(user, login, copy, saved);
@@ -137,12 +162,15 @@ export class Session {
   /** The session this device was in last time, if any. */
   static async resume(): Promise<Session | null> {
     const resumed = await turn(async () => {
+      // Signed out offline last time: finish that, rather than be signed in again by the cookie.
+      if (localStorage.getItem(SIGNED_OUT)) return logout().then(() => "signed out" as const);
       const login = cachedLogin();
       if (!login) return null;
       const copy = crypto.randomUUID();
       const saved = await load(login.user.id, copy);
       return saved ? new Session(login.user, login.id, copy, saved) : null;
     });
+    if (resumed === "signed out") return null;
     if (resumed) return resumed;
     try {
       return await Session.open(await api<User>("GET", "/me"));
@@ -153,43 +181,57 @@ export class Session {
   }
 
   /** Asks the server whether the session still holds, and refreshes the user's details. */
-  async check(): Promise<boolean> {
+  async check() {
+    let me: User;
     try {
-      const me = await api<User>("GET", "/me");
-      // Someone else signed in meanwhile, in another tab: this copy is not theirs.
-      if (me.id !== this.user.id) return false;
-      this.setUser(me);
-      return true;
+      me = await api<User>("GET", "/me");
     } catch (e) {
       // Offline, or the server is down: carry on with the local copy.
-      return !(e instanceof ApiError && e.status === 401);
+      if (e instanceof ApiError && e.status === 401) this.endedElsewhere(true);
+      return;
     }
+    // Someone else signed in meanwhile, in another tab: this copy is not theirs.
+    if (me.id !== this.user.id) this.endedElsewhere(false);
+    else this.setUser(me);
   }
 
   /** Ends the session here, and in the other tabs in the same sign-in, and forgets the user's data
    * on this device. When the device has signed in as the same user again since, here or in another
    * tab, the data is that sign-in's now: only this session's copy goes. */
   close(): Promise<void> {
-    return (this.closing ??= this.end());
+    return this.end(false);
   }
 
-  private async end() {
-    tabs.removeEventListener("message", this.heard);
-    this.socket.stop();
-    await this.saver.close();
-    await turn(async () => {
-      const latest = cachedLogin();
-      const current = latest?.id === this.login;
-      if (current) localStorage.removeItem(LOGIN);
-      else if (latest?.user.id === this.user.id) return forgetCopy(this.user.id, this.copy);
-      await forget(this.user.id);
-      if (current) tabs.postMessage({ ended: this.login } satisfies Message);
-    });
+  /** Ends the session here, once; `keep` keeps the user's data on this device. */
+  private end(keep: boolean): Promise<void> {
+    return (this.closing ??= (async () => {
+      tabs.removeEventListener("message", this.heard);
+      this.socket.stop();
+      await this.saver.close();
+      await turn(async () => {
+        const latest = cachedLogin();
+        const current = latest?.id === this.login;
+        if (keep) {
+          if (current) localStorage.removeItem(LOGIN);
+          return;
+        }
+        if (!current && latest?.user.id === this.user.id) return forgetCopy(this.user.id, this.copy);
+        await forget(this.user.id);
+        // The sign-in goes last: a sign-out cut short before has no data left to open with.
+        if (current) {
+          localStorage.removeItem(LOGIN);
+          tabs.postMessage({ ended: this.login } satisfies Message);
+        }
+      });
+    })());
   }
 
+  /** Signs out on the server, unless the browser has signed in again since in another tab: the
+   * cookie is that sign-in's now. Then ends the session as `close` does. */
   async signOut() {
-    await api("POST", "/auth/logout").catch((e) => {
-      if (!(e instanceof ApiError && (e.code === OFFLINE || e.status === 401))) throw e;
+    this.signingOut = true;
+    await turn(async () => {
+      if (cachedLogin()?.id === this.login) await logout();
     });
     await this.close();
   }

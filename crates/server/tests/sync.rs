@@ -185,6 +185,29 @@ async fn a_change_after_the_session_ended_is_not_turned_down() {
 }
 
 #[tokio::test]
+async fn a_change_the_server_fails_at_is_not_turned_down() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let me = t.me(&s).await;
+    let addr = serve(&t).await;
+    let mut web = Client::connect(addr, Some(&s)).await;
+    web.hello(&me, None, 0).await;
+    let read_only = |on: bool| t.state.db.call(move |c| Ok(c.pragma_update(None, "query_only", on)?));
+    read_only(true).await.unwrap();
+    let mutation = json!({ "id": id(), "ops": [{ "op": "task.create", "id": id(), "title": "交电费" }] });
+    web.send(json!({ "type": "mutate", "mutation": mutation })).await;
+    let reply = web.recv().await.unwrap();
+    assert_eq!((&reply["type"], &reply["code"]), (&json!("error"), &json!("internal")), "it stays queued and goes again");
+    assert_eq!(web.recv().await, None);
+
+    read_only(false).await.unwrap();
+    let mut again = Client::connect(addr, Some(&s)).await;
+    again.hello(&me, None, 0).await;
+    again.send(json!({ "type": "mutate", "mutation": mutation })).await;
+    assert_eq!(again.recv().await.unwrap()["type"], "ack");
+}
+
+#[tokio::test]
 async fn the_cookie_only_counts_from_this_site() {
     let t = TestApp::new();
     let s = t.admin().await;

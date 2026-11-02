@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { openDB } from "idb";
 import { expect, test } from "vitest";
-import { forget, forgetCopy, load, saver } from "./persist";
+import { forget, forgetCopy, forgetOthers, load, saver } from "./persist";
 import { type Copy, Store } from "./store";
 
 const user = (n: number) => `019a4b2c-0000-7000-8000-00000000000${n}`;
@@ -50,9 +50,13 @@ test("a failed write is reported, and what it held goes with the next", async ()
   await load(u, "here");
   const failed: unknown[] = [];
   const save = saver(u, "here", (e) => failed.push(e));
-  // A function cannot be stored; the second save waits for the first write.
-  await Promise.all([save.save({ ...copy(1), base: { ...copy(1).base, folders: [() => {}] as never } }, [pending(1)], []), save.save(copy(2), [pending(2)], [])]);
-  expect([failed.length, await outbox(u)]).toEqual([1, []]);
+  // A function cannot be stored; the second save waits for the first write, and hears after it.
+  const heard: number[] = [];
+  await Promise.all([
+    save.save({ ...copy(1), base: { ...copy(1).base, folders: [() => {}] as never } }, [pending(1)], []).then(() => heard.push(1)),
+    save.save(copy(2), [pending(2)], []).then(() => heard.push(2)),
+  ]);
+  expect([failed.length, await outbox(u), heard]).toEqual([1, [], [1, 2]]);
   await save.save(copy(3), [pending(3)], []);
   expect([failed.length, await outbox(u)]).toEqual([1, [1, 2, 3]]);
 });
@@ -72,4 +76,17 @@ test("a closed saver writes nothing more, and forgetting deletes what is left", 
   expect(await outbox(u)).toEqual([1]);
   await forget(u);
   expect(await outbox(u)).toEqual([]);
+});
+
+test("signing in as someone deletes everyone else's data", async () => {
+  const [a, b, c] = [user(6), user(7), user(8)];
+  for (const u of [a, b, c]) {
+    await load(u, "here");
+    const save = saver(u, "here", fail);
+    await save.save(copy(1), [pending(1)], []);
+  }
+  await forgetOthers(b);
+  expect([await load(a, "here"), await load(c, "here")]).toEqual([undefined, undefined]);
+  expect([await outbox(a), await outbox(b), await outbox(c)]).toEqual([[], [1], []]);
+  expect((await load(b, "here"))!.seq).toBe(1);
 });

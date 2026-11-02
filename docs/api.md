@@ -120,8 +120,8 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | 服务端 → 客户端 | `{type: "resync"}` | `since` 超出保留期，客户端重新下载 `/snapshot` |
 | 客户端 → 服务端 | `{type: "mutate", mutation}` | 提交改动，格式同 `POST /mutations` |
 | 服务端 → 客户端 | `{type: "ack", id, seq}` | 改动已生效，`seq` 是它的序号（重复提交时是第一次生效时的序号） |
-| 服务端 → 客户端 | `{type: "reject", id, code, message, details?}` | 改动被拒绝（包括格式不对），客户端撤回它的本地效果 |
-| 服务端 → 客户端 | `{type: "error", code, message}` | 认证失败或消息无法识别，随后服务端关闭连接 |
+| 服务端 → 客户端 | `{type: "reject", id, code, message, details?}` | 改动本身不成立（格式不对、冲突、事项不存在、只读令牌等），客户端撤回它的本地效果，不再重发 |
+| 服务端 → 客户端 | `{type: "error", code, message}` | 认证失败、消息无法识别或服务端出错（`internal`），随后服务端关闭连接。提交改动时会话已失效或服务端出错，也是这样而不是 `reject`：错不在改动，客户端留着它，重新登录或重连后再发 |
 
 - 每次 `mutate` 和每次推送前都重新检查令牌：令牌删除、会话退出或改密码登出其他设备后，已有的连接马上收到 `unauthenticated` 错误并关闭，不再收到数据；只读令牌的提交被拒绝。
 - Cookie 只在页面与服务端同源时有效（请求的 `Origin` 与 `Host` 或 `X-Forwarded-Host` 一致，不区分大小写），以免同一站点下的其他页面借用 Cookie 建立连接。浏览器总会带 `Origin`；没有 `Origin` 的连接不认 Cookie，App 用 `hello` 里的 `token`。

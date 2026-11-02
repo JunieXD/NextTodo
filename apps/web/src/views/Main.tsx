@@ -49,12 +49,8 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
   const { snack } = useFeedback();
   const undo = useUndo();
   useEffect(() => {
-    const ended = async () => {
-      await session.close();
-      onSignedOut("登录已失效，请重新登录");
-    };
     session.listen({
-      signedOut: ended,
+      signedOut: () => onSignedOut("登录已失效，请重新登录"),
       rejected: (_, e) => snack(`没能保存：${e.message}`),
       unsaved: () => snack("没能存到这台设备上，关掉页面前请保持联网"),
       arrived(entries) {
@@ -64,7 +60,7 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
     });
   });
   useEffect(() => {
-    session.check().then((ok) => ok || session.ended());
+    void session.check();
   }, [session]);
   return null;
 }

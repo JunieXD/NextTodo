@@ -18,16 +18,21 @@ import { type Connection, Socket } from "./sync/socket";
 import { type Saved, Store } from "./sync/store";
 import { useFeedback } from "./ui/feedback";
 
-const USER = "nexttodo.user";
+const LOGIN = "nexttodo.login";
 
-/** Who was signed in on this device last, shared by its tabs. */
-function cachedUser(): User | null {
-  const cached = localStorage.getItem(USER);
+/** The latest sign-in on this device, shared by its tabs: which one, so that a tab still in an
+ * earlier one leaves it alone, and who signed in. */
+interface Login {
+  id: string;
+  user: User;
+}
+
+function cachedLogin(): Login | null {
+  const cached = localStorage.getItem(LOGIN);
   return cached && JSON.parse(cached);
 }
 
-/** Tells the other tabs when a session ends in one of them: they hold the same user's data, and
- * would save it again. */
+/** Tells the other tabs in a sign-in when it ends in one of them: they would save its data again. */
 const tabs = new BroadcastChannel("nexttodo.ended");
 
 /** What the UI wants to hear about; set once it is on screen. */
@@ -47,11 +52,13 @@ export class Session {
 
   constructor(
     public user: User,
+    /** The sign-in this session belongs to. */
+    private readonly login: string,
     saved: Saved,
   ) {
     this.saver = saver(user.id);
     this.store = new Store(saved, {
-      save: (s) => this.saver.save(s),
+      save: (copy, queued, settled) => this.saver.save(copy, queued, settled),
       send: (m) => this.socket.send(m),
       rejected: (m, e) => this.listeners.rejected(m, e),
       arrived: (entries) => this.listeners.arrived(entries),
@@ -70,13 +77,8 @@ export class Session {
     tabs.addEventListener("message", this.endedElsewhere);
   }
 
-  /** Set when the session ended in another tab, which has cleaned up already. */
-  private endedInAnotherTab = false;
-
   private readonly endedElsewhere = (e: MessageEvent) => {
-    if (e.data !== this.user.id) return;
-    this.endedInAnotherTab = true;
-    this.listeners.signedOut();
+    if (e.data === this.login) this.listeners.signedOut();
   };
 
   listen(listeners: Listeners) {
@@ -90,7 +92,7 @@ export class Session {
 
   setUser(user: User) {
     this.user = user;
-    localStorage.setItem(USER, JSON.stringify(user));
+    if (cachedLogin()?.id === this.login) localStorage.setItem(LOGIN, JSON.stringify({ id: this.login, user }));
   }
 
   watchConnection = (w: () => void) => {
@@ -100,19 +102,20 @@ export class Session {
 
   /** Signs in as `user`, from the copy on this device or a fresh one from the server. */
   static async open(user: User): Promise<Session> {
-    localStorage.setItem(USER, JSON.stringify(user));
+    const login = crypto.randomUUID();
+    localStorage.setItem(LOGIN, JSON.stringify({ id: login, user }));
     const saved = await load(user.id);
-    if (saved) return new Session(user, saved);
+    if (saved) return new Session(user, login, saved);
     const { seq, folders, tasks, dependencies } = await download(user.id);
-    return new Session(user, { ...Store.empty(), seq, base: { folders, tasks, dependencies } });
+    return new Session(user, login, { ...Store.empty(), seq, base: { folders, tasks, dependencies } });
   }
 
   /** The session this device was in last time, if any. */
   static async resume(): Promise<Session | null> {
-    const user = cachedUser();
-    if (user) {
-      const saved = await load(user.id);
-      if (saved) return new Session(user, saved);
+    const login = cachedLogin();
+    if (login) {
+      const saved = await load(login.user.id);
+      if (saved) return new Session(login.user, login.id, saved);
     }
     try {
       return await Session.open(await api<User>("GET", "/me"));
@@ -136,16 +139,19 @@ export class Session {
     }
   }
 
-  /** Forgets everything about the user on this device, and ends the session in the other tabs. */
+  /** Ends the session here, and in the other tabs in the same sign-in, and forgets the user's data
+   * on this device. When the device has signed in as the same user again since, here or in another
+   * tab, the data is that sign-in's now: only this tab's copy goes. */
   async close() {
     tabs.removeEventListener("message", this.endedElsewhere);
     this.socket.stop();
     await this.saver.close();
-    // The tab where it ended has done the rest, and may have signed in again since.
-    if (this.endedInAnotherTab) return forgetHere(this.user.id);
-    if (cachedUser()?.id === this.user.id) localStorage.removeItem(USER);
+    const latest = cachedLogin();
+    const current = latest?.id === this.login;
+    if (current) localStorage.removeItem(LOGIN);
+    else if (latest?.user.id === this.user.id) return forgetHere(this.user.id);
     await forget(this.user.id);
-    tabs.postMessage(this.user.id);
+    if (current) tabs.postMessage(this.login);
   }
 
   async signOut() {

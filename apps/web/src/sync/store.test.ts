@@ -3,7 +3,7 @@ import type { ErrorBody } from "../api/types/ErrorBody";
 import type { LogEntry } from "../api/types/LogEntry";
 import type { Mutation } from "../api/types/Mutation";
 import type { Task } from "../api/types/Task";
-import { type Saved, Store } from "./store";
+import { type Pending, type Saved, Store } from "./store";
 
 const id = (n: number) => `019a4b2c-0000-7000-8000-${String(n).padStart(12, "0")}`;
 
@@ -30,8 +30,13 @@ function setup(saved: Saved = Store.empty()) {
   const rejected: [Mutation, ErrorBody][] = [];
   const arrived: LogEntry[][] = [];
   let last = saved;
+  const outbox = new Map(saved.outbox.map((p) => [p.mutation.id, p]));
   const store = new Store(saved, {
-    save: (s) => (last = s),
+    save(copy, queued: Pending[], settled) {
+      for (const p of queued) outbox.set(p.mutation.id, p);
+      for (const id of settled) outbox.delete(id);
+      last = { ...copy, outbox: [...outbox.values()] };
+    },
     send: (m) => sent.push(m),
     rejected: (m, e) => rejected.push([m, e]),
     arrived: (e) => arrived.push(e),

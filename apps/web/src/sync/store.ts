@@ -29,6 +29,10 @@ export interface Saved {
   log: [MutationId, Effect[]][];
 }
 
+/** What the server confirmed, as this copy has it: what is saved but the outbox, which is saved by
+ * the changes that join and leave it. */
+export type Copy = Omit<Saved, "outbox">;
+
 export interface View {
   board: Board;
   /** Changes in the outbox that cannot be applied here; they wait for the server's verdict. */
@@ -38,7 +42,10 @@ export interface View {
 }
 
 export interface Hooks {
-  save(s: Saved): void;
+  /** Saves the copy, and the changes that `queued` joined the outbox and `settled` left it: those
+   * the server confirmed or turned down. Every change that arrives settles, also one queued in
+   * another tab. */
+  save(copy: Copy, queued: Pending[], settled: MutationId[]): void;
   send(m: Mutation): void;
   rejected(m: Mutation, e: ErrorBody): void;
   /** Changes that arrived from elsewhere: other devices, or agents with a token. */
@@ -97,7 +104,7 @@ export class Store {
     const pending = { mutation: { id: uuidv7(), ops }, at: Date.now() };
     const effects = apply(copy(this.data), ops, this.context(pending.at));
     this.outbox.push(pending);
-    this.changed();
+    this.changed([pending]);
     this.hooks.send(pending.mutation);
     return { id: pending.mutation.id, effects };
   }
@@ -115,7 +122,7 @@ export class Store {
     }
     this.seq = seq;
     this.outbox = this.outbox.filter((p) => !arrived.has(p.mutation.id));
-    this.changed();
+    this.changed([], [...arrived]);
     const others = entries.filter((e) => !mine.has(e.id));
     if (others.length) this.hooks.arrived(others);
   }
@@ -126,7 +133,7 @@ export class Store {
   acked(id: MutationId, seq: number) {
     if (seq > this.seq || !this.outbox.some((p) => p.mutation.id === id)) return;
     this.outbox = this.outbox.filter((p) => p.mutation.id !== id);
-    this.changed();
+    this.changed([], [id]);
   }
 
   /** The server turned a change down: drop it, which takes its effect out of the view. */
@@ -134,7 +141,7 @@ export class Store {
     const pending = this.outbox.find((p) => p.mutation.id === id);
     if (!pending) return;
     this.outbox = this.outbox.filter((p) => p !== pending);
-    this.changed();
+    this.changed([], [id]);
     this.hooks.rejected(pending.mutation, error);
   }
 
@@ -159,9 +166,9 @@ export class Store {
     if (this.log.size > LOG_SIZE) this.log.delete(this.log.keys().next().value!);
   }
 
-  private changed() {
+  private changed(queued: Pending[] = [], settled: MutationId[] = []) {
     this.recompute();
-    this.hooks.save({ seq: this.seq, base: toSnapshot(this.base), outbox: this.outbox, log: [...this.log] });
+    this.hooks.save({ seq: this.seq, base: toSnapshot(this.base), log: [...this.log] }, queued, settled);
     for (const listener of this.listeners) listener();
   }
 

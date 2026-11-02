@@ -1,75 +1,95 @@
-// Keeps each user's local copy in IndexedDB, so the app opens with data even when offline. Every
-// open tab saves a copy of its own, so that tabs never overwrite each other's unsent changes; opening
-// the app merges them into one. A change can stay unsent in a copy after the server has it, when its
-// tab closed before hearing back: every save takes the changes its copy has received out of the
-// others, and merging leaves out those the newest copy has received.
+// Keeps each user's local copy in IndexedDB, so the app opens with data even when offline.
+//
+// - `copies`, keyed by [user id, tab]: what the server confirmed, as each open tab has it. A tab
+//   writes only its own, so tabs never overwrite each other; the app opens from the newest.
+// - `outbox`, keyed by [user id, mutation id]: the changes made on this device that the server has
+//   not confirmed yet, shared by all tabs. A change goes in when it is made, and out as soon as any
+//   tab hears the server's verdict, in the same transaction as that tab's copy, which then includes
+//   it. So a change is in the newest copy or in the outbox, never in both, whichever tab closes when.
 
-import { openDB } from "idb";
-import type { Saved } from "./store";
+import { type IDBPDatabase, openDB } from "idb";
+import type { MutationId } from "../api/types/MutationId";
+import type { Copy, Pending, Saved } from "./store";
 
 /** This tab, for as long as the page is loaded. */
 const TAB = crypto.randomUUID();
 
+let opened: Promise<IDBPDatabase> | undefined;
 const db = () =>
-  openDB("nexttodo", 1, {
+  (opened ??= openDB("nexttodo", 1, {
     upgrade(db) {
-      // Keyed by [user id, tab].
       db.createObjectStore("copies");
+      db.createObjectStore("outbox");
     },
-  });
+    // The browser closed it, say because the site's data was cleared: open it again next time.
+    terminated() {
+      opened = undefined;
+    },
+  }));
 
-/** All the copies of a user's data: arrays sort after strings. */
-const copies = (userId: string) => IDBKeyRange.bound([userId], [userId, []]);
+/** All of a user's records in either store: arrays sort after strings. */
+const all = (userId: string) => IDBKeyRange.bound([userId], [userId, []]);
 
-/** The user's data saved on this device: the newest base, with the unsent changes of every copy in
- * the order they were made (mutation ids are UUIDv7), less those the base is known to include. It
- * becomes this tab's copy, replacing the others; a tab still open saves its own again with its next
- * change, and a change sent twice is applied once. */
+/** The user's data saved on this device: the newest copy, and the outbox in the order the changes
+ * were made (mutation ids are UUIDv7). The newest copy becomes this tab's, in place of the others;
+ * a tab still open saves its own again with its next change. */
 export async function load(userId: string): Promise<Saved | undefined> {
-  const tx = (await db()).transaction("copies", "readwrite");
-  const all: Saved[] = await tx.store.getAll(copies(userId));
-  if (!all.length) return undefined;
-  const newest = all.reduce((a, b) => (b.seq > a.seq ? b : a));
-  const included = new Set(newest.log.map(([id]) => id));
-  const outbox = new Map(all.flatMap((c) => c.outbox).filter((p) => !included.has(p.mutation.id)).map((p) => [p.mutation.id, p]));
-  const merged = { ...newest, outbox: [...outbox.values()].sort((a, b) => (a.mutation.id < b.mutation.id ? -1 : 1)) };
-  await tx.store.delete(copies(userId));
-  await tx.store.put(merged, [userId, TAB]);
+  const tx = (await db()).transaction(["copies", "outbox"], "readwrite");
+  const copies = tx.objectStore("copies");
+  const found: Copy[] = await copies.getAll(all(userId));
+  if (!found.length) return undefined;
+  const newest = found.reduce((a, b) => (b.seq > a.seq ? b : a));
+  const outbox: Pending[] = await tx.objectStore("outbox").getAll(all(userId));
+  await copies.delete(all(userId));
+  await copies.put(newest, [userId, TAB]);
   await tx.done;
-  return merged;
+  return { ...newest, outbox };
 }
 
 export interface Saver {
-  /** Saves the latest state, writing at most one at a time and skipping states that a newer one
-   * replaced while a write was going on. The changes it has received leave the other copies. */
-  save(s: Saved): void;
-  /** Stops saving, once the write going on has finished. */
+  /** Saves this tab's copy and the changes that joined and left the outbox, writing at most once at
+   * a time: a write waiting for its turn takes the latest copy and everything since the last one. */
+  save(copy: Copy, queued: Pending[], settled: MutationId[]): void;
+  /** Stops saving, once what was saved so far is written. */
   close(): Promise<void>;
 }
 
 export function saver(userId: string): Saver {
-  let next: Saved | undefined;
+  let copy: Copy | undefined;
+  const queued = new Map<MutationId, Pending>();
+  const settled = new Set<MutationId>();
   let writing: Promise<void> | null = null;
   let closed = false;
   return {
-    save(s) {
+    save(c, joined, left) {
       if (closed) return;
-      next = s;
+      copy = c;
+      for (const p of joined) queued.set(p.mutation.id, p);
+      for (const id of left) {
+        queued.delete(id);
+        settled.add(id);
+      }
       writing ??= (async () => {
         try {
-          while (next) {
-            const s = next;
-            next = undefined;
-            const tx = (await db()).transaction("copies", "readwrite");
-            const received = new Set(s.log.map(([id]) => id));
-            for (const key of await tx.store.getAllKeys(copies(userId))) {
-              if ((key as string[])[1] === TAB) continue;
-              const other: Saved = await tx.store.get(key);
-              const outbox = other.outbox.filter((p) => !received.has(p.mutation.id));
-              if (outbox.length < other.outbox.length) await tx.store.put({ ...other, outbox }, key);
+          while (copy) {
+            const batch = { copy, queued: [...queued.values()], settled: [...settled] };
+            copy = undefined;
+            queued.clear();
+            settled.clear();
+            try {
+              const tx = (await db()).transaction(["copies", "outbox"], "readwrite");
+              const outbox = tx.objectStore("outbox");
+              for (const p of batch.queued) outbox.put(p, [userId, p.mutation.id]);
+              for (const id of batch.settled) outbox.delete([userId, id]);
+              tx.objectStore("copies").put(batch.copy, [userId, TAB]);
+              await tx.done;
+            } catch (e) {
+              // Not written: it goes with the next save.
+              copy ??= batch.copy;
+              for (const p of batch.queued) if (!settled.has(p.mutation.id)) queued.set(p.mutation.id, p);
+              for (const id of batch.settled) settled.add(id);
+              throw e;
             }
-            await tx.store.put(s, [userId, TAB]);
-            await tx.done;
           }
         } finally {
           writing = null;
@@ -78,16 +98,17 @@ export function saver(userId: string): Saver {
     },
     async close() {
       closed = true;
-      next = undefined;
       // A write that failed has nothing left to wait for.
       await writing?.catch(() => {});
     },
   };
 }
 
-/** Deletes every copy of the user's data. Close the saver first, or a write may land afterwards. */
+/** Deletes everything of the user's on this device. Close the saver first, or a write may land
+ * afterwards. */
 export async function forget(userId: string) {
-  await (await db()).delete("copies", copies(userId));
+  const tx = (await db()).transaction(["copies", "outbox"], "readwrite");
+  await Promise.all([tx.objectStore("copies").delete(all(userId)), tx.objectStore("outbox").delete(all(userId)), tx.done]);
 }
 
 /** Deletes this tab's copy of the user's data. */

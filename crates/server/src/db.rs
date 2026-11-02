@@ -53,13 +53,21 @@ impl Db {
     }
 }
 
-/// Deletes mutations older than `cutoff`, remembering per user how far the log was cut.
-pub fn prune(conn: &Connection, cutoff: i64) -> rusqlite::Result<usize> {
-    conn.execute(
-        "UPDATE users SET pruned_seq = old.seq
-         FROM (SELECT owner_id, max(seq) AS seq FROM mutations WHERE created_at < ?1 GROUP BY owner_id) AS old
-         WHERE users.id = old.owner_id",
+/// Clears the operations and effects of mutations older than `cutoff`. The rows stay, so that a
+/// resubmitted old mutation is recognised instead of applied again. Per user the log is cut at a
+/// sequence number, which only moves forward: everything up to it is cleared, nothing after it.
+pub fn prune(conn: &mut Connection, cutoff: i64) -> rusqlite::Result<usize> {
+    let tx = conn.transaction()?;
+    tx.execute(
+        "UPDATE users SET pruned_seq = max(pruned_seq, coalesce(
+             (SELECT max(seq) FROM mutations WHERE owner_id = users.id AND created_at < ?1 AND effects IS NOT NULL), 0))",
         [cutoff],
     )?;
-    conn.execute("DELETE FROM mutations WHERE created_at < ?1", [cutoff])
+    let cleared = tx.execute(
+        "UPDATE mutations SET ops = NULL, effects = NULL
+         WHERE effects IS NOT NULL AND seq <= (SELECT pruned_seq FROM users WHERE id = mutations.owner_id)",
+        [],
+    )?;
+    tx.commit()?;
+    Ok(cleared)
 }

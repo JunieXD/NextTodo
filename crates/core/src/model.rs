@@ -5,11 +5,26 @@ use uuid::Uuid;
 
 pub use crate::sort_key::SortKey;
 
+/// Ids are UUIDv7, so they sort by creation time.
 macro_rules! id_type {
     ($($name:ident),*) => {$(
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-        #[serde(transparent)]
+        #[serde(try_from = "Uuid", into = "Uuid")]
         pub struct $name(pub Uuid);
+
+        impl TryFrom<Uuid> for $name {
+            type Error = &'static str;
+
+            fn try_from(id: Uuid) -> Result<Self, Self::Error> {
+                if id.get_version_num() == 7 { Ok(Self(id)) } else { Err("ID 必须是 UUIDv7") }
+            }
+        }
+
+        impl From<$name> for Uuid {
+            fn from(id: $name) -> Uuid {
+                id.0
+            }
+        }
 
         impl std::fmt::Display for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -335,6 +350,13 @@ mod tests {
         for bad in ["24:00", "9:00", "九点", "1", "12:60", "12-30"] {
             assert!(from_value::<Time>(json!(bad)).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn ids_must_be_uuid_v7() {
+        assert!(from_value::<TaskId>(json!("019a4b2c-0000-7000-8000-000000000001")).is_ok());
+        assert!(from_value::<TaskId>(json!("00000000-0000-0000-0000-000000000000")).is_err());
+        assert!(from_value::<TaskId>(json!("9b2e5f7a-3c1d-4e8f-9a6b-2d4c8e1f3a5b")).is_err());
     }
 
     #[test]

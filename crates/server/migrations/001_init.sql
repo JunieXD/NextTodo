@@ -77,8 +77,9 @@ CREATE TABLE mutations (
     owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     token_id TEXT NOT NULL,
     actor TEXT,
-    ops TEXT NOT NULL,
-    effects TEXT NOT NULL,
+    -- both cleared once past the retention period; the row stays so the id is still recognised
+    ops TEXT,
+    effects TEXT,
     created_at INTEGER NOT NULL
 ) STRICT;
 CREATE INDEX mutations_owner ON mutations (owner_id, seq);

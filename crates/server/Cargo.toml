@@ -8,7 +8,6 @@ publish.workspace = true
 anyhow = "1.0.104"
 argon2 = "0.6.0"
 axum = { version = "0.8.9", features = ["ws", "macros"] }
-axum-extra = { version = "0.12.6", features = ["cookie"] }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 nexttodo-core = { path = "../core", features = ["sql"] }
 rand = "0.10.3"
@@ -18,8 +17,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 serde_path_to_error = "0.1.20"
 sha2 = "0.11.1"
-thiserror = "2.0.21"
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "signal", "time"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
 tower-http = { version = "0.7.1", features = ["compression-br", "compression-zstd", "compression-gzip", "trace"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

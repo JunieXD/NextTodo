@@ -124,6 +124,7 @@ async fn invites_registration_and_token_permissions() {
     assert_eq!(denied.status, StatusCode::FORBIDDEN);
     let minted = t.call("POST", "/tokens", Some(read_only), Some(json!({ "name": "x", "scope": "write" }))).await;
     assert_eq!(minted.status, StatusCode::FORBIDDEN, "API tokens cannot mint tokens");
+    assert_eq!(t.call("POST", "/auth/logout", Some(read_only), None).await.status, StatusCode::FORBIDDEN, "nor revoke themselves");
 
     let tokens = t.call("GET", "/tokens", Some(&admin), None).await.body;
     assert_eq!(tokens.as_array().unwrap().len(), 2);
@@ -320,6 +321,76 @@ async fn changes_since_and_resync_after_pruning() {
 }
 
 #[tokio::test]
+async fn old_mutations_are_recognised_after_pruning() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let a = id();
+    t.mutate(&s, json!([{ "op": "task.create", "id": a, "title": "初稿" }])).await;
+    let old = json!({ "id": id(), "ops": [{ "op": "task.update", "id": a, "title": "旧编辑" }] });
+    let first = t.call("POST", "/mutations", Some(&s), Some(old.clone())).await.body;
+
+    t.advance(MUTATION_RETENTION_MS + 1);
+    let cutoff = t.state.clock.now() - MUTATION_RETENTION_MS;
+    t.state.db.call(move |c| Ok(db::prune(c, cutoff)?)).await.unwrap();
+    t.mutate(&s, json!([{ "op": "task.update", "id": a, "title": "最新编辑" }])).await;
+
+    let again = t.call("POST", "/mutations", Some(&s), Some(old)).await;
+    assert_eq!((again.status, again.body["seq"].clone(), again.body["effects"].clone()), (StatusCode::OK, first["seq"].clone(), json!([])));
+    assert_eq!(t.snapshot(&s).await["tasks"][0]["title"], "最新编辑", "the old edit is not applied again");
+}
+
+#[tokio::test]
+async fn the_log_is_cut_at_a_seq_that_only_moves_forward() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    // The clock goes back between the two, so the later mutation is the older one by time.
+    let first = t.mutate(&s, json!([{ "op": "task.create", "id": id(), "title": "一" }])).await.body["seq"].as_i64().unwrap();
+    t.advance(-10);
+    t.mutate(&s, json!([{ "op": "task.create", "id": id(), "title": "二" }])).await;
+    let prune = |cutoff: i64| t.state.db.call(move |c| Ok(db::prune(c, cutoff)?));
+
+    let now = t.state.clock.now();
+    prune(now + 5).await.unwrap();
+    let r = t.call("GET", &format!("/changes?since={first}"), Some(&s), None).await;
+    assert_eq!(r.status, StatusCode::GONE, "everything up to the newest pruned mutation is gone");
+    prune(now + 11).await.unwrap();
+    let r = t.call("GET", &format!("/changes?since={first}"), Some(&s), None).await;
+    assert_eq!(r.status, StatusCode::GONE, "pruning the first one later does not move the cut back");
+}
+
+#[tokio::test]
+async fn deep_folder_trees_can_be_deleted() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let ids: Vec<String> = (0..1001).map(|_| id()).collect();
+    let create = |i: usize| json!({ "op": "folder.create", "id": ids[i], "name": format!("第 {i} 层"), "parent_id": (i > 0).then(|| ids[i - 1].clone()) });
+    t.mutate(&s, (0..1000).map(create).collect()).await;
+    t.mutate(&s, json!([create(1000), { "op": "task.create", "id": id(), "title": "最深处", "folder_id": ids[1000] }])).await;
+
+    let r = t.mutate(&s, json!([{ "op": "folder.delete", "id": ids[0] }])).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    let snap = t.snapshot(&s).await;
+    assert_eq!((snap["folders"].clone(), snap["tasks"].clone()), (json!([]), json!([])));
+}
+
+#[tokio::test]
+async fn undoing_an_update_keeps_what_the_update_did_not_touch() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let a = id();
+    t.mutate(&s, json!([{ "op": "task.create", "id": a, "title": "初稿" }])).await;
+    let update = id();
+    t.call("POST", "/mutations", Some(&s), Some(json!({ "id": update, "ops": [{ "op": "task.update", "id": a, "title": "二稿" }] }))).await;
+    t.mutate(&s, json!([{ "op": "task.delete", "id": a }])).await;
+    t.mutate(&s, json!([{ "op": "task.create", "id": a, "title": "重建" }])).await;
+
+    let undo = t.mutate(&s, json!([{ "op": "undo", "mutation": update }])).await.body;
+    let task = t.snapshot(&s).await["tasks"][0].clone();
+    assert_eq!((task["title"].as_str(), task["number"].as_i64()), (Some("初稿"), Some(2)));
+    assert_eq!(undo["effects"][0]["after"], task, "the recorded change matches the stored task");
+}
+
+#[tokio::test]
 async fn users_cannot_see_or_touch_each_others_data() {
     let t = TestApp::new();
     let admin = t.admin().await;
@@ -361,4 +432,20 @@ async fn bad_input_names_the_field() {
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
     let r = t.call("GET", "/nope", Some(&s), None).await;
     assert_eq!(r.body["code"], "not_found");
+
+    let raw = |content_type: &str, body: &str| {
+        Request::builder()
+            .method("POST")
+            .uri("/api/v1/auth/login")
+            .header(header::CONTENT_TYPE, content_type)
+            .body(Body::from(body.to_owned()))
+            .unwrap()
+    };
+    let login = r#"{"username":"junie","password":"correct horse","device":"x"}"#;
+    let form = t.app.clone().oneshot(raw("text/plain", login)).await.unwrap();
+    assert_eq!(form.status(), StatusCode::BAD_REQUEST, "a cross-site form cannot log anyone in");
+    let trailing = t.app.clone().oneshot(raw("application/json", &format!("{login} garbage"))).await.unwrap();
+    assert_eq!(trailing.status(), StatusCode::BAD_REQUEST);
+    let ok = t.app.clone().oneshot(raw("application/json; charset=utf-8", login)).await.unwrap();
+    assert_eq!(ok.status(), StatusCode::OK);
 }

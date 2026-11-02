@@ -26,14 +26,16 @@ pub struct Applied {
 
 pub fn apply(conn: &mut Connection, actor: &Actor, m: &Mutation, now: i64) -> Result<Applied, ApiError> {
     let tx = conn.transaction()?;
-    let earlier: Option<(String, i64, String)> = tx
+    let earlier: Option<(String, i64, Option<String>)> = tx
         .query_row("SELECT owner_id, seq, effects FROM mutations WHERE id = ?1", [m.id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()?;
     if let Some((owner, seq, effects)) = earlier {
         if owner != actor.owner {
             return Err(ApiError::conflict("改动 ID 重复"));
         }
-        return Ok(Applied { seq, effects: serde_json::from_str(&effects)? });
+        // past the retention period only the receipt is left
+        let effects = effects.map(|e| serde_json::from_str(&e)).transpose()?.unwrap_or_default();
+        return Ok(Applied { seq, effects });
     }
     let mut cx = Cx { c: &tx, owner: actor.owner, via: actor.via.map(str::to_owned), now, effects: Vec::new() };
     for op in &m.ops {
@@ -207,7 +209,8 @@ impl Cx<'_> {
     }
 
     /// Records the removal of everything in the subtree (dependencies, tasks, folders deepest first)
-    /// so that undo can bring it all back in reverse order.
+    /// so that undo can bring it all back in reverse order. Folders are deleted one by one, deepest
+    /// first, because a single cascade through a deep tree would hit SQLite's trigger depth limit.
     fn delete_folder(&mut self, id: FolderId) -> Result<(), ApiError> {
         for d in store::subtree_dependencies(self.c, id)? {
             self.effects.push(Effect::Dependency(Link::Removed(d)));
@@ -216,9 +219,9 @@ impl Cx<'_> {
             self.effects.push(Effect::Task(Change::Deleted(Box::new(t))));
         }
         for f in store::subtree_folders(self.c, id)? {
+            store::delete_folder(self.c, f.id)?;
             self.effects.push(Effect::Folder(Change::Deleted(f)));
         }
-        store::delete_folder(self.c, id)?;
         Ok(())
     }
 
@@ -271,12 +274,14 @@ impl Cx<'_> {
     }
 
     /// Restores what a mutation changed, newest change first. Entities that were removed come back
-    /// unchanged (same id and number); changes whose target is already gone or back are skipped.
+    /// unchanged (same id and number). Changes whose target is already gone or back are skipped;
+    /// bringing something back into a folder or onto a task that is gone fails.
     fn undo(&mut self, id: MutationId) -> Result<(), ApiError> {
         let effects: String = self
             .c
             .query_row("SELECT effects FROM mutations WHERE id = ?1 AND owner_id = ?2", params![id, self.owner], |r| r.get(0))
             .optional()?
+            .flatten()
             .ok_or_else(|| ApiError::not_found("要撤销的改动不存在或已过期"))?;
         let effects: Vec<Effect> = serde_json::from_str(&effects)?;
         for effect in effects.into_iter().rev() {
@@ -288,15 +293,17 @@ impl Cx<'_> {
                 }
                 Effect::Folder(Change::Deleted(f)) => {
                     if store::load_folder(self.c, self.owner, f.id)?.is_none() {
-                        if let Some(p) = f.parent_id {
-                            self.folder(p)?;
+                        if let Some(p) = f.parent_id
+                            && store::load_folder(self.c, self.owner, p)?.is_none()
+                        {
+                            return Err(ApiError::not_found(format!("文件夹“{}”原来所在的文件夹已经删除了", f.name.as_str())));
                         }
                         self.create_folder(Folder { updated_at: self.now, ..f })?;
                     }
                 }
                 Effect::Folder(Change::Updated { before: b, .. }) => {
                     if let Some(cur) = store::load_folder(self.c, self.owner, b.id)? {
-                        let restored = Folder { updated_at: cur.updated_at, ..b };
+                        let restored = Folder { parent_id: b.parent_id, name: b.name, sort_key: b.sort_key, ..cur.clone() };
                         self.update_folder(cur, restored)?;
                     }
                 }
@@ -307,15 +314,26 @@ impl Cx<'_> {
                 }
                 Effect::Task(Change::Deleted(t)) => {
                     if store::load_task(self.c, self.owner, t.id)?.is_none() {
-                        if let Some(f) = t.folder_id {
-                            self.folder(f)?;
+                        if let Some(f) = t.folder_id
+                            && store::load_folder(self.c, self.owner, f)?.is_none()
+                        {
+                            return Err(ApiError::not_found(format!("“{}”原来所在的文件夹已经删除了", t.title.as_str())));
                         }
                         self.create_task(Task { updated_at: self.now, updated_via: self.via.clone(), ..*t })?;
                     }
                 }
                 Effect::Task(Change::Updated { before: b, .. }) => {
                     if let Some(cur) = store::load_task(self.c, self.owner, b.id)? {
-                        let restored = Task { updated_at: cur.updated_at, updated_via: cur.updated_via.clone(), ..*b };
+                        let b = *b;
+                        let restored = Task {
+                            folder_id: b.folder_id,
+                            title: b.title,
+                            description: b.description,
+                            done_at: b.done_at,
+                            due: b.due,
+                            sort_key: b.sort_key,
+                            ..cur.clone()
+                        };
                         self.update_task(cur, restored)?;
                     }
                 }
@@ -325,8 +343,11 @@ impl Cx<'_> {
                     }
                 }
                 Effect::Dependency(Link::Removed(d)) => {
-                    self.task(d.before)?;
-                    self.task(d.after)?;
+                    for end in [d.before, d.after] {
+                        if store::load_task(self.c, self.owner, end)?.is_none() {
+                            return Err(ApiError::not_found("要恢复的依赖连着的事项已经删除了"));
+                        }
+                    }
                     if store::load_dependency(self.c, self.owner, d.before, d.after)?.is_none() {
                         self.create_dependency(d)?;
                     }

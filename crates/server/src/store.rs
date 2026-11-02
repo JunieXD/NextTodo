@@ -74,7 +74,7 @@ pub fn update_folder(c: &Connection, f: &Folder) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Deletes the folder; its subfolders, tasks and their dependencies go with it (foreign key cascade).
+/// Deletes the folder; its tasks and their dependencies go with it (foreign key cascade).
 pub fn delete_folder(c: &Connection, id: FolderId) -> rusqlite::Result<()> {
     c.execute("DELETE FROM folders WHERE id = ?1", [id])?;
     Ok(())

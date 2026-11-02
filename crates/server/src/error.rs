@@ -3,7 +3,7 @@
 
 use axum::body::Bytes;
 use axum::extract::{FromRequest, Request};
-use axum::http::StatusCode;
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use nexttodo_core::model::TaskId;
 use serde::Serialize;
@@ -94,21 +94,34 @@ impl IntoResponse for ApiError {
 }
 
 /// JSON body extractor and response. Bad input becomes a 400 naming the field, like `ops[0].due`.
+///
+/// Like axum's own, it insists on `Content-Type: application/json`: a cross-site form cannot send
+/// that, which keeps other sites from posting to the API with the user's cookie.
 pub struct Json<T>(pub T);
 
 impl<S: Send + Sync, T: DeserializeOwned> FromRequest<S> for Json<T> {
     type Rejection = ApiError;
 
     async fn from_request(req: Request, state: &S) -> Result<Self, ApiError> {
+        let is_json = req
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.split(';').next().is_some_and(|m| m.trim().eq_ignore_ascii_case("application/json")));
+        if !is_json {
+            return Err(ApiError::invalid("请求体要用 JSON，并带上 Content-Type: application/json", None));
+        }
         let bytes = Bytes::from_request(req, state).await.map_err(|e| ApiError::invalid(e.body_text(), None))?;
         let de = &mut serde_json::Deserializer::from_slice(&bytes);
-        serde_path_to_error::deserialize(de).map(Json).map_err(|e| {
+        let value = serde_path_to_error::deserialize(&mut *de).map_err(|e| {
             let path = e.path().to_string();
             let message = e.inner().to_string();
             // serde_json appends the position, which means nothing to the user
             let message = message.rsplit_once(" at line ").map_or(message.as_str(), |(m, _)| m).to_owned();
             ApiError::invalid(message, (path != ".").then_some(path))
-        })
+        })?;
+        de.end().map_err(|_| ApiError::invalid("请求体在 JSON 后面还有多余的内容", None))?;
+        Ok(Json(value))
     }
 }
 

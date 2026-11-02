@@ -8,6 +8,8 @@
 - 令牌明文是 `nt_` 加 43 位 base62 随机串（256 位熵），只在生成时返回一次，数据库只存它的 SHA-256。
 - 只读令牌调用会产生改动的接口时返回 403。
 - Cookie 属性：`HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=34560000`（400 天）。
+- 带请求体的接口只接受 `Content-Type: application/json`。别的网站用表单提交不了这种请求，所以不能借用户的 Cookie 调接口。
+- 文件夹、事项和改动的 ID 必须是 UUIDv7。
 
 ## 端点
 
@@ -17,7 +19,7 @@
 |---|---|---|
 | POST | `/auth/register` | 凭邀请码注册：`{invite, username, password, display_name, device}`，成功后直接登录 |
 | POST | `/auth/login` | `{username, password, device}` → `{secret, user}`，同时设置 Cookie |
-| POST | `/auth/logout` | 注销当前会话，清除 Cookie |
+| POST | `/auth/logout` | 注销当前会话，清除 Cookie；API 令牌调用返回 403 |
 | GET | `/me` | 当前用户 |
 | GET | `/tokens` | 当前用户的会话和 API 令牌（不含明文）。令牌和邀请码只能用会话管理，API 令牌调用返回 403 |
 | POST | `/tokens` | 生成 API 令牌：`{name, scope}` → `{token, secret}` |
@@ -71,9 +73,9 @@
 | `task.delete` | `id` | 连同相关依赖 |
 | `dep.add` | `before`、`after` | |
 | `dep.remove` | `before`、`after` | |
-| `undo` | `mutation` | 撤销一个改动：按相反顺序把它的变化恢复回去；恢复时同样要通过所有规则 |
+| `undo` | `mutation` | 撤销一个改动：按相反顺序把它的变化恢复回去，恢复时同样要通过所有规则。要改回去的东西已经不存在的跳过；要恢复的事项或文件夹原来所在的文件夹、要恢复的依赖连着的事项已经被删除时，整个撤销不生效 |
 
-成功返回 `{seq, effects}`。同一个 `id` 再次提交时直接返回第一次的结果，不会重复生效。
+成功返回 `{seq, effects}`。同一个 `id` 再次提交时直接返回第一次的结果，不会重复生效；超过保留期的只返回 `seq`，`effects` 为空。
 
 ## 变化
 

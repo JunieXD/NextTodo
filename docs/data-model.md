@@ -101,11 +101,11 @@
 | owner_id | TEXT → users | |
 | token_id | TEXT | 提交改动的令牌 |
 | actor | TEXT | 来源显示名的快照：会话为空，API 令牌为令牌名 |
-| ops | TEXT（JSON） | 提交的操作 |
-| effects | TEXT（JSON） | 实际产生的实体变化，见 [API](api.md#变化) |
+| ops | TEXT（JSON），可空 | 提交的操作 |
+| effects | TEXT（JSON），可空 | 实际产生的实体变化，见 [API](api.md#变化) |
 | created_at | INTEGER | |
 
-保留 90 天，服务端每天删除更早的行。
+操作和变化保留 90 天：服务端每天把更早的行的 `ops`、`effects` 清空，行本身留下，这样很久以前的改动被重新提交时仍然认得出来，不会再生效一次。每个用户按序号整段清理，`pruned_seq` 只增不减。
 
 ## 规则
 

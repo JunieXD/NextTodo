@@ -79,8 +79,8 @@ async fn prune_daily(state: AppState) {
         tick.tick().await;
         let cutoff = state.clock.now() - MUTATION_RETENTION_MS;
         // a failure is already logged by the error conversion; try again tomorrow
-        if let Ok(deleted) = state.db.call(move |c| Ok(db::prune(c, cutoff)?)).await {
-            tracing::info!(deleted, "pruned mutation log");
+        if let Ok(cleared) = state.db.call(move |c| Ok(db::prune(c, cutoff)?)).await {
+            tracing::info!(cleared, "pruned mutation log");
         }
     }
 }

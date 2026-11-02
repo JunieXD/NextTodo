@@ -14,6 +14,7 @@ use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRe
 use rusqlite::{Connection, OptionalExtension, ToSql, params};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 use crate::AppState;
@@ -48,8 +49,14 @@ fn verify_password(password: &str, hash: &str) -> bool {
 /// Checked when the username does not exist, so that a failed login takes as long either way.
 static DUMMY_HASH: LazyLock<String> = LazyLock::new(|| hash_password(&random_string(16)));
 
-async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
-    tokio::task::spawn_blocking(f).await.expect("blocking task panicked")
+/// Each password hash takes about 19 MiB and tens of milliseconds. Anyone can ask for one by trying
+/// to log in, so only this many run at once and the rest wait their turn.
+static HASHING: Semaphore = Semaphore::const_new(2);
+
+/// Runs password hashing or verification on a blocking thread, a few at a time.
+async fn hashing<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    let _permit = HASHING.acquire().await.expect("the semaphore is never closed");
+    tokio::task::spawn_blocking(f).await.expect("hashing task panicked")
 }
 
 macro_rules! field {
@@ -221,7 +228,7 @@ pub async fn create_admin(state: &AppState, username: String, display_name: Stri
     let username = Username::try_from(username).map_err(|m| ApiError::invalid(m, Some("username".into())))?;
     let display_name = DisplayName::try_from(display_name).map_err(|m| ApiError::invalid(m, Some("display_name".into())))?;
     let password = Password::try_from(password).map_err(|m| ApiError::invalid(m, Some("password".into())))?;
-    let hash = blocking(move || hash_password(&password.0)).await;
+    let hash = hashing(move || hash_password(&password.0)).await;
     let now = state.clock.now();
     state.db.call(move |c| create_user(c, &username.0, &display_name.0, &hash, true, now).map(drop)).await
 }
@@ -264,7 +271,7 @@ pub async fn login(State(st): State<AppState>, Json(req): Json<Login>) -> Result
         })
         .await?;
     let (password, hash) = (req.password, found.as_ref().map_or_else(|| DUMMY_HASH.clone(), |(_, h)| h.clone()));
-    let matches = blocking(move || verify_password(&password, &hash)).await;
+    let matches = hashing(move || verify_password(&password, &hash)).await;
     let Some((user_id, _)) = found.filter(|_| matches) else {
         return Err(ApiError::unauthenticated("用户名或密码不对"));
     };
@@ -289,21 +296,27 @@ pub struct Register {
     device: DeviceName,
 }
 
+fn check_invite(c: &Connection, code: &str) -> Result<(), ApiError> {
+    let used_by: Option<Option<String>> = c.query_row("SELECT used_by FROM invites WHERE code = ?1", [code], |r| r.get(0)).optional()?;
+    match used_by {
+        None => Err(ApiError::not_found("邀请码不存在")),
+        Some(Some(_)) => Err(ApiError::conflict("邀请码已经用过了")),
+        Some(None) => Ok(()),
+    }
+}
+
 pub async fn register(State(st): State<AppState>, Json(req): Json<Register>) -> Result<Response, ApiError> {
     let Register { invite, username, password, display_name, device } = req;
-    let hash = blocking(move || hash_password(&password.0)).await;
+    // Checked before the costly hashing, and again in the transaction that uses it up.
+    let code = invite.clone();
+    st.db.call(move |c| check_invite(c, &code)).await?;
+    let hash = hashing(move || hash_password(&password.0)).await;
     let now = st.clock.now();
     let session = st
         .db
         .call(move |c| {
             let tx = c.transaction()?;
-            let used_by: Option<Option<String>> =
-                tx.query_row("SELECT used_by FROM invites WHERE code = ?1", [&invite], |r| r.get(0)).optional()?;
-            match used_by {
-                None => return Err(ApiError::not_found("邀请码不存在")),
-                Some(Some(_)) => return Err(ApiError::conflict("邀请码已经用过了")),
-                Some(None) => {}
-            }
+            check_invite(&tx, &invite)?;
             let user_id = create_user(&tx, &username.0, &display_name.0, &hash, false, now)?;
             tx.execute("UPDATE invites SET used_by = ?1, used_at = ?2 WHERE code = ?3", params![user_id, now, invite])?;
             let secret = create_session(&tx, &user_id, &device.0, now)?;
@@ -316,6 +329,7 @@ pub async fn register(State(st): State<AppState>, Json(req): Json<Register>) -> 
 }
 
 pub async fn logout(State(st): State<AppState>, auth: Auth) -> Result<Response, ApiError> {
+    auth.require_session()?;
     st.db.call(move |c| Ok(c.execute("DELETE FROM tokens WHERE id = ?1", [auth.token_id])?)).await?;
     let cookie = format!("{COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0");
     Ok((StatusCode::NO_CONTENT, [(header::SET_COOKIE, HeaderValue::from_str(&cookie).expect("cookie is ASCII"))]).into_response())

@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 
 const DIGITS: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const SMALLEST_INTEGER: &str = "A00000000000000000000000000";
-const MAX_LEN: usize = 128;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -29,8 +28,7 @@ impl TryFrom<String> for SortKey {
 
     fn try_from(s: String) -> Result<Self, String> {
         let b = s.as_bytes();
-        let valid = s.len() <= MAX_LEN
-            && b.first().is_some_and(u8::is_ascii_alphabetic)
+        let valid = b.first().is_some_and(u8::is_ascii_alphabetic)
             && b.iter().all(u8::is_ascii_alphanumeric)
             && integer_len(b[0]) <= b.len()
             && s != SMALLEST_INTEGER
@@ -129,6 +127,9 @@ mod tests {
         assert_eq!(after("a0V"), "a1");
         let largest = format!("z{}", "z".repeat(26));
         assert_eq!(after(&largest), format!("{largest}V"));
+        // keys only ever get longer here; whatever is generated must read back
+        let long = format!("{largest}{}", "z".repeat(200));
+        assert_eq!(after(&long), format!("{long}V"));
     }
 
     #[test]

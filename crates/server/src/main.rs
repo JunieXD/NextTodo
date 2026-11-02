@@ -41,9 +41,9 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))).init();
     let cli = Cli::parse();
     std::fs::create_dir_all(&cli.data)?;
-    let state = AppState::new(Db::open(&cli.data.join("nexttodo.db"))?, Clock::system());
+    let state = AppState::new(Db::open(&cli.data.join(DB_FILE))?, Clock::system());
     match cli.command {
-        Command::Serve { listen, web } => serve(state, listen, web).await,
+        Command::Serve { listen, web } => serve(state, listen, web, cli.data).await,
         Command::CreateAdmin { username, display_name } => {
             let password = read_password()?;
             let display_name = display_name.unwrap_or_else(|| username.clone());
@@ -68,8 +68,8 @@ fn read_password() -> anyhow::Result<String> {
     Ok(password)
 }
 
-async fn serve(state: AppState, listen: SocketAddr, web: Option<PathBuf>) -> anyhow::Result<()> {
-    tokio::spawn(prune_daily(state.clone()));
+async fn serve(state: AppState, listen: SocketAddr, web: Option<PathBuf>, data: PathBuf) -> anyhow::Result<()> {
+    tokio::spawn(daily(state.clone(), data));
     let router = match &web {
         Some(dir) => with_web(app(state), dir),
         None => app(state),
@@ -80,14 +80,29 @@ async fn serve(state: AppState, listen: SocketAddr, web: Option<PathBuf>) -> any
     Ok(())
 }
 
-async fn prune_daily(state: AppState) {
+const DB_FILE: &str = "nexttodo.db";
+
+/// How many daily snapshots of the database are kept.
+const SNAPSHOTS_KEPT: usize = 7;
+
+/// Once at start and then every day: clears the old part of the mutation log and snapshots the
+/// database into `data/snapshots`. A failure is logged and tried again the next day.
+async fn daily(state: AppState, data: PathBuf) {
     let mut tick = tokio::time::interval(Duration::from_secs(24 * 3600));
     loop {
         tick.tick().await;
         let cutoff = state.clock.now() - MUTATION_RETENTION_MS;
-        // a failure is already logged by the error conversion; try again tomorrow
+        // a failure is already logged by the error conversion
         if let Ok(cleared) = state.db.call(move |c| Ok(db::prune(c, cutoff)?)).await {
             tracing::info!(cleared, "pruned mutation log");
+        }
+        let (data, now) = (data.clone(), state.clock.now());
+        match tokio::task::spawn_blocking(move || db::snapshot(&data.join(DB_FILE), &data.join("snapshots"), now, SNAPSHOTS_KEPT))
+            .await
+            .expect("snapshot task panicked")
+        {
+            Ok(path) => tracing::info!(path = %path.display(), "snapshot written"),
+            Err(e) => tracing::error!("snapshot failed: {e:#}"),
         }
     }
 }

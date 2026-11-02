@@ -1,7 +1,7 @@
 //! SQLite access: one connection behind a mutex, used from blocking threads. The load is a handful of
 //! users, so a single connection is simpler than a pool and never waits long.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -70,4 +70,36 @@ pub fn prune(conn: &mut Connection, cutoff: i64) -> rusqlite::Result<usize> {
     )?;
     tx.commit()?;
     Ok(cleared)
+}
+
+/// Writes a consistent copy of the database at `db` to `dir/snapshot-<unix seconds>.db` and deletes
+/// all but the newest `keep` copies. Uses a connection of its own, so requests don't wait for it. The
+/// copy is written under a temporary name first, so that a crash never leaves a half-written
+/// snapshot that looks complete. The directory holds nothing else.
+pub fn snapshot(db: &Path, dir: &Path, now_ms: i64, keep: usize) -> anyhow::Result<PathBuf> {
+    std::fs::create_dir_all(dir)?;
+    let files = |ext: &str| -> std::io::Result<Vec<PathBuf>> {
+        let mut found = Vec::new();
+        for entry in std::fs::read_dir(dir)? {
+            let p = entry?.path();
+            if p.extension().is_some_and(|e| e == ext) {
+                found.push(p);
+            }
+        }
+        found.sort();
+        Ok(found)
+    };
+    // Left over from a crash: never complete, and VACUUM INTO refuses to overwrite.
+    for p in files("partial")? {
+        std::fs::remove_file(p)?;
+    }
+    let path = dir.join(format!("snapshot-{:010}.db", now_ms / 1000));
+    let partial = path.with_extension("db.partial");
+    Connection::open(db)?.execute("VACUUM INTO ?1", [partial.to_str().expect("data directory path is UTF-8")])?;
+    std::fs::rename(&partial, &path)?;
+    let all = files("db")?;
+    for p in &all[..all.len().saturating_sub(keep)] {
+        std::fs::remove_file(p)?;
+    }
+    Ok(path)
 }

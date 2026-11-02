@@ -64,7 +64,7 @@ pub fn prune(conn: &mut Connection, cutoff: i64) -> rusqlite::Result<usize> {
         [cutoff],
     )?;
     let cleared = tx.execute(
-        "UPDATE mutations SET ops = NULL, effects = NULL
+        "UPDATE mutations SET ops = NULL, effects = NULL, reply = NULL
          WHERE effects IS NOT NULL AND seq <= (SELECT pruned_seq FROM users WHERE id = mutations.owner_id)",
         [],
     )?;

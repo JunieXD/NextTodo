@@ -55,7 +55,7 @@
 | id | TEXT PK | |
 | owner_id | TEXT → users | |
 | parent_id | TEXT → folders，可空 | 空表示在根目录；删除父文件夹时级联删除 |
-| name | TEXT | 1–100 字，不含 `/` |
+| name | TEXT | 1–100 字，单行，不含 `/` 和控制字符 |
 | sort_key | TEXT | 同一层内的顺序 |
 | created_at / updated_at | INTEGER | |
 
@@ -69,8 +69,8 @@
 | owner_id | TEXT → users | |
 | number | INTEGER | 每个用户内唯一的短编号 |
 | folder_id | TEXT → folders，可空 | 空表示在根目录；删除文件夹时级联删除 |
-| title | TEXT | 1–200 字，单行 |
-| description | TEXT | Markdown，最长 20000 字 |
+| title | TEXT | 1–200 字，单行，不含控制字符 |
+| description | TEXT | Markdown，最长 20000 字；除换行和制表符外不含控制字符 |
 | done_at | INTEGER，可空 | 空表示待办 |
 | due_date | TEXT，可空 | |
 | due_time | TEXT，可空 | 只能在有 `due_date` 时设置 |
@@ -105,9 +105,10 @@
 | actor | TEXT | 来源显示名的快照：会话为空，API 令牌为令牌名 |
 | ops | TEXT（JSON），可空 | 提交的操作 |
 | effects | TEXT（JSON），可空 | 实际产生的实体变化，见 [API](api.md#变化) |
+| reply | TEXT（JSON），可空 | 通过工具做的改动：工具的回复，同一个幂等键重发时原样返回 |
 | created_at | INTEGER | |
 
-操作和变化保留 90 天：服务端每天把更早的行的 `ops`、`effects` 清空，行本身留下，这样很久以前的改动被重新提交时仍然认得出来，不会再生效一次。每个用户按序号整段清理，`pruned_seq` 只增不减。
+操作、变化和回复保留 90 天：服务端每天把更早的行的 `ops`、`effects`、`reply` 清空，行本身留下，这样很久以前的改动被重新提交时仍然认得出来，不会再生效一次。每个用户按序号整段清理，`pruned_seq` 只增不减。
 
 ## 规则
 

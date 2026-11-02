@@ -87,6 +87,8 @@ async fn bad_plans_are_rejected_whole() {
         ),
         (json!([{ "title": "A", "due": "2026-11-20", "remind": 10 }]), StatusCode::BAD_REQUEST, "具体的截止时间"),
         (json!([{ "title": "A", "due": "11月20日" }]), StatusCode::BAD_REQUEST, "日期"),
+        (json!([{ "ref": "1", "title": "A" }, { "title": "B", "after": ["1"] }]), StatusCode::BAD_REQUEST, "编号"),
+        (json!([{ "ref": "#1", "title": "A" }]), StatusCode::BAD_REQUEST, "编号"),
     ] {
         let r = apply(tasks).await;
         assert_eq!(r.status, status, "{}", r.body);
@@ -119,6 +121,48 @@ async fn folders_are_named_by_path() {
     t.ok(&s, "delete", json!({ "tasks": [1], "folders": ["/生活", "/生活/毕业论文", "/生活"] })).await;
     let snap = t.snapshot(&s).await;
     assert_eq!((snap["folders"].as_array().unwrap().len(), snap["tasks"].clone()), (1, json!([])));
+}
+
+#[tokio::test]
+async fn the_log_reads_each_batch_with_the_folders_of_its_time() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "mkdir", json!({ "path": "/A" })).await;
+    t.ok(&s, "mkdir", json!({ "path": "/B" })).await;
+    t.ok(&s, "move", json!({ "folders": ["/A"], "to": "/B" })).await;
+    t.ok(&s, "move", json!({ "folders": ["/B/A"], "to": "/" })).await;
+    t.ok(&s, "move", json!({ "folders": ["/B"], "to": "/A" })).await;
+    t.ok(&s, "delete", json!({ "folders": ["/A"] })).await;
+    let log = t.ok(&s, "log", json!({})).await["data"].clone();
+    let summaries: Vec<&str> = log.as_array().unwrap().iter().map(|b| b["summary"].as_str().unwrap()).collect();
+    assert_eq!(
+        summaries,
+        vec![
+            "删除 2 个文件夹：/A/B、/A",
+            "移动文件夹 /B → /A/B",
+            "移动文件夹 /B/A → /A",
+            "移动文件夹 /A → /B/A",
+            "新建文件夹 /B",
+            "新建文件夹 /A"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn editing_a_task() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "交电费", "due": "2026-11-20" })).await;
+    let cleared = t.ok(&s, "edit", json!({ "task": 1, "remind": null })).await;
+    assert!(text(&cleared).starts_with("没有变化"), "there was no reminder to clear: {}", text(&cleared));
+    assert_eq!(t.tool(&s, "edit", json!({ "task": 1, "remind": 10 })).await.status, StatusCode::BAD_REQUEST, "no time to remind before");
+    t.ok(&s, "edit", json!({ "task": 1, "due": "2026-11-20 18:00", "remind": 30 })).await;
+    t.ok(&s, "edit", json!({ "task": 1, "due": "2026-11-21 09:00" })).await;
+    let due = t.ok(&s, "show", json!({ "task": 1 })).await["data"]["due"].clone();
+    assert_eq!(due, json!({ "date": "2026-11-21", "time": "09:00", "remind_before": 30 }), "moving the deadline keeps the reminder");
+    t.ok(&s, "edit", json!({ "task": 1, "remind": null })).await;
+    assert_eq!(t.ok(&s, "show", json!({ "task": 1 })).await["data"]["due"]["remind_before"], Value::Null);
+    assert_eq!(t.tool(&s, "edit", json!({ "task": 1 })).await.status, StatusCode::BAD_REQUEST, "nothing to change");
 }
 
 #[tokio::test]
@@ -172,6 +216,25 @@ async fn permissions_idempotency_and_bad_arguments() {
     let again = t.app.clone().oneshot(add()).await.unwrap().into_body().collect().await.unwrap().to_bytes();
     assert_eq!(first, again);
     assert_eq!(t.snapshot(&s).await["tasks"].as_array().unwrap().len(), 1);
+
+    t.ok(&s, "add", json!({ "title": "前置" })).await;
+    t.ok(&s, "dep_add", json!({ "before": 2, "after": 1 })).await;
+    let done = |key: &'static str, task: i64| {
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/v1/tools/done")
+            .header(header::AUTHORIZATION, format!("Bearer {s}"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("Idempotency-Key", key)
+            .body(Body::from(json!({ "tasks": [task] }).to_string()))
+            .unwrap();
+        let app = t.app.clone();
+        async move { app.oneshot(req).await.unwrap().into_body().collect().await.unwrap().to_bytes() }
+    };
+    let first = done("019a4b2c-0000-7000-8000-000000000043", 2).await;
+    assert!(String::from_utf8_lossy(&first).contains("解锁 #1"));
+    done("019a4b2c-0000-7000-8000-000000000044", 1).await;
+    assert_eq!(done("019a4b2c-0000-7000-8000-000000000043", 2).await, first, "a retry gets the first answer, not one made now");
 
     let r = t.tool(&s, "show", json!({ "task": "abc" })).await;
     assert_eq!((r.status, r.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("task")));

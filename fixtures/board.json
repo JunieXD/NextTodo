@@ -54,6 +54,27 @@
     }
   },
   {
+    "name": "经过多个文件夹外事项的间接依赖也算；外面事项的其它前置不影响文件夹里的顺序",
+    "folders": [
+      { "id": "f", "name": "前端", "key": "a0" },
+      { "id": "g", "name": "后端", "key": "a1" }
+    ],
+    "tasks": [
+      { "id": "c", "folder": "f", "key": "a0" },
+      { "id": "b", "folder": "f", "key": "a1" },
+      { "id": "a", "folder": "f", "key": "a2" },
+      { "id": "x1", "folder": "g", "key": "a0" },
+      { "id": "x2", "folder": "g", "key": "a1" },
+      { "id": "z", "folder": "g", "key": "a2" }
+    ],
+    "deps": [["a", "x1"], ["x1", "x2"], ["x2", "c"], ["z", "x2"]],
+    "expect": {
+      "status": { "a": "ready", "b": "ready", "c": "waiting 1", "x1": "waiting 1", "x2": "waiting 2", "z": "ready" },
+      "order": { "f": ["b", "a", "c"], "g": ["x1", "z", "x2"] },
+      "next": ["b", "a", "z"]
+    }
+  },
+  {
     "name": "已完成的排在最后，最近完成的在前；经过已完成事项的路径不算约束",
     "folders": [],
     "tasks": [

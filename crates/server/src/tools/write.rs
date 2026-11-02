@@ -45,24 +45,30 @@ pub fn run(c: &mut Connection, auth: &Auth, id: Option<MutationId>, now: i64, bu
     let actor = Actor { owner: &auth.user_id, token_id: &auth.token_id, via: auth.via() };
     let id = id.unwrap_or_else(|| MutationId(Uuid::now_v7()));
     let tx = c.transaction()?;
-    let (batch, effects) = match mutate::earlier(&tx, &actor, id)? {
-        Some(done) => (Some(done.seq), done.effects),
-        None => {
-            let snap = store::snapshot(&tx, &auth.user_id)?;
-            let write = build(&WriteCx { c: &tx, owner: &auth.user_id, board: &Board::new(&snap) })?;
-            if write.ops.len() > MAX_OPS {
-                return Err(ApiError::invalid(format!("一次最多 {MAX_OPS} 个操作，这次有 {} 个", write.ops.len()), None));
-            }
-            let effects = mutate::run(&tx, &actor, &write.ops, now)?;
-            let batch = if write.preview { None } else { Some(mutate::record(&tx, &actor, id, &write.ops, &effects, now)?) };
-            (batch, effects)
-        }
-    };
-    // Rendered inside the transaction, so a preview still sees what it would have made.
-    let output = report(&store::snapshot(&tx, &auth.user_id)?, batch, &effects);
-    if batch.is_some() {
-        tx.commit()?;
+    if let Some(done) = mutate::earlier(&tx, &actor, id)? {
+        // A retry gets the first answer again, not one made from what has changed since.
+        let reply: Option<String> = tx.query_row("SELECT reply FROM mutations WHERE seq = ?1", [done.seq], |r| r.get(0))?;
+        return match reply {
+            Some(reply) => Ok(serde_json::from_str(&reply)?),
+            // past the retention period, or sent by an app rather than through a tool
+            None => Ok(report(&store::snapshot(&tx, &auth.user_id)?, Some(done.seq), &done.effects)),
+        };
     }
+    let snap = store::snapshot(&tx, &auth.user_id)?;
+    let write = build(&WriteCx { c: &tx, owner: &auth.user_id, board: &Board::new(&snap) })?;
+    if write.ops.len() > MAX_OPS {
+        return Err(ApiError::invalid(format!("一次最多 {MAX_OPS} 个操作，这次有 {} 个", write.ops.len()), None));
+    }
+    let effects = mutate::run(&tx, &actor, &write.ops, now)?;
+    // Rendered inside the transaction, so a preview still sees what it would have made.
+    let after = store::snapshot(&tx, &auth.user_id)?;
+    if write.preview {
+        return Ok(report(&after, None, &effects));
+    }
+    let batch = mutate::record(&tx, &actor, id, &write.ops, &effects, now)?;
+    let output = report(&after, Some(batch), &effects);
+    tx.execute("UPDATE mutations SET reply = ?1 WHERE seq = ?2", params![serde_json::to_string(&output)?, batch])?;
+    tx.commit()?;
     Ok(output)
 }
 
@@ -72,7 +78,7 @@ fn report(after: &Snapshot, batch: Option<i64>, effects: &[Effect]) -> Output {
     if batch.is_none() {
         lines.push("预览，没有保存：".to_owned());
     }
-    lines.extend(text::changes(effects, &Names::new(after, effects), 20));
+    lines.extend(text::changes(effects, &mut Names::new(after), 20));
     if effects.is_empty() {
         lines.push("没有变化".into());
     }
@@ -144,6 +150,11 @@ fn due(due: Option<super::args::DueText>, remind: Option<u32>) -> Result<Option<
     }
 }
 
+/// A task number written as text in a plan: `"42"` or `"#42"`.
+fn number(s: &str) -> Option<i64> {
+    s.strip_prefix('#').unwrap_or(s).parse().ok()
+}
+
 fn plan_ops(b: &Board, plan: Plan) -> Result<Vec<Op>, ApiError> {
     let mut ops = Vec::new();
     let mut folders = Folders { board: b, made: HashMap::new() };
@@ -151,18 +162,20 @@ fn plan_ops(b: &Board, plan: Plan) -> Result<Vec<Op>, ApiError> {
     let ids: Vec<TaskId> = plan.tasks.iter().map(|_| TaskId(Uuid::now_v7())).collect();
     let mut refs = HashMap::new();
     for (t, &id) in plan.tasks.iter().zip(&ids) {
-        if let Some(name) = &t.name
-            && refs.insert(name.clone(), id).is_some()
-        {
+        let Some(name) = &t.name else { continue };
+        if number(name).is_some() {
+            return Err(ApiError::invalid(format!("ref“{name}”会被当成事项编号，换一个不是数字的名字"), None));
+        }
+        if refs.insert(name.clone(), id).is_some() {
             return Err(ApiError::invalid(format!("计划里有两个事项的 ref 都是“{name}”"), None));
         }
     }
     let resolve = |r: &PlanRef| -> Result<TaskId, ApiError> {
         match r {
             PlanRef::Number(n) => Ok(find_task(b, *n)?.id),
-            PlanRef::Name(s) => match s.strip_prefix('#').unwrap_or(s).parse() {
-                Ok(n) => Ok(find_task(b, n)?.id),
-                Err(_) => refs.get(s).copied().ok_or_else(|| ApiError::invalid(format!("计划里没有 ref 为“{s}”的事项"), None)),
+            PlanRef::Name(s) => match number(s) {
+                Some(n) => Ok(find_task(b, n)?.id),
+                None => refs.get(s).copied().ok_or_else(|| ApiError::invalid(format!("计划里没有 ref 为“{s}”的事项"), None)),
             },
         }
     };
@@ -220,6 +233,9 @@ pub fn apply(w: &WriteCx, a: ApplyArgs) -> Result<Write, ApiError> {
 
 pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
     let b = w.board;
+    if a.title.is_none() && a.description.is_none() && a.due.is_none() && a.remind.is_none() {
+        return Err(ApiError::invalid("没有给出要修改的内容", None));
+    }
     let t = find_task(b, a.task)?;
     let current_remind = t.due.as_ref().and_then(|d| d.at.as_ref()).and_then(|at| at.remind_before);
     let new_due = match (a.due, a.remind) {
@@ -231,17 +247,13 @@ pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
             let remind = remind.unwrap_or(if d.time.is_some() { current_remind } else { None });
             Some(due(Some(d), remind)?)
         }
-        (None, Some(remind)) => {
-            let at = t.due.as_ref().and_then(|d| d.at.as_ref().map(|at| (d.date.clone(), at.time.clone())));
-            let Some((date, time)) = at else {
-                return Err(ApiError::invalid("这个事项没有具体的截止时间，不能设提醒", Some("remind".into())));
-            };
-            Some(Some(Due::new(date, Some(time), remind).map_err(|m| ApiError::invalid(m, Some("remind".into())))?))
-        }
+        (None, Some(remind)) => match t.due.as_ref().and_then(|d| d.at.as_ref().map(|at| (d.date.clone(), at.time.clone()))) {
+            Some((date, time)) => Some(Some(Due::new(date, Some(time), remind).map_err(|m| ApiError::invalid(m, Some("remind".into())))?)),
+            // Without a time there is no reminder, so clearing it changes nothing.
+            None if remind.is_none() => None,
+            None => return Err(ApiError::invalid("这个事项没有具体的截止时间，不能设提醒", Some("remind".into()))),
+        },
     };
-    if a.title.is_none() && a.description.is_none() && new_due.is_none() {
-        return Err(ApiError::invalid("没有给出要修改的内容", None));
-    }
     Ok(vec![Op::TaskUpdate {
         id: t.id,
         folder_id: None,

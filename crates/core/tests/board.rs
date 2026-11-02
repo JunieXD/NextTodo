@@ -115,3 +115,22 @@ fn board_matches_fixtures() {
         }
     }
 }
+
+#[test]
+fn ordering_stays_linear_through_a_shared_task() {
+    // Many tasks in one folder go through a single task elsewhere: n + n edges, not n × n.
+    let n = 3000;
+    let mut tasks: Vec<Value> = (0..n).map(|i| json!({ "id": format!("b{i}"), "folder": "f", "key": "a0" })).collect();
+    tasks.push(json!({ "id": "hub", "folder": "g", "key": "a0" }));
+    tasks.extend((0..n).map(|i| json!({ "id": format!("a{i}"), "folder": "f", "key": "a0" })));
+    let deps = (0..n).flat_map(|i| [(format!("b{i}"), "hub".to_owned()), ("hub".to_owned(), format!("a{i}"))]).collect();
+    let folders = vec![json!({ "id": "f", "name": "f", "key": "a0" }), json!({ "id": "g", "name": "g", "key": "a1" })];
+    let case = Case { name: String::new(), folders, tasks, deps, expect: serde_json::from_value(json!({})).unwrap() };
+    let mut names = Names::default();
+    let snap = snapshot(&case, &mut names);
+    let board = Board::new(&snap);
+    let f = Some(serde_json::from_value(json!(names.id("f"))).unwrap());
+    let order: Vec<String> = board.tasks_in(f).into_iter().map(|t| names.name(t)).collect();
+    let want: Vec<String> = (0..n).map(|i| format!("b{i}")).chain((0..n).map(|i| format!("a{i}"))).collect();
+    assert_eq!(order, want);
+}

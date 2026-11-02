@@ -18,7 +18,7 @@ const SEARCH_LIMIT: usize = 50;
 
 /// `（待办 3，可做 1）` for the tasks directly in a folder, and the same as data.
 fn counts(b: &Board, f: Option<FolderId>) -> (String, usize, usize) {
-    let tasks = b.tasks_in(f);
+    let tasks = b.contents(f);
     let pending = tasks.iter().filter(|t| t.done_at.is_none()).count();
     let ready = tasks.iter().filter(|t| b.status(t) == Status::Ready).count();
     let text = if pending == 0 { "（没有待办）".to_owned() } else { format!("（待办 {pending}，可做 {ready}）") };
@@ -122,12 +122,12 @@ pub fn search(c: &Connection, cx: &Cx, a: SearchArgs) -> Result<Output, ApiError
     }
     let snap = store::snapshot(c, cx.owner)?;
     let b = Board::new(&snap);
-    let mut found: Vec<&Task> = b
-        .folder_tree()
-        .into_iter()
-        .flat_map(|f| b.tasks_in(f))
+    let mut found: Vec<&Task> = snap
+        .tasks
+        .iter()
         .filter(|t| t.title.as_str().to_lowercase().contains(&query) || t.description.as_str().to_lowercase().contains(&query))
         .collect();
+    b.sort(&mut found);
     found.sort_by_key(|t| t.done_at.is_some());
     let total = found.len();
     found.truncate(SEARCH_LIMIT);
@@ -185,7 +185,8 @@ pub fn graph(c: &Connection, cx: &Cx, a: GraphArgs) -> Result<Output, ApiError> 
 }
 
 fn mermaid(b: &Board, nodes: &[&Task], edges: &[(&Task, &Task)], scope: Option<FolderId>) -> String {
-    let escape = |s: &str| s.replace('"', "#quot;").replace('<', "#lt;").replace('>', "#gt;");
+    // Mermaid's entities: `#` first, so that a title cannot spell one out itself.
+    let escape = |s: &str| s.replace('#', "#35;").replace('"', "#quot;").replace('<', "#lt;").replace('>', "#gt;").replace('`', "#96;");
     let mut lines = vec!["flowchart LR".to_owned()];
     for t in nodes {
         let class = match b.status(t) {
@@ -243,10 +244,10 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
         return Ok(Output { text: "还没有改动记录。".into(), data: json!([]) });
     }
     let snap = store::snapshot(c, cx.owner)?;
-    let names = Names::new(&snap, rows.iter().flat_map(|r| &r.effects));
+    let mut names = Names::new(&snap);
     let (mut lines, mut data) = (Vec::new(), Vec::new());
     for r in &rows {
-        let mut summary = text::changes(&r.effects, &names, 3).join("；");
+        let mut summary = text::changes(&r.effects, &mut names, 3).join("；");
         if summary.is_empty() {
             summary = "没有变化".into();
         }

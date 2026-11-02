@@ -173,8 +173,7 @@ impl<'a> Board<'a> {
     /// Tasks directly in a folder: unfinished ones in dependency order, then finished ones, most
     /// recently finished first.
     pub fn tasks_in(&self, f: Option<FolderId>) -> Vec<&'a Task> {
-        let (mut done, pending): (Vec<&Task>, Vec<&Task>) =
-            self.contents.get(&f).into_iter().flatten().copied().partition(|t| t.done_at.is_some());
+        let (mut done, pending): (Vec<&Task>, Vec<&Task>) = self.contents(f).iter().partition(|t| t.done_at.is_some());
         let mut list = self.order(pending, |t| t.done_at.is_none());
         done.sort_by_key(|t| (Reverse(t.done_at), t.id));
         list.extend(done);
@@ -202,39 +201,49 @@ impl<'a> Board<'a> {
     /// tasks that can go next, the one earliest in manual order goes first.
     pub fn order(&self, tasks: Vec<&'a Task>, through: impl Fn(&Task) -> bool) -> Vec<&'a Task> {
         let members: HashSet<TaskId> = tasks.iter().map(|t| t.id).collect();
-        // Edges between members, found by searching from each member and stopping at the next
-        // member on every path; the rest follows by transitivity.
-        let mut later: HashMap<TaskId, Vec<TaskId>> = HashMap::new();
-        let mut waiting: HashMap<TaskId, usize> = tasks.iter().map(|t| (t.id, 0)).collect();
-        for t in &tasks {
-            let mut seen = HashSet::new();
-            let mut stack: Vec<TaskId> = self.after.get(&t.id).cloned().unwrap_or_default();
-            while let Some(id) = stack.pop() {
-                if !seen.insert(id) {
-                    continue;
-                }
-                if members.contains(&id) {
-                    later.entry(t.id).or_default().push(id);
-                    *waiting.get_mut(&id).expect("member") += 1;
-                } else if through(self.tasks[&id]) {
-                    stack.extend(self.after.get(&id).into_iter().flatten());
-                }
+        // The members and the tasks through which they depend on each other.
+        let mut relevant = HashSet::new();
+        let mut stack: Vec<TaskId> = members.iter().copied().collect();
+        while let Some(id) = stack.pop() {
+            if relevant.insert(id) {
+                stack.extend(self.before.get(&id).into_iter().flatten().filter(|p| members.contains(p) || through(self.tasks[*p])));
             }
         }
-        let mut heap: BinaryHeap<Reverse<(usize, &SortKey, TaskId)>> =
-            tasks.iter().filter(|t| waiting[&t.id] == 0).map(|t| Reverse(self.key(t))).collect();
+        // Kahn's algorithm. The other tasks go as soon as nothing holds them back; members wait
+        // in the heap for their turn in manual order.
+        let mut waiting: HashMap<TaskId, usize> =
+            relevant.iter().map(|id| (*id, self.before.get(id).into_iter().flatten().filter(|p| relevant.contains(*p)).count())).collect();
+        let mut free: Vec<TaskId> = waiting.iter().filter(|(_, n)| **n == 0).map(|(id, _)| *id).collect();
+        let mut heap = BinaryHeap::new();
         let mut list = Vec::with_capacity(tasks.len());
-        while let Some(Reverse((_, _, id))) = heap.pop() {
-            list.push(self.tasks[&id]);
-            for next in later.get(&id).into_iter().flatten() {
-                let n = waiting.get_mut(next).expect("member");
-                *n -= 1;
-                if *n == 0 {
-                    heap.push(Reverse(self.key(self.tasks[next])));
+        loop {
+            let id = if let Some(id) = free.pop() {
+                if members.contains(&id) {
+                    heap.push(Reverse(self.key(self.tasks[&id])));
+                    continue;
+                }
+                id
+            } else if let Some(Reverse((_, _, id))) = heap.pop() {
+                list.push(self.tasks[&id]);
+                id
+            } else {
+                break;
+            };
+            for next in self.after.get(&id).into_iter().flatten() {
+                if let Some(n) = waiting.get_mut(next) {
+                    *n -= 1;
+                    if *n == 0 {
+                        free.push(*next);
+                    }
                 }
             }
         }
         list
+    }
+
+    /// Tasks directly in a folder, in no particular order.
+    pub fn contents(&self, f: Option<FolderId>) -> &[&'a Task] {
+        self.contents.get(&f).map_or(&[], Vec::as_slice)
     }
 
     fn key(&self, t: &'a Task) -> (usize, &'a SortKey, TaskId) {

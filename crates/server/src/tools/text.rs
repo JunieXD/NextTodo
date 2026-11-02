@@ -64,34 +64,39 @@ pub fn ago(now: i64, then: i64) -> String {
     }
 }
 
-/// Names of folders and tasks, including ones that a change removed.
+/// Folder paths and task numbers as they were at one point in the change log.
+#[derive(Clone)]
 pub struct Names {
     folders: HashMap<FolderId, (Option<FolderId>, String)>,
+    /// Numbers never change, so this keeps every task it has seen.
     tasks: HashMap<TaskId, i64>,
 }
 
 impl Names {
-    /// The current data wins over what the effects remember.
-    pub fn new<'a>(snap: &Snapshot, effects: impl IntoIterator<Item = &'a Effect>) -> Self {
-        let mut names = Names { folders: HashMap::new(), tasks: HashMap::new() };
-        for e in effects {
+    /// The names now.
+    pub fn new(snap: &Snapshot) -> Self {
+        Names {
+            folders: snap.folders.iter().map(|f| (f.id, (f.parent_id, f.name.as_str().to_owned()))).collect(),
+            tasks: snap.tasks.iter().map(|t| (t.id, t.number)).collect(),
+        }
+    }
+
+    /// Steps back over a batch, to the names from before it.
+    fn undo(&mut self, effects: &[Effect]) {
+        for e in effects.iter().rev() {
             match e {
-                Effect::Folder(Change::Created(f) | Change::Updated { after: f, .. } | Change::Deleted(f)) => {
-                    names.folders.insert(f.id, (f.parent_id, f.name.as_str().to_owned()));
+                Effect::Folder(Change::Created(f)) => {
+                    self.folders.remove(&f.id);
+                }
+                Effect::Folder(Change::Updated { before: f, .. } | Change::Deleted(f)) => {
+                    self.folders.insert(f.id, (f.parent_id, f.name.as_str().to_owned()));
                 }
                 Effect::Task(Change::Created(t) | Change::Updated { after: t, .. } | Change::Deleted(t)) => {
-                    names.tasks.insert(t.id, t.number);
+                    self.tasks.insert(t.id, t.number);
                 }
                 Effect::Dependency(_) => {}
             }
         }
-        for f in &snap.folders {
-            names.folders.insert(f.id, (f.parent_id, f.name.as_str().to_owned()));
-        }
-        for t in &snap.tasks {
-            names.tasks.insert(t.id, t.number);
-        }
-        names
     }
 
     fn path(&self, f: Option<FolderId>) -> String {
@@ -160,16 +165,17 @@ fn item(t: &Task) -> String {
     format!("#{} {}", t.number, t.title.as_str())
 }
 
-/// The kind of change, a task number to list it by, and how it reads.
-fn describe(e: &Effect, n: &Names) -> (Kind, Option<i64>, String) {
+/// The kind of change, a task number to list it by, and how it reads, given the names from before
+/// and after its batch.
+fn describe(e: &Effect, n: &Names, then: &Names) -> (Kind, Option<i64>, String) {
     let (kind, item) = match e {
-        Effect::Folder(Change::Created(f)) => (Kind::FolderCreated, n.path(Some(f.id))),
+        Effect::Folder(Change::Created(f)) => (Kind::FolderCreated, then.path(Some(f.id))),
         Effect::Folder(Change::Updated { before, after }) => {
             let old = n.path_in(before.parent_id, before.name.as_str());
             if before.name != after.name {
                 (Kind::FolderRenamed, format!("{old} → {}", after.name.as_str()))
             } else if before.parent_id != after.parent_id {
-                (Kind::FolderMoved, format!("{old} → {}", n.path(Some(after.id))))
+                (Kind::FolderMoved, format!("{old} → {}", then.path(Some(after.id))))
             } else {
                 (Kind::FolderSorted, old)
             }
@@ -179,7 +185,7 @@ fn describe(e: &Effect, n: &Names) -> (Kind, Option<i64>, String) {
         Effect::Task(Change::Updated { before, after }) => match (before.done_at, after.done_at) {
             (None, Some(_)) => (Kind::TaskDone, item(after)),
             (Some(_), None) => (Kind::TaskReopened, item(after)),
-            _ if before.folder_id != after.folder_id => (Kind::TaskMoved, format!("{} → {}", item(after), n.path(after.folder_id))),
+            _ if before.folder_id != after.folder_id => (Kind::TaskMoved, format!("{} → {}", item(after), then.path(after.folder_id))),
             _ => (Kind::TaskEdited, item(after)),
         },
         Effect::Task(Change::Deleted(t)) => (Kind::TaskDeleted, item(t)),
@@ -195,10 +201,14 @@ fn describe(e: &Effect, n: &Names) -> (Kind, Option<i64>, String) {
 }
 
 /// What a batch changed, one line per kind of change, listing at most `limit` items per line.
-pub fn changes(effects: &[Effect], names: &Names, limit: usize) -> Vec<String> {
+/// `names` are those from after the batch; this steps them back to before it, so that going through
+/// the log newest first, each batch reads with the folders as they were at the time.
+pub fn changes(effects: &[Effect], names: &mut Names, limit: usize) -> Vec<String> {
+    let then = names.clone();
+    names.undo(effects);
     let mut groups: BTreeMap<Kind, Vec<(Option<i64>, String)>> = BTreeMap::new();
     for e in effects {
-        let (kind, number, item) = describe(e, names);
+        let (kind, number, item) = describe(e, names, &then);
         groups.entry(kind).or_default().push((number, item));
     }
     groups

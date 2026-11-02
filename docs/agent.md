@@ -73,7 +73,7 @@ tasks:
 ```
 
 - 事项按列出的顺序排在各自文件夹的最后。
-- `ref` 在计划内不能重复，引用可以指向列表里靠后的事项。
+- `ref` 在计划内不能重复，也不能写成编号的样子（`42`、`#42`），免得和已有事项混淆；引用可以指向列表里靠后的事项。
 - 一个计划最多产生 1000 个操作。
 - `--dry-run`（`dry_run: true`）完整校验一遍并输出会发生的变化，但不保存。
 
@@ -163,7 +163,7 @@ bearer_token_env_var = "NEXTTODO_TOKEN"
 
 - `GET /api/v1/tools`：工具列表，每项 `{name, description, input_schema}`，和 MCP 的 `tools/list` 相同。
 - `POST /api/v1/tools/{name}`：请求体是参数 JSON，返回 `{text, data}`。错误格式同 [API](api.md#错误)。
-- 写操作可以带请求头 `Idempotency-Key: <uuidv7>`，作为改动 ID：同一个键重发时直接返回第一次的结果。
+- 写操作可以带请求头 `Idempotency-Key: <uuidv7>`，作为改动 ID：同一个键重发时原样返回第一次的结果（90 天内；之后只认得出这个键，不会再生效一次）。
 
 ## Skill
 

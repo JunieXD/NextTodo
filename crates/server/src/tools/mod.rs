@@ -15,7 +15,7 @@ use nexttodo_core::model::{FolderId, MutationId, Task};
 use rmcp::handler::server::common::schema_for_type;
 use rmcp::model::JsonObject;
 use rusqlite::Connection;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::AppState;
@@ -25,7 +25,7 @@ use args::*;
 use write::{Write, WriteCx};
 
 /// What a tool returns: text for people and agents, data for programs.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Output {
     pub text: String,
     pub data: Value,

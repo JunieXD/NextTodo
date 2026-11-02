@@ -10,6 +10,7 @@ use anyhow::{Context, anyhow, bail};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
+use ureq::http::StatusCode;
 
 #[derive(Parser)]
 #[command(name = "nexttodo", version, about = "NextTodo 命令行：查看和管理待办")]
@@ -198,19 +199,22 @@ fn read_config() -> anyhow::Result<Option<Config>> {
 }
 
 fn write_config(config: &Config) -> anyhow::Result<PathBuf> {
-    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
     let path = config_path()?;
     std::fs::DirBuilder::new().recursive(true).mode(0o700).create(path.parent().expect("has a parent"))?;
-    let mut file = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&path)?;
+    let mut file = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(&path)?;
+    // Set on the open file before the token goes in, also when the file was already there.
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
     file.write_all(serde_json::to_string_pretty(config)?.as_bytes())?;
     Ok(path)
 }
 
 /// The server and token: environment variables first, then the configuration file.
 fn credentials() -> anyhow::Result<(String, String)> {
-    let config = read_config()?;
-    let url = std::env::var("NEXTTODO_URL").ok().or_else(|| config.as_ref().map(|c| c.url.clone()));
-    let token = std::env::var("NEXTTODO_TOKEN").ok().or_else(|| config.map(|c| c.token));
+    let (url, token) = (std::env::var("NEXTTODO_URL").ok(), std::env::var("NEXTTODO_TOKEN").ok());
+    let config = if url.is_some() && token.is_some() { None } else { read_config()? };
+    let url = url.or_else(|| config.as_ref().map(|c| c.url.clone()));
+    let token = token.or_else(|| config.map(|c| c.token));
     match (url, token) {
         (Some(url), Some(token)) => Ok((url, token)),
         _ => bail!("还没有登录：先运行 nexttodo login --url <服务器地址>，或者设置 NEXTTODO_URL 和 NEXTTODO_TOKEN"),
@@ -228,17 +232,33 @@ impl Server {
         Server { agent: config.into(), url: url.trim_end_matches('/').to_owned() }
     }
 
-    /// Posts JSON and returns the reply body, or the server's error message. Network failures are
-    /// retried with the same idempotency key, so a write that did reach the server applies once.
+    /// Sends once and reads the whole reply.
+    fn send(&self, path: &str, token: Option<&str>, key: Option<&str>, body: &Value) -> Result<(StatusCode, String), ureq::Error> {
+        let mut req = self.agent.post(format!("{}{path}", self.url));
+        if let Some(key) = key {
+            req = req.header("Idempotency-Key", key);
+        }
+        if let Some(token) = token {
+            req = req.header("Authorization", format!("Bearer {token}"));
+        }
+        let mut res = req.send_json(body)?;
+        Ok((res.status(), res.body_mut().read_to_string()?))
+    }
+
+    /// Posts JSON once and returns the reply, or the server's error message.
     fn post(&self, path: &str, token: Option<&str>, body: &Value) -> anyhow::Result<Value> {
-        let key = uuid::Uuid::now_v7().to_string();
+        let (status, text) = self.send(path, token, None, body).context("连接不上服务器")?;
+        reply(status, &text)
+    }
+
+    /// Calls a tool and returns `(text, data)`. Network failures, including a reply cut off on the
+    /// way back, are retried with the same idempotency key, so a change that reached the server
+    /// applies once.
+    fn tool(&self, name: &str, token: &str, args: &Value) -> anyhow::Result<(String, Value)> {
+        let (path, key) = (format!("/api/v1/tools/{name}"), uuid::Uuid::now_v7().to_string());
         let mut attempt = 0;
-        let mut res = loop {
-            let mut req = self.agent.post(format!("{}{path}", self.url)).header("Idempotency-Key", &key);
-            if let Some(token) = token {
-                req = req.header("Authorization", format!("Bearer {token}"));
-            }
-            match req.send_json(body) {
+        let (status, text) = loop {
+            match self.send(&path, Some(token), Some(&key), args) {
                 Ok(res) => break res,
                 Err(e) if attempt < 2 => {
                     attempt += 1;
@@ -248,27 +268,54 @@ impl Server {
                 Err(e) => return Err(e).context("连接不上服务器"),
             }
         };
-        let status = res.status();
-        let text = res.body_mut().read_to_string().context("读取服务器的回复出错")?;
-        let reply: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
-        if status.is_success() {
-            return Ok(reply);
-        }
-        let message = reply["message"].as_str().map_or_else(|| format!("服务器返回 {status}"), str::to_owned);
-        match reply["details"]["field"].as_str() {
-            Some(field) => bail!("{message}（{field}）"),
-            None => bail!("{message}"),
+        match reply(status, &text)? {
+            Value::Object(mut reply) => match (reply.remove("text"), reply.remove("data")) {
+                (Some(Value::String(text)), Some(data)) => Ok((text, data)),
+                _ => bail!("服务器的回复里缺少 text 或 data"),
+            },
+            _ => bail!("服务器的回复格式不对"),
         }
     }
 }
 
+/// The body of a successful reply, or the error the server described.
+fn reply(status: StatusCode, text: &str) -> anyhow::Result<Value> {
+    if status == StatusCode::NO_CONTENT {
+        return Ok(Value::Null);
+    }
+    if status.is_success() {
+        return serde_json::from_str(text).context("服务器的回复不是 JSON");
+    }
+    // A proxy in between may answer with a page of its own.
+    let reply: Value = serde_json::from_str(text).unwrap_or_default();
+    let message = reply["message"].as_str().map_or_else(|| format!("服务器返回 {status}"), str::to_owned);
+    match reply["details"]["field"].as_str() {
+        Some(field) => bail!("{message}（{field}）"),
+        None => bail!("{message}"),
+    }
+}
+
+/// Text for the terminal: control characters, which could clear the screen or fake other output,
+/// are shown escaped; line breaks and tabs stay.
+fn printable(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if c.is_control() && !matches!(c, '\n' | '\t') {
+            out.extend(c.escape_default());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 fn call(name: &str, args: Value, json_out: bool) -> anyhow::Result<()> {
     let (url, token) = credentials()?;
-    let reply = Server::new(&url).post(&format!("/api/v1/tools/{name}"), Some(&token), &args)?;
+    let (text, data) = Server::new(&url).tool(name, &token, &args)?;
     if json_out {
-        println!("{}", serde_json::to_string_pretty(&reply["data"])?);
+        println!("{}", serde_json::to_string_pretty(&data)?);
     } else {
-        println!("{}", reply["text"].as_str().unwrap_or_default());
+        println!("{}", printable(&text));
     }
     Ok(())
 }
@@ -370,7 +417,7 @@ fn main() -> ExitCode {
     match run(Cli::parse()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("错误：{e:#}");
+            eprintln!("错误：{}", printable(&format!("{e:#}")));
             ExitCode::FAILURE
         }
     }

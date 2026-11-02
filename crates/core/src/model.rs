@@ -107,6 +107,9 @@ pub fn line(s: String, what: &str, max: usize) -> Result<String, String> {
     if s.contains(['\n', '\r']) {
         return Err(format!("{what}只能有一行"));
     }
+    if s.chars().any(char::is_control) {
+        return Err(format!("{what}不能包含控制字符"));
+    }
     if s.chars().count() > max {
         return Err(format!("{what}不能超过 {max} 个字"));
     }
@@ -129,7 +132,13 @@ text_type!(
 text_type!(
     /// Task description in Markdown; may be empty.
     Description,
-    |s| if s.chars().count() > 20_000 { Err("描述不能超过 20000 个字".into()) } else { Ok(s) }
+    |s| if s.chars().count() > 20_000 {
+        Err("描述不能超过 20000 个字".into())
+    } else if s.chars().any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t')) {
+        Err("描述不能包含控制字符".into())
+    } else {
+        Ok(s)
+    }
 );
 text_type!(
     /// A calendar date `YYYY-MM-DD` in the user's local time.
@@ -362,6 +371,10 @@ mod tests {
         assert!(from_value::<Name>(json!("名".repeat(101))).is_err());
         assert!(from_value::<Name>(json!("工作/网站")).is_err());
         assert!(from_value::<Description>(json!("")).is_ok());
+        assert!(from_value::<Title>(json!("清屏\u{1b}[2J")).is_err(), "control characters");
+        assert!(from_value::<Name>(json!("a\tb")).is_err());
+        assert!(from_value::<Description>(json!("- [ ] 一\r\n\t- [ ] 二")).is_ok());
+        assert!(from_value::<Description>(json!("\u{9b}2J")).is_err());
     }
 
     #[test]

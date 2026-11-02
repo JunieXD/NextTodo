@@ -44,8 +44,8 @@ export interface View {
 export interface Hooks {
   /** Saves the copy, and the changes that `queued` joined the outbox and `settled` left it: those
    * the server confirmed or turned down. Every change that arrives settles, also one queued in
-   * another tab. */
-  save(copy: Copy, queued: Pending[], settled: MutationId[]): void;
+   * another tab. Resolves once written, or failed to be. */
+  save(copy: Copy, queued: Pending[], settled: MutationId[]): Promise<void>;
   send(m: Mutation): void;
   rejected(m: Mutation, e: ErrorBody): void;
   /** Changes that arrived from elsewhere: other devices, or agents with a token. */
@@ -62,6 +62,8 @@ export class Store {
   private readonly log: Map<MutationId, Effect[]>;
   /** Effects of the outbox changes, as last applied. */
   private local = new Map<MutationId, Effect[]>();
+  /** Changes made here that are not saved yet, and so not sent. */
+  private readonly saving = new Set<MutationId>();
   private view!: View;
   private data!: Data;
   private readonly listeners = new Set<() => void>();
@@ -93,9 +95,9 @@ export class Store {
     return this.seq;
   }
 
-  /** Changes still waiting for the server, in the order they were made. */
+  /** Changes saved and still waiting for the server, in the order they were made. */
   get unconfirmed(): Mutation[] {
-    return this.outbox.map((p) => p.mutation);
+    return this.outbox.filter((p) => !this.saving.has(p.mutation.id)).map((p) => p.mutation);
   }
 
   /** Makes a change here at once and queues it for the server. Throws `Rejected` when it cannot
@@ -104,9 +106,15 @@ export class Store {
     const pending = { mutation: { id: uuidv7(), ops }, at: Date.now() };
     const effects = apply(copy(this.data), ops, this.context(pending.at));
     this.outbox.push(pending);
-    this.changed([pending]);
-    this.hooks.send(pending.mutation);
-    return { id: pending.mutation.id, effects };
+    // Sent once saved: a tab that hears of it from the server takes it out of the saved outbox,
+    // which only works if it is there by then.
+    const { id } = pending.mutation;
+    this.saving.add(id);
+    void this.changed([pending]).then(() => {
+      this.saving.delete(id);
+      if (this.outbox.includes(pending)) this.hooks.send(pending.mutation);
+    });
+    return { id, effects };
   }
 
   /** What a change did, as far as this copy knows. */
@@ -145,6 +153,13 @@ export class Store {
     this.hooks.rejected(pending.mutation, error);
   }
 
+  /** Another tab heard the server turn a change down: drop it here too, without telling again. */
+  drop(id: MutationId) {
+    if (!this.outbox.some((p) => p.mutation.id === id)) return;
+    this.outbox = this.outbox.filter((p) => p.mutation.id !== id);
+    this.changed([], [id]);
+  }
+
   /** A fresh copy of everything from the server; changes not yet confirmed stay queued. */
   resync(snapshot: SeqSnapshot) {
     const fresh = fromSnapshot(snapshot);
@@ -166,10 +181,11 @@ export class Store {
     if (this.log.size > LOG_SIZE) this.log.delete(this.log.keys().next().value!);
   }
 
-  private changed(queued: Pending[] = [], settled: MutationId[] = []) {
+  private changed(queued: Pending[] = [], settled: MutationId[] = []): Promise<void> {
     this.recompute();
-    this.hooks.save({ seq: this.seq, base: toSnapshot(this.base), log: [...this.log] }, queued, settled);
+    const saved = this.hooks.save({ seq: this.seq, base: toSnapshot(this.base), log: [...this.log] }, queued, settled);
     for (const listener of this.listeners) listener();
+    return saved;
   }
 
   private recompute() {

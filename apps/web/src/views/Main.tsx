@@ -56,6 +56,7 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
     session.listen({
       signedOut: ended,
       rejected: (_, e) => snack(`没能保存：${e.message}`),
+      unsaved: () => snack("没能存到这台设备上，关掉页面前请保持联网"),
       arrived(entries) {
         const last = entries.findLast((e) => e.actor !== null && e.effects.length > 0 && e.created_at > Date.now() - RECENT_MS);
         if (last) snack({ text: describe(last, session.store.getView().board), action: "撤销", onAction: () => undo(last.id), ms: 8000 });

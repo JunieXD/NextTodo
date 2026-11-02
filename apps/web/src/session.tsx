@@ -13,7 +13,7 @@ import type { Op } from "./api/types/Op";
 import type { SeqSnapshot } from "./api/types/SeqSnapshot";
 import type { User } from "./api/types/User";
 import { Rejected } from "./domain/apply";
-import { type Saver, forget, forgetHere, load, saver } from "./sync/persist";
+import { type Saver, forget, forgetCopy, load, saver } from "./sync/persist";
 import { type Connection, Socket } from "./sync/socket";
 import { type Saved, Store } from "./sync/store";
 import { useFeedback } from "./ui/feedback";
@@ -32,13 +32,22 @@ function cachedLogin(): Login | null {
   return cached && JSON.parse(cached);
 }
 
-/** Tells the other tabs in a sign-in when it ends in one of them: they would save its data again. */
-const tabs = new BroadcastChannel("nexttodo.ended");
+/** What a tab tells the others: that a sign-in ended, so that its other tabs end too instead of
+ * saving its data again; that the server turned a change down, which only the tab that sent it
+ * hears, so that tabs that took it from the outbox drop it too. */
+type Message = { ended: string } | { rejected: MutationId };
+const tabs = new BroadcastChannel("nexttodo");
+
+/** Runs `f` while no other tab is signing in or out: what it finds on the device stays so until it
+ * is done. */
+const turn = <T,>(f: () => Promise<T>): Promise<T> => navigator.locks.request("nexttodo.login", f);
 
 /** What the UI wants to hear about; set once it is on screen. */
 export interface Listeners {
   rejected(m: Mutation, e: ErrorBody): void;
   arrived(entries: LogEntry[]): void;
+  /** Saving on this device failed; changes still go to the server. */
+  unsaved(): void;
   signedOut(): void;
 }
 
@@ -48,19 +57,28 @@ export class Session {
   private readonly socket: Socket;
   connection: Connection = "connecting";
   private readonly watchers = new Set<() => void>();
-  private listeners: Listeners = { rejected() {}, arrived() {}, signedOut() {} };
+  private listeners: Listeners = { rejected() {}, arrived() {}, unsaved() {}, signedOut() {} };
+  private closing?: Promise<void>;
 
   constructor(
     public user: User,
     /** The sign-in this session belongs to. */
     private readonly login: string,
+    /** Its copy of the user's data on this device. */
+    private readonly copy: string,
     saved: Saved,
   ) {
-    this.saver = saver(user.id);
+    this.saver = saver(user.id, copy, (e) => {
+      console.error(e);
+      this.listeners.unsaved();
+    });
     this.store = new Store(saved, {
       save: (copy, queued, settled) => this.saver.save(copy, queued, settled),
       send: (m) => this.socket.send(m),
-      rejected: (m, e) => this.listeners.rejected(m, e),
+      rejected: (m, e) => {
+        tabs.postMessage({ rejected: m.id } satisfies Message);
+        this.listeners.rejected(m, e);
+      },
       arrived: (entries) => this.listeners.arrived(entries),
     });
     this.socket = new Socket(this.store, {
@@ -74,11 +92,12 @@ export class Session {
       },
     });
     this.socket.start();
-    tabs.addEventListener("message", this.endedElsewhere);
+    tabs.addEventListener("message", this.heard);
   }
 
-  private readonly endedElsewhere = (e: MessageEvent) => {
-    if (e.data === this.login) this.listeners.signedOut();
+  private readonly heard = ({ data }: MessageEvent<Message>) => {
+    if ("rejected" in data) this.store.drop(data.rejected);
+    else if (data.ended === this.login) this.listeners.signedOut();
   };
 
   listen(listeners: Listeners) {
@@ -103,20 +122,26 @@ export class Session {
   /** Signs in as `user`, from the copy on this device or a fresh one from the server. */
   static async open(user: User): Promise<Session> {
     const login = crypto.randomUUID();
-    localStorage.setItem(LOGIN, JSON.stringify({ id: login, user }));
-    const saved = await load(user.id);
-    if (saved) return new Session(user, login, saved);
+    const copy = crypto.randomUUID();
+    const saved = await turn(async () => {
+      localStorage.setItem(LOGIN, JSON.stringify({ id: login, user }));
+      return load(user.id, copy);
+    });
+    if (saved) return new Session(user, login, copy, saved);
     const { seq, folders, tasks, dependencies } = await download(user.id);
-    return new Session(user, login, { ...Store.empty(), seq, base: { folders, tasks, dependencies } });
+    return new Session(user, login, copy, { ...Store.empty(), seq, base: { folders, tasks, dependencies } });
   }
 
   /** The session this device was in last time, if any. */
   static async resume(): Promise<Session | null> {
-    const login = cachedLogin();
-    if (login) {
-      const saved = await load(login.user.id);
-      if (saved) return new Session(login.user, login.id, saved);
-    }
+    const resumed = await turn(async () => {
+      const login = cachedLogin();
+      if (!login) return null;
+      const copy = crypto.randomUUID();
+      const saved = await load(login.user.id, copy);
+      return saved ? new Session(login.user, login.id, copy, saved) : null;
+    });
+    if (resumed) return resumed;
     try {
       return await Session.open(await api<User>("GET", "/me"));
     } catch (e) {
@@ -141,17 +166,23 @@ export class Session {
 
   /** Ends the session here, and in the other tabs in the same sign-in, and forgets the user's data
    * on this device. When the device has signed in as the same user again since, here or in another
-   * tab, the data is that sign-in's now: only this tab's copy goes. */
-  async close() {
-    tabs.removeEventListener("message", this.endedElsewhere);
+   * tab, the data is that sign-in's now: only this session's copy goes. */
+  close(): Promise<void> {
+    return (this.closing ??= this.end());
+  }
+
+  private async end() {
+    tabs.removeEventListener("message", this.heard);
     this.socket.stop();
     await this.saver.close();
-    const latest = cachedLogin();
-    const current = latest?.id === this.login;
-    if (current) localStorage.removeItem(LOGIN);
-    else if (latest?.user.id === this.user.id) return forgetHere(this.user.id);
-    await forget(this.user.id);
-    if (current) tabs.postMessage(this.login);
+    await turn(async () => {
+      const latest = cachedLogin();
+      const current = latest?.id === this.login;
+      if (current) localStorage.removeItem(LOGIN);
+      else if (latest?.user.id === this.user.id) return forgetCopy(this.user.id, this.copy);
+      await forget(this.user.id);
+      if (current) tabs.postMessage({ ended: this.login } satisfies Message);
+    });
   }
 
   async signOut() {

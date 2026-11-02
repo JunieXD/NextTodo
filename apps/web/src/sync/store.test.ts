@@ -26,6 +26,8 @@ function task(n: number, title: string, extra: Partial<Task> = {}): Task {
 }
 
 function setup(saved: Saved = Store.empty()) {
+  /** What saving waits on; resolved unless a test holds it back. */
+  let written = Promise.resolve();
   const sent: Mutation[] = [];
   const rejected: [Mutation, ErrorBody][] = [];
   const arrived: LogEntry[][] = [];
@@ -36,25 +38,40 @@ function setup(saved: Saved = Store.empty()) {
       for (const p of queued) outbox.set(p.mutation.id, p);
       for (const id of settled) outbox.delete(id);
       last = { ...copy, outbox: [...outbox.values()] };
+      return written;
     },
     send: (m) => sent.push(m),
     rejected: (m, e) => rejected.push([m, e]),
     arrived: (e) => arrived.push(e),
   });
   const titles = () => store.getView().board.sort([...store.getView().board.snapshot.tasks]).map((t) => t.title);
-  return { store, sent, rejected, arrived, titles, saved: () => last };
+  const hold = () => {
+    let release!: () => void;
+    written = new Promise((r) => (release = r));
+    return release;
+  };
+  return { store, sent, rejected, arrived, titles, hold, saved: () => last };
 }
+
+/** Lets the saves made so far finish. */
+const settle = () => new Promise((r) => setTimeout(r));
 
 /** How the server echoes a change back. */
 const echo = (m: Mutation, seq: number, effects: LogEntry["effects"]): LogEntry => ({ seq, id: m.id, actor: null, effects, created_at: 0 });
 
-test("a change shows at once, is sent, and leaves the queue when the server confirms it", () => {
-  const { store, sent, titles, saved } = setup();
+test("a change shows at once, is sent once saved, and leaves the queue when the server confirms it", async () => {
+  const { store, sent, titles, hold, saved } = setup();
+  const release = hold();
   const { effects } = store.commit([{ op: "task.create", id: id(1), title: "交电费", sort_key: "a1" }]);
   expect(titles()).toEqual(["交电费"]);
   expect(store.getView().pending).toBe(1);
-  expect(sent).toHaveLength(1);
   expect(saved().outbox).toHaveLength(1);
+  // Not sent, nor sent again on reconnecting, until it is saved.
+  await settle();
+  expect([sent.length, store.unconfirmed.length]).toEqual([0, 0]);
+  release();
+  await settle();
+  expect([sent.length, store.unconfirmed.length]).toEqual([1, 1]);
 
   const made = effects[0].after as Task;
   store.receive([echo(sent[0], 1, [{ kind: "task", before: null, after: { ...made, number: 7 } }])], 1);
@@ -72,12 +89,20 @@ test("changes from elsewhere merge under the ones still queued", () => {
   expect(arrived.flat().map((e) => e.actor)).toEqual(["Claude Code"]);
 });
 
-test("a rejected change leaves the view and is reported", () => {
+test("a rejected change leaves the view and is reported", async () => {
   const { store, sent, rejected, titles } = setup();
   store.commit([{ op: "task.create", id: id(1), title: "一", sort_key: "a1" }]);
+  await settle();
   store.reject(sent[0].id, { code: "conflict", message: "事项 ID 已存在" });
   expect(titles()).toEqual([]);
   expect(rejected.map(([, e]) => e.message)).toEqual(["事项 ID 已存在"]);
+});
+
+test("a change another tab heard turned down leaves the view without being reported again", () => {
+  const { store, rejected, titles, saved } = setup();
+  const { id: change } = store.commit([{ op: "task.create", id: id(1), title: "一", sort_key: "a1" }]);
+  store.drop(change);
+  expect([titles(), saved().outbox, rejected]).toEqual([[], [], []]);
 });
 
 test("a change that no longer applies waits for the server instead of breaking the view", () => {
@@ -88,11 +113,12 @@ test("a change that no longer applies waits for the server instead of breaking t
   expect(store.getView().stuck.has(change)).toBe(true);
 });
 
-test("changes the server has not seen yet can be undone here", () => {
+test("changes the server has not seen yet can be undone here", async () => {
   const { store, titles } = setup();
   const { id: made } = store.commit([{ op: "task.create", id: id(1), title: "一", sort_key: "a1" }]);
   store.commit([{ op: "undo", mutation: made }]);
   expect(titles()).toEqual([]);
+  await settle();
   expect(store.unconfirmed).toHaveLength(2);
 });
 
@@ -110,9 +136,10 @@ test("a fresh copy keeps the queued changes on top", () => {
   expect(store.since).toBe(90);
 });
 
-test("a change the fresh copy already has leaves the queue when the server acknowledges it again", () => {
+test("a change the fresh copy already has leaves the queue when the server acknowledges it again", async () => {
   const { store, sent, titles } = setup();
   store.commit([{ op: "task.create", id: id(1), title: "交电费", sort_key: "a1" }]);
+  await settle();
   // The server applied it at 5, but the reply was lost; later the copy was too old and downloaded afresh.
   store.resync({ user: "u", seq: 9, folders: [], tasks: [task(1, "交电费")], dependencies: [] });
   expect(store.getView().stuck.has(sent[0].id)).toBe(true);

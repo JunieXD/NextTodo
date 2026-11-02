@@ -26,5 +26,8 @@ export function App() {
       </Root>
     );
   }
-  return <Main key={state.session.user.id} session={state.session} onSignedOut={(notice) => setState({ kind: "out", notice })} />;
+  const { session } = state;
+  // Only while still in this session: a sign-out may finish after the user signed in again.
+  const signedOut = (notice?: string) => setState((s) => (s.kind === "in" && s.session === session ? { kind: "out", notice } : s));
+  return <Main key={session.user.id} session={session} onSignedOut={signedOut} />;
 }

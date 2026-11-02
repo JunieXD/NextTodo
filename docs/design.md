@@ -225,7 +225,7 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 - 服务端是一个进程、一个端口：同时提供 API、WebSocket、MCP 和网页静态文件。静态文件在构建时预先压缩好，放在镜像里，见[网页端](web.md#部署)。
 - 在本机用 `cargo-zigbuild` 交叉编译 x86_64 Linux 静态二进制，打成基于 `scratch` 的镜像，通过 `docker save | ssh rcvps docker load` 传到服务器。服务器上不编译。
 - 服务器目录 `/opt/1panel/www/sites/NextTodo/`：`compose.yaml` 和 `data/`（SQLite 数据库和快照）。只监听 `127.0.0.1`。
-- 域名 `todo.juniexd.cn`：由 1Panel 反向代理，开启 WebSocket，使用 `*.juniexd.cn` 证书。
+- 域名 `todo.juniexd.cn`：由 1Panel 反向代理，开启 WebSocket，使用 `*.juniexd.cn` 证书。反向代理要把原来的 `Host` 传过去（或设 `X-Forwarded-Host`），网页的同步连接靠它确认是同源页面。
 - 服务端每天用 `VACUUM INTO` 做一次数据库快照，保留最近 7 份。
 - 部署用一条命令完成。
 - 替换 Vikunja：NextTodo 上线后，把 `/opt/1panel/www/sites/vikunja` 备份到外接盘 `Backups/`，停掉并删除 Vikunja，再把 `todo.juniexd.cn` 的反向代理指向 NextTodo。

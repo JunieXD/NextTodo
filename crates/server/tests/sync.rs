@@ -25,9 +25,17 @@ struct Client(WebSocketStream<MaybeTlsStream<TcpStream>>);
 
 impl Client {
     async fn connect(addr: SocketAddr, cookie: Option<&str>) -> Self {
+        Self::from_page(addr, cookie, None).await
+    }
+
+    /// Connects as a browser would from a page at `origin`.
+    async fn from_page(addr: SocketAddr, cookie: Option<&str>, origin: Option<&str>) -> Self {
         let mut req = format!("ws://{addr}/api/v1/sync").into_client_request().unwrap();
         if let Some(secret) = cookie {
             req.headers_mut().insert("Cookie", format!("nt_session={secret}").parse().unwrap());
+        }
+        if let Some(origin) = origin {
+            req.headers_mut().insert("Origin", origin.parse().unwrap());
         }
         Client(tokio_tungstenite::connect_async(req).await.unwrap().0)
     }
@@ -132,4 +140,30 @@ async fn a_client_too_far_behind_is_told_to_resync() {
     assert_eq!(snap.status, StatusCode::OK);
     let mut again = Client::connect(addr, Some(&s)).await;
     assert_eq!(again.hello(None, snap.body["seq"].as_i64().unwrap()).await["changes"], json!([]));
+}
+
+#[tokio::test]
+async fn a_revoked_token_stops_getting_changes() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let token = t.call("POST", "/tokens", Some(&s), Some(json!({ "name": "看板", "scope": "read" }))).await.body;
+    let addr = serve(&t).await;
+    let mut board = Client::connect(addr, None).await;
+    board.hello(token["secret"].as_str(), 0).await;
+
+    let path = format!("/tokens/{}", token["token"]["id"].as_str().unwrap());
+    assert_eq!(t.call("DELETE", &path, Some(&s), None).await.status, StatusCode::NO_CONTENT);
+    assert_eq!(board.recv().await.unwrap()["code"], "unauthenticated", "told at once, before anything new happens");
+    assert_eq!(board.recv().await, None);
+}
+
+#[tokio::test]
+async fn the_cookie_only_counts_from_this_site() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let addr = serve(&t).await;
+    let mut other = Client::from_page(addr, Some(&s), Some("https://evil.example.com")).await;
+    assert_eq!(other.hello(None, 0).await["code"], "unauthenticated");
+    let mut own = Client::from_page(addr, Some(&s), Some(&format!("http://{addr}"))).await;
+    assert_eq!(own.hello(None, 0).await["type"], "changes");
 }

@@ -83,9 +83,14 @@ pub fn changes_since(c: &Connection, owner: &str, since: i64) -> Result<Changes,
 pub async fn mutate(State(st): State<AppState>, auth: Auth, Json(m): Json<Mutation>) -> Result<Json<Applied>, ApiError> {
     auth.require_write()?;
     let now = st.clock.now();
-    let owner = auth.user_id.clone();
-    let applied =
-        st.db.call(move |c| mutate::apply(c, &Actor { owner: &auth.user_id, token_id: &auth.token_id, via: auth.via() }, &m, now)).await?;
-    st.hub.changed(&owner);
+    let hub = st.hub.clone();
+    let applied = st
+        .db
+        .call(move |c| {
+            let applied = mutate::apply(c, &Actor { owner: &auth.user_id, token_id: &auth.token_id, via: auth.via() }, &m, now)?;
+            hub.changed(&auth.user_id);
+            Ok(applied)
+        })
+        .await?;
     Ok(Json(applied))
 }

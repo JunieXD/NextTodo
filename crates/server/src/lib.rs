@@ -15,13 +15,15 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::Router;
+use axum::body::Body;
 use axum::extract::Request;
-use axum::http::{HeaderValue, header};
-use axum::middleware::{self, Next};
-use axum::response::Response;
+use axum::http::{HeaderValue, Uri, header};
+use axum::middleware;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
+use tower::ServiceExt;
 use tower_http::compression::CompressionLayer;
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 
 pub use db::Db;
@@ -105,20 +107,28 @@ pub fn app(state: AppState) -> Router {
     Router::new().nest("/api/v1", api).merge(mcp).layer(CompressionLayer::new()).layer(TraceLayer::new_for_http()).with_state(state)
 }
 
-/// Adds the web app's files from `dir`, using the compressed copies made at build time. Paths that
-/// match no file get `index.html`, so the app's own routes work when opened directly.
+/// Adds the web app's files from `dir`, using the compressed copies made at build time. Page
+/// addresses (no file extension in the last segment) get `index.html`, so the app's own routes work
+/// when opened directly; a missing file is a 404, and unknown `/api` and `/mcp` paths answer in JSON.
 pub fn with_web(router: Router, dir: &Path) -> Router {
-    let index = ServeFile::new(dir.join("index.html")).precompressed_br().precompressed_gzip();
-    let files = ServeDir::new(dir).precompressed_br().precompressed_gzip().fallback(index);
-    router.fallback_service(Router::new().fallback_service(files).layer(middleware::from_fn(cache_control)))
+    let files = ServeDir::new(dir).precompressed_br().precompressed_gzip();
+    router.fallback(move |req: Request| web(files.clone(), req))
 }
 
-/// Built assets have the content hash in their name and never change; everything else is checked
-/// on every load so that a new version shows up.
-async fn cache_control(req: Request, next: Next) -> Response {
-    let immutable = req.uri().path().starts_with("/assets/");
-    let mut res = next.run(req).await;
-    let value = if immutable { "public, max-age=31536000, immutable" } else { "no-cache" };
-    res.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static(value));
+async fn web(files: ServeDir, mut req: Request) -> Response {
+    let path = req.uri().path();
+    if path == "/api" || path.starts_with("/api/") || path.starts_with("/mcp/") {
+        return ApiError::not_found("接口不存在").into_response();
+    }
+    // Built assets have the content hash in their name and never change; everything else is
+    // checked on every load so that a new version shows up.
+    let immutable = path.starts_with("/assets/");
+    if !path.rsplit('/').next().is_some_and(|last| last.contains('.')) {
+        *req.uri_mut() = Uri::from_static("/index.html");
+    }
+    let Ok(res) = files.oneshot(req).await;
+    let mut res = res.map(Body::new);
+    let cache = if immutable && res.status().is_success() { "public, max-age=31536000, immutable" } else { "no-cache" };
+    res.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
     res
 }

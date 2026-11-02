@@ -1,13 +1,14 @@
 //! Real-time sync over WebSocket. See `docs/api.md#同步协议`.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, header};
 use axum::response::Response;
 use nexttodo_core::model::MutationId;
 use nexttodo_core::ops::Mutation;
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::broadcast::error::RecvError;
@@ -22,6 +23,8 @@ use crate::sync::{LogEntry, changes_since};
 const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 /// Often enough that reverse proxies do not close an idle connection.
 const PING_EVERY: Duration = Duration::from_secs(30);
+/// No pong or message for this long ends the connection.
+const SILENT_LIMIT: Duration = Duration::from_secs(75);
 const MAX_MESSAGE: usize = 2 << 20;
 
 #[derive(Deserialize, TS)]
@@ -62,12 +65,21 @@ pub enum ServerMessage {
 }
 
 pub async fn sync(ws: WebSocketUpgrade, State(st): State<AppState>, headers: HeaderMap) -> Response {
-    let presented = auth::presented_secret(&headers);
+    let presented = same_origin(&headers).then(|| auth::presented_secret(&headers)).flatten();
     ws.max_message_size(MAX_MESSAGE).on_upgrade(move |socket| async move {
         if let Err(e) = connection(st, socket, presented).await {
             tracing::debug!(error = %e, "sync connection ended");
         }
     })
+}
+
+/// Browsers send the session cookie with a WebSocket opened by any page of the same site, so the
+/// cookie only counts when the page is this one. Apps send no `Origin` and sign in with a token.
+fn same_origin(headers: &HeaderMap) -> bool {
+    let Some(origin) = headers.get(header::ORIGIN) else { return true };
+    let origin = origin.to_str().ok().and_then(|o| o.split_once("://")).map(|(_, authority)| authority);
+    // Behind a reverse proxy the page's host may arrive as `X-Forwarded-Host`.
+    ["x-forwarded-host", "host"].iter().any(|name| headers.get(*name).and_then(|h| h.to_str().ok()).is_some_and(|h| Some(h) == origin))
 }
 
 async fn send(ws: &mut WebSocket, msg: ServerMessage) -> Result<(), axum::Error> {
@@ -103,16 +115,19 @@ async fn connection(st: AppState, mut ws: WebSocket, presented: Option<String>) 
     }
     let mut ping = tokio::time::interval(PING_EVERY);
     ping.tick().await;
+    let mut heard = Instant::now();
     loop {
         tokio::select! {
             msg = ws.recv() => match msg {
                 Some(Ok(Message::Text(text))) => {
+                    heard = Instant::now();
                     if let Err(e) = handle(&st, &mut ws, &secret, &text).await? {
                         return fail(&mut ws, e).await;
                     }
                 }
                 Some(Ok(Message::Close(_))) | None => return Ok(()),
-                Some(Ok(_)) => {}
+                // Pongs to our pings and anything else show the client is still there.
+                Some(Ok(_)) => heard = Instant::now(),
                 Some(Err(e)) => return Err(e),
             },
             note = hub.recv() => {
@@ -126,7 +141,13 @@ async fn connection(st: AppState, mut ws: WebSocket, presented: Option<String>) 
                     return Ok(());
                 }
             }
-            _ = ping.tick() => ws.send(Message::Ping(Default::default())).await?,
+            _ = ping.tick() => {
+                // A client that stopped answering is gone, even if the connection looks open.
+                if heard.elapsed() > SILENT_LIMIT {
+                    return Ok(());
+                }
+                ws.send(Message::Ping(Default::default())).await?;
+            }
         }
     }
 }
@@ -134,8 +155,17 @@ async fn connection(st: AppState, mut ws: WebSocket, presented: Option<String>) 
 /// Sends the changes after `sent`. Returns false once the connection is closed: after telling the
 /// client to download everything again (it reconnects from its new snapshot), or on an error.
 async fn push(st: &AppState, ws: &mut WebSocket, auth: &Auth, sent: &mut i64, always: bool) -> Result<bool, axum::Error> {
-    let (owner, since) = (auth.user_id.clone(), *sent);
-    match st.db.call(move |c| changes_since(c, &owner, since)).await {
+    let (owner, token, since) = (auth.user_id.clone(), auth.token_id.clone(), *sent);
+    let read = st.db.call(move |c| {
+        // A token revoked or a session signed out since `hello` gets nothing more.
+        let valid: bool =
+            c.query_row("SELECT EXISTS (SELECT 1 FROM tokens WHERE id = ?1 AND user_id = ?2)", params![token, owner], |r| r.get(0))?;
+        if !valid {
+            return Err(ApiError::unauthenticated("登录已失效，请重新登录"));
+        }
+        changes_since(c, &owner, since)
+    });
+    match read.await {
         Ok(batch) => {
             if always || !batch.changes.is_empty() {
                 send(ws, ServerMessage::Changes { seq: batch.seq, changes: batch.changes }).await?;
@@ -178,9 +208,12 @@ async fn apply(st: &AppState, secret: &str, mutation: Value) -> Result<i64, ApiE
     auth.require_write()?;
     let m: Mutation = from_value(mutation)?;
     let now = st.clock.now();
-    let owner = auth.user_id.clone();
-    let applied =
-        st.db.call(move |c| mutate::apply(c, &Actor { owner: &auth.user_id, token_id: &auth.token_id, via: auth.via() }, &m, now)).await?;
-    st.hub.changed(&owner);
-    Ok(applied.seq)
+    let hub = st.hub.clone();
+    st.db
+        .call(move |c| {
+            let applied = mutate::apply(c, &Actor { owner: &auth.user_id, token_id: &auth.token_id, via: auth.via() }, &m, now)?;
+            hub.changed(&auth.user_id);
+            Ok(applied.seq)
+        })
+        .await
 }

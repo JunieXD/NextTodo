@@ -50,8 +50,12 @@ pub fn run(c: &mut Connection, auth: &Auth, id: Option<MutationId>, now: i64, bu
         let reply: Option<String> = tx.query_row("SELECT reply FROM mutations WHERE seq = ?1", [done.seq], |r| r.get(0))?;
         return match reply {
             Some(reply) => Ok(serde_json::from_str(&reply)?),
-            // past the retention period, or sent by an app rather than through a tool
-            None => Ok(report(&store::snapshot(&tx, &auth.user_id)?, Some(done.seq), &done.effects)),
+            // Past the retention period, or sent by an app rather than through a tool. Only the
+            // receipt is given: the old effects cannot be read against today's folders.
+            None => Ok(Output {
+                text: format!("批次 {} 已经保存过，这次没有再生效", done.seq),
+                data: json!({ "batch": done.seq, "effects": done.effects, "unlocked": [] }),
+            }),
         };
     }
     let snap = store::snapshot(&tx, &auth.user_id)?;

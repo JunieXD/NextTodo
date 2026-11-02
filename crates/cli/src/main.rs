@@ -263,7 +263,7 @@ impl Server {
                 Err(e) if attempt < 2 => {
                     attempt += 1;
                     std::thread::sleep(Duration::from_millis(500 * attempt));
-                    eprintln!("连接服务器出错（{e}），重试第 {attempt} 次");
+                    eprintln!("{}", printable(&format!("连接服务器出错（{e}），重试第 {attempt} 次")));
                 }
                 Err(e) => return Err(e).context("连接不上服务器"),
             }
@@ -346,7 +346,7 @@ fn login(url: Option<String>, name: String, read_only: bool) -> anyhow::Result<(
     server.post("/api/v1/auth/logout", Some(&session), &json!({}))?;
     let token = made?["secret"].as_str().ok_or_else(|| anyhow!("服务器的回复里没有令牌"))?.to_owned();
     let path = write_config(&Config { url: server.url.clone(), token })?;
-    println!("已登录，令牌“{name}”保存在 {}", path.display());
+    println!("{}", printable(&format!("已登录，令牌“{name}”保存在 {}", path.display())));
     Ok(())
 }
 

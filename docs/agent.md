@@ -163,7 +163,7 @@ bearer_token_env_var = "NEXTTODO_TOKEN"
 
 - `GET /api/v1/tools`：工具列表，每项 `{name, description, input_schema}`，和 MCP 的 `tools/list` 相同。
 - `POST /api/v1/tools/{name}`：请求体是参数 JSON，返回 `{text, data}`。错误格式同 [API](api.md#错误)。
-- 写操作可以带请求头 `Idempotency-Key: <uuidv7>`，作为改动 ID：同一个键重发时原样返回第一次的结果（90 天内；之后只认得出这个键，不会再生效一次）。
+- 写操作可以带请求头 `Idempotency-Key: <uuidv7>`，作为改动 ID：同一个键重发时原样返回第一次的结果（90 天内）；超过保留期，或者这个键是 App 提交的改动 ID 时，只返回批次号，不会再生效一次。
 
 ## Skill
 

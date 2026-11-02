@@ -44,7 +44,11 @@
 
 ## 部署
 
-`pnpm build` 输出到 `apps/web/dist`，并为每个文件生成 `.br` 和 `.gz` 预压缩版本。服务端用 `--web <目录>` 提供这些文件：带内容哈希的资源长期缓存，`index.html` 和 Service Worker 不缓存；不是 `/api`、`/mcp` 的未知路径返回 `index.html`，由前端路由处理。
+`pnpm build` 输出到 `apps/web/dist`，并为每个文本文件生成 `.br` 和 `.gz` 预压缩版本。服务端用 `--web <目录>` 提供这些文件：
+
+- 页面地址（最后一段没有扩展名，如 `/folders/<id>`）返回 `index.html`，由前端路由处理。
+- 其他路径按文件提供，不存在就是 404；`/assets/` 下带内容哈希的资源成功返回时长期缓存，其余（含 `index.html` 和 Service Worker）每次重新检查。
+- `/api`、`/mcp` 下的未知路径返回 JSON 格式的 404，不回退到网页。
 
 开发时 `pnpm dev` 启动 Vite（5173），把 `/api` 和 `/mcp` 转发到本地服务端（8080）。
 

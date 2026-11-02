@@ -149,6 +149,52 @@ async fn the_log_reads_each_batch_with_the_folders_of_its_time() {
 }
 
 #[tokio::test]
+async fn changes_inside_one_batch_read_with_the_folders_of_that_moment() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let (a, b) = (common::id(), common::id());
+    t.mutate(
+        &s,
+        json!([
+            { "op": "folder.create", "id": a, "name": "A" },
+            { "op": "folder.create", "id": b, "name": "B", "parent_id": a },
+            { "op": "folder.delete", "id": a },
+        ]),
+    )
+    .await;
+    let log = t.ok(&s, "log", json!({})).await["data"].clone();
+    assert_eq!(log[0]["summary"], "新建 2 个文件夹：/A、/A/B；删除 2 个文件夹：/A/B、/A");
+}
+
+#[tokio::test]
+async fn a_tool_retried_with_the_id_of_an_app_change_gets_a_receipt() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let (a, b) = (common::id(), common::id());
+    t.mutate(&s, json!([{ "op": "folder.create", "id": a, "name": "A" }, { "op": "folder.create", "id": b, "name": "B", "parent_id": a }]))
+        .await;
+    let moved = common::id();
+    let r = t
+        .call("POST", "/mutations", Some(&s), Some(json!({ "id": moved, "ops": [{ "op": "folder.update", "id": b, "parent_id": null }] })))
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    t.mutate(&s, json!([{ "op": "folder.update", "id": a, "parent_id": b }])).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/tools/mkdir")
+        .header(header::AUTHORIZATION, format!("Bearer {s}"))
+        .header(header::CONTENT_TYPE, "application/json")
+        .header("Idempotency-Key", &moved)
+        .body(Body::from(json!({ "path": "/Z" }).to_string()))
+        .unwrap();
+    let bytes = t.app.clone().oneshot(req).await.unwrap().into_body().collect().await.unwrap().to_bytes();
+    let reply: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(reply["text"], "批次 2 已经保存过，这次没有再生效");
+    assert!(t.snapshot(&s).await["folders"].as_array().unwrap().iter().all(|f| f["name"] != "Z"), "and nothing was made");
+}
+
+#[tokio::test]
 async fn editing_a_task() {
     let t = TestApp::new();
     let s = t.admin().await;

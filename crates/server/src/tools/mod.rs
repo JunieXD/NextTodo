@@ -120,10 +120,14 @@ pub async fn call(st: &AppState, auth: Auth, name: &str, args: Value, id: Option
         Call::Read(run) => st.db.call(move |c| run(c, &Cx { owner: &auth.user_id, now })).await,
         Call::Write(build) => {
             auth.require_write()?;
-            let owner = auth.user_id.clone();
-            let output = st.db.call(move |c| write::run(c, &auth, id, now, build)).await?;
-            st.hub.changed(&owner);
-            Ok(output)
+            let hub = st.hub.clone();
+            st.db
+                .call(move |c| {
+                    let output = write::run(c, &auth, id, now, build)?;
+                    hub.changed(&auth.user_id);
+                    Ok(output)
+                })
+                .await
         }
     }
 }

@@ -291,13 +291,18 @@ pub async fn login(State(st): State<AppState>, Json(req): Json<Login>) -> Result
     let (password, stored) = (req.password, found.as_ref().map(|(_, h)| h.clone()));
     // The dummy hash is made on first use, so that goes inside the limit too.
     let matches = hashing(move || verify_password(&password, stored.as_deref().unwrap_or(&DUMMY_HASH))).await;
-    let Some((user_id, _)) = found.filter(|_| matches) else {
+    let Some((user_id, verified)) = found.filter(|_| matches) else {
         return Err(ApiError::unauthenticated("用户名或密码不对"));
     };
     let (now, device) = (st.clock.now(), req.device.0);
     let session = st
         .db
         .call(move |c| {
+            // The password may have changed while this one was being checked.
+            let current: String = c.query_row("SELECT password_hash FROM users WHERE id = ?1", [&user_id], |r| r.get(0))?;
+            if current != verified {
+                return Err(ApiError::unauthenticated("用户名或密码不对"));
+            }
             let secret = create_session(c, &user_id, &device, now)?;
             Ok(Session { secret, user: load_user(c, &user_id)? })
         })
@@ -350,7 +355,15 @@ pub async fn register(State(st): State<AppState>, Json(req): Json<Register>) -> 
 
 pub async fn logout(State(st): State<AppState>, auth: Auth) -> Result<Response, ApiError> {
     auth.require_session()?;
-    st.db.call(move |c| Ok(c.execute("DELETE FROM tokens WHERE id = ?1", [auth.token_id])?)).await?;
+    let hub = st.hub.clone();
+    st.db
+        .call(move |c| {
+            c.execute("DELETE FROM tokens WHERE id = ?1", [auth.token_id])?;
+            // Open sync connections check their token again and close.
+            hub.changed(&auth.user_id);
+            Ok(())
+        })
+        .await?;
     let cookie = format!("{COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0");
     Ok((StatusCode::NO_CONTENT, [(header::SET_COOKIE, HeaderValue::from_str(&cookie).expect("cookie is ASCII"))]).into_response())
 }
@@ -392,17 +405,30 @@ pub async fn change_password(State(st): State<AppState>, auth: Auth, Json(req): 
     let stored: String =
         st.db.call(move |c| Ok(c.query_row("SELECT password_hash FROM users WHERE id = ?1", [user_id], |r| r.get(0))?)).await?;
     let NewPassword { old_password, new_password } = req;
-    let hash = hashing(move || verify_password(&old_password, &stored).then(|| hash_password(&new_password.0))).await;
+    let verified = stored.clone();
+    let hash = hashing(move || verify_password(&old_password, &verified).then(|| hash_password(&new_password.0))).await;
     let hash = hash.ok_or_else(|| ApiError::invalid("原密码不对", Some("old_password".into())))?;
+    let hub = st.hub.clone();
     st.db
         .call(move |c| {
             let tx = c.transaction()?;
-            tx.execute("UPDATE users SET password_hash = ?1 WHERE id = ?2", params![hash, auth.user_id])?;
+            // While hashing, this session may have been signed out, or the password changed from
+            // another device; then the old password checked above no longer counts.
+            let signed_in: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM tokens WHERE id = ?1)", [&auth.token_id], |r| r.get(0))?;
+            if !signed_in {
+                return Err(ApiError::unauthenticated("登录已失效，请重新登录"));
+            }
+            let changed = tx
+                .execute("UPDATE users SET password_hash = ?1 WHERE id = ?2 AND password_hash = ?3", params![hash, auth.user_id, stored])?;
+            if changed == 0 {
+                return Err(ApiError::conflict("密码刚被别的设备改过，请用新密码再试"));
+            }
             tx.execute(
                 "DELETE FROM tokens WHERE user_id = ?1 AND kind = ?2 AND id <> ?3",
                 params![auth.user_id, TokenKind::Session, auth.token_id],
             )?;
             tx.commit()?;
+            hub.changed(&auth.user_id);
             Ok(StatusCode::NO_CONTENT)
         })
         .await
@@ -487,10 +513,14 @@ pub async fn create_token(State(st): State<AppState>, auth: Auth, Json(req): Jso
 
 pub async fn delete_token(State(st): State<AppState>, auth: Auth, Path(id): Path<String>) -> Result<StatusCode, ApiError> {
     auth.require_session()?;
+    let hub = st.hub.clone();
     st.db
         .call(move |c| match c.execute("DELETE FROM tokens WHERE id = ?1 AND user_id = ?2", params![id, auth.user_id])? {
             0 => Err(ApiError::not_found("令牌不存在")),
-            _ => Ok(StatusCode::NO_CONTENT),
+            _ => {
+                hub.changed(&auth.user_id);
+                Ok(StatusCode::NO_CONTENT)
+            }
         })
         .await
 }

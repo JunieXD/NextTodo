@@ -111,9 +111,12 @@ pub fn line(s: String, what: &str, max: usize) -> Result<String, String> {
 }
 
 text_type!(
-    /// Folder name.
+    /// Folder name. Without `/`, so that paths name folders.
     Name,
-    |s| line(s, "名称", 100)
+    |s| {
+        let s = line(s, "名称", 100)?;
+        if s.contains('/') { Err("文件夹名称里不能有 /".into()) } else { Ok(s) }
+    }
 );
 text_type!(
     /// Task title.
@@ -190,19 +193,25 @@ struct DueFields {
     remind_before: Option<u32>,
 }
 
-impl TryFrom<DueFields> for Due {
-    type Error = String;
-
-    fn try_from(f: DueFields) -> Result<Self, String> {
-        if f.remind_before.is_some_and(|m| m > MAX_REMIND_BEFORE) {
+impl Due {
+    pub fn new(date: Date, time: Option<Time>, remind_before: Option<u32>) -> Result<Due, String> {
+        if remind_before.is_some_and(|m| m > MAX_REMIND_BEFORE) {
             return Err("提醒最多提前 30 天".into());
         }
-        let at = match (f.time, f.remind_before) {
+        let at = match (time, remind_before) {
             (Some(time), remind_before) => Some(DueAt { time, remind_before }),
             (None, Some(_)) => return Err("只有设了具体的截止时间才能设提醒".into()),
             (None, None) => None,
         };
-        Ok(Due { date: f.date, at })
+        Ok(Due { date, at })
+    }
+}
+
+impl TryFrom<DueFields> for Due {
+    type Error = String;
+
+    fn try_from(f: DueFields) -> Result<Self, String> {
+        Due::new(f.date, f.time, f.remind_before)
     }
 }
 
@@ -335,6 +344,7 @@ mod tests {
         assert!(from_value::<Title>(json!("  ")).is_err());
         assert!(from_value::<Title>(json!("一\n二")).is_err());
         assert!(from_value::<Name>(json!("名".repeat(101))).is_err());
+        assert!(from_value::<Name>(json!("工作/网站")).is_err());
         assert!(from_value::<Description>(json!("")).is_ok());
     }
 

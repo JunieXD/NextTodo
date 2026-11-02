@@ -2,7 +2,8 @@
 
 use axum::extract::rejection::QueryRejection;
 use axum::extract::{Query, State};
-use nexttodo_core::model::{Dependency, Effect, Folder, MutationId, Task};
+use nexttodo_core::board::Snapshot;
+use nexttodo_core::model::{Effect, MutationId};
 use nexttodo_core::ops::Mutation;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -14,24 +15,15 @@ use crate::mutate::{self, Actor, Applied};
 use crate::store;
 
 #[derive(Serialize)]
-pub struct Snapshot {
+pub struct SeqSnapshot {
     seq: i64,
-    folders: Vec<Folder>,
-    tasks: Vec<Task>,
-    dependencies: Vec<Dependency>,
+    #[serde(flatten)]
+    snapshot: Snapshot,
 }
 
-pub async fn snapshot(State(st): State<AppState>, auth: Auth) -> Result<Json<Snapshot>, ApiError> {
+pub async fn snapshot(State(st): State<AppState>, auth: Auth) -> Result<Json<SeqSnapshot>, ApiError> {
     st.db
-        .call(move |c| {
-            let owner = &auth.user_id;
-            Ok(Snapshot {
-                seq: store::latest_seq(c, owner)?,
-                folders: store::all_folders(c, owner)?,
-                tasks: store::all_tasks(c, owner)?,
-                dependencies: store::all_dependencies(c, owner)?,
-            })
-        })
+        .call(move |c| Ok(SeqSnapshot { seq: store::latest_seq(c, &auth.user_id)?, snapshot: store::snapshot(c, &auth.user_id)? }))
         .await
         .map(Json)
 }

@@ -116,6 +116,7 @@ sql_enum!(Scope { Read = "read", Write = "write" });
 sql_enum!(TokenKind { Session = "session", Api = "api" });
 
 /// The authenticated caller.
+#[derive(Clone)]
 pub struct Auth {
     pub user_id: String,
     pub token_id: String,

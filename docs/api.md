@@ -30,6 +30,10 @@
 | GET | `/changes?since=<seq>` | 增量：`{seq, changes}`；`since` 早于保留期时返回 410 |
 | POST | `/mutations` | 提交一个改动，见下文 |
 | GET | `/sync` | WebSocket，见[同步协议](#同步协议) |
+| GET | `/tools` | 工具列表，见 [agent 接入](agent.md#工具接口) |
+| POST | `/tools/{name}` | 调用一个工具 |
+
+MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp)。
 
 `seq` 是这个用户能看到的最新改动序号；`/snapshot` 和 `/changes` 返回的数据都截止到这个序号。
 
@@ -100,7 +104,7 @@
 | 404 | `not_found` | 引用的实体不存在或不属于当前用户 |
 | 409 | `cycle` | 依赖会成环，`details.path` 是环上的事项 ID，首尾相同 |
 | 409 | `folder_cycle` | 文件夹移到了自己的子孙下面 |
-| 409 | `conflict` | 用户名已被占用、邀请码已用过、依赖已存在 |
+| 409 | `conflict` | 用户名已被占用、邀请码已用过、依赖已存在、同一层已有同名文件夹 |
 | 410 | `resync` | `since` 早于保留期，需要重新下载 `/snapshot` |
 
 ## 同步协议

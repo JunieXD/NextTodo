@@ -11,8 +11,10 @@ axum = { version = "0.8.9", features = ["ws", "macros"] }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 nexttodo-core = { path = "../core", features = ["sql"] }
 rand = "0.10.3"
+rmcp = { version = "3.8.0", default-features = false, features = ["server", "transport-streamable-http-server"] }
 rpassword = "7.5.4"
 rusqlite = { version = "0.41.1", features = ["bundled"] }
+schemars = "1.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 serde_path_to_error = "0.1.20"

@@ -1,0 +1,115 @@
+[
+  {
+    "name": "依赖决定状态和顺序",
+    "folders": [],
+    "tasks": [
+      { "id": "a", "key": "a0" },
+      { "id": "b", "key": "a1" },
+      { "id": "c", "key": "a2" },
+      { "id": "d", "key": "a3" }
+    ],
+    "deps": [["a", "b"], ["b", "c"]],
+    "expect": {
+      "status": { "a": "ready", "b": "waiting 1", "c": "waiting 1", "d": "ready" },
+      "unlocks": { "a": ["b"], "b": ["c"], "c": [], "d": [] },
+      "order": { "/": ["a", "b", "c", "d"] },
+      "next": ["a", "d"]
+    }
+  },
+  {
+    "name": "依赖优先于手动顺序，没有先后约束的按手动顺序",
+    "folders": [],
+    "tasks": [
+      { "id": "late", "key": "a0" },
+      { "id": "early", "key": "a5" },
+      { "id": "free", "key": "a2" }
+    ],
+    "deps": [["early", "late"]],
+    "expect": {
+      "status": { "late": "waiting 1", "early": "ready", "free": "ready" },
+      "unlocks": { "early": ["late"] },
+      "order": { "/": ["free", "early", "late"] },
+      "next": ["free", "early"]
+    }
+  },
+  {
+    "name": "经过文件夹外事项的间接依赖也算先后约束",
+    "folders": [
+      { "id": "f", "name": "前端", "key": "a0" },
+      { "id": "g", "name": "后端", "key": "a1" }
+    ],
+    "tasks": [
+      { "id": "x", "folder": "g", "key": "a0" },
+      { "id": "b", "folder": "f", "key": "a0" },
+      { "id": "a", "folder": "f", "key": "a1" },
+      { "id": "p", "folder": "f", "key": "a2" },
+      { "id": "y", "folder": "g", "key": "a1" },
+      { "id": "q", "folder": "f", "key": "a3" }
+    ],
+    "deps": [["a", "x"], ["x", "b"], ["y", "p"]],
+    "expect": {
+      "status": { "a": "ready", "x": "waiting 1", "b": "waiting 1", "p": "waiting 1", "y": "ready", "q": "ready" },
+      "order": { "f": ["a", "b", "p", "q"], "g": ["x", "y"] },
+      "next": ["a", "q", "y"]
+    }
+  },
+  {
+    "name": "已完成的排在最后，最近完成的在前；经过已完成事项的路径不算约束",
+    "folders": [],
+    "tasks": [
+      { "id": "b", "key": "a0" },
+      { "id": "x", "key": "a1", "done_at": 100 },
+      { "id": "a", "key": "a2" },
+      { "id": "y", "key": "a3", "done_at": 200 }
+    ],
+    "deps": [["a", "x"], ["x", "b"]],
+    "expect": {
+      "status": { "b": "ready", "x": "done", "a": "ready", "y": "done" },
+      "unlocks": { "x": [], "a": [] },
+      "order": { "/": ["b", "a", "y", "x"] },
+      "next": ["b", "a"]
+    }
+  },
+  {
+    "name": "一个后续有多个前置时，做完其中一个不算解锁",
+    "folders": [],
+    "tasks": [
+      { "id": "a", "key": "a0" },
+      { "id": "b", "key": "a1" },
+      { "id": "c", "key": "a2" },
+      { "id": "d", "key": "a3", "done_at": 1 },
+      { "id": "e", "key": "a4" }
+    ],
+    "deps": [["a", "c"], ["b", "c"], ["d", "e"], ["a", "e"]],
+    "expect": {
+      "status": { "a": "ready", "b": "ready", "c": "waiting 2", "d": "done", "e": "waiting 1" },
+      "unlocks": { "a": ["e"], "b": [] },
+      "order": { "/": ["a", "b", "c", "e", "d"] },
+      "next": ["a", "b"]
+    }
+  },
+  {
+    "name": "接下来：有截止的按时间排在前面（只有日期的算当天最晚），其余按文件夹树和手动顺序",
+    "folders": [
+      { "id": "work", "name": "工作", "key": "a1" },
+      { "id": "site", "name": "网站", "parent": "work", "key": "a0" },
+      { "id": "home", "name": "生活", "key": "a0" }
+    ],
+    "tasks": [
+      { "id": "site1", "folder": "site", "key": "a0" },
+      { "id": "work1", "folder": "work", "key": "a0" },
+      { "id": "home2", "folder": "home", "key": "a1" },
+      { "id": "home1", "folder": "home", "key": "a0" },
+      { "id": "root1", "key": "a0" },
+      { "id": "day", "folder": "site", "key": "a1", "due": { "date": "2026-11-20" } },
+      { "id": "evening", "folder": "home", "key": "a2", "due": { "date": "2026-11-20", "time": "18:00" } },
+      { "id": "soon", "folder": "work", "key": "a1", "due": { "date": "2026-11-05", "time": "09:00" } }
+    ],
+    "deps": [],
+    "expect": {
+      "order": { "/": ["root1"], "home": ["home1", "home2", "evening"], "work": ["work1", "soon"], "site": ["site1", "day"] },
+      "next": ["soon", "evening", "day", "root1", "home1", "home2", "work1", "site1"],
+      "paths": { "/": "/", "work": "/工作", "site": "/工作/网站", "home": "/生活" }
+    }
+  }
+]

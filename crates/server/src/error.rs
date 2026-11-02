@@ -45,9 +45,9 @@ impl ApiError {
         Self::new(StatusCode::CONFLICT, "conflict", message)
     }
 
-    /// `path` goes around the cycle and ends where it starts.
-    pub fn cycle(path: Vec<TaskId>) -> Self {
-        let mut e = Self::new(StatusCode::CONFLICT, "cycle", "加上这条依赖会形成循环");
+    /// `path` goes around the cycle and ends where it starts; `titles` spells it out for the user.
+    pub fn cycle(path: Vec<TaskId>, titles: &str) -> Self {
+        let mut e = Self::new(StatusCode::CONFLICT, "cycle", format!("加上这条依赖会形成循环：{titles}"));
         e.details = Some(json!({ "path": path }));
         e
     }
@@ -58,6 +58,16 @@ impl ApiError {
 
     pub fn resync() -> Self {
         Self::new(StatusCode::GONE, "resync", "本地数据太旧，需要重新下载")
+    }
+}
+
+impl ApiError {
+    /// The message, with the field it is about when there is one.
+    pub fn describe(&self) -> String {
+        match self.details.as_ref().and_then(|d| d["field"].as_str()) {
+            Some(field) => format!("{}（{field}）", self.message),
+            None => self.message.clone(),
+        }
     }
 }
 

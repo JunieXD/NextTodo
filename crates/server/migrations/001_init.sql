@@ -39,6 +39,7 @@ CREATE TABLE folders (
     updated_at INTEGER NOT NULL
 ) STRICT;
 CREATE INDEX folders_parent ON folders (owner_id, parent_id, sort_key);
+CREATE UNIQUE INDEX folders_name ON folders (owner_id, coalesce(parent_id, ''), name);
 
 CREATE TABLE tasks (
     id TEXT PRIMARY KEY,

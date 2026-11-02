@@ -26,29 +26,45 @@ pub struct Applied {
 
 pub fn apply(conn: &mut Connection, actor: &Actor, m: &Mutation, now: i64) -> Result<Applied, ApiError> {
     let tx = conn.transaction()?;
-    let earlier: Option<(String, i64, Option<String>)> = tx
-        .query_row("SELECT owner_id, seq, effects FROM mutations WHERE id = ?1", [m.id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-        .optional()?;
-    if let Some((owner, seq, effects)) = earlier {
-        if owner != actor.owner {
-            return Err(ApiError::conflict("改动 ID 重复"));
-        }
-        // past the retention period only the receipt is left
-        let effects = effects.map(|e| serde_json::from_str(&e)).transpose()?.unwrap_or_default();
-        return Ok(Applied { seq, effects });
+    if let Some(applied) = earlier(&tx, actor, m.id)? {
+        return Ok(applied);
     }
-    let mut cx = Cx { c: &tx, owner: actor.owner, via: actor.via.map(str::to_owned), now, effects: Vec::new() };
-    for op in &m.ops {
-        cx.op(op)?;
-    }
-    let effects = cx.effects;
-    tx.execute(
-        "INSERT INTO mutations (id, owner_id, token_id, actor, ops, effects, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![m.id, actor.owner, actor.token_id, actor.via, serde_json::to_string(&m.ops)?, serde_json::to_string(&effects)?, now],
-    )?;
-    let seq = tx.last_insert_rowid();
+    let effects = run(&tx, actor, &m.ops, now)?;
+    let seq = record(&tx, actor, m.id, &m.ops, &effects, now)?;
     tx.commit()?;
     Ok(Applied { seq, effects })
+}
+
+/// The result of a mutation that was already applied.
+pub fn earlier(c: &Connection, actor: &Actor, id: MutationId) -> Result<Option<Applied>, ApiError> {
+    let row: Option<(String, i64, Option<String>)> = c
+        .query_row("SELECT owner_id, seq, effects FROM mutations WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .optional()?;
+    let Some((owner, seq, effects)) = row else { return Ok(None) };
+    if owner != actor.owner {
+        return Err(ApiError::conflict("改动 ID 重复"));
+    }
+    // past the retention period only the receipt is left
+    let effects = effects.map(|e| serde_json::from_str(&e)).transpose()?.unwrap_or_default();
+    Ok(Some(Applied { seq, effects }))
+}
+
+/// Applies the operations inside the caller's transaction and returns what changed.
+pub fn run(c: &Connection, actor: &Actor, ops: &[Op], now: i64) -> Result<Vec<Effect>, ApiError> {
+    let mut cx = Cx { c, owner: actor.owner, via: actor.via.map(str::to_owned), now, effects: Vec::new() };
+    for op in ops {
+        cx.op(op)?;
+    }
+    Ok(cx.effects)
+}
+
+/// Adds the mutation to the log and returns its sequence number.
+pub fn record(c: &Connection, actor: &Actor, id: MutationId, ops: &[Op], effects: &[Effect], now: i64) -> Result<i64, ApiError> {
+    c.execute(
+        "INSERT INTO mutations (id, owner_id, token_id, actor, ops, effects, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![id, actor.owner, actor.token_id, actor.via, serde_json::to_string(ops)?, serde_json::to_string(effects)?, now],
+    )?;
+    Ok(c.last_insert_rowid())
 }
 
 /// `cur` with the fields that changed from `before` to `after` set back to `before`, so that undoing
@@ -196,7 +212,15 @@ impl Cx<'_> {
         store::load_task(self.c, self.owner, id)?.ok_or_else(|| ApiError::not_found("事项不存在"))
     }
 
+    fn check_name(&self, f: &Folder) -> Result<(), ApiError> {
+        if store::folder_name_taken(self.c, self.owner, f)? {
+            return Err(ApiError::conflict(format!("这一层已经有叫“{}”的文件夹了", f.name.as_str())));
+        }
+        Ok(())
+    }
+
     fn create_folder(&mut self, f: Folder) -> Result<(), ApiError> {
+        self.check_name(&f)?;
         store::insert_folder(self.c, self.owner, &f)?;
         self.effects.push(Effect::Folder(Change::Created(f)));
         Ok(())
@@ -213,6 +237,9 @@ impl Cx<'_> {
             if store::in_subtree(self.c, after.id, p)? {
                 return Err(ApiError::folder_cycle());
             }
+        }
+        if after.parent_id != before.parent_id || after.name != before.name {
+            self.check_name(&after)?;
         }
         after.updated_at = self.now;
         store::update_folder(self.c, &after)?;
@@ -272,7 +299,9 @@ impl Cx<'_> {
     fn create_dependency(&mut self, d: Dependency) -> Result<(), ApiError> {
         let edges = store::dependency_edges(self.c, self.owner)?;
         if let Some(path) = find_path(&edges, d.after, d.before) {
-            return Err(ApiError::cycle([d.before].into_iter().chain(path).collect()));
+            let path: Vec<TaskId> = [d.before].into_iter().chain(path).collect();
+            let titles = path.iter().map(|&id| Ok(format!("“{}”", self.task(id)?.title.as_str()))).collect::<Result<Vec<_>, ApiError>>()?;
+            return Err(ApiError::cycle(path, &titles.join(" → ")));
         }
         store::insert_dependency(self.c, self.owner, &d)?;
         self.effects.push(Effect::Dependency(Link::Added(d)));

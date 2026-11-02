@@ -3,14 +3,17 @@
 pub mod auth;
 pub mod db;
 pub mod error;
+pub mod mcp;
 pub mod mutate;
 pub mod store;
 pub mod sync;
+pub mod tools;
 
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::Router;
+use axum::middleware;
 use axum::routing::{delete, get, post};
 use tower_http::compression::CompressionLayer;
 use tower_http::trace::TraceLayer;
@@ -56,6 +59,11 @@ pub fn app(state: AppState) -> Router {
         .route("/snapshot", get(sync::snapshot))
         .route("/changes", get(sync::changes))
         .route("/mutations", post(sync::mutate))
+        .route("/tools", get(tools::list_tools))
+        .route("/tools/{name}", post(tools::call_tool))
         .fallback(|| async { ApiError::not_found("接口不存在") });
-    Router::new().nest("/api/v1", api).layer(CompressionLayer::new()).layer(TraceLayer::new_for_http()).with_state(state)
+    let mcp = Router::new()
+        .route_service("/mcp", mcp::service(state.clone()))
+        .route_layer(middleware::from_fn_with_state(state.clone(), mcp::authenticate));
+    Router::new().nest("/api/v1", api).merge(mcp).layer(CompressionLayer::new()).layer(TraceLayer::new_for_http()).with_state(state)
 }

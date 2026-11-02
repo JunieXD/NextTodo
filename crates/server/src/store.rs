@@ -1,5 +1,6 @@
 //! Reading and writing entities. Every lookup is scoped to the owner.
 
+use nexttodo_core::board::Snapshot;
 use nexttodo_core::model::{Date, Dependency, Due, DueAt, Folder, FolderId, SortKey, Task, TaskId, Time};
 use rusqlite::{Connection, OptionalExtension, Params, Row, params};
 
@@ -52,6 +53,15 @@ fn due_columns(due: &Option<Due>) -> (Option<&Date>, Option<&Time>, Option<u32>)
 
 pub fn load_folder(c: &Connection, owner: &str, id: FolderId) -> rusqlite::Result<Option<Folder>> {
     c.query_row(&format!("SELECT {FOLDER_COLUMNS} FROM folders WHERE id = ?1 AND owner_id = ?2"), params![id, owner], folder_row).optional()
+}
+
+/// Whether another folder next to `f` already has its name.
+pub fn folder_name_taken(c: &Connection, owner: &str, f: &Folder) -> rusqlite::Result<bool> {
+    c.query_row(
+        "SELECT EXISTS (SELECT 1 FROM folders WHERE owner_id = ?1 AND parent_id IS ?2 AND name = ?3 AND id <> ?4)",
+        params![owner, f.parent_id, f.name, f.id],
+        |r| r.get(0),
+    )
 }
 
 pub fn folder_id_taken(c: &Connection, id: FolderId) -> rusqlite::Result<bool> {
@@ -208,16 +218,18 @@ pub fn delete_dependency(c: &Connection, d: &Dependency) -> rusqlite::Result<()>
     Ok(())
 }
 
-pub fn all_folders(c: &Connection, owner: &str) -> rusqlite::Result<Vec<Folder>> {
-    all(c, &format!("SELECT {FOLDER_COLUMNS} FROM folders WHERE owner_id = ?1 ORDER BY id"), [owner], folder_row)
-}
-
-pub fn all_tasks(c: &Connection, owner: &str) -> rusqlite::Result<Vec<Task>> {
-    all(c, &format!("SELECT {TASK_COLUMNS} FROM tasks WHERE owner_id = ?1 ORDER BY id"), [owner], task_row)
-}
-
-pub fn all_dependencies(c: &Connection, owner: &str) -> rusqlite::Result<Vec<Dependency>> {
-    all(c, "SELECT before_id, after_id, created_at FROM dependencies WHERE owner_id = ?1 ORDER BY before_id, after_id", [owner], dep_row)
+/// All of a user's data, in id order.
+pub fn snapshot(c: &Connection, owner: &str) -> rusqlite::Result<Snapshot> {
+    Ok(Snapshot {
+        folders: all(c, &format!("SELECT {FOLDER_COLUMNS} FROM folders WHERE owner_id = ?1 ORDER BY id"), [owner], folder_row)?,
+        tasks: all(c, &format!("SELECT {TASK_COLUMNS} FROM tasks WHERE owner_id = ?1 ORDER BY id"), [owner], task_row)?,
+        dependencies: all(
+            c,
+            "SELECT before_id, after_id, created_at FROM dependencies WHERE owner_id = ?1 ORDER BY before_id, after_id",
+            [owner],
+            dep_row,
+        )?,
+    })
 }
 
 /// The latest mutation sequence number the user can see.

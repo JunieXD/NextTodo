@@ -17,7 +17,7 @@ import {
   ReactFlowProvider,
   useReactFlow,
 } from "@xyflow/react";
-import "@xyflow/react/dist/base.css";
+import "./graph.css";
 import { Check as CheckIcon, Clock, Folder as FolderIcon, Link, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { FolderId } from "../api/types/FolderId";

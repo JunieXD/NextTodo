@@ -2,6 +2,7 @@
 
 import { ChevronRight, Clock, Folder as FolderIcon, Check as CheckIcon, Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
+import type { Op } from "../api/types/Op";
 import type { Folder } from "../api/types/Folder";
 import type { FolderId } from "../api/types/FolderId";
 import type { Task } from "../api/types/Task";
@@ -9,8 +10,12 @@ import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
 import { dueKind, formatDue } from "../domain/dates";
 import { edgesAmong } from "../domain/graph";
+import { range, rekey } from "../domain/reorder";
+import { useCommit } from "../session";
+import { useFeedback } from "../ui/feedback";
 import { Check } from "../ui/controls";
 import { Icon, Inbound, Outbound } from "../ui/icons";
+import { useRowDrag } from "./drag";
 import { useMarks } from "./marks";
 
 export interface RowActions {
@@ -119,7 +124,8 @@ function useSwipe(inner: React.RefObject<HTMLDivElement | null>, done: (dx: numb
       if (e.touches.length === 1) s = { x: e.touches[0].clientX, y: e.touches[0].clientY, dx: 0, active: false };
     };
     const move = (e: TouchEvent) => {
-      if (!s) return;
+      // A row picked up to be dragged elsewhere doesn't swipe.
+      if (!s || "lifted" in row.dataset) return;
       const dx = e.touches[0].clientX - s.x;
       if (!s.active) {
         if (Math.abs(e.touches[0].clientY - s.y) > 10) {
@@ -225,8 +231,25 @@ export function railLayout(list: Task[], board: Board) {
 
 export function RailList({ tasks, board, now, selected, actions }: { tasks: Task[]; board: Board; now: Date; selected: TaskId | null; actions: RowActions }) {
   const rail = railLayout(tasks, board);
+  const commit = useCommit();
+  const { snack } = useFeedback();
+  const list = useRef<HTMLDivElement>(null);
+  useRowDrag(list, RAIL_ROW, {
+    range: (from) => range(board, tasks, from),
+    drop(from, to, blocked) {
+      const t = tasks[from];
+      const { above, below } = range(board, tasks, from);
+      if (blocked === "up") snack(`“${t.title}”要等“${above!.title}”做完，只能排在它后面`);
+      else if (blocked === "down") snack(`“${below!.title}”要等“${t.title}”做完，“${t.title}”只能排在它前面`);
+      else if (to !== from) {
+        const wanted = tasks.filter((x) => x !== t);
+        wanted.splice(to, 0, t);
+        commit(rekey(wanted, t.id).map((k): Op => ({ op: "task.update", ...k })));
+      }
+    },
+  });
   return (
-    <div className="rail-list" style={{ "--gutter": `${rail.gutter}px`, "--sep-left": `${rail.gutter}px` } as React.CSSProperties}>
+    <div className="rail-list" ref={list} style={{ "--gutter": `${rail.gutter}px`, "--sep-left": `${rail.gutter}px` } as React.CSSProperties}>
       <svg className="rail" width={rail.gutter} height={rail.height}>
         {rail.paths.map((p) => (
           <path key={p.key} d={p.d} className={p.live ? "live" : undefined} />

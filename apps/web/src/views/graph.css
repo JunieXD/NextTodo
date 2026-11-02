@@ -1,0 +1,2 @@
+/* React Flow's own styles, in a layer below the app's so that the app's win. */
+@import "@xyflow/react/dist/base.css" layer(base);

@@ -19,13 +19,13 @@ fi
 mv compose.yaml.new compose.yaml
 mv .env.new .env
 
-# Started, and answering on its port.
+# Started, and answering on its port within 30 seconds.
 up() {
   docker compose up -d || return 1
-  local port
+  local port deadline=$((SECONDS + 30))
   port=$(sed -n 's/^NEXTTODO_PORT=//p' .env)
-  for _ in $(seq 30); do
-    curl -fsS -o /dev/null "http://127.0.0.1:$port/" && return 0
+  while ((SECONDS < deadline)); do
+    curl -fsS --max-time 3 -o /dev/null "http://127.0.0.1:$port/" && return 0
     sleep 1
   done
   return 1
@@ -35,7 +35,7 @@ if up; then
   rm -f compose.yaml.prev .env.prev
   exit 0
 fi
-docker compose logs --tail 50
+docker compose logs --tail 50 || true
 if [[ -f .env.prev ]]; then
   echo "新版本没有启动起来，换回上一个版本" >&2
   mv compose.yaml.prev compose.yaml

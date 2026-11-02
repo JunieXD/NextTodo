@@ -1,6 +1,8 @@
 // Keeps each user's local copy in IndexedDB, so the app opens with data even when offline. Every
 // open tab saves a copy of its own, so that tabs never overwrite each other's unsent changes; opening
-// the app merges them into one.
+// the app merges them into one. A change can stay unsent in a copy after the server has it, when its
+// tab closed before hearing back: every save takes the changes its copy has received out of the
+// others, and merging leaves out those the newest copy has received.
 
 import { openDB } from "idb";
 import type { Saved } from "./store";
@@ -39,7 +41,7 @@ export async function load(userId: string): Promise<Saved | undefined> {
 
 export interface Saver {
   /** Saves the latest state, writing at most one at a time and skipping states that a newer one
-   * replaced while a write was going on. */
+   * replaced while a write was going on. The changes it has received leave the other copies. */
   save(s: Saved): void;
   /** Stops saving, once the write going on has finished. */
   close(): Promise<void>;
@@ -58,7 +60,16 @@ export function saver(userId: string): Saver {
           while (next) {
             const s = next;
             next = undefined;
-            await (await db()).put("copies", s, [userId, TAB]);
+            const tx = (await db()).transaction("copies", "readwrite");
+            const received = new Set(s.log.map(([id]) => id));
+            for (const key of await tx.store.getAllKeys(copies(userId))) {
+              if ((key as string[])[1] === TAB) continue;
+              const other: Saved = await tx.store.get(key);
+              const outbox = other.outbox.filter((p) => !received.has(p.mutation.id));
+              if (outbox.length < other.outbox.length) await tx.store.put({ ...other, outbox }, key);
+            }
+            await tx.store.put(s, [userId, TAB]);
+            await tx.done;
           }
         } finally {
           writing = null;
@@ -77,4 +88,9 @@ export function saver(userId: string): Saver {
 /** Deletes every copy of the user's data. Close the saver first, or a write may land afterwards. */
 export async function forget(userId: string) {
   await (await db()).delete("copies", copies(userId));
+}
+
+/** Deletes this tab's copy of the user's data. */
+export async function forgetHere(userId: string) {
+  await (await db()).delete("copies", [userId, TAB]);
 }

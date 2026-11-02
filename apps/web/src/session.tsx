@@ -13,12 +13,18 @@ import type { Op } from "./api/types/Op";
 import type { SeqSnapshot } from "./api/types/SeqSnapshot";
 import type { User } from "./api/types/User";
 import { Rejected } from "./domain/apply";
-import { type Saver, forget, load, saver } from "./sync/persist";
+import { type Saver, forget, forgetHere, load, saver } from "./sync/persist";
 import { type Connection, Socket } from "./sync/socket";
 import { type Saved, Store } from "./sync/store";
 import { useFeedback } from "./ui/feedback";
 
 const USER = "nexttodo.user";
+
+/** Who was signed in on this device last, shared by its tabs. */
+function cachedUser(): User | null {
+  const cached = localStorage.getItem(USER);
+  return cached && JSON.parse(cached);
+}
 
 /** Tells the other tabs when a session ends in one of them: they hold the same user's data, and
  * would save it again. */
@@ -64,8 +70,13 @@ export class Session {
     tabs.addEventListener("message", this.endedElsewhere);
   }
 
+  /** Set when the session ended in another tab, which has cleaned up already. */
+  private endedInAnotherTab = false;
+
   private readonly endedElsewhere = (e: MessageEvent) => {
-    if (e.data === this.user.id) this.listeners.signedOut();
+    if (e.data !== this.user.id) return;
+    this.endedInAnotherTab = true;
+    this.listeners.signedOut();
   };
 
   listen(listeners: Listeners) {
@@ -98,9 +109,8 @@ export class Session {
 
   /** The session this device was in last time, if any. */
   static async resume(): Promise<Session | null> {
-    const cached = localStorage.getItem(USER);
-    if (cached) {
-      const user: User = JSON.parse(cached);
+    const user = cachedUser();
+    if (user) {
       const saved = await load(user.id);
       if (saved) return new Session(user, saved);
     }
@@ -126,12 +136,14 @@ export class Session {
     }
   }
 
-  /** Forgets everything about the user on this device. */
+  /** Forgets everything about the user on this device, and ends the session in the other tabs. */
   async close() {
     tabs.removeEventListener("message", this.endedElsewhere);
     this.socket.stop();
     await this.saver.close();
-    localStorage.removeItem(USER);
+    // The tab where it ended has done the rest, and may have signed in again since.
+    if (this.endedInAnotherTab) return forgetHere(this.user.id);
+    if (cachedUser()?.id === this.user.id) localStorage.removeItem(USER);
     await forget(this.user.id);
     tabs.postMessage(this.user.id);
   }

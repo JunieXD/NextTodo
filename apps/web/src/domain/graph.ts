@@ -10,27 +10,51 @@ export type Edge = [before: TaskId, after: TaskId];
 
 /** Leaves out A → C when A → B → C is there too. Dependencies have no cycles. */
 export function reduce(edges: Edge[]): Edge[] {
-  const next = new Map<TaskId, TaskId[]>();
-  for (const [a, b] of edges) {
-    const list = next.get(a);
-    if (list) list.push(b);
-    else next.set(a, [b]);
+  const out = new Map<TaskId, Edge[]>();
+  const waiting = new Map<TaskId, number>();
+  for (const e of edges) {
+    const list = out.get(e[0]);
+    if (list) list.push(e);
+    else out.set(e[0], [e]);
+    waiting.set(e[0], waiting.get(e[0]) ?? 0);
+    waiting.set(e[1], (waiting.get(e[1]) ?? 0) + 1);
   }
-  // For each task, everything after it, and everything after the tasks right after it: an edge to
-  // one of those is implied by a longer path.
-  const memo = new Map<TaskId, { after: Set<TaskId>; implied: Set<TaskId> }>();
-  const walk = (n: TaskId) => {
-    let m = memo.get(n);
-    if (!m) {
-      const direct = next.get(n) ?? [];
-      const implied = new Set<TaskId>();
-      for (const d of direct) for (const x of walk(d).after) implied.add(x);
-      m = { after: new Set([...implied, ...direct]), implied };
-      memo.set(n, m);
+  // Each task's place in a topological order (Kahn's algorithm).
+  const rank = new Map<TaskId, number>();
+  const ready = [...waiting].filter(([, n]) => n === 0).map(([id]) => id);
+  while (ready.length) {
+    const id = ready.pop()!;
+    rank.set(id, rank.size);
+    for (const [, b] of out.get(id) ?? []) {
+      waiting.set(b, waiting.get(b)! - 1);
+      if (waiting.get(b) === 0) ready.push(b);
     }
-    return m;
-  };
-  return edges.filter(([a, b]) => !walk(a).implied.has(b));
+  }
+  // Going through a task's successors in that order, one that an earlier one leads to is implied.
+  // Nothing past the last successor can be one, so the walks stop there.
+  const redundant = new Set<Edge>();
+  for (const list of out.values()) {
+    if (list.length < 2) continue;
+    const sorted = list.toSorted((x, y) => rank.get(x[1])! - rank.get(y[1])!);
+    const last = rank.get(sorted.at(-1)![1])!;
+    const reached = new Set<TaskId>();
+    for (const e of sorted) {
+      if (reached.has(e[1])) {
+        redundant.add(e);
+        continue;
+      }
+      const stack = [e[1]];
+      while (stack.length) {
+        for (const [, b] of out.get(stack.pop()!) ?? []) {
+          if (rank.get(b)! <= last && !reached.has(b)) {
+            reached.add(b);
+            stack.push(b);
+          }
+        }
+      }
+    }
+  }
+  return edges.filter((e) => !redundant.has(e));
 }
 
 /** The dependencies among `tasks`, without redundant ones. */

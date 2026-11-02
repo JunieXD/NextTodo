@@ -38,3 +38,14 @@ test("opening merges what every tab saved: the newest base and the unsent change
   expect(await load(USER)).toBeUndefined();
   expect(await load("someone-else")).toBeDefined();
 });
+
+test("a save takes the changes it has received out of the other copies", async () => {
+  const db = await openDB("nexttodo", 1);
+  // Another tab sent 1 and 2, and closed before hearing back.
+  await db.put("copies", copy(5, [1, 2]), [USER, "tab-a"]);
+  const save = saver(USER);
+  save.save(copy(9, [3], [1]));
+  await save.close();
+  expect((await db.get("copies", [USER, "tab-a"])).outbox.map((p: { at: number }) => p.at)).toEqual([2]);
+  await forget(USER);
+});

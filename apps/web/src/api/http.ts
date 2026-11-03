@@ -36,10 +36,18 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
   }
   if (res.status === 204) return undefined as T;
   if (res.ok) return JSON.parse(text) as T;
-  // A proxy in between may answer with a page of its own.
-  const error: Partial<ErrorBody> = res.headers.get("Content-Type")?.startsWith("application/json") ? JSON.parse(text) : {};
+  const error = parseError(text);
   const field = (error.details as { field?: string } | undefined)?.field;
   throw new ApiError(res.status, error.code ?? "error", error.message ?? `服务器出错了（${res.status}）`, field);
+}
+
+/** The server's error, or nothing when a proxy in between answers with a page of its own. */
+function parseError(text: string): Partial<ErrorBody> {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
 }
 
 /** How this browser shows up among the user's devices, such as `Chrome · macOS`. */

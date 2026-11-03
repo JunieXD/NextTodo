@@ -4,7 +4,6 @@
 
 import "fake-indexeddb/auto";
 import { openDB } from "idb";
-import { v7 as uuidv7 } from "uuid";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { User } from "./api/types/User";
 import type { Session } from "./session";
@@ -169,6 +168,23 @@ test("signing out ends the user's tabs of an earlier sign-in too", async () => {
   expect(await saved(u)).toEqual([0, 0]);
 });
 
+test("signing out in a tab of an earlier sign-in ends the user's tabs of a later one too", async () => {
+  const u = user(20);
+  const a = await signIn(u);
+  await (await tab()).open(as(u));
+  const bSocket = sockets.at(-1)!;
+  const c = (await (await tab()).resume())!;
+  const heard = watch(c);
+  // The server stops accepting B's sign-in, which drops it; C, offline, hears nothing.
+  kick(bSocket);
+  await vi.waitFor(() => expect(login()).toBeNull());
+  await a.signOut();
+  await vi.waitFor(() => expect(heard.signedOut).toBe(true));
+  change(c);
+  await c.close();
+  expect(await saved(u)).toEqual([0, 0]);
+});
+
 test("a tab of an earlier sign-in that the server stops accepting leaves the latest sign-in alone", async () => {
   const u = user(4);
   await signIn(u);
@@ -204,14 +220,13 @@ test("signing out while another tab signs in as the same user leaves that sign-i
 
 test("a sign-in or sign-out heard late leaves a later sign-in alone", async () => {
   const [u, v] = [user(17), user(18)];
-  const earlier = uuidv7();
   const b = await signIn(u);
   const heard = watch(b);
   const { id } = change(b);
   await vi.waitFor(() => expect(b.store.unconfirmed).toHaveLength(2));
   const late = new BroadcastChannel("nexttodo");
-  late.postMessage({ signedOut: { id: earlier, user: u } });
-  late.postMessage({ signedIn: { id: earlier, user: v } });
+  late.postMessage({ signedOut: { id: 0, user: u } });
+  late.postMessage({ signedIn: { id: 0, user: v } });
   // Messages come in order: once the change is dropped, the two before it have been heard.
   late.postMessage({ rejected: id });
   await vi.waitFor(() => expect(b.store.unconfirmed).toHaveLength(1));

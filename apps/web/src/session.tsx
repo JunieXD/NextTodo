@@ -3,7 +3,6 @@
 // holds.
 
 import { createContext, useContext, useSyncExternalStore } from "react";
-import { v7 as uuidv7 } from "uuid";
 import { ApiError, api } from "./api/http";
 import type { Effect } from "./api/types/Effect";
 import type { ErrorBody } from "./api/types/ErrorBody";
@@ -22,10 +21,20 @@ import { useFeedback } from "./ui/feedback";
 const LOGIN = "nexttodo.login";
 
 /** The latest sign-in on this device, shared by its tabs: which one, so that a tab still in an
- * earlier one leaves it alone, and who signed in. Sign-in ids grow with time (UUIDv7). */
+ * earlier one leaves it alone, and who signed in. */
 interface Login {
-  id: string;
+  /** Its number in the device's sequence of sign-ins and sign-outs. */
+  id: number;
   user: User;
+}
+
+const COUNT = "nexttodo.count";
+
+/** The next number in the device's sequence of sign-ins and sign-outs; in `turn`. */
+function next(): number {
+  const n = Number(localStorage.getItem(COUNT)) + 1;
+  localStorage.setItem(COUNT, String(n));
+  return n;
 }
 
 function cachedLogin(): Login | null {
@@ -54,10 +63,10 @@ async function logout(): Promise<boolean> {
   return true;
 }
 
-/** What a tab tells the others: who signed in, so that tabs of anyone else end; who signed out on
- * this device, and up to which sign-in, so that the user's tabs in it or before end too, instead of
- * saving the data again; that the server turned a change down, which only the tab that sent it
- * hears, so that tabs that took it from the outbox drop it too. */
+/** What a tab tells the others, numbered in the device's sequence: who signed in, so that tabs of
+ * anyone else end; who signed out on this device, so that the user's tabs end too, whichever sign-in
+ * they are in, instead of saving the data again; that the server turned a change down, which only
+ * the tab that sent it hears, so that tabs that took it from the outbox drop it too. */
 type Message = { signedIn: Login } | { signedOut: Login } | { rejected: MutationId };
 const tabs = new BroadcastChannel("nexttodo");
 
@@ -93,7 +102,7 @@ export class Session {
   constructor(
     public user: User,
     /** The sign-in this session belongs to. */
-    private readonly login: string,
+    private readonly login: number,
     /** Its copy of the user's data on this device. */
     private readonly copy: string,
     saved: Saved,
@@ -127,11 +136,10 @@ export class Session {
 
   private readonly heard = ({ data }: MessageEvent<Message>) => {
     if ("rejected" in data) this.store.drop(data.rejected);
-    // A message can be heard late: only a sign-in after this session's own, or a sign-out of it or
-    // of a later one, ends it.
+    // A message can be heard late: only a sign-in or sign-out after this session's sign-in ends it.
     else if ("signedIn" in data) {
       if (data.signedIn.user.id !== this.user.id && data.signedIn.id > this.login) this.endedElsewhere(false);
-    } else if (data.signedOut.user.id === this.user.id && data.signedOut.id >= this.login) this.endedElsewhere(false);
+    } else if (data.signedOut.user.id === this.user.id && data.signedOut.id > this.login) this.endedElsewhere(false);
   };
 
   /** Ends the session here after it ended elsewhere, and tells the UI. When the server just stopped
@@ -249,7 +257,7 @@ export class Session {
       // their sign-in deleted it, but this session may have saved some again since.
       if (latest.user.id !== this.user.id) await forget(this.user.id);
       else if (!keep) await forgetCopy(this.user.id, this.copy);
-    } else if (!keep) await forgetUser({ id: this.login, user: this.user });
+    } else if (!keep) await forgetUser(this.user);
     else if (current) localStorage.removeItem(LOGIN);
     // Signed out on the server too, and the data deleted: done.
     if (!keep && this.loggedOut && pendingSignOut()?.id === this.login) localStorage.removeItem(SIGNED_OUT);
@@ -271,7 +279,7 @@ export class Session {
 /** Makes `user` the device's latest sign-in and opens their data saved on the device; anyone
  * else's goes. In `turn`. Without data saved, returns the sign-in to download it for. */
 async function claim(user: User, copy: string): Promise<Session | Login> {
-  const login: Login = { id: uuidv7(), user };
+  const login: Login = { id: next(), user };
   localStorage.setItem(LOGIN, JSON.stringify(login));
   localStorage.removeItem(SIGNED_OUT);
   tabs.postMessage({ signedIn: login } satisfies Message);
@@ -290,18 +298,18 @@ async function fresh({ id, user }: Login, copy: string): Promise<Session> {
   });
 }
 
-/** Signs the user of `login` out on this device: deletes their data, and their sign-in if it is
- * still the latest; their tabs still open in it or an earlier one end. In `turn`. */
-async function forgetUser(login: Login) {
-  await forget(login.user.id);
+/** Signs the user out on this device: deletes their data, and their sign-in if it is still the
+ * latest; their tabs still open end. In `turn`. */
+async function forgetUser(user: User) {
+  await forget(user.id);
   // The sign-in goes last: cut short before, there is no data left to open with.
-  if (cachedLogin()?.user.id === login.user.id) localStorage.removeItem(LOGIN);
-  tabs.postMessage({ signedOut: login } satisfies Message);
+  if (cachedLogin()?.user.id === user.id) localStorage.removeItem(LOGIN);
+  tabs.postMessage({ signedOut: { id: next(), user } } satisfies Message);
 }
 
 /** Finishes a sign-out cut short; in `turn`. */
 async function finishSignOut(out: Login) {
-  await forgetUser(out);
+  await forgetUser(out.user);
   if (await logout()) localStorage.removeItem(SIGNED_OUT);
 }
 

@@ -360,7 +360,6 @@ svg { display: block; flex: none; }
 .desk .snackbar { left: 0; right: 0; margin: 0 auto; bottom: 24px; width: 440px; }
 .desk .row:hover > .row-inner { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 4%); }
 .desk .row.selected > .row-inner { background: var(--secondary-container); }
-.row-value { margin-left: auto; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
 
 /* ---------- macOS app ---------- */
 /* The window's buttons sit at the top left, over the page (tauri.conf.json); the bars around them

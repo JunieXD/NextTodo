@@ -12,7 +12,12 @@ let resuming: Promise<Session | null> | undefined;
 
 export function App() {
   const [state, setState] = useState<State>({ kind: "loading" });
-  useEffect(started, []);
+  // The first page has rendered, the sign-in page or the app: a build being tried works. Should it
+  // fail to render, the error boundary takes its place, and this never runs.
+  const shown = state.kind !== "loading";
+  useEffect(() => {
+    if (shown) started();
+  }, [shown]);
   useEffect(() => {
     (resuming ??= Session.resume()).then(
       (session) => setState(session ? { kind: "in", session } : { kind: "out" }),

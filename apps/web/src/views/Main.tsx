@@ -9,7 +9,7 @@ import { type Session, SessionContext, useSession, useUndo } from "../session";
 import { useFeedback } from "../ui/feedback";
 import { useWide } from "../ui/hooks";
 import { Root } from "../ui/Root";
-import { check, install, restart, usePending } from "../updates";
+import { EVERY_MS, check, install, restart, usePending } from "../updates";
 import { Desktop } from "./Desktop";
 import { MarksProvider } from "./marks";
 import { Phone } from "./Phone";
@@ -81,8 +81,8 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
   return null;
 }
 
-/** Looks for updates when the app opens and comes back to the front, and tells the user once about
- * one waiting. */
+/** Looks for updates when the app opens, comes back to the front, and while it runs, and tells the
+ * user once about one waiting. */
 function Updates() {
   const { snack } = useFeedback();
   const pending = usePending();
@@ -90,7 +90,12 @@ function Updates() {
     const shown = () => document.visibilityState === "visible" && void check();
     void check();
     document.addEventListener("visibilitychange", shown);
-    return () => document.removeEventListener("visibilitychange", shown);
+    // The macOS app may stay open, or in the menu bar, for days.
+    const timer = setInterval(() => void check(), EVERY_MS);
+    return () => {
+      document.removeEventListener("visibilitychange", shown);
+      clearInterval(timer);
+    };
   }, []);
   useEffect(() => {
     if (pending?.kind === "apk") snack({ text: `NextTodo ${pending.version} 可以安装了`, action: "安装", onAction: () => void install(pending.url, snack), ms: 8000 });

@@ -53,8 +53,10 @@ jq -n --argjson native "$(jq .native apps/web/dist/app/web.json)" --arg version 
   '{native: $native, versionName: $version, url: "app/NextTodo.apk"}' > "$app/android.json"
 bundle=$(cargo metadata --no-deps --format-version 1 --manifest-path apps/desktop/src-tauri/Cargo.toml | jq -r .target_directory)/release/bundle/macos
 cp "$bundle/NextTodo.app.tar.gz" "$app/"
+# Read on its own line, where set -e stops at a missing signature; inside jq's arguments it would not.
+signature=$(cat "$bundle/NextTodo.app.tar.gz.sig")
 jq -n --arg version "$version" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg platform "darwin-$(uname -m | sed s/arm64/aarch64/)" \
-  --arg signature "$(cat "$bundle/NextTodo.app.tar.gz.sig")" --arg url "$URL/app/NextTodo.app.tar.gz" \
+  --arg signature "$signature" --arg url "$URL/app/NextTodo.app.tar.gz" \
   '{version: $version, pub_date: $date, platforms: {($platform): {signature: $signature, url: $url}}}' > "$app/macos.json"
 docker build --platform linux/amd64 --provenance=false -t "nexttodo:$TAG" "$stage"
 

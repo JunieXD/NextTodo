@@ -28,7 +28,9 @@ export const appVersion = async () => (app === "android" ? (await NextTodo.appIn
 
 /** How often to look again: the web app changes with nearly every release, the macOS app is a
  * download of a few MB. */
-const EVERY_MS = app === "android" ? 3600_000 : 6 * 3600_000;
+export const EVERY_MS = app === "android" ? 3600_000 : 6 * 3600_000;
+/** The server the checks below are of: another one starts afresh. */
+let server = "";
 let checked = 0;
 let checking = false;
 
@@ -36,30 +38,40 @@ let checking = false;
  * With a macOS version installed already, it would only install that again: the app still runs the
  * one before. */
 export async function check() {
-  if (!app || checking || Date.now() - checked < EVERY_MS || pending?.kind === "restart") return;
-  checking = true;
-  try {
-    if (app === "android") {
-      await NextTodo.updateWeb();
-      const res = await fetch(`${serverUrl()}/app/android.json`);
-      if (!res.ok) throw new Error(`/app/android.json：${res.status}`);
-      const apk: { native: number; versionName: string; url: string } = await res.json();
-      if (apk.native > (await NextTodo.appInfo()).native) {
-        set({ kind: "apk", version: apk.versionName, url: new URL(apk.url, `${serverUrl()}/`).href });
-      }
-    } else {
-      const version = await invoke<string | null>("update", { server: serverUrl() });
-      if (version) set({ kind: "restart", version });
-    }
-    checked = Date.now();
-  } catch (e) {
-    console.warn("检查更新失败", e);
-  } finally {
-    checking = false;
+  if (!app) return;
+  if (server !== serverUrl()) {
+    server = serverUrl();
+    checked = 0;
+    if (pending?.kind === "apk") set(null);
   }
+  if (checking || Date.now() - checked < EVERY_MS || pending?.kind === "restart") return;
+  checking = true;
+  // Each on its own: a web build that fails to download does not keep back an APK that fixes it.
+  const jobs: Promise<unknown>[] = app === "android" ? [NextTodo.updateWeb(), checkApk(server)] : [checkMac(server)];
+  const failed = (await Promise.allSettled(jobs)).filter((r) => r.status === "rejected");
+  checking = false;
+  for (const f of failed) console.warn("检查更新失败", f.reason);
+  if (!failed.length) checked = Date.now();
 }
 
-/** Tells the listeners about a new update; the same APK found again is not news. */
+/** Offers the APK `from` gives when its native version is newer; nothing, should the app have moved
+ * to another server meanwhile. */
+async function checkApk(from: string) {
+  const res = await fetch(`${from}/app/android.json`);
+  if (!res.ok) throw new Error(`/app/android.json：${res.status}`);
+  const apk: { native: number; versionName: string; url: string } = await res.json();
+  const newer = apk.native > (await NextTodo.appInfo()).native;
+  if (from !== serverUrl()) return;
+  set(newer ? { kind: "apk", version: apk.versionName, url: new URL(apk.url, `${from}/`).href } : null);
+}
+
+/** Installs the macOS version `from` gives when it is newer. */
+async function checkMac(from: string) {
+  const version = await invoke<string | null>("update", { server: from });
+  if (version) set({ kind: "restart", version });
+}
+
+/** Tells the listeners about a new update, or none any more; the same found again is not news. */
 function set(p: Pending) {
   if (p?.kind === pending?.kind && p?.version === pending?.version) return;
   pending = p;

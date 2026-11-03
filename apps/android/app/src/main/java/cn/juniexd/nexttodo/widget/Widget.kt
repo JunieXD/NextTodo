@@ -73,19 +73,23 @@ object Widget {
         }
     }
 
-    /** The tasks ticked off and being completed, each with where it was: it stays there, shown done,
-     * until it goes, whatever lists come meanwhile. Kept in memory, as the completing is: should the
-     * app be stopped, both end. */
-    private val ticked = MutableStateFlow<Map<String, IndexedValue<Item>>>(emptyMap())
+    /** A task ticked off and being completed, with where it was in the list, in the session `token`. */
+    private data class Ticked(val row: IndexedValue<Item>, val token: String)
+
+    /** The tasks being completed: each stays where it was, shown done, until it goes, whatever lists
+     * come meanwhile; in its own session only. Kept in memory, as the completing is: should the app be
+     * stopped, both end. */
+    private val ticked = MutableStateFlow<Map<String, Ticked>>(emptyMap())
 
     /** What to show now. */
     fun shown(context: Context): Shown {
-        val ticked = ticked.value
+        val token = Server.token(context)
+        val ticked = ticked.value.filterValues { it.token == token }
         val items = items(context).toMutableList()
-        for ((i, item) in ticked.values.sortedBy { it.index }) {
+        for ((i, item) in ticked.values.map { it.row }.sortedBy { it.index }) {
             if (items.none { it.id == item.id }) items.add(minOf(i, items.size), item)
         }
-        return Shown(Server.token(context) != null, items, ticked.keys)
+        return Shown(token != null, items, ticked.keys)
     }
 
     /** Takes a task done on the server out of the list, until the next list comes. Lists asked for
@@ -131,7 +135,7 @@ object Widget {
     suspend fun complete(context: Context, task: String, number: Int) {
         val token = Server.token(context) ?: return
         val start = SystemClock.elapsedRealtime()
-        shown(context).items.withIndex().find { it.value.id == task }?.let { row -> ticked.update { it + (task to row) } }
+        shown(context).items.withIndex().find { it.value.id == task }?.let { row -> ticked.update { it + (task to Ticked(row, token)) } }
         try {
             NextWidget().updateAll(context)
             try {

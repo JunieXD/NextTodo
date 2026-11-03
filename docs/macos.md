@@ -55,7 +55,7 @@ macOS App：Tauri 2 外壳加载打包在安装包里的网页端，加上菜单
 
 ## 构建
 
-- `pnpm tauri build`（在 `apps/desktop` 下）：构建网页端，再打 `.app` 和 `.dmg`。
+- `pnpm tauri build`（在 `apps/desktop` 下）：构建网页端，再打 `.app`、`.dmg` 和更新包。更新包要用更新密钥签名，打包前设好环境变量 `TAURI_SIGNING_PRIVATE_KEY`（私钥文件路径）和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`，没有它们打包会失败。
 - 不做苹果签名，用 ad-hoc 签名（`signingIdentity: "-"`）。本机构建的不带隔离属性，直接能打开；从别处下载的第一次打开会被拦下，要到“系统设置 → 隐私与安全性”里点“仍要打开”。
 - 版本号：部署脚本打包时是 `0.1.<提交数>`（见[更新](#更新)）；直接 `pnpm tauri build` 打出的是网页端 `package.json` 的版本（0.1.0），装上后会被服务器上的版本更新掉。
 

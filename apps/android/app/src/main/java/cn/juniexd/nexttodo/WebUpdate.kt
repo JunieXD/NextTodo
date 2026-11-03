@@ -16,7 +16,7 @@ import org.json.JSONObject
 /**
  * Newer builds of the web app from the server, used from the next start (docs/android.md#更新).
  * A build is downloaded into `files/web/<version>/`, reusing the files the one running has, and is
- * tried at the next start; one that does not report ready by the start after is given up.
+ * tried at the next start; one that does not report ready in time is given up.
  */
 object WebUpdate {
     /** The build served now: a downloaded one's version, or the APK's. */
@@ -29,9 +29,10 @@ object WebUpdate {
     private fun prefs(context: Context) = context.getSharedPreferences("WebUpdate", Context.MODE_PRIVATE)
     private fun builds(context: Context) = File(context.filesDir, "web")
 
-    /** Before the bridge starts: picks the build to serve, and has Capacitor serve it. */
+    /** Before the bridge starts: picks the build to serve, has Capacitor serve it, and returns its
+     * directory; null for the APK's. Called again when the build tried does not report ready in time. */
     @Synchronized
-    fun start(context: Context) {
+    fun start(context: Context): File? {
         val prefs = prefs(context)
         // Builds downloaded for another APK may need what this one lacks, and Capacitor serves the
         // APK's after an update anyway.
@@ -44,7 +45,7 @@ object WebUpdate {
         val bad = if (sameApk) prefs.getStringSet("bad", null).orEmpty() else emptySet()
         val trying = built(prefs.getString("staged", null))
         val good = built(prefs.getString("good", null))
-        val serve = trying ?: good
+        val serve = (trying ?: good)?.let { File(builds(context), it) }
         prefs.edit().clear()
             .putInt("apk", BuildConfig.VERSION_CODE)
             .putString("good", good)
@@ -52,10 +53,14 @@ object WebUpdate {
             .putStringSet("bad", failed?.let { bad + it } ?: bad)
             .commit()
         context.getSharedPreferences(WebView.WEBVIEW_PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putString(WebView.CAP_SERVER_PATH, serve?.let { File(builds(context), it).path } ?: "")
+            .putString(WebView.CAP_SERVER_PATH, serve?.path ?: "")
             .commit()
-        running = serve ?: bundled(context)
+        running = serve?.name ?: bundled(context)
+        return serve
     }
+
+    /** Whether the build served is being tried, and has yet to report ready. */
+    fun trying(context: Context) = prefs(context).contains("trying")
 
     /** The web app started: the build being tried works, and the ones before it can go. */
     @Synchronized
@@ -74,7 +79,8 @@ object WebUpdate {
         try {
             val server = Server.prefs(context).getString("server", null) ?: return@withContext null
             val info = JSONObject(String(download("$server/app/web.json")))
-            val version = info.getString("version")
+            // A commit, which names a directory here.
+            val version = info.getString("version").takeIf { it.matches(Regex("[0-9a-f]{7,40}")) } ?: throw IOException("版本号无效")
             val prefs = prefs(context)
             val known = setOf(running, prefs.getString("staged", null)) + prefs.getStringSet("bad", null).orEmpty()
             if (version in known || info.getInt("native") > BuildConfig.NATIVE) return@withContext null
@@ -92,6 +98,8 @@ object WebUpdate {
                     to.writeBytes(download("$server/$path"))
                 }
             }
+            // Released again meanwhile, the server may have given files of the next build.
+            if (JSONObject(String(download("$server/app/web.json"))).getString("version") != version) throw IOException("服务器上的版本已更新，下次再下载")
             File(part, "app").mkdirs()
             File(part, "app/web.json").writeText(info.toString())
             stage(context, part, version)

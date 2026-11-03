@@ -2,7 +2,7 @@
 
 import { ChevronRight, Copy, KeyRound, Mail, Monitor, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
-import { ApiError, api } from "../api/http";
+import { ApiError, api, native, serverUrl } from "../api/http";
 import type { CreatedToken } from "../api/types/CreatedToken";
 import type { Invite } from "../api/types/Invite";
 import type { Scope } from "../api/types/Scope";
@@ -15,6 +15,11 @@ import { type Theme, setTheme, useTheme } from "../theme";
 import { Seg } from "../ui/controls";
 import { Modal, useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
+import { BackgroundSettings } from "./Background";
+
+/** The link that opens registration with an invite code: on the server, which in the app is not
+ * where the page comes from. */
+const inviteLink = (code: string) => `${serverUrl() || location.origin}/?invite=${code}`;
 
 type Page = "main" | "password" | "token" | { secret: string; name: string };
 
@@ -60,7 +65,7 @@ export function Settings({ onClose, onSignOut }: { onClose(): void; onSignOut():
     try {
       const made = await api<Invite>("POST", "/invites");
       setInvites((list) => [made, ...(list ?? [])]);
-      await copy(`${location.origin}/?invite=${made.code}`);
+      await copy(inviteLink(made.code));
       snack("已复制邀请链接");
     } catch (e) {
       failed(e);
@@ -162,7 +167,7 @@ export function Settings({ onClose, onSignOut }: { onClose(): void; onSignOut():
                     <span className="folder-sub">{i.used_by ? `${i.used_by} 已注册` : `没用过，${ago(i.created_at, now)}生成`}</span>
                   </span>
                   {!i.used_by && (
-                    <button className="icon-btn sm" aria-label="复制邀请链接" onClick={() => copy(`${location.origin}/?invite=${i.code}`).then(() => snack("已复制邀请链接"))}>
+                    <button className="icon-btn sm" aria-label="复制邀请链接" onClick={() => copy(inviteLink(i.code)).then(() => snack("已复制邀请链接"))}>
                       <Icon of={Copy} size={16} />
                     </button>
                   )}
@@ -178,6 +183,8 @@ export function Settings({ onClose, onSignOut }: { onClose(): void; onSignOut():
           </div>
         </>
       )}
+
+      {native && <BackgroundSettings />}
 
       <h2 className="group-title">外观</h2>
       <div style={{ margin: "0 16px" }}>

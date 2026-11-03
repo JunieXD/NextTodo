@@ -152,6 +152,11 @@ export class Board {
     return `/${names.join("/")}`;
   }
 
+  /** Where a folder is, as people read it: `学习 / 毕业论文`, or `根目录`. */
+  place(f: FolderId | null): string {
+    return f ? this.folderPath(f).slice(1).replaceAll("/", " / ") : "根目录";
+  }
+
   /** The folder at a path such as `/工作/网站改版` (the leading `/` is optional). */
   findFolder(path: string): FolderId | null | undefined {
     let cur: FolderId | null = null;

@@ -17,7 +17,7 @@ import { useTaskActions } from "./actions";
 import { useMarks } from "./marks";
 import { useSelection } from "./nav";
 import { DueEditor, FolderPicker, TaskPicker } from "./pickers";
-import { dueClass, place } from "./rows";
+import { dueClass } from "./rows";
 
 const STATUS = { ready: "可做", waiting: "等待中", done: "已完成" };
 
@@ -64,7 +64,7 @@ export function Detail({ id, now, onClose }: { id: TaskId; now: Date; onClose?: 
       </div>
 
       <div className="group">
-        <Prop icon={FolderIcon} label="文件夹" value={place(board, t.folder_id)} onClick={() => setPanel("folder")} />
+        <Prop icon={FolderIcon} label="文件夹" value={board.place(t.folder_id)} onClick={() => setPanel("folder")} />
         <Prop icon={Calendar} label="截止" value={t.due ? formatDue(t.due, now) : "未设置"} cls={t.due ? dueClass(t, now) : "muted"} onClick={() => setPanel("due")} />
         {t.due?.time && (
           <Prop icon={Bell} label="提醒" value={remindLabel(t.due.remind_before)} cls={t.due.remind_before === undefined ? "muted" : ""} onClick={() => setPanel("due")} />
@@ -242,7 +242,7 @@ function Links({ board, list, onOpen, onRemove, onAdd, add }: { board: Board; li
               <span className={`dot ${status}`} />
               <button type="button" className="dep-main">
                 <span className="dep-title">{o.title}</span>
-                <span className="dep-path">{place(board, o.folder_id)}</span>
+                <span className="dep-path">{board.place(o.folder_id)}</span>
               </button>
               <button
                 className="icon-btn sm"

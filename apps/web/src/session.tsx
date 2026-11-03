@@ -3,7 +3,7 @@
 // holds.
 
 import { createContext, useContext, useSyncExternalStore } from "react";
-import { ApiError, api } from "./api/http";
+import { ApiError, api, dropSession, native, syncToken, syncUrl } from "./api/http";
 import type { Effect } from "./api/types/Effect";
 import type { ErrorBody } from "./api/types/ErrorBody";
 import type { LogEntry } from "./api/types/LogEntry";
@@ -13,6 +13,7 @@ import type { Op } from "./api/types/Op";
 import type { SeqSnapshot } from "./api/types/SeqSnapshot";
 import type { User } from "./api/types/User";
 import { Rejected } from "./domain/apply";
+import { clear, watch } from "./native";
 import { type Saver, forget, forgetCopy, forgetOthers, load, saver } from "./sync/persist";
 import { type Connection, Socket } from "./sync/socket";
 import { type Saved, Store } from "./sync/store";
@@ -81,6 +82,8 @@ export interface Listeners {
   arrived(entries: LogEntry[]): void;
   /** Saving on this device failed; changes still go to the server. */
   unsaved(): void;
+  /** In the app: the reminders or the widget could not be brought up to date. */
+  appFailed(e: unknown): void;
   /** The session has ended elsewhere, and here too now. */
   signedOut(): void;
 }
@@ -89,9 +92,11 @@ export class Session {
   readonly store: Store;
   private readonly saver: Saver;
   private readonly socket: Socket;
+  /** In the app: stops keeping the reminders and the widget in step, and clears them. */
+  private readonly unwatch?: () => Promise<void>;
   connection: Connection = "connecting";
   private readonly watchers = new Set<() => void>();
-  private listeners: Listeners = { rejected() {}, arrived() {}, unsaved() {}, signedOut() {} };
+  private listeners: Listeners = { rejected() {}, arrived() {}, unsaved() {}, appFailed() {}, signedOut() {} };
   /** How the session has ended here, once it has: when that is done, and whether the user's data
    * stays on this device. */
   private ended?: { done: Promise<void>; keep: boolean };
@@ -122,7 +127,8 @@ export class Session {
       arrived: (entries) => this.listeners.arrived(entries),
     });
     this.socket = new Socket(this.store, {
-      url: `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/v1/sync`,
+      url: syncUrl(),
+      token: syncToken(),
       user: user.id,
       resync: async () => this.store.resync(await download(user.id)),
       signedOut: () => this.endedElsewhere(true),
@@ -133,6 +139,7 @@ export class Session {
     });
     this.socket.start();
     tabs.addEventListener("message", this.heard);
+    if (native) this.unwatch = watch(this.store, (e) => this.listeners.appFailed(e));
   }
 
   private readonly heard = ({ data }: MessageEvent<Message>) => {
@@ -188,6 +195,18 @@ export class Session {
 
   /** The session this device was in last time, if any. */
   static async resume(): Promise<Session | null> {
+    // In the app, the session is the token kept on the device. Without it, what a sign-out cut short
+    // left behind goes.
+    if (native && !syncToken()) {
+      await clear();
+      const login = cachedLogin();
+      if (login) {
+        // The sign-in goes last, so that cut short again, this is done again next time.
+        await forget(login.user.id);
+        localStorage.removeItem(LOGIN);
+      }
+      return null;
+    }
     const copy = crypto.randomUUID();
     const found = await turn(async () => {
       const out = pendingSignOut();
@@ -244,6 +263,9 @@ export class Session {
 
   private async stop() {
     this.socket.stop();
+    // The token goes first, so that the widget, emptied next, asks to sign in.
+    await dropSession();
+    await this.unwatch?.();
     await this.saver.close();
   }
 

@@ -13,7 +13,6 @@ import { Detail } from "./Detail";
 import { FolderMenu } from "./FolderMenu";
 import { FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, RootBody, SearchResults } from "./lists";
 import { folderUrl, useFolderView, useSelection } from "./nav";
-import { place } from "./rows";
 
 export function Desktop({ sideOpen, paneOpen, toggleSide, togglePane, onSettings }: { sideOpen: boolean; paneOpen: boolean; toggleSide(): void; togglePane(): void; onSettings(): void }) {
   const [location] = useLocation();
@@ -54,7 +53,7 @@ export function Desktop({ sideOpen, paneOpen, toggleSide, togglePane, onSettings
         <FolderMenu folder={f.id} />
       </div>
     );
-    const crumbs = f.parent_id ? place(board, f.parent_id) : "";
+    const crumbs = f.parent_id ? board.place(f.parent_id) : "";
     main =
       view === "graph" ? (
         <Page title={f.name} crumbs={crumbs} actions={actions} scroll={false}>

@@ -2,9 +2,9 @@
 // quick-add bar.
 
 import { ChevronRight, Folder as FolderIcon, FolderPlus, List, Plus, Workflow } from "lucide-react";
-import { lazy, Suspense, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
-import { useLocation } from "wouter";
+import { useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
 import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
@@ -223,6 +223,16 @@ export function QuickAdd({ folder }: { folder?: FolderId }) {
   const [picking, setPicking] = useState(false);
   const last = useRef<TaskId | null>(null);
   const into = folder ?? (target && board.folder(target) ? target : null);
+  // The app's widget opens `/?add` to type a new task straight away.
+  const input = useRef<HTMLInputElement>(null);
+  const [params] = useSearchParams();
+  const [location, navigate] = useLocation();
+  const asked = params.has("add");
+  useEffect(() => {
+    if (!asked) return;
+    input.current!.focus();
+    navigate(location, { replace: true });
+  }, [asked, location, navigate]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -245,7 +255,7 @@ export function QuickAdd({ folder }: { folder?: FolderId }) {
       <span className="plus">
         <Icon of={Plus} size={22} width={2} />
       </span>
-      <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={into ? "添加事项" : "记一件事"} autoComplete="off" enterKeyHint="done" aria-label="新事项标题" />
+      <input ref={input} value={title} onChange={(e) => setTitle(e.target.value)} placeholder={into ? "添加事项" : "记一件事"} autoComplete="off" enterKeyHint="done" aria-label="新事项标题" />
       {folder === undefined ? (
         <button type="button" className="qa-btn" onClick={() => setPicking(true)}>
           <Icon of={FolderIcon} size={16} />

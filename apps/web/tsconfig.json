@@ -16,5 +16,5 @@
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["src", "vite.config.ts", "scripts"]
+  "include": ["src", "vite.config.ts", "capacitor.config.ts", "scripts"]
 }

@@ -53,6 +53,7 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
       signedOut: () => onSignedOut("登录已失效，请重新登录"),
       rejected: (_, e) => snack(`没能保存：${e.message}`),
       unsaved: () => snack("没能存到这台设备上，关掉页面前请保持联网"),
+      appFailed: (e) => snack(`提醒和小组件没能更新：${e instanceof Error ? e.message : String(e)}`),
       arrived(entries) {
         const last = entries.findLast((e) => e.actor !== null && e.effects.length > 0 && e.created_at > Date.now() - RECENT_MS);
         if (last) snack({ text: describe(last, session.store.getView().board), action: "撤销", onAction: () => undo(last.id), ms: 8000 });

@@ -102,7 +102,7 @@ const kick = (socket: FakeSocket) => socket.onmessage!({ data: JSON.stringify({ 
 /** Whether the session's tab went back to signing in. */
 function watch(s: Session) {
   const heard = { signedOut: false };
-  s.listen({ rejected() {}, arrived() {}, unsaved() {}, signedOut: () => (heard.signedOut = true) });
+  s.listen({ rejected() {}, arrived() {}, unsaved() {}, appFailed() {}, signedOut: () => (heard.signedOut = true) });
   return heard;
 }
 

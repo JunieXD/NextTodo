@@ -9,7 +9,6 @@ import { REMINDERS, isoDate, remindLabel } from "../domain/dates";
 import { useView } from "../session";
 import { Modal } from "../ui/feedback";
 import { Icon } from "../ui/icons";
-import { place } from "./rows";
 
 /** Picks a folder or the root. Folders inside `exclude` (and `exclude` itself) cannot be picked. */
 export function FolderPicker({
@@ -77,7 +76,7 @@ export function TaskPicker({ task, dir, onPick, onClose }: { task: Task; dir: "p
                 <span className={`dot ${board.status(t)}`} />
                 <span className="dep-main">
                   <span className="dep-title">{t.title}</span>
-                  <span className="dep-path">{loop ? "加上会形成循环" : place(board, t.folder_id)}</span>
+                  <span className="dep-path">{loop ? "加上会形成循环" : board.place(t.folder_id)}</span>
                 </span>
               </div>
             </button>

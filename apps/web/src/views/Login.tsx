@@ -1,6 +1,6 @@
 import { CircleCheck } from "lucide-react";
 import { useState } from "react";
-import { ApiError, api, deviceName } from "../api/http";
+import { ApiError, api, deviceName, keepSession, native, serverUrl, setServer } from "../api/http";
 import type { Session } from "../api/types/Session";
 import type { User } from "../api/types/User";
 import { Seg } from "../ui/controls";
@@ -10,7 +10,7 @@ import { Icon } from "../ui/icons";
 export function Login({ onSignIn, notice }: { onSignIn(request: () => Promise<User>): Promise<void>; notice?: string }) {
   const invite = new URLSearchParams(location.search).get("invite") ?? "";
   const [mode, setMode] = useState<"login" | "register">(invite ? "register" : "login");
-  const [form, setForm] = useState({ invite, username: "", display_name: "", password: "" });
+  const [form, setForm] = useState({ server: serverUrl(), invite, username: "", display_name: "", password: "" });
   const [error, setError] = useState<{ message: string; field?: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -22,12 +22,15 @@ export function Login({ onSignIn, notice }: { onSignIn(request: () => Promise<Us
     e.preventDefault();
     setBusy(true);
     try {
+      const { server, ...fields } = form;
+      if (native) setServer(server);
       const body =
         mode === "login"
-          ? { username: form.username.trim(), password: form.password, device: deviceName() }
-          : { ...form, invite: form.invite.trim(), username: form.username.trim(), display_name: form.display_name.trim(), device: deviceName() };
+          ? { username: fields.username.trim(), password: fields.password, device: deviceName() }
+          : { ...fields, invite: fields.invite.trim(), username: fields.username.trim(), display_name: fields.display_name.trim(), device: deviceName() };
       await onSignIn(async () => {
         const session = await api<Session>("POST", mode === "login" ? "/auth/login" : "/auth/register", body);
+        await keepSession(session.secret);
         if (invite) history.replaceState(null, "", "/");
         return session.user;
       });
@@ -65,6 +68,7 @@ export function Login({ onSignIn, notice }: { onSignIn(request: () => Promise<Us
           onChange={(m) => (setMode(m), setError(null))}
         />
         {notice && !error && <p className="form-error">{notice}</p>}
+        {native && field("server", "服务器", { autoComplete: "url", autoCapitalize: "none", inputMode: "url" })}
         {mode === "register" && field("invite", "邀请码", { autoComplete: "off" })}
         {field("username", "用户名", { autoComplete: "username", autoCapitalize: "none" }, mode === "register" ? "字母、数字和下划线，3–32 位" : undefined)}
         {mode === "register" && field("display_name", "显示名", { autoComplete: "nickname" }, "别人看到的名字")}

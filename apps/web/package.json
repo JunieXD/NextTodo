@@ -6,10 +6,16 @@
     "dev": "vite",
     "build": "tsc && vite build && node scripts/compress.js",
     "check": "tsc && eslint . && vitest run",
+    "android:build": "tsc && vite build && cap sync android && cd ../android && ./gradlew assembleRelease",
     "test": "vitest",
     "gen": "cd ../.. && cargo test -q export_bindings"
   },
   "dependencies": {
+    "@capacitor/android": "8.6.0",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/local-notifications": "8.3.1",
+    "@capacitor/preferences": "8.0.1",
     "@xyflow/react": "12.12.0",
     "elkjs": "0.12.1",
     "fractional-indexing": "4.0.0",
@@ -25,6 +31,7 @@
     "wouter": "3.13.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.6.0",
     "@eslint/js": "10.0.1",
     "@tailwindcss/vite": "4.3.3",
     "@types/react": "19.3.0",

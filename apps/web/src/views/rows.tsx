@@ -4,7 +4,6 @@ import { ChevronRight, Clock, Folder as FolderIcon, Check as CheckIcon, Trash2 }
 import { type ReactNode, useEffect, useRef } from "react";
 import type { Op } from "../api/types/Op";
 import type { Folder } from "../api/types/Folder";
-import type { FolderId } from "../api/types/FolderId";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
@@ -23,9 +22,6 @@ export interface RowActions {
   toggle(t: Task): void;
   remove(t: Task): void;
 }
-
-/** Where a folder is, as people read it: `学习 / 毕业论文`, or `根目录`. */
-export const place = (board: Board, f: FolderId | null) => (f ? board.folderPath(f).slice(1).replaceAll("/", " / ") : "根目录");
 
 /** `overdue` or `today` for a pending task due then, which is when the date is coloured. */
 export function dueClass(t: Task, now: Date): string {
@@ -57,7 +53,7 @@ export function TaskRow({
   const status = board.status(t);
   const unlocks = status === "ready" ? board.unlocks(t).length : 0;
   const meta: ReactNode[] = [];
-  if (path && t.folder_id) meta.push(<span key="path" className="m-path">{place(board, t.folder_id)}</span>);
+  if (path && t.folder_id) meta.push(<span key="path" className="m-path">{board.place(t.folder_id)}</span>);
   if (t.due) {
     meta.push(
       <span key="due" className={dueClass(t, now)}>

@@ -9,6 +9,8 @@ import { useConnection, useSession, useView } from "../session";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { Sheet } from "../ui/Sheet";
+import { native } from "../api/http";
+import { BackgroundTip } from "./Background";
 import { Detail } from "./Detail";
 import { FolderMenu } from "./FolderMenu";
 import { FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, RootBody, SearchResults } from "./lists";
@@ -99,6 +101,7 @@ function NextScreen({ now }: { now: Date }) {
         {formatToday(now)}，{board.next().length} 项可做
       </p>
       <ConnectionNote connection={connection} />
+      {native && <BackgroundTip />}
       <NextBody now={now} />
     </Screen>
   );

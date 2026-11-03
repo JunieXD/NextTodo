@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">NextTodo</string>
+    <string name="title_activity_main">NextTodo</string>
+    <string name="package_name">cn.juniexd.nexttodo</string>
+    <string name="widget_description">现在能做的事，勾一下就完成</string>
+</resources>

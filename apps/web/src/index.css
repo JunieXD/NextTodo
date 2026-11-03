@@ -79,13 +79,13 @@ svg { display: block; flex: none; }
 .screen.scrolled .nav { background: var(--bar-bg); -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6); box-shadow: 0 .5px 0 var(--outline-variant); }
 .nav-title { font-size: 18px; font-weight: 600; opacity: 0; transition: opacity .2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 56vw; }
 .screen.scrolled .nav-title { opacity: 1; }
-.nav-actions { justify-self: end; display: flex; gap: 4px; }
 .back { display: inline-flex; align-items: center; gap: 2px; height: 44px; padding: 0 8px 0 2px; color: var(--primary); font-size: 17px; justify-self: start; }
 .icon-btn { width: 40px; height: 40px; border-radius: 20px; display: grid; place-items: center; color: var(--on-surface-variant); }
 .icon-btn:active { background: var(--press); }
 .icon-btn.sm { width: 32px; height: 32px; }
 
 .scroll { flex: 1; overflow-y: auto; padding-top: calc(56px + var(--safe-top)); padding-bottom: calc(var(--tabbar-h) + 84px); }
+.scroll.fill { display: flex; flex-direction: column; overflow: hidden; padding-bottom: var(--tabbar-h); }
 .hero { display: flex; align-items: flex-end; justify-content: space-between; padding: 4px 20px 0; }
 .large-title { margin: 0; font-size: 32px; line-height: 1.2; font-weight: 700; letter-spacing: -.01em; }
 .subtitle { margin: 4px 20px 6px; font-size: 15px; color: var(--on-surface-variant); }
@@ -165,7 +165,6 @@ svg { display: block; flex: none; }
 .seg button.on { background: var(--seg-on); color: var(--on-surface); box-shadow: var(--shadow-1); }
 .seg.sm button { height: 26px; font-size: 13px; }
 .view-seg { margin: 14px 16px 4px; }
-.nav-space { height: calc(56px + var(--safe-top)); flex: none; }
 
 /* quick add */
 .quick-add { position: absolute; z-index: 4; left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 10px); height: 50px; border-radius: 25px; display: flex; align-items: center; gap: 4px; padding: 0 6px 0 16px;
@@ -198,8 +197,6 @@ svg { display: block; flex: none; }
 .react-flow__edge-path { fill: none; stroke: var(--outline); stroke-opacity: .55; stroke-width: 1.6; }
 .react-flow__edge.hl .react-flow__edge-path { stroke: var(--primary); stroke-opacity: 1; stroke-width: 2.2; }
 .react-flow__edge.dim { opacity: .2; }
-.react-flow__attribution { background: none; font-size: 10px; opacity: .5; }
-.react-flow__attribution a { color: var(--on-surface-variant); }
 .node { border-radius: 14px; padding: 8px 12px; display: flex; flex-direction: column; justify-content: center; gap: 2px; text-align: left;
   background: var(--group-bg); border: 1px solid var(--outline-variant); color: var(--on-surface); transition: opacity .2s, box-shadow .2s; }
 .node.ready { background: var(--primary-container); color: var(--on-primary-container); border-color: transparent; }

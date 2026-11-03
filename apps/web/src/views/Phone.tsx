@@ -73,8 +73,9 @@ export function Phone({ onSettings }: { onSettings(): void }) {
   );
 }
 
-/** A page with a large title that gives way to a small one in a frosted bar once scrolled past. */
-function Screen({ title, nav, anim = "", children, after }: { title: string; nav?: ReactNode; anim?: string; children: ReactNode; after?: ReactNode }) {
+/** A page with a large title that gives way to a small one in a frosted bar once scrolled past.
+ * With `fill`, the page doesn't scroll and its last child takes the height left, as the graph does. */
+function Screen({ title, nav, anim = "", fill, children, after }: { title: string; nav?: ReactNode; anim?: string; fill?: boolean; children: ReactNode; after?: ReactNode }) {
   const [scrolled, setScrolled] = useState(false);
   return (
     <section className={`screen${scrolled ? " scrolled" : ""}${anim}`}>
@@ -83,7 +84,7 @@ function Screen({ title, nav, anim = "", children, after }: { title: string; nav
         <span className="nav-title">{title}</span>
         <span />
       </header>
-      <div className="scroll" onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 36)}>
+      <div className={`scroll${fill ? " fill" : ""}`} onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 36)}>
         {children}
       </div>
       {after}
@@ -137,8 +138,9 @@ function DoneScreen({ anim, now }: { anim: string; now: Date }) {
   );
 }
 
-/** A folder, or the root (`null`). The root is where the folders are reached from, so it is always a
- * list, with the search over all tasks. */
+/** A folder, or the root (`null`). The list and the graph share the page, so switching between them
+ * changes only what is under the switch. The root is where the folders are reached from, so it is
+ * always a list, with the search over all tasks. */
 function FolderScreen({ folder, anim, now }: { folder: FolderId | null; anim: string; now: Date }) {
   const { board } = useView();
   const [view] = useFolderView();
@@ -147,24 +149,9 @@ function FolderScreen({ folder, anim, now }: { folder: FolderId | null; anim: st
   const title = f ? f.name : "文件夹";
   const nav = f && <Back to={folderUrl(f.parent_id)} label={f.parent_id ? board.folderName(f.parent_id) : "文件夹"} />;
   const menu = folder && <FolderMenu folder={folder} />;
-  if (f && view === "graph") {
-    return (
-      <section className={`screen scrolled${anim}`}>
-        <header className="nav" data-tauri-drag-region="deep">
-          {nav ?? <span />}
-          <span className="nav-title">{title}</span>
-          <span className="nav-actions">{menu}</span>
-        </header>
-        <div className="nav-space" />
-        <div className="view-seg">
-          <FolderViewSeg />
-        </div>
-        <FolderGraph folder={f.id} across={false} now={now} />
-      </section>
-    );
-  }
+  const graph = f !== null && view === "graph";
   return (
-    <Screen title={title} nav={nav} anim={anim} after={<QuickAdd folder={folder} />}>
+    <Screen title={title} nav={nav} anim={anim} fill={graph} after={!graph && <QuickAdd folder={folder} />}>
       <div className="hero">
         <h1 className="large-title">{title}</h1>
         {menu}
@@ -179,7 +166,7 @@ function FolderScreen({ folder, anim, now }: { folder: FolderId | null; anim: st
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索全部事项" autoComplete="off" />
         </label>
       )}
-      {query.trim() ? <SearchResults query={query} now={now} /> : <FolderBody folder={folder} now={now} />}
+      {graph ? <FolderGraph folder={f.id} across={false} now={now} /> : query.trim() ? <SearchResults query={query} now={now} /> : <FolderBody folder={folder} now={now} />}
     </Screen>
   );
 }

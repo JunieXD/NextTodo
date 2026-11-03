@@ -72,7 +72,7 @@
   - 连线 `SPLINES` 的 `CONSERVATIVE` 模式：曲线绕开节点；`SLOPPY` 模式会斜穿空白，交叉更多。
 - **平移和缩放**：React Flow 负责；单指或鼠标拖动平移，捏合或 Ctrl + 滚轮缩放，触控板双指滑动平移。第一屏按原大小显示，缩小到 0.8 倍能放下就缩小，放得下就居中，放不下从第一层开始。
 - **画法**：节点和连线由应用自己画，连线直接用 ELK 算出的路径；React Flow 的连接点只是摆设，藏起来。
-- React Flow 的署名链接保留在画布右上角：隐藏它需要订阅 React Flow Pro。
+- 关系图不显示 React Flow 的署名链接（`proOptions.hideAttribution`）：React Flow 是 MIT 许可，个人项目隐藏署名不受限制。
 
 ## 登录
 

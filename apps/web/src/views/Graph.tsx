@@ -225,7 +225,7 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
             panOnScroll
             minZoom={0.35}
             maxZoom={2.5}
-            attributionPosition="top-right"
+            proOptions={{ hideAttribution: true }}
           >
             <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} />
           </ReactFlow>

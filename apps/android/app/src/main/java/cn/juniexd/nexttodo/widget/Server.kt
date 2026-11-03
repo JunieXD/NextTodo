@@ -16,7 +16,7 @@ class HttpError(val status: Int, message: String) : Exception(message)
 
 /** The server, reached with the address and session token the app keeps in Capacitor Preferences. */
 object Server {
-    private fun prefs(context: Context) = context.getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE)
+    fun prefs(context: Context) = context.getSharedPreferences("CapacitorStorage", Context.MODE_PRIVATE)
 
     /** The session's token; `null` when signed out. */
     fun token(context: Context): String? = prefs(context).getString("token", null)

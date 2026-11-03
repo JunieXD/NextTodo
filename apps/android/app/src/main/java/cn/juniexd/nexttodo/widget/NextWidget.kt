@@ -66,10 +66,10 @@ class NextWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val changes = Widget.changes(context)
         // Glance keeps a session going for a while after an update or a tap, and updates during it
-        // only recompose: the list is read here, again on every change.
+        // only recompose: what to show is read here, again on every change.
         provideContent {
-            val items by changes.collectAsState(Widget.items(context))
-            Content(context, items, Server.token(context) != null, LocalDateTime.now())
+            val shown by changes.collectAsState(Widget.shown(context))
+            Content(context, shown.items, shown.signedIn, LocalDateTime.now())
         }
     }
 }

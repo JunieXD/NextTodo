@@ -219,8 +219,13 @@ export class Session {
       try {
         return await claim(await api<User>("GET", "/me"), copy);
       } catch (e) {
-        if (e instanceof ApiError && e.status === 401) return null;
-        throw e;
+        if (!(e instanceof ApiError && e.status === 401)) throw e;
+        // In the app, the token goes too, as when a session ends.
+        if (native) {
+          await dropSession();
+          await clear();
+        }
+        return null;
       }
     });
     return !found || found instanceof Session ? found : fresh(found, copy);

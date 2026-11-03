@@ -34,6 +34,9 @@ import org.json.JSONArray
 /** A task as the widget shows it. Its number is the id of its reminder. */
 data class Item(val id: String, val number: Int, val title: String, val folder: String, val due: Due?)
 
+/** What the widget shows: the list, or that the app is signed out. */
+data class Shown(val signedIn: Boolean, val items: List<Item>)
+
 /** The widget's list, kept in its own preferences: written by the app, or fetched from the server. */
 object Widget {
     private fun prefs(context: Context) = context.getSharedPreferences("widget", Context.MODE_PRIVATE)
@@ -55,7 +58,7 @@ object Widget {
         NextWidget().updateAll(context)
     }
 
-    fun items(context: Context): List<Item> {
+    private fun items(context: Context): List<Item> {
         val list = JSONArray(prefs(context).getString("tasks", "[]"))
         return (0 until list.length()).map { i ->
             val t = list.getJSONObject(i)
@@ -65,12 +68,16 @@ object Widget {
         }
     }
 
-    /** The list each time it changes. */
-    fun changes(context: Context): Flow<List<Item>> = callbackFlow {
-        val prefs = prefs(context)
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> trySend(items(context)) }
-        prefs.registerOnSharedPreferenceChangeListener(listener)
-        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    /** What to show now. */
+    fun shown(context: Context) = Shown(Server.token(context) != null, items(context))
+
+    /** What to show, each time the list or the sign-in changes: an empty list stays empty when the
+     * app signs in or out. */
+    fun changes(context: Context): Flow<Shown> = callbackFlow {
+        val watched = listOf(prefs(context), Server.prefs(context))
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> trySend(shown(context)) }
+        watched.forEach { it.registerOnSharedPreferenceChangeListener(listener) }
+        awaitClose { watched.forEach { it.unregisterOnSharedPreferenceChangeListener(listener) } }
     }
 
     /** Fetches the list from the server when signed in. An answer for a session that has ended

@@ -235,8 +235,8 @@ export function RailList({ tasks, board, now, selected, actions }: { tasks: Task
     drop(from, to) {
       const t = tasks[from];
       const { min, max, above, below } = range(board, tasks, from);
-      if (to < min) snack(`“${t.title}”要等“${above!.title}”做完，只能排在它后面`);
-      else if (to > max) snack(`“${below!.title}”要等“${t.title}”做完，“${t.title}”只能排在它前面`);
+      if (to < min) snack(`“${t.title}”需等待“${above!.title}”完成，只能排在其后`);
+      else if (to > max) snack(`“${below!.title}”需等待“${t.title}”完成，“${t.title}”只能排在其前`);
       else if (to !== from) {
         const wanted = tasks.filter((x) => x !== t);
         wanted.splice(to, 0, t);

@@ -30,7 +30,7 @@ test("new things go last, and names stay unique among siblings", () => {
   const [a, b] = [d.tasks.get(id(2))!, d.tasks.get(id(3))!];
   expect(a.sort_key < b.sort_key).toBe(true);
   expect(a.number).toBe(0);
-  expect(() => apply(d, [{ op: "folder.create", id: id(4), name: "工作" }], cx)).toThrow("这一层已经有叫“工作”的文件夹了");
+  expect(() => apply(d, [{ op: "folder.create", id: id(4), name: "工作" }], cx)).toThrow("同一层级已有名为“工作”的文件夹");
 });
 
 test("a failed mutation leaves nothing behind", () => {
@@ -44,7 +44,7 @@ test("a failed mutation leaves nothing behind", () => {
     { op: "task.create", id: id(3), title: "测试" },
     { op: "dep.add", before: id(2), after: id(1) },
   ];
-  expect(() => apply(d, ops, cx)).toThrow(new Rejected("cycle", "加上这条依赖会形成循环：“开发” → “设计” → “开发”"));
+  expect(() => apply(d, ops, cx)).toThrow(new Rejected("cycle", "添加该依赖将形成循环：“开发” → “设计” → “开发”"));
   expect(titles(d)).toEqual(["设计", "开发"]);
   expect(d.deps.size).toBe(1);
 });
@@ -84,7 +84,7 @@ test("folders cannot move into themselves", () => {
     { op: "folder.create", id: id(1), name: "上" },
     { op: "folder.create", id: id(2), name: "下", parent_id: id(1) },
   ]);
-  expect(() => apply(d, [{ op: "folder.update", id: id(1), parent_id: id(2) }], cx)).toThrow("文件夹不能移到自己或自己的子文件夹里");
+  expect(() => apply(d, [{ op: "folder.update", id: id(1), parent_id: id(2) }], cx)).toThrow("文件夹不能移入自身或其子文件夹");
 });
 
 test("revert undoes what replaying effects did", () => {

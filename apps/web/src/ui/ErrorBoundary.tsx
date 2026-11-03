@@ -15,9 +15,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
       <div className="login">
         <div className="login-card">
           <div className="login-brand">
-            <h1>出错了</h1>
+            <h1>页面出错</h1>
             <p>{this.state.error.message}</p>
-            <p>本机的数据都还在，重新加载就能继续。</p>
+            <p>本机数据未受影响，重新加载即可继续。</p>
           </div>
           <button className="filled-btn" onClick={() => location.reload()}>
             重新加载

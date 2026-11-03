@@ -190,7 +190,7 @@ async fn a_tool_retried_with_the_id_of_an_app_change_gets_a_receipt() {
         .unwrap();
     let bytes = t.app.clone().oneshot(req).await.unwrap().into_body().collect().await.unwrap().to_bytes();
     let reply: Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(reply["text"], "批次 2 已经保存过，这次没有再生效");
+    assert_eq!(reply["text"], "批次 2 已保存，本次未重复生效");
     assert!(t.snapshot(&s).await["folders"].as_array().unwrap().iter().all(|f| f["name"] != "Z"), "and nothing was made");
 }
 
@@ -328,5 +328,5 @@ async fn mcp_serves_the_same_tools() {
     assert_eq!(called["result"]["content"][0]["text"], "#1 交电费");
     let (_, failed) = rpc(Some(&s), "tools/call", json!({ "name": "show", "arguments": { "task": 9 } })).await;
     assert_eq!(failed["result"]["isError"], true);
-    assert_eq!(failed["result"]["content"][0]["text"], "没有 #9 这个事项");
+    assert_eq!(failed["result"]["content"][0]["text"], "不存在事项 #9");
 }

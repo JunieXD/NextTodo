@@ -76,14 +76,14 @@ export function TaskPicker({ task, dir, onPick, onClose }: { task: Task; dir: "p
                 <span className={`dot ${board.status(t)}`} />
                 <span className="dep-main">
                   <span className="dep-title">{t.title}</span>
-                  <span className="dep-path">{loop ? "加上会形成循环" : board.place(t.folder_id)}</span>
+                  <span className="dep-path">{loop ? "添加后将形成循环" : board.place(t.folder_id)}</span>
                 </span>
               </div>
             </button>
           );
         })}
       </div>
-      {candidates.length === 0 && <p className="empty">没有可选的事项。</p>}
+      {candidates.length === 0 && <p className="empty">暂无可选的事项。</p>}
     </Modal>
   );
 }
@@ -110,14 +110,14 @@ export function DueEditor({ due, onSave, onClose }: { due: Due | null; onSave(d:
         </label>
         <label className="field">
           <span>
-            时间 <span className="hint">可以不填，算当天结束前</span>
+            时间 <span className="hint">可不填，默认为当天结束</span>
           </span>
           <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
         </label>
         <label className="field">
           提醒
           <select value={time ? remind : ""} disabled={!time} onChange={(e) => setRemind(e.target.value)}>
-            <option value="">{time ? "不提醒" : "设了时间才能提醒"}</option>
+            <option value="">{time ? "不提醒" : "设置时间后才能提醒"}</option>
             {choices.map((m) => (
               <option key={m} value={m}>
                 {remindLabel(m)}

@@ -8,7 +8,7 @@ const length = (s: string) => [...s].length;
 function line(s: string, what: string, max: number): Checked {
   const value = s.trim();
   if (!value) return { ok: false, error: `${what}不能为空` };
-  if (/[\n\r]/.test(value)) return { ok: false, error: `${what}只能有一行` };
+  if (/[\n\r]/.test(value)) return { ok: false, error: `${what}不能换行` };
   if (/\p{Cc}/u.test(value)) return { ok: false, error: `${what}不能包含控制字符` };
   if (length(value) > max) return { ok: false, error: `${what}不能超过 ${max} 个字` };
   return { ok: true, value };
@@ -18,7 +18,7 @@ export const checkTitle = (s: string) => line(s, "标题", 200);
 
 export function checkFolderName(s: string): Checked {
   const c = line(s, "名称", 100);
-  return c.ok && c.value.includes("/") ? { ok: false, error: "文件夹名称里不能有 /" } : c;
+  return c.ok && c.value.includes("/") ? { ok: false, error: "文件夹名称不能包含 /" } : c;
 }
 
 export function checkDescription(s: string): Checked {

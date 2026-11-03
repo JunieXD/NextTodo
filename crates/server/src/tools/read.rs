@@ -21,7 +21,7 @@ fn counts(b: &Board, f: Option<FolderId>) -> (String, usize, usize) {
     let tasks = b.contents(f);
     let pending = tasks.iter().filter(|t| t.done_at.is_none()).count();
     let ready = tasks.iter().filter(|t| b.status(t) == Status::Ready).count();
-    let text = if pending == 0 { "（没有待办）".to_owned() } else { format!("（待办 {pending}，可做 {ready}）") };
+    let text = if pending == 0 { "（无待办）".to_owned() } else { format!("（待办 {pending}，可做 {ready}）") };
     (text, pending, ready)
 }
 
@@ -64,7 +64,7 @@ pub fn next(c: &Connection, cx: &Cx, _: NoArgs) -> Result<Output, ApiError> {
     let b = Board::new(&snap);
     let tasks = b.next();
     let text = if tasks.is_empty() {
-        "现在没有可做的事项。".to_owned()
+        "暂无可做的事项。".to_owned()
     } else {
         tasks.iter().map(|t| task_line(&b, t, t.folder_id.is_some(), false)).collect::<Vec<_>>().join("\n")
     };
@@ -132,7 +132,7 @@ pub fn search(c: &Connection, cx: &Cx, a: SearchArgs) -> Result<Output, ApiError
     let total = found.len();
     found.truncate(SEARCH_LIMIT);
     let text = match total {
-        0 => format!("没有找到包含“{}”的事项。", a.query.trim()),
+        0 => format!("未找到包含“{}”的事项。", a.query.trim()),
         _ => {
             let head = if total > SEARCH_LIMIT {
                 format!("找到 {total} 项，只列出前 {SEARCH_LIMIT} 项：")
@@ -165,7 +165,7 @@ pub fn graph(c: &Connection, cx: &Cx, a: GraphArgs) -> Result<Output, ApiError> 
     let edges: Vec<(&Task, &Task)> =
         nodes.iter().flat_map(|&t| b.before(t).into_iter().filter(|p| seen.contains(&p.id)).map(move |p| (p, t))).collect();
     let text = if nodes.is_empty() {
-        "这里没有待办事项。".to_owned()
+        "暂无待办事项。".to_owned()
     } else if a.mermaid {
         mermaid(&b, &nodes, &edges, scope)
     } else {
@@ -241,7 +241,7 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
         rows.push(Row { seq, actor, device, ops: serde_json::from_str(&ops)?, effects: serde_json::from_str(&effects)?, created_at });
     }
     if rows.is_empty() {
-        return Ok(Output { text: "还没有改动记录。".into(), data: json!([]) });
+        return Ok(Output { text: "暂无改动记录。".into(), data: json!([]) });
     }
     let snap = store::snapshot(c, cx.owner)?;
     let mut names = Names::new(&snap);

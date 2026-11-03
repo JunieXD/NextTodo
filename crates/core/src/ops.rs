@@ -28,8 +28,8 @@ impl TryFrom<MutationFields> for Mutation {
 
     fn try_from(f: MutationFields) -> Result<Self, String> {
         match f.ops.len() {
-            0 => Err("改动里至少要有一个操作".into()),
-            n if n > MAX_OPS => Err(format!("一个改动最多 {MAX_OPS} 个操作")),
+            0 => Err("改动至少包含一个操作".into()),
+            n if n > MAX_OPS => Err(format!("每个改动最多 {MAX_OPS} 个操作")),
             _ => Ok(Mutation { id: f.id, ops: f.ops }),
         }
     }

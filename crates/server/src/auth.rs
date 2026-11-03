@@ -87,9 +87,9 @@ macro_rules! field {
 field!(Username, |s| if (3..=32).contains(&s.len()) && s.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_') {
     Ok(s)
 } else {
-    Err("用户名要 3–32 位，只能用字母、数字和下划线".into())
+    Err("用户名须为 3–32 位字母、数字或下划线".into())
 });
-field!(Password, |s| if (8..=128).contains(&s.chars().count()) { Ok(s) } else { Err("密码要 8–128 位".into()) });
+field!(Password, |s| if (8..=128).contains(&s.chars().count()) { Ok(s) } else { Err("密码须为 8–128 位".into()) });
 field!(DisplayName, |s| line(s, "显示名", 50));
 field!(DeviceName, |s| line(s, "设备名", 100));
 field!(TokenName, |s| line(s, "令牌名", 50));
@@ -136,14 +136,14 @@ impl Auth {
     }
 
     pub fn require_write(&self) -> Result<(), ApiError> {
-        if self.scope == Scope::Write { Ok(()) } else { Err(ApiError::forbidden("这个令牌是只读的")) }
+        if self.scope == Scope::Write { Ok(()) } else { Err(ApiError::forbidden("此令牌为只读")) }
     }
 
     fn require_session(&self) -> Result<(), ApiError> {
         if self.kind == TokenKind::Session {
             Ok(())
         } else {
-            Err(ApiError::forbidden("令牌和邀请码只能在登录的设备上管理"))
+            Err(ApiError::forbidden("令牌和邀请码只能在已登录的设备上管理"))
         }
     }
 }
@@ -292,7 +292,7 @@ pub async fn login(State(st): State<AppState>, Json(req): Json<Login>) -> Result
     // The dummy hash is made on first use, so that goes inside the limit too.
     let matches = hashing(move || verify_password(&password, stored.as_deref().unwrap_or(&DUMMY_HASH))).await;
     let Some((user_id, verified)) = found.filter(|_| matches) else {
-        return Err(ApiError::unauthenticated("用户名或密码不对"));
+        return Err(ApiError::unauthenticated("用户名或密码错误"));
     };
     let (now, device) = (st.clock.now(), req.device.0);
     let session = st
@@ -301,7 +301,7 @@ pub async fn login(State(st): State<AppState>, Json(req): Json<Login>) -> Result
             // The password may have changed while this one was being checked.
             let current: String = c.query_row("SELECT password_hash FROM users WHERE id = ?1", [&user_id], |r| r.get(0))?;
             if current != verified {
-                return Err(ApiError::unauthenticated("用户名或密码不对"));
+                return Err(ApiError::unauthenticated("用户名或密码错误"));
             }
             let secret = create_session(c, &user_id, &device, now)?;
             Ok(Session { secret, user: load_user(c, &user_id)? })
@@ -325,7 +325,7 @@ fn check_invite(c: &Connection, code: &str) -> Result<(), ApiError> {
     let used_by: Option<Option<String>> = c.query_row("SELECT used_by FROM invites WHERE code = ?1", [code], |r| r.get(0)).optional()?;
     match used_by {
         None => Err(ApiError::not_found("邀请码不存在")),
-        Some(Some(_)) => Err(ApiError::conflict("邀请码已经用过了")),
+        Some(Some(_)) => Err(ApiError::conflict("邀请码已被使用")),
         Some(None) => Ok(()),
     }
 }
@@ -407,7 +407,7 @@ pub async fn change_password(State(st): State<AppState>, auth: Auth, Json(req): 
     let NewPassword { old_password, new_password } = req;
     let verified = stored.clone();
     let hash = hashing(move || verify_password(&old_password, &verified).then(|| hash_password(&new_password.0))).await;
-    let hash = hash.ok_or_else(|| ApiError::invalid("原密码不对", Some("old_password".into())))?;
+    let hash = hash.ok_or_else(|| ApiError::invalid("当前密码错误", Some("old_password".into())))?;
     let hub = st.hub.clone();
     st.db
         .call(move |c| {
@@ -421,7 +421,7 @@ pub async fn change_password(State(st): State<AppState>, auth: Auth, Json(req): 
             let changed = tx
                 .execute("UPDATE users SET password_hash = ?1 WHERE id = ?2 AND password_hash = ?3", params![hash, auth.user_id, stored])?;
             if changed == 0 {
-                return Err(ApiError::conflict("密码刚被别的设备改过，请用新密码再试"));
+                return Err(ApiError::conflict("密码刚在其他设备上修改，请使用新密码重试"));
             }
             tx.execute(
                 "DELETE FROM tokens WHERE user_id = ?1 AND kind = ?2 AND id <> ?3",
@@ -537,7 +537,7 @@ pub struct Invite {
 
 fn require_admin(auth: &Auth) -> Result<(), ApiError> {
     auth.require_session()?;
-    if auth.is_admin { Ok(()) } else { Err(ApiError::forbidden("只有管理员能管理邀请码")) }
+    if auth.is_admin { Ok(()) } else { Err(ApiError::forbidden("仅管理员可管理邀请码")) }
 }
 
 pub async fn list_invites(State(st): State<AppState>, auth: Auth) -> Result<Json<Vec<Invite>>, ApiError> {

@@ -193,13 +193,12 @@ impl Cx<'_> {
                 self.task(*before)?;
                 self.task(*after)?;
                 if store::load_dependency(self.c, self.owner, *before, *after)?.is_some() {
-                    return Err(ApiError::conflict("这条依赖已经存在"));
+                    return Err(ApiError::conflict("该依赖已存在"));
                 }
                 self.create_dependency(Dependency { before: *before, after: *after, created_at: self.now })
             }
             Op::DepRemove { before, after } => {
-                let d =
-                    store::load_dependency(self.c, self.owner, *before, *after)?.ok_or_else(|| ApiError::not_found("这条依赖不存在"))?;
+                let d = store::load_dependency(self.c, self.owner, *before, *after)?.ok_or_else(|| ApiError::not_found("该依赖不存在"))?;
                 self.delete_dependency(d)
             }
             Op::Undo { mutation } => self.undo(*mutation),
@@ -216,7 +215,7 @@ impl Cx<'_> {
 
     fn check_name(&self, f: &Folder) -> Result<(), ApiError> {
         if store::folder_name_taken(self.c, self.owner, f)? {
-            return Err(ApiError::conflict(format!("这一层已经有叫“{}”的文件夹了", f.name.as_str())));
+            return Err(ApiError::conflict(format!("同一层级已有名为“{}”的文件夹", f.name.as_str())));
         }
         Ok(())
     }
@@ -339,7 +338,7 @@ impl Cx<'_> {
                         if let Some(p) = f.parent_id
                             && store::load_folder(self.c, self.owner, p)?.is_none()
                         {
-                            return Err(ApiError::not_found(format!("文件夹“{}”原来所在的文件夹已经删除了", f.name.as_str())));
+                            return Err(ApiError::not_found(format!("文件夹“{}”原所在的文件夹已删除", f.name.as_str())));
                         }
                         self.create_folder(Folder { updated_at: self.now, ..f })?;
                     }
@@ -360,7 +359,7 @@ impl Cx<'_> {
                         if let Some(f) = t.folder_id
                             && store::load_folder(self.c, self.owner, f)?.is_none()
                         {
-                            return Err(ApiError::not_found(format!("“{}”原来所在的文件夹已经删除了", t.title.as_str())));
+                            return Err(ApiError::not_found(format!("“{}”原所在的文件夹已删除", t.title.as_str())));
                         }
                         self.create_task(Task { updated_at: self.now, updated_via: self.via.clone(), ..*t })?;
                     }
@@ -379,7 +378,7 @@ impl Cx<'_> {
                 Effect::Dependency(Link::Removed(d)) => {
                     for end in [d.before, d.after] {
                         if store::load_task(self.c, self.owner, end)?.is_none() {
-                            return Err(ApiError::not_found("要恢复的依赖连着的事项已经删除了"));
+                            return Err(ApiError::not_found("要恢复的依赖所关联的事项已删除"));
                         }
                     }
                     if store::load_dependency(self.c, self.owner, d.before, d.after)?.is_none() {

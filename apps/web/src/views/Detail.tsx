@@ -23,8 +23,8 @@ const STATUS = { ready: "可做", waiting: "等待中", done: "已完成" };
 
 type Panel = "folder" | "due" | "pred" | "succ" | null;
 
-/** Who made a change: `你`, or a token's name followed by a space before the Chinese. */
-const who = (via: string | null) => (via ? `${via} ` : "你");
+/** Who made a change: nobody named for the user, or a token's name followed by a space before the Chinese. */
+const who = (via: string | null) => (via ? `${via} ` : "");
 
 type TaskFields = Omit<Extract<Op, { op: "task.update" }>, "op" | "id">;
 
@@ -37,11 +37,11 @@ export function Detail({ id, now, onClose }: { id: TaskId; now: Date; onClose?: 
   const { pop } = useMarks();
   const { select } = useSelection();
   const [panel, setPanel] = useState<Panel>(null);
-  if (!t) return <div className="detail-empty">这一项已经删除了</div>;
+  if (!t) return <div className="detail-empty">该事项已删除</div>;
   const status = board.status(t);
   const update = (fields: TaskFields) => commit([{ op: "task.update", id: t.id, ...fields }]);
   const move = (f: string | null) => {
-    if (f !== t.folder_id && update({ folder_id: f })) snack(`已移到“${board.folderName(f)}”`);
+    if (f !== t.folder_id && update({ folder_id: f })) snack(`已移至“${board.folderName(f)}”`);
   };
 
   return (
@@ -52,7 +52,7 @@ export function Detail({ id, now, onClose }: { id: TaskId; now: Date; onClose?: 
           <Title key={t.id} task={t} onSave={(title) => update({ title })} />
           <div className="d-status">
             <span className={`pill ${status}`}>{STATUS[status]}</span>
-            {status === "waiting" && <span>还差 {board.waitingOn(t)} 项前置</span>}
+            {status === "waiting" && <span>还有 {board.waitingOn(t)} 项前置未完成</span>}
             {t.number > 0 && <span className="tabular-nums">#{t.number}</span>}
           </div>
         </div>
@@ -76,14 +76,14 @@ export function Detail({ id, now, onClose }: { id: TaskId; now: Date; onClose?: 
       <div className="d-sec">
         <div>
           <h3>前置</h3>
-          <p>这些做完，才能开始这一项</p>
+          <p>以下事项完成后，才能开始此项</p>
         </div>
       </div>
       <Links board={board} list={board.before(t)} onOpen={(o) => select(o.id)} onRemove={(o) => actions.unlink(o.id, t.id)} onAdd={() => setPanel("pred")} add="添加前置" />
       <div className="d-sec">
         <div>
           <h3>后续</h3>
-          <p>这一项做完，才能开始这些</p>
+          <p>此项完成后，才能开始以下事项</p>
         </div>
       </div>
       <Links board={board} list={board.after(t)} onOpen={(o) => select(o.id)} onRemove={(o) => actions.unlink(t.id, o.id)} onAdd={() => setPanel("succ")} add="添加后续" />
@@ -101,7 +101,7 @@ export function Detail({ id, now, onClose }: { id: TaskId; now: Date; onClose?: 
 
       {panel === "folder" && (
         <FolderPicker
-          title="移到文件夹"
+          title="移动到"
           current={t.folder_id}
           onPick={move}
           onClose={() => setPanel(null)}
@@ -221,7 +221,7 @@ function DescriptionSection({ task, onSave }: { task: Task; onSave(description: 
           <textarea
             className="md-edit"
             value={draft}
-            placeholder="支持 Markdown，- [ ] 开头是清单"
+            placeholder="支持 Markdown，以 - [ ] 开头为清单项"
             onChange={(e) => setDraft(e.target.value)}
             onBlur={() => save(draft, task, onSave)}
           />
@@ -246,7 +246,7 @@ function Links({ board, list, onOpen, onRemove, onAdd, add }: { board: Board; li
               </button>
               <button
                 className="icon-btn sm"
-                aria-label="移除这条依赖"
+                aria-label="移除此依赖"
                 onClick={(e) => {
                   e.stopPropagation();
                   onRemove(o);

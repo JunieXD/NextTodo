@@ -8,7 +8,7 @@ export function StartAtLogin() {
   const { snack } = useFeedback();
   const [on, setOn] = useState<boolean | null>(null);
   useEffect(() => {
-    isEnabled().then(setOn, (e) => snack(`没能读出开机自启的设置：${e}`));
+    isEnabled().then(setOn, (e) => snack(`读取开机自启设置失败：${e}`));
   }, [snack]);
   if (on === null) return null;
   const toggle = async () => {
@@ -16,7 +16,7 @@ export function StartAtLogin() {
       await (on ? disable() : enable());
       setOn(await isEnabled());
     } catch (e) {
-      snack(`没能${on ? "关闭" : "开启"}开机自启：${e}`);
+      snack(`${on ? "关闭" : "开启"}开机自启失败：${e}`);
     }
   };
   return (
@@ -27,7 +27,7 @@ export function StartAtLogin() {
           <div className="row-inner">
             <span className="folder-main">
               <span>登录时启动</span>
-              <span className="folder-sub">{on ? "已开启：只出现在菜单栏，到点照样提醒" : "开启后登录时启动，只出现在菜单栏"}</span>
+              <span className="folder-sub">{on ? "已开启：启动后仅显示在菜单栏，提醒照常" : "开启后登录时自动启动，仅显示在菜单栏"}</span>
             </span>
             <button className="text-btn" onClick={toggle}>
               {on ? "关闭" : "开启"}

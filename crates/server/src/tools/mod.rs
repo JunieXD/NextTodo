@@ -74,7 +74,7 @@ macro_rules! tools {
                     let args: $args = from_value(args)?;
                     Ok(tools!(@call $kind, $run, args))
                 })*
-                _ => Err(ApiError::not_found(format!("没有叫 {name} 的工具"))),
+                _ => Err(ApiError::not_found(format!("不存在名为 {name} 的工具"))),
             }
         }
     };
@@ -85,7 +85,7 @@ macro_rules! tools {
 tools! {
     Read "tree"(NoArgs) => read::tree, "文件夹树，每个文件夹直接包含的待办数和可做数。";
     Read "list"(ListArgs) => read::list, "列出一个文件夹的子文件夹和事项，事项按先后顺序；默认不含已完成的。";
-    Read "next"(NoArgs) => read::next, "接下来：所有现在就能做的事项（前置都已完成），有截止时间的排在前面。回答“现在该做什么”时用它。";
+    Read "next"(NoArgs) => read::next, "接下来：当前可做的事项（前置均已完成），有截止时间的排在前面。回答“现在该做什么”时使用。";
     Read "show"(ShowArgs) => read::show, "事项详情：状态、文件夹、截止时间和提醒、前置、后续、来源和描述。";
     Read "search"(SearchArgs) => read::search, "按关键词搜索事项的标题和描述，不区分大小写，最多 50 项。";
     Read "graph"(GraphArgs) => read::graph, "文件夹（含子文件夹）里的事项和依赖，按先后顺序列出，每项后面是它的前置；连到文件夹外的事项也列出。";
@@ -97,7 +97,7 @@ tools! {
     Write "mkdir"(MkdirArgs) => write::mkdir, "新建文件夹，路径上缺的层级一起建。";
     Write "rename"(RenameArgs) => write::rename, "给文件夹改名。";
     Write "move"(MoveArgs) => write::move_to, "把事项或文件夹移到一个已有的文件夹，/ 是根目录。";
-    Destructive "delete"(DeleteArgs) => write::delete, "删除事项或文件夹；文件夹连同里面的子文件夹和事项一起删除。可以用 undo 撤销。";
+    Destructive "delete"(DeleteArgs) => write::delete, "删除事项或文件夹；文件夹连同其中的子文件夹和事项一并删除。可用 undo 撤销。";
     Write "dep_add"(DepArgs) => write::dep_add, "加一条依赖：before 完成后才能做 after。会成环时拒绝，并列出环上的事项。";
     Write "dep_remove"(DepArgs) => write::dep_remove, "删除一条依赖。";
     Write "apply"(ApplyArgs) => write::apply, "按计划批量新建文件夹、事项和依赖，全部成功或全部不生效。新事项用 ref 互相引用，已有事项用编号。先用 dry_run 预览给用户看。";
@@ -106,11 +106,11 @@ tools! {
 
 /// The folder at a path; `None` is the root.
 fn find_folder(b: &Board, path: &str) -> Result<Option<FolderId>, ApiError> {
-    b.find_folder(path).ok_or_else(|| ApiError::not_found(format!("找不到文件夹 /{}", path.trim().trim_matches('/'))))
+    b.find_folder(path).ok_or_else(|| ApiError::not_found(format!("未找到文件夹 /{}", path.trim().trim_matches('/'))))
 }
 
 fn find_task<'a>(b: &Board<'a>, number: i64) -> Result<&'a Task, ApiError> {
-    b.task_by_number(number).ok_or_else(|| ApiError::not_found(format!("没有 #{number} 这个事项")))
+    b.task_by_number(number).ok_or_else(|| ApiError::not_found(format!("不存在事项 #{number}")))
 }
 
 /// Runs a tool. `id` makes a write idempotent: the same id returns the first result.

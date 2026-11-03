@@ -28,7 +28,7 @@ const GROUPS: [DueKind | "none", string, string][] = [
   ["today", "今天", "today"],
   ["week", "7 天内", ""],
   ["later", "以后", ""],
-  ["none", "没有截止时间", ""],
+  ["none", "无截止时间", ""],
 ];
 
 /** Tasks that can be done now, grouped by when they are due. */
@@ -44,7 +44,7 @@ export function NextBody({ now }: { now: Date }) {
     const g = t.due ? dueKind(t.due, now) : "none";
     groups.set(g, [...(groups.get(g) ?? []), t]);
   }
-  if (!groups.size) return <p className="empty">现在没有能做的事。去文件夹里添加，或者让 agent 帮你拆一个计划。</p>;
+  if (!groups.size) return <p className="empty">暂无可做的事项。可在文件夹中添加，或让 agent 拆分计划。</p>;
   return GROUPS.filter(([g]) => groups.has(g)).map(([g, label, cls]) => (
     <section key={g}>
       <h2 className={`group-title ${cls}`}>{label}</h2>
@@ -119,7 +119,7 @@ export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date
           </div>
         </>
       ) : (
-        subs.length === 0 && <p className="empty">还没有事项。在下面输入，或者让 agent 帮你拆一个计划。</p>
+        subs.length === 0 && <p className="empty">暂无事项。可在下方输入，或让 agent 拆分计划。</p>
       )}
     </>
   );
@@ -160,7 +160,7 @@ export function DoneBody({ now }: { now: Date }) {
     const day = formatDay(t.done_at!, now);
     days.set(day, [...(days.get(day) ?? []), t]);
   }
-  if (!days.size) return <p className="empty">还没有完成的事项。</p>;
+  if (!days.size) return <p className="empty">暂无已完成的事项。</p>;
   return [...days].map(([day, tasks]) => (
     <section key={day}>
       <h2 className="group-title">{day}</h2>
@@ -181,7 +181,7 @@ export function SearchResults({ query, now }: { query: string; now: Date }) {
   const hits = board
     .sort(board.snapshot.tasks.filter((t) => t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)))
     .sort((a, b) => Number(a.done_at !== null) - Number(b.done_at !== null));
-  if (!hits.length) return <p className="empty">没有找到包含“{query.trim()}”的事项。</p>;
+  if (!hits.length) return <p className="empty">未找到包含“{query.trim()}”的事项。</p>;
   return (
     <>
       <h2 className="group-title">{hits.length} 个结果</h2>
@@ -243,7 +243,7 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
     if (!commit(ops)) return;
     last.current = chain ? id : null;
     setTitle("");
-    snack(after ? `已添加，接在“${after.title}”后面` : `已添加“${c.value}”`);
+    snack(after ? `已添加，排在“${after.title}”之后` : `已添加“${c.value}”`);
   };
 
   return (
@@ -251,7 +251,7 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
       <span className="plus">
         <Icon of={Plus} size={22} width={2} />
       </span>
-      <input ref={input} value={title} onChange={(e) => setTitle(e.target.value)} placeholder={into ? "添加事项" : "记一件事"} autoComplete="off" enterKeyHint="done" aria-label="新事项标题" />
+      <input ref={input} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="添加事项" autoComplete="off" enterKeyHint="done" aria-label="新事项标题" />
       {folder === undefined ? (
         <button type="button" className="qa-btn" onClick={() => setPicking(true)}>
           <Icon of={FolderIcon} size={16} />
@@ -263,7 +263,7 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
           依次排队
         </button>
       )}
-      {picking && <FolderPicker title="记到哪里" current={into} onPick={setTarget} onClose={() => setPicking(false)} />}
+      {picking && <FolderPicker title="添加到" current={into} onPick={setTarget} onClose={() => setPicking(false)} />}
     </form>
   );
 }

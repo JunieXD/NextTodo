@@ -114,7 +114,7 @@ enum Command {
     Mkdir { path: String },
     #[command(about = "文件夹改名")]
     Rename { folder: String, name: String },
-    #[command(about = "把事项（编号）或文件夹（路径）移到另一个文件夹")]
+    #[command(about = "移动事项（编号）或文件夹（路径）到另一个文件夹")]
     Mv {
         #[arg(required = true, num_args = 2.., help = "要移动的事项和文件夹，最后一个是目标文件夹")]
         items: Vec<String>,
@@ -185,16 +185,16 @@ struct Config {
 fn config_path() -> anyhow::Result<PathBuf> {
     let base = match std::env::var_os("XDG_CONFIG_HOME") {
         Some(dir) => PathBuf::from(dir),
-        None => std::env::home_dir().context("找不到用户主目录")?.join(".config"),
+        None => std::env::home_dir().context("无法找到用户主目录")?.join(".config"),
     };
     Ok(base.join("nexttodo").join("config.json"))
 }
 
 fn read_config() -> anyhow::Result<Option<Config>> {
     match std::fs::read_to_string(config_path()?) {
-        Ok(text) => Ok(Some(serde_json::from_str(&text).context("配置文件格式不对")?)),
+        Ok(text) => Ok(Some(serde_json::from_str(&text).context("配置文件格式错误")?)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e).context("读不了配置文件"),
+        Err(e) => Err(e).context("无法读取配置文件"),
     }
 }
 
@@ -217,7 +217,7 @@ fn credentials() -> anyhow::Result<(String, String)> {
     let token = token.or_else(|| config.map(|c| c.token));
     match (url, token) {
         (Some(url), Some(token)) => Ok((url, token)),
-        _ => bail!("还没有登录：先运行 nexttodo login --url <服务器地址>，或者设置 NEXTTODO_URL 和 NEXTTODO_TOKEN"),
+        _ => bail!("尚未登录：请先运行 nexttodo login --url <服务器地址>，或设置 NEXTTODO_URL 和 NEXTTODO_TOKEN"),
     }
 }
 
@@ -247,7 +247,7 @@ impl Server {
 
     /// Posts JSON once and returns the reply, or the server's error message.
     fn post(&self, path: &str, token: Option<&str>, body: &Value) -> anyhow::Result<Value> {
-        let (status, text) = self.send(path, token, None, body).context("连接不上服务器")?;
+        let (status, text) = self.send(path, token, None, body).context("无法连接服务器")?;
         reply(status, &text)
     }
 
@@ -263,17 +263,17 @@ impl Server {
                 Err(e) if attempt < 2 => {
                     attempt += 1;
                     std::thread::sleep(Duration::from_millis(500 * attempt));
-                    eprintln!("{}", printable(&format!("连接服务器出错（{e}），重试第 {attempt} 次")));
+                    eprintln!("{}", printable(&format!("连接服务器失败（{e}），第 {attempt} 次重试")));
                 }
-                Err(e) => return Err(e).context("连接不上服务器"),
+                Err(e) => return Err(e).context("无法连接服务器"),
             }
         };
         match reply(status, &text)? {
             Value::Object(mut reply) => match (reply.remove("text"), reply.remove("data")) {
                 (Some(Value::String(text)), Some(data)) => Ok((text, data)),
-                _ => bail!("服务器的回复里缺少 text 或 data"),
+                _ => bail!("服务器回复缺少 text 或 data"),
             },
-            _ => bail!("服务器的回复格式不对"),
+            _ => bail!("服务器回复格式错误"),
         }
     }
 }
@@ -284,7 +284,7 @@ fn reply(status: StatusCode, text: &str) -> anyhow::Result<Value> {
         return Ok(Value::Null);
     }
     if status.is_success() {
-        return serde_json::from_str(text).context("服务器的回复不是 JSON");
+        return serde_json::from_str(text).context("服务器回复不是 JSON");
     }
     // A proxy in between may answer with a page of its own.
     let reply: Value = serde_json::from_str(text).unwrap_or_default();
@@ -321,7 +321,7 @@ fn call(name: &str, args: Value, json_out: bool) -> anyhow::Result<()> {
 }
 
 fn login(url: Option<String>, name: String, read_only: bool) -> anyhow::Result<()> {
-    let url = url.or_else(|| read_config().ok().flatten().map(|c| c.url)).context("用 --url 指定服务器地址")?;
+    let url = url.or_else(|| read_config().ok().flatten().map(|c| c.url)).context("请用 --url 指定服务器地址")?;
     let server = Server::new(&url);
     print!("用户名：");
     std::io::stdout().flush()?;
@@ -339,12 +339,12 @@ fn login(url: Option<String>, name: String, read_only: bool) -> anyhow::Result<(
         None,
         &json!({ "username": username.trim(), "password": password, "device": "nexttodo 命令行" }),
     )?;
-    let session = session["secret"].as_str().ok_or_else(|| anyhow!("服务器的回复里没有会话"))?.to_owned();
+    let session = session["secret"].as_str().ok_or_else(|| anyhow!("服务器回复中没有会话"))?.to_owned();
     let scope = if read_only { "read" } else { "write" };
     let made = server.post("/api/v1/tokens", Some(&session), &json!({ "name": name, "scope": scope }));
     // The session only existed to make the token.
     server.post("/api/v1/auth/logout", Some(&session), &json!({}))?;
-    let token = made?["secret"].as_str().ok_or_else(|| anyhow!("服务器的回复里没有令牌"))?.to_owned();
+    let token = made?["secret"].as_str().ok_or_else(|| anyhow!("服务器回复中没有令牌"))?.to_owned();
     let path = write_config(&Config { url: server.url.clone(), token })?;
     println!("{}", printable(&format!("已登录，令牌“{name}”保存在 {}", path.display())));
     Ok(())
@@ -355,9 +355,9 @@ fn plan(file: &PathBuf) -> anyhow::Result<Value> {
     if file.as_os_str() == "-" {
         std::io::stdin().read_to_string(&mut text)?;
     } else {
-        text = std::fs::read_to_string(file).with_context(|| format!("读不了 {}", file.display()))?;
+        text = std::fs::read_to_string(file).with_context(|| format!("无法读取 {}", file.display()))?;
     }
-    serde_saphyr::from_str(&text).map_err(|e| anyhow!("计划不是合法的 YAML：{e}"))
+    serde_saphyr::from_str(&text).map_err(|e| anyhow!("计划不是有效的 YAML：{e}"))
 }
 
 fn run(cli: Cli) -> anyhow::Result<()> {

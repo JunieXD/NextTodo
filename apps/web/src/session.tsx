@@ -319,7 +319,7 @@ async function claim(user: User, copy: string): Promise<Session | Login> {
 async function fresh({ id, user }: Login, copy: string): Promise<Session> {
   const { seq, folders, tasks, dependencies } = await download(user.id);
   return turn(async () => {
-    if (pendingSignOut() || cachedLogin()?.user.id !== user.id) throw new ApiError(401, "unauthenticated", "这台设备上的登录已经变了，请重新登录");
+    if (pendingSignOut() || cachedLogin()?.user.id !== user.id) throw new ApiError(401, "unauthenticated", "本机的登录状态已变更，请重新登录");
     return new Session(user, id, copy, { ...Store.empty(), seq, base: { folders, tasks, dependencies } });
   });
 }
@@ -349,7 +349,7 @@ async function finishSignOut(out: Login) {
 /** The user's data from the server, unless this browser has signed in as someone else by now. */
 async function download(user: string): Promise<SeqSnapshot> {
   const snapshot = await api<SeqSnapshot>("GET", "/snapshot");
-  if (snapshot.user !== user) throw new ApiError(401, "unauthenticated", "这台设备上登录的账号已经换了，请重新登录");
+  if (snapshot.user !== user) throw new ApiError(401, "unauthenticated", "本机已切换账号，请重新登录");
   return snapshot;
 }
 

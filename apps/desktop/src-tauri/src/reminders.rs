@@ -73,7 +73,7 @@ pub fn start(app: AppHandle) {
             queue.looked = now;
             for r in due {
                 if let Err(e) = app.notification().builder().title(&r.title).body(&r.body).action_type_id(KIND).extra("task", &r.task).show() {
-                    eprintln!("提醒没能弹出：{e}");
+                    eprintln!("提醒弹出失败：{e}");
                 }
             }
             let wait = queue.list.iter().map(|r| r.at - now).min().map_or(LOOK_AGAIN, |ms| LOOK_AGAIN.min(Duration::from_millis(ms as u64)));

@@ -35,7 +35,7 @@ impl TryFrom<String> for SortKey {
             && integer_len(b[0]) <= b.len()
             && s != SMALLEST_INTEGER
             && !s[integer_len(b[0])..].ends_with('0');
-        if valid { Ok(SortKey(s)) } else { Err(format!("顺序键“{s}”不对")) }
+        if valid { Ok(SortKey(s)) } else { Err(format!("顺序键“{s}”格式错误")) }
     }
 }
 

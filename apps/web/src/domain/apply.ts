@@ -174,12 +174,12 @@ class Applier {
         if (op.before === op.after) throw new Rejected("invalid", "事项不能依赖自己");
         this.task(op.before);
         this.task(op.after);
-        if (this.d.deps.has(depKey(op.before, op.after))) throw new Rejected("conflict", "这条依赖已经存在");
+        if (this.d.deps.has(depKey(op.before, op.after))) throw new Rejected("conflict", "该依赖已存在");
         this.createDependency({ before: op.before, after: op.after, created_at: now });
         return;
       case "dep.remove": {
         const dep = this.d.deps.get(depKey(op.before, op.after));
-        if (!dep) throw new Rejected("not_found", "这条依赖不存在");
+        if (!dep) throw new Rejected("not_found", "该依赖不存在");
         this.deleteDependency(dep);
         return;
       }
@@ -209,7 +209,7 @@ class Applier {
   private checkName(f: Folder) {
     for (const o of this.d.folders.values()) {
       if (o.id !== f.id && o.parent_id === f.parent_id && o.name === f.name) {
-        throw new Rejected("conflict", `这一层已经有叫“${f.name}”的文件夹了`);
+        throw new Rejected("conflict", `同一层级已有名为“${f.name}”的文件夹`);
       }
     }
   }
@@ -224,7 +224,7 @@ class Applier {
     if (after.parent_id !== before.parent_id && after.parent_id !== null) {
       this.folder(after.parent_id);
       for (let cur: FolderId | null = after.parent_id; cur !== null; cur = this.d.folders.get(cur)!.parent_id) {
-        if (cur === after.id) throw new Rejected("folder_cycle", "文件夹不能移到自己或自己的子文件夹里");
+        if (cur === after.id) throw new Rejected("folder_cycle", "文件夹不能移入自身或其子文件夹");
       }
     }
     if (after.parent_id !== before.parent_id || after.name !== before.name) this.checkName(after);
@@ -275,7 +275,7 @@ class Applier {
     const path = this.chain(dep.after, dep.before);
     if (path) {
       const titles = [dep.before, ...path].map((id) => `“${this.task(id).title}”`).join(" → ");
-      throw new Rejected("cycle", `加上这条依赖会形成循环：${titles}`);
+      throw new Rejected("cycle", `添加该依赖将形成循环：${titles}`);
     }
     this.push({ kind: "dependency", before: null, after: dep });
   }
@@ -321,7 +321,7 @@ class Applier {
           const f = e.before;
           if (this.d.folders.has(f.id)) continue;
           if (f.parent_id !== null && !this.d.folders.has(f.parent_id)) {
-            throw new Rejected("not_found", `文件夹“${f.name}”原来所在的文件夹已经删除了`);
+            throw new Rejected("not_found", `文件夹“${f.name}”原所在的文件夹已删除`);
           }
           this.createFolder({ ...f, updated_at: now });
         } else {
@@ -335,7 +335,7 @@ class Applier {
           const t = e.before;
           if (this.d.tasks.has(t.id)) continue;
           if (t.folder_id !== null && !this.d.folders.has(t.folder_id)) {
-            throw new Rejected("not_found", `“${t.title}”原来所在的文件夹已经删除了`);
+            throw new Rejected("not_found", `“${t.title}”原所在的文件夹已删除`);
           }
           this.createTask({ ...t, updated_at: now, updated_via: null });
         } else {
@@ -349,7 +349,7 @@ class Applier {
       } else if (!e.after) {
         const dep = e.before;
         if (!this.d.tasks.has(dep.before) || !this.d.tasks.has(dep.after)) {
-          throw new Rejected("not_found", "要恢复的依赖连着的事项已经删除了");
+          throw new Rejected("not_found", "要恢复的依赖所关联的事项已删除");
         }
         if (!this.d.deps.has(depKey(dep.before, dep.after))) this.createDependency(dep);
       }

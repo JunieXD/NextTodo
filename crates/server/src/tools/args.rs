@@ -55,7 +55,7 @@ pub struct LogArgs {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AddArgs {
-    #[schemars(with = "String", description = "标题，写成一个动作")]
+    #[schemars(with = "String", description = "标题，以动作表述")]
     pub title: Title,
     #[schemars(description = "文件夹路径；默认根目录 /；不存在时一起新建")]
     pub folder: Option<String>,
@@ -112,7 +112,7 @@ pub struct MkdirArgs {
 pub struct RenameArgs {
     #[schemars(description = "文件夹路径")]
     pub folder: String,
-    #[schemars(with = "String", description = "新名字，不能含 /")]
+    #[schemars(with = "String", description = "新名称，不能包含 /")]
     pub name: Name,
 }
 
@@ -136,7 +136,7 @@ pub struct DeleteArgs {
     #[schemars(description = "要删除的事项编号")]
     pub tasks: Vec<i64>,
     #[serde(default)]
-    #[schemars(description = "要删除的文件夹路径，里面的一切一起删除")]
+    #[schemars(description = "要删除的文件夹路径，其中的内容一并删除")]
     pub folders: Vec<String>,
 }
 
@@ -171,9 +171,9 @@ pub struct Plan {
 #[serde(deny_unknown_fields)]
 pub struct PlanTask {
     #[serde(rename = "ref")]
-    #[schemars(rename = "ref", description = "计划内的临时名字，供 after、before 引用；不能重复")]
+    #[schemars(rename = "ref", description = "计划内的临时名称，供 after、before 引用；不可重复")]
     pub name: Option<String>,
-    #[schemars(with = "String", description = "标题，写成一个动作")]
+    #[schemars(with = "String", description = "标题，以动作表述")]
     pub title: Title,
     #[schemars(with = "Option<String>", description = "描述，Markdown；写清怎样算完成")]
     pub description: Option<Description>,

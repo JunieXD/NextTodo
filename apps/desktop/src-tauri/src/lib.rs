@@ -109,7 +109,7 @@ pub fn run() {
             })?;
             // Taken by another app, the shortcut does nothing; the menu bar icon still works.
             if let Err(e) = app.global_shortcut().register(shortcut) {
-                eprintln!("快捷键 ⌃⌥Space 没能注册：{e}");
+                eprintln!("快捷键 ⌃⌥Space 注册失败：{e}");
             }
             reminders::start(app.handle().clone());
             if std::env::args().any(|a| a == HIDDEN) {

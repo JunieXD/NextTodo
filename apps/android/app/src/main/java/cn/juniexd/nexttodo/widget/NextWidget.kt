@@ -89,7 +89,7 @@ private fun Content(context: Context, items: List<Item>, signedIn: Boolean, now:
         }
         when {
             !signedIn -> Note("打开 NextTodo 登录", GlanceModifier.clickable(open(context, "nexttodo://home")))
-            items.isEmpty() -> Note("现在没有可做的事项")
+            items.isEmpty() -> Note("暂无可做的事项")
             else -> LazyColumn {
                 items(items) { item -> TaskRow(context, item, now) }
             }
@@ -142,7 +142,7 @@ class RefreshAction : ActionCallback {
         try {
             Widget.refresh(context)
         } catch (e: Exception) {
-            Widget.toast(context, "没能刷新：${e.message}")
+            Widget.toast(context, "刷新失败：${e.message}")
         }
     }
 }

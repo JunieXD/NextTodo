@@ -102,7 +102,7 @@ object Widget {
         try {
             Server.complete(context, token, task)
         } catch (e: Exception) {
-            if (e is HttpError && e.status == 401) ended(context, token) else toast(context, "没能完成：${e.message}")
+            if (e is HttpError && e.status == 401) ended(context, token) else toast(context, "完成失败：${e.message}")
             return
         }
         // Signed in again meanwhile, maybe as someone else, whose reminder this number may be.
@@ -111,7 +111,7 @@ object Widget {
         try {
             refresh(context)
         } catch (e: Exception) {
-            toast(context, "没能刷新：${e.message}")
+            toast(context, "刷新失败：${e.message}")
         }
     }
 

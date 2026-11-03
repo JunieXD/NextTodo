@@ -108,14 +108,14 @@ async fn connection(st: AppState, mut ws: WebSocket, presented: Option<String>) 
         _ => return Ok(()),
     };
     let Some(ClientMessage::Hello { token, since, user }) = hello else {
-        return fail(&mut ws, ApiError::invalid("连接后的第一条消息必须是 hello", None)).await;
+        return fail(&mut ws, ApiError::invalid("连接后的第一条消息须为 hello", None)).await;
     };
     let Some(secret) = token.or(presented) else {
         return fail(&mut ws, ApiError::unauthenticated("请先登录")).await;
     };
     let auth = match auth::authenticate(&st, secret.clone()).await {
         Ok(auth) if auth.user_id == user => auth,
-        Ok(_) => return fail(&mut ws, ApiError::unauthenticated("这台设备上登录的账号已经换了，请重新登录")).await,
+        Ok(_) => return fail(&mut ws, ApiError::unauthenticated("本机已切换账号，请重新登录")).await,
         Err(e) => return fail(&mut ws, e).await,
     };
     // Subscribed before the first read, so nothing committed in between is missed.
@@ -201,7 +201,7 @@ async fn handle(st: &AppState, ws: &mut WebSocket, secret: &str, text: &str) -> 
         return Ok(Err(ApiError::invalid("无法识别的消息", None)));
     };
     let Some(id) = mutation.get("id").and_then(|id| serde_json::from_value::<MutationId>(id.clone()).ok()) else {
-        return Ok(Err(ApiError::invalid("改动缺少合法的 id", None)));
+        return Ok(Err(ApiError::invalid("改动缺少有效的 id", None)));
     };
     let reply = match apply(st, secret, mutation).await {
         Ok(seq) => ServerMessage::Ack { id, seq },

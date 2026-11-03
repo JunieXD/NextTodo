@@ -119,7 +119,7 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
   };
   const unlink = async (before: TaskId, after: TaskId) => {
     const [a, b] = [board.task(before)!, board.task(after)!];
-    if (await confirm({ title: "删除这条依赖？", body: `删除后，“${b.title}”不再需要等“${a.title}”完成。`, ok: "删除", danger: true })) actions.unlink(before, after);
+    if (await confirm({ title: "删除此依赖？", body: `删除后，“${b.title}”无需再等待“${a.title}”完成。`, ok: "删除", danger: true })) actions.unlink(before, after);
   };
 
   // Sizes and handles given up front, so that the drawing doesn't wait for React Flow to measure
@@ -194,7 +194,7 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
         <div className="graph-wrap" ref={wrap}>
           {connect && (
             <div className="connect-banner" role="status">
-              {from ? `再点后续事项，接在“${from.title}”后面` : "先点前置事项"}
+              {from ? `请点选后续事项，它将排在“${from.title}”之后` : "请先点选前置事项"}
             </div>
           )}
           <svg className="graph-defs" aria-hidden>
@@ -208,7 +208,7 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
             </defs>
           </svg>
           {s.tasks.length === 0 ? (
-            <p className="empty">这个文件夹里没有待办事项。</p>
+            <p className="empty">此文件夹中暂无待办事项。</p>
           ) : (
           <ReactFlow
             nodes={nodes}

@@ -63,9 +63,9 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
   useEffect(() => {
     session.listen({
       signedOut: () => onSignedOut("登录已失效，请重新登录"),
-      rejected: (_, e) => snack(`没能保存：${e.message}`),
-      unsaved: () => snack("没能存到这台设备上，关掉页面前请保持联网"),
-      appFailed: (e) => snack(`${app === "android" ? "提醒和小组件" : "提醒"}没能更新：${e instanceof Error ? e.message : String(e)}`),
+      rejected: (_, e) => snack(`保存失败：${e.message}`),
+      unsaved: () => snack("无法保存到本机，关闭页面前请保持联网"),
+      appFailed: (e) => snack(`${app === "android" ? "提醒和小组件" : "提醒"}更新失败：${e instanceof Error ? e.message : String(e)}`),
       arrived(entries) {
         const last = entries.findLast((e) => e.actor !== null && e.effects.length > 0 && e.created_at > Date.now() - RECENT_MS);
         if (last) snack({ text: describe(last, session.store.getView().board), action: "撤销", onAction: () => undo(last.id), ms: 8000 });
@@ -78,17 +78,17 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
   return null;
 }
 
-/** `Claude Code 在“求职”里添加了 4 项` */
+/** `Claude Code 在“求职”中添加了 4 项` */
 function describe(entry: LogEntry, board: Board): string {
   const tasks = entry.effects.filter((e) => e.kind === "task");
   const created = tasks.filter((e) => !e.before).map((e) => e.after!);
   if (created.length && created.length === tasks.length) {
     const folders = new Set(created.map((t) => t.folder_id));
     const [only] = folders;
-    const where = folders.size > 1 ? "" : `在“${only ? (board.folder(only)?.name ?? "文件夹") : board.folderName(null)}”里`;
+    const where = folders.size > 1 ? "" : `在“${only ? (board.folder(only)?.name ?? "文件夹") : board.folderName(null)}”中`;
     return `${entry.actor} ${where}添加了 ${created.length} 项`;
   }
   const done = tasks.filter((e) => e.before && e.after && e.before.done_at === null && e.after.done_at !== null);
   if (done.length && done.length === tasks.length) return `${entry.actor} 完成了 ${done.length} 项`;
-  return `${entry.actor} 做了 ${entry.effects.length} 处改动`;
+  return `${entry.actor} 进行了 ${entry.effects.length} 处改动`;
 }

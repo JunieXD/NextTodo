@@ -105,7 +105,7 @@ pub fn line(s: String, what: &str, max: usize) -> Result<String, String> {
         return Err(format!("{what}不能为空"));
     }
     if s.contains(['\n', '\r']) {
-        return Err(format!("{what}只能有一行"));
+        return Err(format!("{what}不能换行"));
     }
     if s.chars().any(char::is_control) {
         return Err(format!("{what}不能包含控制字符"));
@@ -121,7 +121,7 @@ text_type!(
     Name,
     |s| {
         let s = line(s, "名称", 100)?;
-        if s.contains('/') { Err("文件夹名称里不能有 /".into()) } else { Ok(s) }
+        if s.contains('/') { Err("文件夹名称不能包含 /".into()) } else { Ok(s) }
     }
 );
 text_type!(
@@ -161,7 +161,7 @@ text_type!(
             }
             _ => false,
         };
-        if valid { Ok(s) } else { Err(format!("日期“{s}”不对，格式是 YYYY-MM-DD")) }
+        if valid { Ok(s) } else { Err(format!("日期“{s}”格式错误，应为 YYYY-MM-DD")) }
     }
 );
 text_type!(
@@ -173,7 +173,7 @@ text_type!(
         };
         match (s.len() == 5 && s.get(2..3) == Some(":"), digits(0..2), digits(3..5)) {
             (true, Some(h), Some(m)) if h < 24 && m < 60 => Ok(s),
-            _ => Err(format!("时间“{s}”不对，格式是 HH:MM")),
+            _ => Err(format!("时间“{s}”格式错误，应为 HH:MM")),
         }
     }
 );
@@ -217,7 +217,7 @@ impl Due {
         }
         let at = match (time, remind_before) {
             (Some(time), remind_before) => Some(DueAt { time, remind_before }),
-            (None, Some(_)) => return Err("只有设了具体的截止时间才能设提醒".into()),
+            (None, Some(_)) => return Err("设置提醒需要具体的截止时间".into()),
             (None, None) => None,
         };
         Ok(Due { date, at })

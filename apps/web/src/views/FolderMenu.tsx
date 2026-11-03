@@ -38,11 +38,11 @@ export function FolderMenu({ folder }: { folder: FolderId }) {
     if (parent === f.parent_id) return;
     const sort_key = lastKey(store.getView().board.subfolders(parent).map((s) => s.sort_key));
     const r = commit([{ op: "folder.update", id: f.id, parent_id: parent, sort_key }]);
-    if (r) snack({ text: `已移到“${board.folderName(parent)}”`, action: "撤销", onAction: () => undo(r.id) });
+    if (r) snack({ text: `已移至“${board.folderName(parent)}”`, action: "撤销", onAction: () => undo(r.id) });
   };
   const remove = async () => {
     const inside = [...board.snapshot.tasks].filter((t) => t.folder_id && board.inSubtree(t.folder_id, f.id)).length;
-    const body = inside ? `里面的子文件夹和 ${inside} 个事项会一起删除，可以撤销。` : "里面的子文件夹会一起删除，可以撤销。";
+    const body = inside ? `其中的子文件夹和 ${inside} 个事项将一并删除，可撤销。` : "其中的子文件夹将一并删除，可撤销。";
     if (!(await confirm({ title: `删除“${f.name}”？`, body, ok: "删除", danger: true }))) return;
     const r = commit([{ op: "folder.delete", id: f.id }]);
     if (!r) return;
@@ -68,7 +68,7 @@ export function FolderMenu({ folder }: { folder: FolderId }) {
             </DropdownMenu.Item>
             <DropdownMenu.Item className="menu-item" onSelect={() => setMoving(true)}>
               <Icon of={FolderInput} />
-              移到…
+              移动到…
             </DropdownMenu.Item>
             <DropdownMenu.Item className="menu-item danger-text" onSelect={remove}>
               <Icon of={Trash2} />
@@ -77,7 +77,7 @@ export function FolderMenu({ folder }: { folder: FolderId }) {
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
-      {moving && <FolderPicker title="移到文件夹" current={f.parent_id} exclude={f.id} onPick={move} onClose={() => setMoving(false)} />}
+      {moving && <FolderPicker title="移动到" current={f.parent_id} exclude={f.id} onPick={move} onClose={() => setMoving(false)} />}
     </>
   );
 }

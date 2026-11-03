@@ -59,17 +59,17 @@ impl ApiError {
 
     /// `path` goes around the cycle and ends where it starts; `titles` spells it out for the user.
     pub fn cycle(path: Vec<TaskId>, titles: &str) -> Self {
-        let mut e = Self::new(StatusCode::CONFLICT, "cycle", format!("加上这条依赖会形成循环：{titles}"));
+        let mut e = Self::new(StatusCode::CONFLICT, "cycle", format!("添加该依赖将形成循环：{titles}"));
         e.details = Some(serde_json::json!({ "path": path }));
         e
     }
 
     pub fn folder_cycle() -> Self {
-        Self::new(StatusCode::CONFLICT, "folder_cycle", "文件夹不能移到自己或自己的子文件夹里")
+        Self::new(StatusCode::CONFLICT, "folder_cycle", "文件夹不能移入自身或其子文件夹")
     }
 
     pub fn resync() -> Self {
-        Self::new(StatusCode::GONE, "resync", "本地数据太旧，需要重新下载")
+        Self::new(StatusCode::GONE, "resync", "本地数据已过期，需要重新下载")
     }
 }
 
@@ -94,14 +94,14 @@ impl std::error::Error for ApiError {}
 impl From<rusqlite::Error> for ApiError {
     fn from(e: rusqlite::Error) -> Self {
         tracing::error!(error = %e, "database error");
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal", "服务器出错了，请稍后再试")
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal", "服务器错误，请稍后重试")
     }
 }
 
 impl From<serde_json::Error> for ApiError {
     fn from(e: serde_json::Error) -> Self {
         tracing::error!(error = %e, "stored JSON error");
-        Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal", "服务器出错了，请稍后再试")
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal", "服务器错误，请稍后重试")
     }
 }
 
@@ -145,7 +145,7 @@ impl<S: Send + Sync, T: DeserializeOwned> FromRequest<S> for Json<T> {
             .and_then(|v| v.to_str().ok())
             .is_some_and(|v| v.split(';').next().is_some_and(|m| m.trim().eq_ignore_ascii_case("application/json")));
         if !is_json {
-            return Err(ApiError::invalid("请求体要用 JSON，并带上 Content-Type: application/json", None));
+            return Err(ApiError::invalid("请求体须为 JSON，并设置 Content-Type: application/json", None));
         }
         let bytes = Bytes::from_request(req, state).await.map_err(|e| ApiError::invalid(e.body_text(), None))?;
         let de = &mut serde_json::Deserializer::from_slice(&bytes);
@@ -156,7 +156,7 @@ impl<S: Send + Sync, T: DeserializeOwned> FromRequest<S> for Json<T> {
             let message = message.rsplit_once(" at line ").map_or(message.as_str(), |(m, _)| m).to_owned();
             ApiError::invalid(message, (path != ".").then_some(path))
         })?;
-        de.end().map_err(|_| ApiError::invalid("请求体在 JSON 后面还有多余的内容", None))?;
+        de.end().map_err(|_| ApiError::invalid("请求体在 JSON 之后含有多余内容", None))?;
         Ok(Json(value))
     }
 }

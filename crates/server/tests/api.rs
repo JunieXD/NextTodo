@@ -370,7 +370,7 @@ async fn bad_input_names_the_field() {
         .mutate(&s, json!([{ "op": "task.create", "id": id(), "title": "x", "due": { "date": "2026-11-20", "remind_before": 10 } }]))
         .await;
     assert_eq!((r.status, r.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("ops[0]")));
-    assert_eq!(r.body["message"], "只有设了具体的截止时间才能设提醒");
+    assert_eq!(r.body["message"], "设置提醒需要具体的截止时间");
     let r = t.mutate(&s, json!([{ "op": "task.create", "id": id(), "title": "   " }])).await;
     assert_eq!((r.body["details"]["field"].as_str(), r.body["message"].as_str()), (Some("ops[0]"), Some("标题不能为空")));
     let r = t.call("GET", "/changes?since=abc", Some(&s), None).await;

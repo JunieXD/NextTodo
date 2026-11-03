@@ -53,7 +53,7 @@ pub fn run(c: &mut Connection, auth: &Auth, id: Option<MutationId>, now: i64, bu
             // Past the retention period, or sent by an app rather than through a tool. Only the
             // receipt is given: the old effects cannot be read against today's folders.
             None => Ok(Output {
-                text: format!("批次 {} 已经保存过，这次没有再生效", done.seq),
+                text: format!("批次 {} 已保存，本次未重复生效", done.seq),
                 data: json!({ "batch": done.seq, "effects": done.effects, "unlocked": [] }),
             }),
         };
@@ -61,7 +61,7 @@ pub fn run(c: &mut Connection, auth: &Auth, id: Option<MutationId>, now: i64, bu
     let snap = store::snapshot(&tx, &auth.user_id)?;
     let write = build(&WriteCx { c: &tx, owner: &auth.user_id, board: &Board::new(&snap) })?;
     if write.ops.len() > MAX_OPS {
-        return Err(ApiError::invalid(format!("一次最多 {MAX_OPS} 个操作，这次有 {} 个", write.ops.len()), None));
+        return Err(ApiError::invalid(format!("每次最多 {MAX_OPS} 个操作，本次有 {} 个", write.ops.len()), None));
     }
     let effects = mutate::run(&tx, &actor, &write.ops, now)?;
     // Rendered inside the transaction, so a preview still sees what it would have made.
@@ -80,7 +80,7 @@ fn report(after: &Snapshot, batch: Option<i64>, effects: &[Effect]) -> Output {
     let b = Board::new(after);
     let mut lines = Vec::new();
     if batch.is_none() {
-        lines.push("预览，没有保存：".to_owned());
+        lines.push("预览（未保存）：".to_owned());
     }
     lines.extend(text::changes(effects, &mut Names::new(after), 20));
     if effects.is_empty() {
@@ -111,7 +111,7 @@ fn report(after: &Snapshot, batch: Option<i64>, effects: &[Effect]) -> Output {
         )),
     }
     if let Some(batch) = batch {
-        lines.push(format!("批次 {batch}，可以撤销"));
+        lines.push(format!("批次 {batch}，可撤销"));
     }
     let unlocked: Vec<Value> = unlocked.iter().map(|t| task_view(&b, t)).collect();
     Output { text: lines.join("\n"), data: json!({ "batch": batch, "effects": effects, "unlocked": unlocked }) }
@@ -149,7 +149,7 @@ impl Folders<'_, '_> {
 fn due(due: Option<super::args::DueText>, remind: Option<u32>) -> Result<Option<Due>, ApiError> {
     match (due, remind) {
         (None, None) => Ok(None),
-        (None, Some(_)) => Err(ApiError::invalid("只有设了截止时间才能设提醒", Some("remind".into()))),
+        (None, Some(_)) => Err(ApiError::invalid("设置提醒需要截止时间", Some("remind".into()))),
         (Some(d), remind) => Due::new(d.date, d.time, remind).map(Some).map_err(|m| ApiError::invalid(m, Some("due".into()))),
     }
 }
@@ -168,10 +168,10 @@ fn plan_ops(b: &Board, plan: Plan) -> Result<Vec<Op>, ApiError> {
     for (t, &id) in plan.tasks.iter().zip(&ids) {
         let Some(name) = &t.name else { continue };
         if number(name).is_some() {
-            return Err(ApiError::invalid(format!("ref“{name}”会被当成事项编号，换一个不是数字的名字"), None));
+            return Err(ApiError::invalid(format!("ref“{name}”会被识别为事项编号，请改用非数字的名称"), None));
         }
         if refs.insert(name.clone(), id).is_some() {
-            return Err(ApiError::invalid(format!("计划里有两个事项的 ref 都是“{name}”"), None));
+            return Err(ApiError::invalid(format!("计划中有多个事项的 ref 均为“{name}”"), None));
         }
     }
     let resolve = |r: &PlanRef| -> Result<TaskId, ApiError> {
@@ -179,7 +179,7 @@ fn plan_ops(b: &Board, plan: Plan) -> Result<Vec<Op>, ApiError> {
             PlanRef::Number(n) => Ok(find_task(b, *n)?.id),
             PlanRef::Name(s) => match number(s) {
                 Some(n) => Ok(find_task(b, n)?.id),
-                None => refs.get(s).copied().ok_or_else(|| ApiError::invalid(format!("计划里没有 ref 为“{s}”的事项"), None)),
+                None => refs.get(s).copied().ok_or_else(|| ApiError::invalid(format!("计划中没有 ref 为“{s}”的事项"), None)),
             },
         }
     };
@@ -230,7 +230,7 @@ pub fn add(w: &WriteCx, a: AddArgs) -> Result<Write, ApiError> {
 pub fn apply(w: &WriteCx, a: ApplyArgs) -> Result<Write, ApiError> {
     let b = w.board;
     if a.plan.tasks.is_empty() {
-        return Err(ApiError::invalid("计划里至少要有一个事项", Some("plan.tasks".into())));
+        return Err(ApiError::invalid("计划至少包含一个事项", Some("plan.tasks".into())));
     }
     Ok(Write { ops: plan_ops(b, a.plan)?, preview: a.dry_run })
 }
@@ -238,13 +238,13 @@ pub fn apply(w: &WriteCx, a: ApplyArgs) -> Result<Write, ApiError> {
 pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
     let b = w.board;
     if a.title.is_none() && a.description.is_none() && a.due.is_none() && a.remind.is_none() {
-        return Err(ApiError::invalid("没有给出要修改的内容", None));
+        return Err(ApiError::invalid("未指定要修改的内容", None));
     }
     let t = find_task(b, a.task)?;
     let current_remind = t.due.as_ref().and_then(|d| d.at.as_ref()).and_then(|at| at.remind_before);
     let new_due = match (a.due, a.remind) {
         (None, None) => None,
-        (Some(None), Some(Some(_))) => return Err(ApiError::invalid("清除截止时间时不能设提醒", Some("remind".into()))),
+        (Some(None), Some(Some(_))) => return Err(ApiError::invalid("清除截止时间时不能同时设置提醒", Some("remind".into()))),
         (Some(None), _) => Some(None),
         (Some(Some(d)), remind) => {
             // Moving the deadline keeps the reminder as long as there is still a time to remind before.
@@ -255,7 +255,7 @@ pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
             Some((date, time)) => Some(Some(Due::new(date, Some(time), remind).map_err(|m| ApiError::invalid(m, Some("remind".into())))?)),
             // Without a time there is no reminder, so clearing it changes nothing.
             None if remind.is_none() => None,
-            None => return Err(ApiError::invalid("这个事项没有具体的截止时间，不能设提醒", Some("remind".into()))),
+            None => return Err(ApiError::invalid("该事项没有具体的截止时间，无法设置提醒", Some("remind".into()))),
         },
     };
     Ok(vec![Op::TaskUpdate {
@@ -272,7 +272,7 @@ pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
 
 fn set_done(b: &Board, tasks: Vec<i64>, done: bool) -> Result<Write, ApiError> {
     if tasks.is_empty() {
-        return Err(ApiError::invalid("至少要给一个事项", Some("tasks".into())));
+        return Err(ApiError::invalid("至少需要指定一个事项", Some("tasks".into())));
     }
     let mut seen = HashSet::new();
     let mut ops = Vec::new();
@@ -300,7 +300,7 @@ pub fn mkdir(w: &WriteCx, a: MkdirArgs) -> Result<Write, ApiError> {
     let mut ops = Vec::new();
     let (_, path) = Folders { board: b, made: HashMap::new() }.ensure(&mut ops, &a.path)?;
     if ops.is_empty() {
-        return Err(ApiError::conflict(format!("文件夹 {path} 已经存在")));
+        return Err(ApiError::conflict(format!("文件夹 {path} 已存在")));
     }
     Ok(ops.into())
 }
@@ -319,7 +319,7 @@ pub fn rename(w: &WriteCx, a: RenameArgs) -> Result<Write, ApiError> {
 pub fn move_to(w: &WriteCx, a: MoveArgs) -> Result<Write, ApiError> {
     let b = w.board;
     if a.tasks.is_empty() && a.folders.is_empty() {
-        return Err(ApiError::invalid("没有给出要移动的事项或文件夹", None));
+        return Err(ApiError::invalid("未指定要移动的事项或文件夹", None));
     }
     let to = find_folder(b, &a.to)?;
     let mut ops = Vec::new();
@@ -336,7 +336,7 @@ pub fn move_to(w: &WriteCx, a: MoveArgs) -> Result<Write, ApiError> {
 pub fn delete(w: &WriteCx, a: DeleteArgs) -> Result<Write, ApiError> {
     let b = w.board;
     if a.tasks.is_empty() && a.folders.is_empty() {
-        return Err(ApiError::invalid("没有给出要删除的事项或文件夹", None));
+        return Err(ApiError::invalid("未指定要删除的事项或文件夹", None));
     }
     let mut ops = Vec::new();
     let mut seen = HashSet::new();

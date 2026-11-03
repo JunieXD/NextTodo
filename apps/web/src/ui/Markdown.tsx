@@ -15,7 +15,7 @@ export function toggleLine(source: string, line: number): string {
 }
 
 export function Description({ source, onChange }: { source: string; onChange(source: string): void }) {
-  if (!source.trim()) return <p className="muted">没有描述</p>;
+  if (!source.trim()) return <p className="muted">暂无描述</p>;
   return (
     <Markdown
       remarkPlugins={[remarkGfm]}

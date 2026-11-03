@@ -304,7 +304,7 @@ test("a tab still downloading when the device signs in as someone else does not 
   const b = (await tab()).open(as(v));
   await vi.waitFor(() => expect(login().user.id).toBe(v.id));
   snapshot.release();
-  await expect(a).rejects.toThrow("登录已经变了");
+  await expect(a).rejects.toThrow("登录状态已变更");
   expect((await b).user.id).toBe(v.id);
 });
 

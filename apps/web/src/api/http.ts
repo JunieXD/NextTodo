@@ -89,13 +89,13 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
     });
     text = await res.text();
   } catch {
-    throw new ApiError(0, OFFLINE, "连不上服务器，请检查网络");
+    throw new ApiError(0, OFFLINE, "无法连接服务器，请检查网络");
   }
   if (res.status === 204) return undefined as T;
   if (res.ok) return JSON.parse(text) as T;
   const error = parseError(text);
   const field = (error.details as { field?: string } | undefined)?.field;
-  throw new ApiError(res.status, error.code ?? "error", error.message ?? `服务器出错了（${res.status}）`, field);
+  throw new ApiError(res.status, error.code ?? "error", error.message ?? `服务器错误（${res.status}）`, field);
 }
 
 /** The server's error, or nothing when a proxy in between answers with a page of its own. */

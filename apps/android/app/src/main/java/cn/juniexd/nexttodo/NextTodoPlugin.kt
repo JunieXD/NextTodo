@@ -19,8 +19,12 @@ class NextTodoPlugin : Plugin() {
     fun updateWidget(call: PluginCall) {
         val tasks = call.getString("tasks")!!
         CoroutineScope(Dispatchers.Default).launch {
-            Widget.show(context, tasks)
-            call.resolve()
+            try {
+                Widget.show(context, tasks)
+                call.resolve()
+            } catch (e: Exception) {
+                call.reject(e.message, e)
+            }
         }
     }
 

@@ -195,23 +195,20 @@ export class Session {
 
   /** The session this device was in last time, if any. */
   static async resume(): Promise<Session | null> {
-    // In the app, the session is the token kept on the device. Without it, what a sign-out cut short
-    // left behind goes.
-    if (native && !syncToken()) {
-      await clear();
-      const login = cachedLogin();
-      if (login) {
-        // The sign-in goes last, so that cut short again, this is done again next time.
-        await forget(login.user.id);
-        localStorage.removeItem(LOGIN);
-      }
-      return null;
-    }
+    // In the app, the session is the token kept on the device: without one, what the widget and the
+    // reminders show is no one's.
+    if (native && !syncToken()) await clear();
     const copy = crypto.randomUUID();
     const found = await turn(async () => {
       const out = pendingSignOut();
       if (out) {
         await finishSignOut(out);
+        return null;
+      }
+      // No token without a sign-out to finish: the server stopped accepting the session, and the
+      // widget heard so first. The data stays, as when the app hears so itself.
+      if (native && !syncToken()) {
+        localStorage.removeItem(LOGIN);
         return null;
       }
       const login = cachedLogin();

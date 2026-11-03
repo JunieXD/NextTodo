@@ -22,6 +22,16 @@ export const NextTodo = registerPlugin<NextTodoPlugin>("NextTodo");
 /** Changes coming close together are handled once. */
 const SETTLE_MS = 2000;
 
+/** Updates and clearing go one at a time, across sessions too: an update may wait for the user to
+ * answer the permission prompt, and a session's clearing up must not come after the next one's
+ * first update. */
+let queue = Promise.resolve();
+function inTurn(f: () => Promise<void>) {
+  const done = queue.then(f);
+  queue = done.catch(() => {});
+  return done;
+}
+
 /** What the widget lists: the ready tasks, as the `next` tool gives them. */
 export const widgetTasks = (board: Board) =>
   board.next().map((t) => ({ id: t.id, number: t.number, title: t.title, folder: board.folderPath(t.folder_id), due: t.due }));
@@ -31,8 +41,6 @@ export const widgetTasks = (board: Board) =>
  * reported to `failed`; the next change tries again. Returns how to stop and clear both. */
 export function watch(store: Store, failed: (e: unknown) => void): () => Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  // One update at a time: one may wait for the user to answer the permission prompt.
-  let running = Promise.resolve();
   const update = async () => {
     const { board } = store.getView();
     await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board)) });
@@ -70,7 +78,7 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
   };
   const changed = () => {
     clearTimeout(timer);
-    timer = setTimeout(() => (running = running.then(update).catch(failed)), SETTLE_MS);
+    timer = setTimeout(() => inTurn(update).catch(failed), SETTLE_MS);
   };
   const shown = () => document.visibilityState === "visible" && changed();
   const unsubscribe = store.subscribe(changed);
@@ -80,18 +88,19 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
     unsubscribe();
     document.removeEventListener("visibilitychange", shown);
     clearTimeout(timer);
-    await running;
     await clear();
   };
 }
 
-/** Empties the widget and takes away every reminder, those shown already too. */
-export async function clear() {
-  await NextTodo.updateWidget({ tasks: "[]" });
-  const { notifications } = await LocalNotifications.getPending();
-  if (notifications.length) await LocalNotifications.cancel({ notifications: notifications.map((n) => ({ id: n.id })) });
-  await LocalNotifications.removeAllDeliveredNotifications();
-}
+/** Empties the widget and takes away every reminder, those shown already too; after the updates
+ * under way. */
+export const clear = () =>
+  inTurn(async () => {
+    await NextTodo.updateWidget({ tasks: "[]" });
+    const { notifications } = await LocalNotifications.getPending();
+    if (notifications.length) await LocalNotifications.cancel({ notifications: notifications.map((n) => ({ id: n.id })) });
+    await LocalNotifications.removeAllDeliveredNotifications();
+  });
 
 /** Opens what a notification or the widget points at: `nexttodo://task/<id>`, `nexttodo://add` or
  * `nexttodo://home`. */

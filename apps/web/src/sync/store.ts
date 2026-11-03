@@ -103,7 +103,7 @@ export class Store {
   /** Makes a change here at once and queues it for the server. Throws `Rejected` when it cannot
    * apply, in which case nothing is queued. */
   commit(ops: Op[]): { id: MutationId; effects: Effect[] } {
-    const pending = { mutation: { id: uuidv7(), ops }, at: Date.now() };
+    const pending = { mutation: { id: after(this.outbox), ops }, at: Date.now() };
     const effects = apply(copy(this.data), ops, this.context(pending.at));
     this.outbox.push(pending);
     // Sent once saved: a tab that hears of it from the server takes it out of the saved outbox,
@@ -203,4 +203,13 @@ export class Store {
     this.data = d;
     this.view = { board: new Board(toSnapshot(d)), stuck, pending: this.outbox.length };
   }
+}
+
+/** An id for a change made after those `queued`, which the page reads in id order when it opens
+ * again. A UUIDv7 starts with the time in milliseconds: kept past the last change's, in case the
+ * clock has gone back since, as it may have when the page opened. */
+function after(queued: Pending[]): MutationId {
+  const last = queued.at(-1)?.mutation.id;
+  const time = last ? parseInt(last.slice(0, 8) + last.slice(9, 13), 16) : 0;
+  return uuidv7({ msecs: Math.max(Date.now(), time + 1) });
 }

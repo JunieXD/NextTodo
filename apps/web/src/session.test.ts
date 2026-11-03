@@ -234,6 +234,21 @@ test("a sign-in or sign-out heard late leaves a later sign-in alone", async () =
   expect([heard.signedOut, login().user.id]).toEqual([false, u.id]);
 });
 
+test("a tab left open while the site's storage is cleared leaves a later sign-in alone", async () => {
+  const u = user(21);
+  const a = await signIn(u);
+  storage.clear();
+  server.cookie = null;
+  const db = await openDB("nexttodo", 1);
+  await Promise.all([db.clear("copies"), db.clear("outbox")]);
+  // Signing in again takes a moment.
+  await new Promise((r) => setTimeout(r, 5));
+  await (await tab()).open(as(u));
+  const cookie = server.cookie!;
+  await a.signOut();
+  expect([server.ended.has(cookie), login().user.id]).toEqual([false, u.id]);
+});
+
 test("a session ended before the UI listens tells it once it does", async () => {
   const a = await signIn(user(19));
   kick(sockets.at(-1)!);

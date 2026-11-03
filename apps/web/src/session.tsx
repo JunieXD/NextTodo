@@ -30,9 +30,10 @@ interface Login {
 
 const COUNT = "nexttodo.count";
 
-/** The next number in the device's sequence of sign-ins and sign-outs; in `turn`. */
+/** The next number in the device's sequence of sign-ins and sign-outs; in `turn`. Never behind the
+ * clock in milliseconds: should the site's storage be cleared, tabs left open have smaller ones. */
 function next(): number {
-  const n = Number(localStorage.getItem(COUNT)) + 1;
+  const n = Math.max(Number(localStorage.getItem(COUNT)) + 1, Date.now());
   localStorage.setItem(COUNT, String(n));
   return n;
 }

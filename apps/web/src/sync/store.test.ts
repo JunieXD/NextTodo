@@ -1,3 +1,4 @@
+import { v7 as uuidv7 } from "uuid";
 import { expect, test } from "vitest";
 import type { ErrorBody } from "../api/types/ErrorBody";
 import type { LogEntry } from "../api/types/LogEntry";
@@ -148,4 +149,15 @@ test("a change the fresh copy already has leaves the queue when the server ackno
   store.acked(sent[0].id, 5);
   expect([store.unconfirmed.length, store.getView().stuck.size]).toEqual([0, 0]);
   expect(titles()).toEqual(["交电费"]);
+});
+
+test("a change comes after the queued ones also when the clock has gone back since they were made", async () => {
+  // Queued while the clock was a minute ahead, before the page opened again.
+  const at = Date.now() + 60_000;
+  const queued: Pending = { mutation: { id: uuidv7({ msecs: at }), ops: [{ op: "task.create", id: id(1), title: "交电费", sort_key: "a1" }] }, at };
+  const { store, saved } = setup({ ...Store.empty(), outbox: [queued] });
+  store.commit([{ op: "task.update", id: id(1), title: "交水费" }]);
+  await settle();
+  const ids = saved().outbox.map((p) => p.mutation.id);
+  expect(ids.toSorted()).toEqual(ids);
 });

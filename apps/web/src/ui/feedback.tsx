@@ -84,7 +84,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
 
 function DialogFrame({ title, close, children }: { title: string; close(): void; children: ReactNode }) {
   const root = useContext(RootContext);
-  useBack(close);
+  useBack("dialog", close);
   return (
     <Dialog.Root open onOpenChange={(o) => !o && close()}>
       <Dialog.Portal container={root}>
@@ -149,7 +149,7 @@ function PromptDialog({ title, label, value = "", placeholder, ok, check, close 
  * to `onBack` when given, such as the page the panel came from, otherwise closes it. */
 export function Modal({ title, onClose, onBack, children }: { title: string; onClose(): void; onBack?: () => void; children: ReactNode }) {
   const root = useContext(RootContext);
-  useBack(onBack ?? onClose);
+  useBack("dialog", onBack ?? onClose);
   return (
     <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal container={root}>

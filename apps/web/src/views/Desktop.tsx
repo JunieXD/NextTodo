@@ -22,8 +22,8 @@ export function Desktop({ onSettings }: { onSettings(): void }) {
   const { selected, close } = useSelection();
   // As on phones, a task not here (yet) shows nothing: one opened from outside may still be on its way.
   const open = selected !== null && board.task(selected) !== undefined;
-  useBack(open ? close : null);
-  // The pane keeps showing the task it was closed on while it slides away.
+  useBack("panel", open ? close : null);
+  // The pane keeps showing the task it was closed on while it slides away, and lets go of it after.
   const [shown, setShown] = useState(open ? selected : null);
   if (open && selected !== shown) setShown(selected);
   const now = useNow();
@@ -44,7 +44,7 @@ export function Desktop({ onSettings }: { onSettings(): void }) {
     );
   } else if (at === "next") {
     main = (
-      <Page title="接下来" crumbs={formatToday(now)} add={<QuickAdd />}>
+      <Page title="接下来" crumbs={formatToday(now)} add={<QuickAdd key="next" />}>
         <NextBody now={now} />
       </Page>
     );
@@ -73,7 +73,7 @@ export function Desktop({ onSettings }: { onSettings(): void }) {
           <FolderGraph folder={id} across now={now} />
         </Page>
       ) : (
-        <Page title={title} crumbs={crumbs} actions={actions} add={<QuickAdd folder={id} />}>
+        <Page title={title} crumbs={crumbs} actions={actions} add={<QuickAdd key={at} folder={id} />}>
           <FolderBody key={at} folder={id} now={now} />
         </Page>
       );
@@ -81,7 +81,10 @@ export function Desktop({ onSettings }: { onSettings(): void }) {
 
   const label = `${sideOpen ? "收起" : "展开"}左侧栏`;
   return (
-    <div className={`desk-cols${sideOpen ? "" : " side-closed"}${open ? "" : " pane-closed"}`}>
+    <div
+      className={`desk-cols${sideOpen ? "" : " side-closed"}${open ? "" : " pane-closed"}`}
+      onTransitionEnd={(e) => e.target === e.currentTarget && !open && setShown(null)}
+    >
       <Sidebar at={query.trim() ? null : at} query={query} setQuery={setQuery} onSettings={onSettings} />
       <main className="main">
         <div className="main-tools" data-tauri-drag-region="deep">

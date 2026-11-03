@@ -66,7 +66,7 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
   const [sub, setSub] = useState(false);
   const [picked, setPicked] = useState<TaskId | null>(null);
   const [connect, setConnect] = useState<{ from: TaskId | null } | null>(null);
-  useBack(connect ? () => setConnect(null) : null);
+  useBack("panel", connect ? () => setConnect(null) : null);
 
   const s = useMemo(() => scene(board, folder, { done, sub }), [board, folder, done, sub]);
   const ids = s.tasks.map((t) => t.id).sort();

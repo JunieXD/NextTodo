@@ -23,8 +23,11 @@ export function Main({ session, onSignedOut }: { session: Session; onSignedOut(n
   const [, navigate] = useLocation();
   const open = params.get("open");
   if ((open || params.has("add")) && settings) setSettings(false);
+  // On top of a page without details, which closing them goes back to: there may be no page before.
   useEffect(() => {
-    if (open) navigate(`/?t=${open}`, { replace: true, state: { sheet: true } });
+    if (!open) return;
+    navigate("/", { replace: true });
+    navigate(`/?t=${open}`, { state: { sheet: true } });
   }, [open, navigate]);
   const signOut = async () => {
     await session.signOut();

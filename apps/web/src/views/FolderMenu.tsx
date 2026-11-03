@@ -25,7 +25,7 @@ export function FolderMenu({ folder }: { folder: FolderId }) {
   const [, navigate] = useLocation();
   const [moving, setMoving] = useState(false);
   const [menu, setMenu] = useState(false);
-  useBack(menu ? () => setMenu(false) : null);
+  useBack("dialog", menu ? () => setMenu(false) : null);
   const { board } = useView();
   const f = board.folder(folder);
   if (!f) return null;

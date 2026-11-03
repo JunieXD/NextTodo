@@ -96,7 +96,7 @@ function Screen({ title, nav, anim = "", fill, children, after }: { title: strin
 function Back({ to, label }: { to: string; label: string }) {
   const [, navigate] = useLocation();
   const up = () => navigate(to);
-  useBack(up);
+  useBack("page", up);
   return (
     <button className="back" onClick={up}>
       <Icon of={ChevronLeft} size={22} />

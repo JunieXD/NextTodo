@@ -10,7 +10,7 @@ export function Sheet({ label, onClose, children }: { label: string; onClose(): 
   const sheet = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const state = useRef({ full, onClose });
-  useBack(onClose);
+  useBack("panel", onClose);
   useEffect(() => {
     state.current = { full, onClose };
   });

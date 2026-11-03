@@ -33,29 +33,36 @@ export const EVERY_MS = app === "android" ? 3600_000 : 6 * 3600_000;
 let server = "";
 let checked = 0;
 let checking = false;
+/** Whether a check was asked for while one was under way, after signing in to another server say. */
+let again = false;
 
 /** Looks for updates, unless it did lately. One that fails, offline say, is tried again the next time.
  * With a macOS version installed already, it would only install that again: the app still runs the
- * one before. One check at a time: the app has one web build and one version to install at a time,
- * whichever server they come from. */
+ * one before. One check at a time, of one server: the app has one web build and one version to
+ * install at a time, whichever server they come from; one asked for meanwhile comes after. */
 export async function check() {
   if (!app) return;
+  if (checking) {
+    again = true;
+    return;
+  }
   if (server !== serverUrl()) {
     server = serverUrl();
     checked = 0;
     if (pending?.kind === "apk") set(null);
   }
-  if (checking || Date.now() - checked < EVERY_MS || pending?.kind === "restart") return;
-  const from = server;
+  if (Date.now() - checked < EVERY_MS || pending?.kind === "restart") return;
   checking = true;
   // Each on its own: a web build that fails to download does not keep back an APK that fixes it.
-  const jobs: Promise<unknown>[] = app === "android" ? [NextTodo.updateWeb(), checkApk(from)] : [checkMac(from)];
+  const jobs: Promise<unknown>[] = app === "android" ? [NextTodo.updateWeb({ server }), checkApk(server)] : [checkMac(server)];
   const failed = (await Promise.allSettled(jobs)).filter((r) => r.status === "rejected");
   checking = false;
-  // Signed in to another server since: that one gets a check of its own.
-  if (from !== serverUrl()) return check();
   for (const f of failed) console.warn("检查更新失败", f.reason);
   if (!failed.length) checked = Date.now();
+  if (again) {
+    again = false;
+    return check();
+  }
 }
 
 /** Offers the APK `from` gives when its native version is newer; nothing, should the app have moved

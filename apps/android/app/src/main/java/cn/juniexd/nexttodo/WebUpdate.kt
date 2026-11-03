@@ -1,7 +1,6 @@
 package cn.juniexd.nexttodo
 
 import android.content.Context
-import cn.juniexd.nexttodo.widget.Server
 import com.getcapacitor.plugin.WebView
 import java.io.File
 import java.io.IOException
@@ -88,13 +87,12 @@ object WebUpdate {
         builds(context).listFiles()?.filter { it.name !in keep }?.forEach { it.deleteRecursively() }
     }
 
-    /** Downloads the server's build when it is another one that this APK can run, and returns its
+    /** Downloads `server`'s build when it is another one that this APK can run, and returns its
      * version; nothing when there is none to download. Fails while another download is under way,
      * one the page before a recreated activity started say, so that this check is not taken as done. */
-    suspend fun update(context: Context): String? = withContext(Dispatchers.IO) {
+    suspend fun update(context: Context, server: String): String? = withContext(Dispatchers.IO) {
         if (!busy.compareAndSet(false, true)) throw IOException("正在下载另一个版本")
         try {
-            val server = Server.prefs(context).getString("server", null) ?: return@withContext null
             val info = JSONObject(String(download("$server/app/web.json")))
             // A commit, which names a directory here.
             val version = info.getString("version").takeIf { it.matches(Regex("[0-9a-f]{7,40}")) } ?: throw IOException("版本号无效")

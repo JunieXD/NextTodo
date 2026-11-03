@@ -59,12 +59,14 @@ class NextTodoPlugin : Plugin() {
         call.resolve()
     }
 
-    /** Downloads the server's build of the web app, for the next start: see `WebUpdate`. */
+    /** Downloads the build of the web app on `server`, the one signed in to, for the next start: see
+     * `WebUpdate`. */
     @PluginMethod
     fun updateWeb(call: PluginCall) {
+        val server = call.getString("server")!!
         CoroutineScope(Dispatchers.Default).launch {
             try {
-                call.resolve(JSObject().put("staged", WebUpdate.update(context)))
+                call.resolve(JSObject().put("staged", WebUpdate.update(context, server)))
             } catch (e: Exception) {
                 call.reject(e.message, e)
             }

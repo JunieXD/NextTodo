@@ -32,12 +32,12 @@ export const EVERY_MS = app === "android" ? 3600_000 : 6 * 3600_000;
 /** The server the checks below are of: another one starts afresh. */
 let server = "";
 let checked = 0;
-/** The server being checked, if one is. */
-let checking: string | null = null;
+let checking = false;
 
 /** Looks for updates, unless it did lately. One that fails, offline say, is tried again the next time.
  * With a macOS version installed already, it would only install that again: the app still runs the
- * one before. */
+ * one before. One check at a time: the app has one web build and one version to install at a time,
+ * whichever server they come from. */
 export async function check() {
   if (!app) return;
   if (server !== serverUrl()) {
@@ -45,14 +45,15 @@ export async function check() {
     checked = 0;
     if (pending?.kind === "apk") set(null);
   }
-  if (checking === server || Date.now() - checked < EVERY_MS || pending?.kind === "restart") return;
-  const from = (checking = server);
+  if (checking || Date.now() - checked < EVERY_MS || pending?.kind === "restart") return;
+  const from = server;
+  checking = true;
   // Each on its own: a web build that fails to download does not keep back an APK that fixes it.
   const jobs: Promise<unknown>[] = app === "android" ? [NextTodo.updateWeb(), checkApk(from)] : [checkMac(from)];
   const failed = (await Promise.allSettled(jobs)).filter((r) => r.status === "rejected");
-  if (checking === from) checking = null;
-  // On another server since, which this check is not of: that one gets its own.
-  if (from !== server) return check();
+  checking = false;
+  // Signed in to another server since: that one gets a check of its own.
+  if (from !== serverUrl()) return check();
   for (const f of failed) console.warn("检查更新失败", f.reason);
   if (!failed.length) checked = Date.now();
 }

@@ -90,7 +90,7 @@ object WebUpdate {
 
     /** Downloads the server's build when it is another one that this APK can run, and returns its
      * version; nothing when there is none to download. Fails while another download is under way,
-     * maybe from another server, so that this check is not taken as done. */
+     * one the page before a recreated activity started say, so that this check is not taken as done. */
     suspend fun update(context: Context): String? = withContext(Dispatchers.IO) {
         if (!busy.compareAndSet(false, true)) throw IOException("正在下载另一个版本")
         try {

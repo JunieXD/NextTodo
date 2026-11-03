@@ -13,7 +13,7 @@ macOS App：Tauri 2 外壳加载打包在安装包里的网页端，加上菜单
 
 ## 连接服务器
 
-和 Android 相同：登录页多“服务器”栏，HTTP 加 `Authorization: Bearer <令牌>`，WebSocket 在 `hello` 里带令牌，设备名是“NextTodo App · macOS”。
+和 Android 相同：登录页多“服务器地址”栏，HTTP 加 `Authorization: Bearer <令牌>`，WebSocket 在 `hello` 里带令牌，设备名是“NextTodo App · macOS”。
 
 - 页面来自 `tauri://localhost`，和服务器不同源。HTTP 经 `@tauri-apps/plugin-http` 由 Rust 发出，不受跨域限制，服务端不需要 CORS。
 - 令牌和服务器地址用 Capacitor Preferences 存（不在 Capacitor 里时它就是 `localStorage`），和 Android 共用一套代码；macOS 没有小组件要读它。

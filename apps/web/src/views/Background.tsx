@@ -73,7 +73,7 @@ export function BackgroundTip() {
       <p>为确保提醒和小组件按时工作，请在系统设置中允许 NextTodo 自启动，并将省电策略设为“无限制”。此项也可在设置中找到。</p>
       <div className="tip-actions">
         <button className="text-btn" onClick={dismiss}>
-          知道了
+          关闭
         </button>
         <button
           className="text-btn"

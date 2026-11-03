@@ -3,7 +3,7 @@
 
 import { Dialog } from "radix-ui";
 import { X } from "lucide-react";
-import { type ReactNode, createContext, useContext, useMemo, useRef, useState } from "react";
+import { type ReactNode, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Checked } from "../domain/text";
 import { useBack } from "./back";
 import { Icon } from "./icons";
@@ -46,9 +46,12 @@ export const useFeedback = () => useContext(FeedbackContext);
 
 type Open = (Confirm & { kind: "confirm"; resolve(ok: boolean): void }) | (Prompt & { kind: "prompt"; resolve(value: string | null): void });
 
-export function FeedbackProvider({ children }: { children: ReactNode }) {
+/** `outside`: the app has been opened from outside, to quick add or to a task. */
+export function FeedbackProvider({ outside, children }: { outside: boolean; children: ReactNode }) {
   const [snack, setSnack] = useState<(Snack & { key: number }) | null>(null);
   const [open, setOpen] = useState<Open | null>(null);
+  /** Answers the dialog open as cancelled. */
+  const cancel = useRef<() => void>(undefined);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const feedback = useMemo<Feedback>(
     () => ({
@@ -58,11 +61,25 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         setSnack({ ...shown, key: Date.now() });
         timer.current = setTimeout(() => setSnack(null), shown.ms ?? 5000);
       },
-      confirm: (c) => new Promise((resolve) => setOpen({ ...c, kind: "confirm", resolve })),
-      prompt: (p) => new Promise((resolve) => setOpen({ ...p, kind: "prompt", resolve })),
+      confirm: (c) =>
+        new Promise((resolve) => {
+          cancel.current = () => resolve(false);
+          setOpen({ ...c, kind: "confirm", resolve });
+        }),
+      prompt: (p) =>
+        new Promise((resolve) => {
+          cancel.current = () => resolve(null);
+          setOpen({ ...p, kind: "prompt", resolve });
+        }),
     }),
     [],
   );
+  // Opened from outside, the dialog makes way, as cancelled. It leaves in this very render, so that
+  // its focus trap does not keep the focus from where it has gone, such as to quick add.
+  if (outside && open) setOpen(null);
+  useEffect(() => {
+    if (outside) cancel.current?.();
+  }, [outside]);
   const act = () => {
     setSnack(null);
     snack?.onAction?.();

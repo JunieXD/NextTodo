@@ -27,7 +27,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -70,23 +73,31 @@ object Widget {
         }
     }
 
-    /** What to show now. */
-    fun shown(context: Context) = Shown(Server.token(context) != null, items(context), prefs(context).getStringSet("ticked", emptySet())!!)
+    /** The tasks ticked off and being completed, each with where it was: it stays there, shown done,
+     * until it goes, whatever lists come meanwhile. Kept in memory, as the completing is: should the
+     * app be stopped, both end. */
+    private val ticked = MutableStateFlow<Map<String, IndexedValue<Item>>>(emptyMap())
 
-    /** Shows a task as done, or not any more, while it is being completed. */
-    private suspend fun tick(context: Context, task: String, on: Boolean) {
-        synchronized(this) {
-            val ticked = prefs(context).getStringSet("ticked", emptySet())!!
-            prefs(context).edit().putStringSet("ticked", if (on) ticked + task else ticked - task).apply()
+    /** What to show now. */
+    fun shown(context: Context): Shown {
+        val ticked = ticked.value
+        val items = items(context).toMutableList()
+        for ((i, item) in ticked.values.sortedBy { it.index }) {
+            if (items.none { it.id == item.id }) items.add(minOf(i, items.size), item)
         }
-        NextWidget().updateAll(context)
+        return Shown(Server.token(context) != null, items, ticked.keys)
     }
 
-    /** Takes a task done on the server out of the list, until the next list comes. */
+    /** Takes a task done on the server out of the list, until the next list comes. Lists asked for
+     * before, which may still have it, are not written any more. */
     private suspend fun drop(context: Context, task: String) {
-        val list = JSONArray(prefs(context).getString("tasks", "[]"))
-        val kept = JSONArray((0 until list.length()).map(list::getJSONObject).filter { it.getString("id") != task })
-        write(context, asked.incrementAndGet(), kept.toString())
+        writing.withLock {
+            val list = JSONArray(prefs(context).getString("tasks", "[]"))
+            val kept = (0 until list.length()).map(list::getJSONObject).filter { it.getString("id") != task }
+            written = asked.incrementAndGet()
+            prefs(context).edit().putString("tasks", JSONArray(kept).toString()).apply()
+        }
+        NextWidget().updateAll(context)
     }
 
     /** What to show, each time the list or the sign-in changes: an empty list stays empty when the
@@ -95,8 +106,9 @@ object Widget {
         val watched = listOf(prefs(context), Server.prefs(context))
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> trySend(shown(context)) }
         watched.forEach { it.registerOnSharedPreferenceChangeListener(listener) }
-        // Changed maybe since read for the first composition, before the listener was there.
-        trySend(shown(context))
+        // Also sends what to show at once: it may have changed since read for the first composition,
+        // before the listener was there.
+        launch { ticked.collect { trySend(shown(context)) } }
         awaitClose { watched.forEach { it.unregisterOnSharedPreferenceChangeListener(listener) } }
     }
 
@@ -119,20 +131,24 @@ object Widget {
     suspend fun complete(context: Context, task: String, number: Int) {
         val token = Server.token(context) ?: return
         val start = SystemClock.elapsedRealtime()
-        tick(context, task, true)
+        shown(context).items.withIndex().find { it.value.id == task }?.let { row -> ticked.update { it + (task to row) } }
         try {
-            Server.complete(context, token, task)
-        } catch (e: Exception) {
-            tick(context, task, false)
-            if (e is HttpError && e.status == 401) ended(context, token) else toast(context, "完成失败：${e.message}")
-            return
+            NextWidget().updateAll(context)
+            try {
+                Server.complete(context, token, task)
+            } catch (e: Exception) {
+                if (e is HttpError && e.status == 401) ended(context, token) else toast(context, "完成失败：${e.message}")
+                return
+            }
+            // Signed in again meanwhile, maybe as someone else, whose reminder this number may be.
+            if (Server.token(context) != token) return
+            cancelReminder(context, number)
+            delay(LINGER_MS - (SystemClock.elapsedRealtime() - start))
+            drop(context, task)
+        } finally {
+            ticked.update { it - task }
+            NextWidget().updateAll(context)
         }
-        // Signed in again meanwhile, maybe as someone else, whose reminder this number may be.
-        if (Server.token(context) != token) return tick(context, task, false)
-        cancelReminder(context, number)
-        delay(LINGER_MS - (SystemClock.elapsedRealtime() - start))
-        drop(context, task)
-        tick(context, task, false)
         try {
             refresh(context)
         } catch (e: Exception) {

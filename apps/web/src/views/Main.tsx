@@ -19,11 +19,12 @@ export function Main({ session, onSignedOut }: { session: Session; onSignedOut(n
   const wide = useWide();
   const [settings, setSettings] = useState(false);
   // Opened from outside the app: quick add from the widget, the menu bar or the shortcut (`/?add`), a
-  // task from the widget or a reminder (`/?open=<task>`). Settings make way.
+  // task from the widget or a reminder (`/?open=<task>`). Settings and dialogs make way.
   const [params] = useSearchParams();
   const [, navigate] = useLocation();
   const open = params.get("open");
-  if ((open || params.has("add")) && settings) setSettings(false);
+  const outside = !!open || params.has("add");
+  if (outside && settings) setSettings(false);
   // On top of a page without details, which closing them goes back to: there may be no page before.
   useEffect(() => {
     if (!open) return;
@@ -38,7 +39,7 @@ export function Main({ session, onSignedOut }: { session: Session; onSignedOut(n
   return (
     <SessionContext value={session}>
       <MarksProvider>
-        <Root className={className}>
+        <Root className={className} outside={outside}>
           <Events onSignedOut={onSignedOut} />
           <Updates />
           {wide ? (

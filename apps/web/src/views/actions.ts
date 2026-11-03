@@ -26,7 +26,7 @@ export function useTaskActions(): RowActions & { link(before: TaskId, after: Tas
       if (!t) return;
       const completing = t.done_at === null;
       if (completing && board().status(t) === "waiting") {
-        const ok = await confirm({ title: "前置还没做完", body: `“${t.title}”还有 ${board().waitingOn(t)} 项前置没完成，仍然标为完成吗？`, ok: "标为完成" });
+        const ok = await confirm({ title: "前置尚未完成", body: `“${t.title}”还有 ${board().waitingOn(t)} 项前置未完成，仍要标为完成吗？`, ok: "标为完成" });
         if (!ok) return;
       }
       const readyBefore = new Set(board().next().map((x) => x.id));
@@ -59,7 +59,7 @@ export function useTaskActions(): RowActions & { link(before: TaskId, after: Tas
       const r = commit([{ op: "dep.add", before, after }]);
       if (!r) return;
       const [a, b] = [board().task(before)!, board().task(after)!];
-      snack({ text: `“${b.title}”现在接在“${a.title}”后面`, action: "撤销", onAction: () => undo(r.id) });
+      snack({ text: `已将“${b.title}”排在“${a.title}”之后`, action: "撤销", onAction: () => undo(r.id) });
     },
 
     unlink(before, after) {

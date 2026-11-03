@@ -12,7 +12,7 @@
   --color-error: var(--error);
 }
 
-/* The look of the prototype (docs/prototype/index.html), carried over as it was. */
+/* The look of the prototype docs/ui.md was settled with (removed since, see commit 57a07ad), carried over as it was. */
 @layer components {
 :root {
   --primary: #1B6B51; --on-primary: #FFFFFF;

@@ -1,6 +1,6 @@
 # 界面
 
-视觉和交互的规格。可点击的原型在 [`prototype/index.html`](prototype/index.html)，正式前端做出来之前以它为准，做出来之后删掉。原型支持用 URL 参数直接打开某个页面，如 `?folder=thesis&view=graph&sel=t3&theme=dark`。
+视觉和交互的规格。定规格时用的可点击原型在正式前端做出来以后删掉了，要看可以在提交 `57a07ad` 里找。
 
 ## 设计方向
 

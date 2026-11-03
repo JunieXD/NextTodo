@@ -12,7 +12,7 @@ use tauri_plugin_notification::NotificationExt;
 /// a reminder due meanwhile would otherwise come as late as the sleep was long.
 const LOOK_AGAIN: Duration = Duration::from_secs(30);
 
-#[derive(Deserialize, PartialEq)]
+#[derive(Deserialize)]
 pub struct Reminder {
     title: String,
     body: String,
@@ -24,8 +24,15 @@ pub struct Reminder {
 
 #[derive(Default)]
 pub struct Reminders {
-    list: Mutex<Vec<Reminder>>,
+    queue: Mutex<Queue>,
     changed: Condvar,
+}
+
+#[derive(Default)]
+struct Queue {
+    list: Vec<Reminder>,
+    /// When the thread last looked at the clock and showed what was due by then.
+    looked: i64,
 }
 
 /// The kind of notification a reminder is: one with an 打开 button. Only with a button does macOS
@@ -33,21 +40,21 @@ pub struct Reminders {
 pub const KIND: &str = "reminder";
 pub const OPEN: &str = "open";
 
-/// Takes over the reminders to come, and those due since the last handover that are still wanted.
-/// One of those the thread has yet to show, as when the Mac has just woken, is still shown, once.
+/// Takes over the reminders to come, and those due since the last handover that are still wanted:
+/// one due after the thread last looked, as when the Mac has just woken, is still shown, once. Those
+/// due before were shown then, if they were to be; unless the clock has gone back since.
 #[tauri::command]
 pub fn set_reminders(state: State<Reminders>, reminders: Vec<Reminder>) {
-    let mut list = state.list.lock().expect("never poisoned");
-    let now = now_ms();
-    let kept: Vec<_> = reminders.into_iter().filter(|r| r.at > now || list.contains(r)).collect();
-    *list = kept;
+    let mut queue = state.queue.lock().expect("never poisoned");
+    let shown = queue.looked.min(now_ms());
+    queue.list = reminders.into_iter().filter(|r| r.at > shown).collect();
     state.changed.notify_one();
 }
 
 /// Takes back every reminder, those due but not shown yet too: signed out.
 #[tauri::command]
 pub fn clear_reminders(state: State<Reminders>) {
-    state.list.lock().expect("never poisoned").clear();
+    state.queue.lock().expect("never poisoned").list.clear();
 }
 
 fn now_ms() -> i64 {
@@ -58,18 +65,19 @@ fn now_ms() -> i64 {
 pub fn start(app: AppHandle) {
     std::thread::spawn(move || {
         let state = app.state::<Reminders>();
-        let mut list = state.list.lock().expect("never poisoned");
+        let mut queue = state.queue.lock().expect("never poisoned");
         loop {
             let now = now_ms();
-            let (due, rest): (Vec<_>, Vec<_>) = list.drain(..).partition(|r| r.at <= now);
-            *list = rest;
+            let (due, rest): (Vec<_>, Vec<_>) = queue.list.drain(..).partition(|r| r.at <= now);
+            queue.list = rest;
+            queue.looked = now;
             for r in due {
                 if let Err(e) = app.notification().builder().title(&r.title).body(&r.body).action_type_id(KIND).extra("task", &r.task).show() {
                     eprintln!("提醒没能弹出：{e}");
                 }
             }
-            let wait = list.iter().map(|r| r.at - now).min().map_or(LOOK_AGAIN, |ms| LOOK_AGAIN.min(Duration::from_millis(ms as u64)));
-            list = state.changed.wait_timeout(list, wait).expect("never poisoned").0;
+            let wait = queue.list.iter().map(|r| r.at - now).min().map_or(LOOK_AGAIN, |ms| LOOK_AGAIN.min(Duration::from_millis(ms as u64)));
+            queue = state.changed.wait_timeout(queue, wait).expect("never poisoned").0;
         }
     });
 }

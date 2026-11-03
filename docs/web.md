@@ -109,3 +109,4 @@
 | 检查和测试 | `pnpm check`（类型检查、ESLint、Vitest） |
 | 构建 | `pnpm build` |
 | 重新生成类型 | `pnpm gen`（运行 Rust 的导出测试） |
+| 重新生成图标 | `node scripts/icons.js`（见[产品图标](ui.md#产品图标)） |

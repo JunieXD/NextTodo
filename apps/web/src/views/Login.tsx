@@ -1,10 +1,8 @@
-import { CircleCheck } from "lucide-react";
 import { useState } from "react";
 import { ApiError, api, deviceName, keepSession, native, serverUrl, setServer } from "../api/http";
 import type { Session } from "../api/types/Session";
 import type { User } from "../api/types/User";
 import { Seg } from "../ui/controls";
-import { Icon } from "../ui/icons";
 
 /** `onSignIn` signs in with `request`, which asks the server and says who signed in. */
 export function Login({ onSignIn, notice }: { onSignIn(request: () => Promise<User>): Promise<void>; notice?: string }) {
@@ -53,9 +51,7 @@ export function Login({ onSignIn, notice }: { onSignIn(request: () => Promise<Us
     <div className="login" data-tauri-drag-region="deep">
       <form className="login-card" onSubmit={submit}>
         <div className="login-brand">
-          <span className="brand-mark">
-            <Icon of={CircleCheck} size={32} width={2} />
-          </span>
+          <img className="brand-mark" src="/icon.svg" alt="" />
           <h1>NextTodo</h1>
           <p>理清先后，专注当下</p>
         </div>

@@ -1,22 +1,75 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The app icon's check in a circle (apps/web/public/icon.svg), sized for an adaptive icon's safe zone. -->
+<!-- The app icon's logo, in the middle 72dp a launcher shows. Written by apps/web/scripts/icons.js; change the drawing there. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <group android:translateX="30" android:translateY="30" android:scaleX="2" android:scaleY="2">
+    <group android:translateX="18" android:translateY="18" android:scaleX="0.070313" android:scaleY="0.070313">
         <path
-            android:pathData="M3.5,12a8.5,8.5 0,1 0,17 0a8.5,8.5 0,1 0,-17 0"
-            android:strokeColor="#FFFFFF"
-            android:strokeWidth="2"
-            android:strokeLineCap="round"
-            android:strokeLineJoin="round" />
+            android:pathData="M332,354L332,448"
+            android:strokeColor="#A6F2D1"
+            android:strokeWidth="40"
+            android:strokeLineCap="butt" />
         <path
-            android:pathData="M8.6,12.2l2.3,2.3 4.6,-4.8"
+            android:pathData="M332,580L332,668"
+            android:strokeColor="#A6F2D1"
+            android:strokeWidth="40"
+            android:strokeLineCap="butt" />
+        <path
+            android:pathData="M248,294A84,84 0 1 0 416,294A84,84 0 1 0 248,294ZM286.28,306.45L313.16,332.49A15,15 0 0 0 324.23,336.71A15,15 0 0 0 334.9,331.58L381.1,278.66A15,15 0 0 0 379.66,257.5A15,15 0 0 0 358.5,258.94L322.69,299.95L307.16,284.91A15,15 0 0 0 285.95,285.24A15,15 0 0 0 286.28,306.45Z"
+            android:fillColor="#FFFFFF"
+            android:fillType="evenOdd" />
+        <path
+            android:pathData="M266,514A66,66 0 1 0 398,514A66,66 0 1 0 266,514Z"
             android:strokeColor="#FFFFFF"
-            android:strokeWidth="2"
+            android:strokeWidth="34"
+            android:strokeLineCap="butt" />
+        <path
+            android:pathData="M310.4,671.63A66,66 0 0 1 353.6,671.63"
+            android:strokeColor="#A6F2D1"
+            android:strokeWidth="28"
+            android:strokeLineCap="butt" />
+        <path
+            android:pathData="M375.21,684.11A66,66 0 0 1 396.81,721.52"
+            android:strokeColor="#A6F2D1"
+            android:strokeWidth="28"
+            android:strokeLineCap="butt" />
+        <path
+            android:pathData="M396.81,746.48A66,66 0 0 1 375.21,783.89"
+            android:strokeColor="#A6F2D1"
+            android:strokeWidth="28"
+            android:strokeLineCap="butt" />
+        <path
+            android:pathData="M353.6,796.37A66,66 0 0 1 310.4,796.37"
+            android:strokeColor="#A6F2D1"
+            android:strokeWidth="28"
+            android:strokeLineCap="butt" />
+        <path
+            android:pathData="M288.79,783.89A66,66 0 0 1 267.19,746.48"
+            android:strokeColor="#A6F2D1"
+            android:strokeWidth="28"
+            android:strokeLineCap="butt" />
+        <path
+            android:pathData="M267.19,721.52A66,66 0 0 1 288.79,684.11"
+            android:strokeColor="#A6F2D1"
+            android:strokeWidth="28"
+            android:strokeLineCap="butt" />
+        <path
+            android:pathData="M498,294L704,294"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="64"
             android:strokeLineCap="round"
-            android:strokeLineJoin="round" />
+            android:strokeAlpha="0.45" />
+        <path
+            android:pathData="M498,514L744,514"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="64"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M498,734L654,734"
+            android:strokeColor="#A6F2D1"
+            android:strokeWidth="64"
+            android:strokeLineCap="round" />
     </group>
 </vector>

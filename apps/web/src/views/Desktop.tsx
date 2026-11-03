@@ -164,9 +164,7 @@ function Sidebar({ at, query, setQuery, onSettings }: { at: FolderId | "next" | 
       <div className="sb-inner">
         <div className="sb-head" data-tauri-drag-region="deep">
           <span className="brand">
-            <span className="brand-mark">
-              <Icon of={CircleCheck} size={18} width={2} />
-            </span>
+            <img className="brand-mark" src="/icon.svg" alt="" />
             NextTodo
           </span>
         </div>

@@ -330,7 +330,13 @@ async function forgetUser(user: User) {
 /** Finishes a sign-out cut short; in `turn`. */
 async function finishSignOut(out: Login) {
   await forgetUser(out.user);
-  if (await logout()) localStorage.removeItem(SIGNED_OUT);
+  const loggedOut = await logout();
+  // In the app, the token goes too, and then what the widget and the reminders show.
+  if (native) {
+    await dropSession();
+    await clear();
+  }
+  if (loggedOut) localStorage.removeItem(SIGNED_OUT);
 }
 
 /** The user's data from the server, unless this browser has signed in as someone else by now. */

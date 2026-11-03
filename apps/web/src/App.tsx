@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Session } from "./session";
 import { Root } from "./ui/Root";
+import { started } from "./updates";
 import { Login } from "./views/Login";
 import { Main } from "./views/Main";
 
@@ -11,6 +12,7 @@ let resuming: Promise<Session | null> | undefined;
 
 export function App() {
   const [state, setState] = useState<State>({ kind: "loading" });
+  useEffect(started, []);
   useEffect(() => {
     (resuming ??= Session.resume()).then(
       (session) => setState(session ? { kind: "in", session } : { kind: "out" }),

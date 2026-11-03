@@ -1,14 +1,51 @@
+import { execFileSync } from "node:child_process";
+import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import type { Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { defineConfig } from "vitest/config";
 
 const server = "http://127.0.0.1:8080";
 
+const git = (...args: string[]) => execFileSync("git", ["-C", "../..", ...args], { encoding: "utf8" }).trim();
+/** The build's version: the commit it is built from. */
+const version = git("rev-parse", "--short", "HEAD");
+/** The native version of the Android app this build needs, as apps/android/app/build.gradle counts
+ * it: the commits that changed the native part. */
+const native = Number(git("rev-list", "--count", "HEAD", "--", "apps/android", "apps/web/capacitor.config.ts", "apps/web/package.json"));
+
+/** Writes `app/web.json`, from which the Android app downloads newer builds (docs/android.md#更新):
+ * the version, the native version needed, and the files. */
+function webJson(): Plugin {
+  let dir = "";
+  return {
+    name: "web-json",
+    apply: "build",
+    configResolved(config) {
+      dir = resolve(config.root, config.build.outDir);
+    },
+    closeBundle: {
+      order: "post",
+      handler() {
+        const files = readdirSync(dir, { recursive: true, withFileTypes: true })
+          .filter((e) => e.isFile())
+          .map((e) => relative(dir, join(e.parentPath, e.name)))
+          .sort();
+        mkdirSync(join(dir, "app"), { recursive: true });
+        writeFileSync(join(dir, "app/web.json"), JSON.stringify({ version, native, files }));
+      },
+    },
+  };
+}
+
 export default defineConfig({
+  define: { "import.meta.env.WEB_VERSION": JSON.stringify(version) },
   plugins: [
     react(),
     tailwindcss(),
+    webJson(),
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["icon.svg", "apple-touch-icon.png"],

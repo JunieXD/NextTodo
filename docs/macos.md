@@ -38,6 +38,17 @@ macOS App：Tauri 2 外壳加载打包在安装包里的网页端，加上菜单
 - 退出登录时清空提醒（`clear_reminders`），已经到点、还没弹出的也清掉。
 - 点提醒或提醒上的“打开”按钮，打开主窗口和这个事项，和 Android 一样（开着的设置面板会关掉）。macOS 的通知只有带按钮时才会等用户点击并报告，所以提醒都带这个按钮；通知插件为此每条通知开一个线程，等到用户处理它，提醒一天没几条，可以接受。
 
+## 更新
+
+总体见[总体设计](design.md#app-更新)。用 `tauri-plugin-updater`：
+
+- 版本 `0.1.<提交数>`，由部署脚本打包时写入。`tauri build` 同时生成更新包 `NextTodo.app.tar.gz` 和它的签名（`createUpdaterArtifacts`），部署脚本据此写出 `/app/macos.json`。
+- 启动时和之后每 6 小时，从 `<登录的服务器>/app/macos.json` 检查（地址在运行时按登录的服务器设，不写死在配置里）。有新版本就在后台下载、校验签名并替换 App，然后提示条显示“新版本已安装，重启后生效”，附“重启”；不点的话，下次退出再打开时生效。
+- 更新密钥：私钥在 `~/.config/nexttodo/tauri-updater.key`，密码在钥匙串（`nexttodo-tauri-updater`），外接盘 `Backups/` 里有备份；公钥写在 `tauri.conf.json`。私钥丢了，已装的 App 就收不到更新，只能手动装一次换了公钥的新版本。
+- App 装在哪就在哪替换（现在是外接盘的 `Applications`）。
+
+设置页“关于”显示网页版本和 App 版本。
+
 ## 开机自启
 
 设置页“开机自启”开关，用 `tauri-plugin-autostart` 写 LaunchAgent，读写失败时提示。开机启动时带 `--hidden`，只出现在菜单栏，不弹窗口，也不占 Dock；打开窗口以后才出现在 Dock 里。
@@ -46,7 +57,7 @@ macOS App：Tauri 2 外壳加载打包在安装包里的网页端，加上菜单
 
 - `pnpm tauri build`（在 `apps/desktop` 下）：构建网页端，再打 `.app` 和 `.dmg`。
 - 不做苹果签名，用 ad-hoc 签名（`signingIdentity: "-"`）。本机构建的不带隔离属性，直接能打开；从别处下载的第一次打开会被拦下，要到“系统设置 → 隐私与安全性”里点“仍要打开”。
-- 版本号用网页端 `package.json` 的版本。
+- 版本号：部署脚本打包时是 `0.1.<提交数>`（见[更新](#更新)）；直接 `pnpm tauri build` 打出的是网页端 `package.json` 的版本（0.1.0），装上后会被服务器上的版本更新掉。
 
 ## 测试
 

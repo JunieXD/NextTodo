@@ -28,9 +28,15 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRDNjdBQTQxNDMxRDA3NkEKUldScUJ4MURRYXBuVEwvMUg2bHpTUlRrNDJTTFhUVE95Z3pIUG0yb0lhbERmMjhMMDJwd2Q1Q2MK"
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["app", "dmg"],
+    "createUpdaterArtifacts": true,
     "category": "Productivity",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns"],
     "macOS": {

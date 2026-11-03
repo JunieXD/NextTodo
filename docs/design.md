@@ -231,9 +231,22 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 - 服务器目录 `/opt/1panel/www/sites/NextTodo/`：`compose.yaml` 和 `data/`（SQLite 数据库和快照）。只监听 `127.0.0.1`。
 - 域名 `todo.juniexd.cn`：由 1Panel 反向代理，开启 WebSocket，使用 `*.juniexd.cn` 证书。反向代理要把原来的 `Host` 传过去（或设 `X-Forwarded-Host`），网页的同步连接靠它确认是同源页面。
 - 服务端启动时和之后每天用 `VACUUM INTO` 做一次数据库快照，放在 `data/snapshots/snapshot-<Unix 秒>.db`，保留最近 7 份。恢复时停掉服务，用快照替换 `data/nexttodo.db`（并删掉旁边的 `-wal`、`-shm` 文件）再启动。
-- 部署用一条命令完成：`deploy/deploy.sh`（`--build` 只在本机构建镜像）。镜像里只有服务端和网页文件，容器以 65534 用户运行，每次部署把 `data/` 整个交给这个用户；服务端端口默认映射到 `127.0.0.1:8790`，第一次部署前确认服务器上没被占用。
+- 部署用一条命令完成：`deploy/deploy.sh`（`--build` 只在本机构建镜像）。它同时构建 [App 更新](#app-更新)用的 Android 正式包和 macOS 更新包，签名密钥从环境变量读取，不进仓库；本机的 `~/.config/nexttodo/deploy.sh` 从钥匙串取出密码再调用它。镜像里只有服务端和网页文件（含 App 更新），容器以 65534 用户运行，每次部署把 `data/` 整个交给这个用户；服务端端口默认映射到 `127.0.0.1:8790`，第一次部署前确认服务器上没被占用。
 - 服务器上由 `deploy/switch.sh` 换版本：先检查新配置，保留旧的 `compose.yaml` 和 `.env`，启动后 30 秒内首页没有响应就换回上一个版本。
 - 替换 Vikunja：NextTodo 上线后，把 `/opt/1panel/www/sites/vikunja` 备份到外接盘 `Backups/`，停掉并删除 Vikunja，再把 `todo.juniexd.cn` 的反向代理指向 NextTodo。
+
+## App 更新
+
+两个 App 都从自己登录的服务器拿更新，不经应用商店。更新文件随 `deploy/deploy.sh` 一起部署，放在网页静态文件的 `/app/` 下，服务端不加接口。
+
+| | 网页部分 | 原生部分 |
+|---|---|---|
+| Android | 热更新：只下载变了的文件，下次打开 App 生效，新版本打不开就退回 | 下载新 APK，由系统弹出安装确认 |
+| macOS | 网页打包在 App 里，随整包更新 | Tauri 官方更新插件：后台下载整个新版本、校验签名，重启生效 |
+
+- 平时的改动几乎都在网页部分，Android 只在原生部分（`apps/android`、Capacitor 配置和插件）改了时才要装新 APK；macOS 每次发布都是整包，几 MB。
+- 只从登录的服务器经 HTTPS 下载，和网页端一样信任这台服务器。APK 由系统校验签名，必须和已装的一致；macOS 更新包用单独的更新密钥签名，App 里带着公钥校验。
+- 每次部署除了服务端镜像，还构建 Android 正式包和 macOS 更新包，连同版本说明一起放进镜像的 `/app/`。细节见 [Android](android.md#更新) 和 [macOS](macos.md#更新)。
 
 ## 性能目标
 

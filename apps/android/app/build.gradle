@@ -2,9 +2,17 @@ apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
 apply plugin: 'org.jetbrains.kotlin.plugin.compose'
 
-// The package version, and the number of commits as the version code, which only grows.
-def webPackage = new groovy.json.JsonSlurper().parse(file('../../web/package.json'))
-def commits = providers.exec { commandLine 'git', 'rev-list', '--count', 'HEAD' }.standardOutput.asText.get().trim().toInteger()
+// Versions from the commits (docs/android.md#更新): all of them for the version code, which only
+// grows, and the version; those that changed the native part for the native version, which a web
+// app built since needs at least.
+def count = { List<String> paths ->
+    providers.exec {
+        workingDir rootProject.file('../..')
+        commandLine(['git', 'rev-list', '--count', 'HEAD', '--'] + paths)
+    }.standardOutput.asText.get().trim().toInteger()
+}
+def commits = count([])
+def nativeVersion = count(['apps/android', 'apps/web/capacitor.config.ts', 'apps/web/package.json'])
 
 android {
     namespace = "cn.juniexd.nexttodo"
@@ -14,7 +22,8 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode commits
-        versionName webPackage.version
+        versionName "0.1.$commits"
+        buildConfigField "int", "NATIVE", "$nativeVersion"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
@@ -40,6 +49,7 @@ android {
         }
     }
     buildFeatures {
+        buildConfig true
         compose true
     }
 }

@@ -1,4 +1,4 @@
-// Account, devices and tokens, invites, appearance.
+// Account, devices and tokens, invites, appearance, versions.
 
 import { ChevronRight, Copy, KeyRound, Mail, Monitor, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -15,6 +15,7 @@ import { type Theme, setTheme, useTheme } from "../theme";
 import { Seg } from "../ui/controls";
 import { Modal, useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
+import { About } from "./About";
 import { BackgroundSettings } from "./Background";
 import { StartAtLogin } from "./StartAtLogin";
 
@@ -200,6 +201,7 @@ export function Settings({ onClose, onSignOut }: { onClose(): void; onSignOut():
           onChange={setTheme}
         />
       </div>
+      <About />
       <div className="group danger" style={{ marginTop: 24 }}>
         <button className="row" onClick={onSignOut}>
           <div className="row-inner">退出登录</div>

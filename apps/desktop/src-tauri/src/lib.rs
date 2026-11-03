@@ -1,7 +1,8 @@
 //! The macOS app: the web app in a window that closing only hides, a menu bar icon and a global
-//! shortcut for quick add, and deadline reminders while it runs. See docs/macos.md.
+//! shortcut for quick add, deadline reminders while it runs, and updates. See docs/macos.md.
 
 mod reminders;
+mod updates;
 
 use std::process::Command;
 
@@ -78,6 +79,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN])))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -89,7 +91,7 @@ pub fn run() {
                 .build(),
         )
         .manage(reminders::Reminders::default())
-        .invoke_handler(tauri::generate_handler![reminders::set_reminders, reminders::clear_reminders])
+        .invoke_handler(tauri::generate_handler![reminders::set_reminders, reminders::clear_reminders, updates::update, updates::restart])
         .setup(move |app| {
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
             window(app.handle())?;

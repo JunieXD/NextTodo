@@ -54,6 +54,23 @@ Jetpack Glance 写的“接下来”小组件：
 - 勾选完成时直接调用 `POST /mutations`（`task.update`，`done: true`，改动 ID 由小组件生成；已经在别处完成的照样算成功），成功后按列表里的事项编号、照插件的做法取消这个事项的提醒（App 可能没在运行），从列表里去掉它，再刷新；期间重新登录过的不动提醒，因为编号可能已经是另一个账号的。
 - 没登录时显示“打开 NextTodo 登录”。
 
+## 更新
+
+总体见[总体设计](design.md#app-更新)。
+
+**版本**：原生版本是改过原生部分的提交数（`apps/android`、`apps/web/capacitor.config.ts`、`apps/web/package.json`，后者里有 Capacitor 插件的版本），写进 APK（`BuildConfig`）。`versionCode` 仍是全部提交数，只增不减；`versionName` 是 `0.1.<全部提交数>`，和同一次构建的 macOS App 一样。
+
+**网页热更新**：
+
+- 构建网页时生成 `app/web.json`：`{version, native, files}`。`version` 是构建它的提交，`native` 是构建时的原生版本，即这份网页要求的最低原生版本，`files` 是全部文件的路径。它随网页部署到服务器，也打进 APK。
+- 打开 App 和回到前台时（每小时最多一次）请求服务器的 `/app/web.json`。版本和当前不同、原生版本够用时，在 App 私有目录 `files/web/<version>/` 准备新版本：`assets/` 下的文件名由 Vite 按内容生成，当前版本里已有的直接复制，其余从服务器下载。全部下载成功才算准备好，失败的下次再试。
+- 下次打开 App 时生效：打开前把 Capacitor 的 `serverBasePath` 指向新目录。网页启动完成后报告就绪（`webReady`），这时新版本才算可用，删掉更早的目录。新版本打开过一次、没报告就绪就又被打开的，退回上一个可用的版本（或 APK 里的），并不再尝试这个版本。
+- 装了新 APK 后，Capacitor 自动改用 APK 里的网页（`isNewBinary`），之前下载的版本作废、删掉。
+
+**原生更新**：服务器上的 `/app/android.json` 是 `{native, versionName, url}`。它的原生版本比已装的新时，设置页“关于”里显示“有新版本”，并在打开 App 时用提示条提醒一次；点“下载安装”把 APK 下载到缓存目录，交给系统安装器。第一次需要在系统设置里允许本 App“安装未知应用”（`REQUEST_INSTALL_PACKAGES`）。
+
+设置页“关于”显示网页版本和 App 版本。
+
 ## 澎湃 OS
 
 系统会清理后台，小组件的定时刷新和提醒需要 App 被允许“自启动”、省电策略设为“无限制”。App 第一次启动时显示一张说明卡片，按钮打开本 App 的系统设置页；在设置里也能再次查看。
@@ -63,7 +80,7 @@ Jetpack Glance 写的“接下来”小组件：
 - 需要 Android SDK（`ANDROID_HOME`）和 JDK 21（Capacitor 8 的 Gradle 版本还不支持更新的 JDK）。
 - `pnpm android:build`（在 `apps/web` 下）：构建网页端、`cap sync android`，再用 Gradle 打 release APK。
 - 正式版用自签名的密钥签名，直接安装。密钥库和密码不进仓库：路径和密码从环境变量 `NEXTTODO_KEYSTORE`、`NEXTTODO_KEYSTORE_PASSWORD` 读取。
-- `versionCode` 用 git 提交数，`versionName` 用 `package.json` 的版本。
+- 版本号见[更新](#更新)。发布用的 APK 由 `deploy/deploy.sh` 构建，随服务端一起部署。
 
 ## 测试
 

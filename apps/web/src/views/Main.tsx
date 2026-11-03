@@ -9,6 +9,7 @@ import { type Session, SessionContext, useSession, useUndo } from "../session";
 import { useFeedback } from "../ui/feedback";
 import { useWide } from "../ui/hooks";
 import { Root } from "../ui/Root";
+import { check, install, restart, usePending } from "../updates";
 import { Desktop } from "./Desktop";
 import { MarksProvider } from "./marks";
 import { Phone } from "./Phone";
@@ -39,6 +40,7 @@ export function Main({ session, onSignedOut }: { session: Session; onSignedOut(n
       <MarksProvider>
         <Root className={className}>
           <Events onSignedOut={onSignedOut} />
+          <Updates />
           {wide ? (
             <Desktop onSettings={() => setSettings(true)} />
           ) : (
@@ -75,6 +77,24 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
   useEffect(() => {
     void session.check();
   }, [session]);
+  return null;
+}
+
+/** Looks for updates when the app opens and comes back to the front, and tells the user once about
+ * one waiting. */
+function Updates() {
+  const { snack } = useFeedback();
+  const pending = usePending();
+  useEffect(() => {
+    const shown = () => document.visibilityState === "visible" && void check();
+    void check();
+    document.addEventListener("visibilitychange", shown);
+    return () => document.removeEventListener("visibilitychange", shown);
+  }, []);
+  useEffect(() => {
+    if (pending?.kind === "apk") snack({ text: `NextTodo ${pending.version} 可以安装了`, action: "安装", onAction: () => void install(pending.url, snack), ms: 8000 });
+    if (pending?.kind === "restart") snack({ text: "新版本已安装，重启后生效", action: "重启", onAction: () => void restart(), ms: 8000 });
+  }, [pending, snack]);
   return null;
 }
 

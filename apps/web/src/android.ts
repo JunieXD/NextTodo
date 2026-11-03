@@ -16,6 +16,15 @@ interface NextTodoPlugin {
   updateWidget(o: { tasks: string }): Promise<void>;
   /** The system settings page of this app, where autostart and battery use are allowed. */
   openAppSettings(): Promise<void>;
+  /** The APK's version, and its native version, which builds of the web app may need. */
+  appInfo(): Promise<{ version: string; native: number }>;
+  /** Says the web app has started, so that the build being tried is kept. */
+  webReady(): Promise<void>;
+  /** Downloads the server's build of the web app for the next start; the version when there was one. */
+  updateWeb(): Promise<{ staged?: string }>;
+  /** Downloads the APK and hands it to the system installer; `started: false` when the app may not
+   * install apps yet, and the settings page that allows it opened instead. */
+  installApp(o: { url: string }): Promise<{ started: boolean }>;
 }
 
 export const NextTodo = registerPlugin<NextTodoPlugin>("NextTodo");

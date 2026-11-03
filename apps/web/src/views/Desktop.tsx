@@ -1,23 +1,31 @@
-// The desktop layout: folders on the left, the list in the middle, details on the right. Both sides
-// can be folded away.
+// The desktop layout: folders on the left, which can be folded away, the list in the middle, and the
+// open task's details on the right.
 
-import { ChevronRight, CircleCheck, Folder as FolderIcon, PanelLeft, PanelRight, Search } from "lucide-react";
+import { ChevronRight, CircleCheck, Folder as FolderIcon, FolderRoot, History, PanelLeft, Search } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Redirect, useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
 import { formatToday } from "../domain/dates";
 import { useConnection, useSession, useView } from "../session";
+import { useBack } from "../ui/back";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { Detail } from "./Detail";
 import { FolderMenu } from "./FolderMenu";
-import { FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, RootBody, SearchResults } from "./lists";
+import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, SearchResults } from "./lists";
 import { folderUrl, useFolderView, useSelection } from "./nav";
 
-export function Desktop({ sideOpen, paneOpen, toggleSide, togglePane, onSettings }: { sideOpen: boolean; paneOpen: boolean; toggleSide(): void; togglePane(): void; onSettings(): void }) {
+export function Desktop({ onSettings }: { onSettings(): void }) {
   const [location] = useLocation();
   const { board } = useView();
-  const { selected } = useSelection();
+  const [sideOpen, setSideOpen] = useState(true);
+  const { selected, close } = useSelection();
+  // As on phones, a task not here (yet) shows nothing: one opened from outside may still be on its way.
+  const open = selected !== null && board.task(selected) !== undefined;
+  useBack(open ? close : null);
+  // The pane keeps showing the task it was closed on while it slides away.
+  const [shown, setShown] = useState(open ? selected : null);
+  if (open && selected !== shown) setShown(selected);
   const now = useNow();
   const [query, setQuery] = useState("");
   // Quick add (`/?add`) is on the page of what to do next, which a search covers.
@@ -25,7 +33,7 @@ export function Desktop({ sideOpen, paneOpen, toggleSide, togglePane, onSettings
   if (params.has("add") && query) setQuery("");
   const [view] = useFolderView();
   const folder = location.match(/^\/folders\/([^/]+)$/)?.[1] ?? null;
-  const at = location.startsWith("/folders") ? (folder ?? "root") : "next";
+  const at = location === "/done" ? "done" : location.startsWith("/folders") ? (folder ?? "root") : "next";
 
   let main: ReactNode;
   if (query.trim()) {
@@ -40,61 +48,60 @@ export function Desktop({ sideOpen, paneOpen, toggleSide, togglePane, onSettings
         <NextBody now={now} />
       </Page>
     );
-  } else if (at === "root") {
+  } else if (at === "done") {
     main = (
-      <Page title="文件夹">
-        <RootBody now={now} />
+      <Page title="已完成">
+        <DoneBody now={now} />
       </Page>
     );
-  } else if (!board.folder(at)) {
+  } else if (at !== "root" && !board.folder(at)) {
     main = <Redirect to="/folders" replace />;
   } else {
-    const f = board.folder(at)!;
+    const f = at === "root" ? null : board.folder(at)!;
+    const id = f?.id ?? null;
+    const title = board.folderName(id);
     const actions = (
       <div className="head-actions">
         <FolderViewSeg />
-        <FolderMenu folder={f.id} />
+        {f && <FolderMenu folder={f.id} />}
       </div>
     );
-    const crumbs = f.parent_id ? board.place(f.parent_id) : "";
+    const crumbs = f ? board.place(f.parent_id) : "";
     main =
       view === "graph" ? (
-        <Page title={f.name} crumbs={crumbs} actions={actions} scroll={false}>
-          <FolderGraph folder={f.id} across now={now} />
+        <Page title={title} crumbs={crumbs} actions={actions} scroll={false}>
+          <FolderGraph folder={id} across now={now} />
         </Page>
       ) : (
-        <Page title={f.name} crumbs={crumbs} actions={actions} add={<QuickAdd folder={f.id} />}>
-          <FolderBody key={f.id} folder={f.id} now={now} />
+        <Page title={title} crumbs={crumbs} actions={actions} add={<QuickAdd folder={id} />}>
+          <FolderBody key={at} folder={id} now={now} />
         </Page>
       );
   }
 
-  const tool = (onClick: () => void, icon: typeof PanelLeft, open: boolean, label: string) => (
-    <button className="icon-btn" onClick={onClick} aria-pressed={open} aria-label={`${open ? "收起" : "展开"}${label}`} title={`${open ? "收起" : "展开"}${label}`}>
-      <Icon of={icon} />
-    </button>
-  );
+  const label = `${sideOpen ? "收起" : "展开"}左侧栏`;
   return (
-    <>
+    <div className={`desk-cols${sideOpen ? "" : " side-closed"}${open ? "" : " pane-closed"}`}>
       <Sidebar at={query.trim() ? null : at} query={query} setQuery={setQuery} onSettings={onSettings} />
       <main className="main">
-        <div className="main-tools">
-          {tool(toggleSide, PanelLeft, sideOpen, "左侧栏")}
-          {tool(togglePane, PanelRight, paneOpen, "详情栏")}
+        <div className="main-tools" data-tauri-drag-region="deep">
+          <button className="icon-btn" onClick={() => setSideOpen(!sideOpen)} aria-pressed={sideOpen} aria-label={label} title={label}>
+            <Icon of={PanelLeft} />
+          </button>
         </div>
         {main}
       </main>
-      <aside className="detail-pane">
-        <div className="pane-inner">{selected ? <Detail key={selected} id={selected} now={now} /> : <div className="detail-empty">选一个事项，在这里查看和编辑</div>}</div>
+      <aside className="detail-pane" inert={!open}>
+        <div className="pane-inner">{shown && <Detail key={shown} id={shown} now={now} onClose={close} />}</div>
       </aside>
-    </>
+    </div>
   );
 }
 
 function Page({ title, crumbs = "", actions, add, scroll = true, children }: { title: string; crumbs?: string; actions?: ReactNode; add?: ReactNode; scroll?: boolean; children: ReactNode }) {
   return (
     <>
-      <header className="main-head">
+      <header className="main-head" data-tauri-drag-region="deep">
         <div>
           <div className="crumbs">{crumbs}</div>
           <h1 className="main-title">{title}</h1>
@@ -107,52 +114,52 @@ function Page({ title, crumbs = "", actions, add, scroll = true, children }: { t
   );
 }
 
-function Sidebar({ at, query, setQuery, onSettings }: { at: FolderId | "next" | "root" | null; query: string; setQuery(q: string): void; onSettings(): void }) {
+function Sidebar({ at, query, setQuery, onSettings }: { at: FolderId | "next" | "done" | "root" | null; query: string; setQuery(q: string): void; onSettings(): void }) {
   const { board, pending } = useView();
   const { user } = useSession();
   const connection = useConnection();
   const [, navigate] = useLocation();
-  const [collapsed, setCollapsed] = useState(() => new Set<FolderId>());
+  const [collapsed, setCollapsed] = useState(() => new Set<FolderId | null>());
   const go = (to: string) => {
     setQuery("");
     navigate(to);
   };
-  const toggle = (id: FolderId) =>
+  const toggle = (id: FolderId | null) =>
     setCollapsed((c) => {
       const next = new Set(c);
       if (!next.delete(id)) next.add(id);
       return next;
     });
-  const tree = (parent: FolderId | null, depth: number): ReactNode =>
-    board.subfolders(parent).map((f) => {
-      const kids = board.subfolders(f.id).length > 0;
-      const open = !collapsed.has(f.id);
-      const count = board.contents(f.id).filter((t) => t.done_at === null).length;
-      return (
-        <div key={f.id}>
-          <button className={`sb-item${at === f.id ? " on" : ""}`} style={{ paddingLeft: 10 + depth * 18 }} onClick={() => go(folderUrl(f.id))}>
-            <span
-              className={`tw${kids && open ? " open" : ""}`}
-              onClick={(e) => {
-                if (!kids) return;
-                e.stopPropagation();
-                toggle(f.id);
-              }}
-            >
-              {kids && <Icon of={ChevronRight} size={14} width={2.2} />}
-            </span>
-            <Icon of={FolderIcon} size={18} />
-            <span className="truncate">{f.name}</span>
-            <span className="count">{count || ""}</span>
-          </button>
-          {kids && open && tree(f.id, depth + 1)}
-        </div>
-      );
-    });
+  // The root first, with the folders inside it.
+  const tree = (id: FolderId | null, depth: number): ReactNode => {
+    const kids = board.subfolders(id);
+    const open = !collapsed.has(id);
+    const count = board.contents(id).filter((t) => t.done_at === null).length;
+    return (
+      <div key={id ?? "root"}>
+        <button className={`sb-item${at === (id ?? "root") ? " on" : ""}`} style={{ paddingLeft: 10 + depth * 18 }} onClick={() => go(folderUrl(id))}>
+          <span
+            className={`tw${kids.length && open ? " open" : ""}`}
+            onClick={(e) => {
+              if (!kids.length) return;
+              e.stopPropagation();
+              toggle(id);
+            }}
+          >
+            {kids.length > 0 && <Icon of={ChevronRight} size={14} width={2.2} />}
+          </span>
+          <Icon of={id ? FolderIcon : FolderRoot} size={18} />
+          <span className="truncate">{board.folderName(id)}</span>
+          <span className="count">{count || ""}</span>
+        </button>
+        {open && kids.map((f) => tree(f.id, depth + 1))}
+      </div>
+    );
+  };
   return (
     <nav className="sidebar">
       <div className="sb-inner">
-        <div className="sb-head">
+        <div className="sb-head" data-tauri-drag-region="deep">
           <span className="brand">
             <span className="brand-mark">
               <Icon of={CircleCheck} size={18} width={2} />
@@ -171,9 +178,12 @@ function Sidebar({ at, query, setQuery, onSettings }: { at: FolderId | "next" | 
             <span>接下来</span>
             <span className="count">{board.next().length}</span>
           </button>
-          <div className="sb-label">
-            <button onClick={() => go("/folders")}>文件夹</button>
-          </div>
+          <button className={`sb-item${at === "done" ? " on" : ""}`} onClick={() => go("/done")}>
+            <span className="tw" />
+            <Icon of={History} size={18} />
+            <span>已完成</span>
+          </button>
+          <div className="sb-label">文件夹</div>
           {tree(null, 0)}
         </div>
         <div className="sb-foot">

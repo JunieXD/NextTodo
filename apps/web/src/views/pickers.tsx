@@ -36,7 +36,7 @@ export function FolderPicker({
                 <span className="folder-ic">
                   <Icon of={FolderIcon} size={18} />
                 </span>
-                <span className="folder-main">{f ? board.folder(f)!.name : "根目录"}</span>
+                <span className="folder-main">{board.folderName(f)}</span>
                 {current === f && (
                   <span className="text-primary">
                     <Icon of={Check} />

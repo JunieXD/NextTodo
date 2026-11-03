@@ -17,15 +17,12 @@ import { Settings } from "./Settings";
 export function Main({ session, onSignedOut }: { session: Session; onSignedOut(notice?: string): void }) {
   const wide = useWide();
   const [settings, setSettings] = useState(false);
-  const [sideOpen, setSideOpen] = useState(true);
-  const [paneOpen, setPaneOpen] = useState(true);
   // Opened from outside the app: quick add from the widget, the menu bar or the shortcut (`/?add`), a
-  // task from the widget or a reminder (`/?open=<task>`). Settings and a closed pane make way.
+  // task from the widget or a reminder (`/?open=<task>`). Settings make way.
   const [params] = useSearchParams();
   const [, navigate] = useLocation();
   const open = params.get("open");
   if ((open || params.has("add")) && settings) setSettings(false);
-  if (open && !paneOpen) setPaneOpen(true);
   useEffect(() => {
     if (open) navigate(`/?t=${open}`, { replace: true, state: { sheet: true } });
   }, [open, navigate]);
@@ -33,14 +30,14 @@ export function Main({ session, onSignedOut }: { session: Session; onSignedOut(n
     await session.signOut();
     onSignedOut();
   };
-  const className = wide ? `app desk${sideOpen ? "" : " side-closed"}${paneOpen ? "" : " pane-closed"}` : "app phone";
+  const className = wide ? "app desk" : "app phone";
   return (
     <SessionContext value={session}>
       <MarksProvider>
         <Root className={className}>
           <Events onSignedOut={onSignedOut} />
           {wide ? (
-            <Desktop sideOpen={sideOpen} paneOpen={paneOpen} toggleSide={() => setSideOpen(!sideOpen)} togglePane={() => setPaneOpen(!paneOpen)} onSettings={() => setSettings(true)} />
+            <Desktop onSettings={() => setSettings(true)} />
           ) : (
             <Phone onSettings={() => setSettings(true)} />
           )}
@@ -85,7 +82,7 @@ function describe(entry: LogEntry, board: Board): string {
   if (created.length && created.length === tasks.length) {
     const folders = new Set(created.map((t) => t.folder_id));
     const [only] = folders;
-    const where = folders.size > 1 ? "" : `在“${only ? (board.folder(only)?.name ?? "文件夹") : "根目录"}”里`;
+    const where = folders.size > 1 ? "" : `在“${only ? (board.folder(only)?.name ?? "文件夹") : board.folderName(null)}”里`;
     return `${entry.actor} ${where}添加了 ${created.length} 项`;
   }
   const done = tasks.filter((e) => e.before && e.after && e.before.done_at === null && e.after.done_at !== null);

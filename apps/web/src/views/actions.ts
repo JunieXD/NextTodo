@@ -1,4 +1,4 @@
-// What can be done to tasks from anywhere: complete or reopen, delete, open, link.
+// What can be done to tasks from anywhere: complete or reopen, delete, open or close, link.
 
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
@@ -18,7 +18,8 @@ export function useTaskActions(): RowActions & { link(before: TaskId, after: Tas
   const board = () => store.getView().board;
 
   return {
-    open: (t) => select(t.id),
+    // Opening the open task again closes it.
+    open: (t) => (selected === t.id ? close() : select(t.id)),
 
     async toggle(task: Task) {
       const t = board().task(task.id);
@@ -33,6 +34,7 @@ export function useTaskActions(): RowActions & { link(before: TaskId, after: Tas
       if (!r) return;
       if (!completing) {
         marking.pop(t.id);
+        snack({ text: `已恢复“${t.title}”`, action: "撤销", onAction: () => undo(r.id) });
         return;
       }
       const unlocked = board()

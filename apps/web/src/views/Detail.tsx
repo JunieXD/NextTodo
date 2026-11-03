@@ -41,7 +41,7 @@ export function Detail({ id, now, onClose }: { id: TaskId; now: Date; onClose?: 
   const status = board.status(t);
   const update = (fields: TaskFields) => commit([{ op: "task.update", id: t.id, ...fields }]);
   const move = (f: string | null) => {
-    if (f !== t.folder_id && update({ folder_id: f })) snack(`已移到“${f ? board.folder(f)!.name : "根目录"}”`);
+    if (f !== t.folder_id && update({ folder_id: f })) snack(`已移到“${board.folderName(f)}”`);
   };
 
   return (

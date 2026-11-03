@@ -1,5 +1,5 @@
-// The bodies of the main pages: what is next, a folder, the folder root, search results; and the
-// quick-add bar.
+// The bodies of the main pages: what is next, what is done, a folder (the root too), search results;
+// and the quick-add bar.
 
 import { ChevronRight, Folder as FolderIcon, FolderPlus, List, Plus, Workflow } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -11,7 +11,7 @@ import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import { lastKey } from "../domain/apply";
 import type { Board } from "../domain/board";
-import { type DueKind, dueKind } from "../domain/dates";
+import { type DueKind, dueKind, formatDay } from "../domain/dates";
 import { checkFolderName, checkTitle } from "../domain/text";
 import { useCommit, useSession, useView } from "../session";
 import { useFeedback } from "../ui/feedback";
@@ -65,25 +65,35 @@ function openTasks(board: Board, folder: FolderId | null, linger: Set<TaskId>): 
   );
 }
 
-export function FolderBody({ folder, now }: { folder: FolderId; now: Date }) {
+/** A folder's subfolders and tasks. The root always lists its folders, with a row to make one. */
+export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date }) {
   const { board } = useView();
   const { linger } = useMarks();
   const { selected } = useSelection();
   const [, navigate] = useLocation();
   const actions = useTaskActions();
+  const newFolder = useNewFolder();
   const [doneOpen, setDoneOpen] = useState(false);
   const subs = board.subfolders(folder);
   const open = openTasks(board, folder, linger);
   const done = board.tasksIn(folder).filter((t) => t.done_at !== null && !linger.has(t.id));
   return (
     <>
-      {subs.length > 0 && (
+      {(subs.length > 0 || folder === null) && (
         <>
           <h2 className="group-title">文件夹</h2>
           <div className="group">
             {subs.map((f) => (
               <FolderRow key={f.id} folder={f} board={board} onOpen={() => navigate(folderUrl(f.id))} />
             ))}
+            {folder === null && (
+              <button className="row add-row" onClick={() => newFolder(null)}>
+                <div className="row-inner">
+                  <Icon of={FolderPlus} />
+                  新建文件夹
+                </div>
+              </button>
+            )}
           </div>
         </>
       )}
@@ -132,49 +142,35 @@ export function FolderViewSeg() {
 // The graph pulls in React Flow and ELK, so it loads when first shown.
 const Graph = lazy(() => import("./Graph"));
 
-export function FolderGraph(props: { folder: FolderId; across: boolean; now: Date }) {
+export function FolderGraph(props: { folder: FolderId | null; across: boolean; now: Date }) {
   return (
     <Suspense fallback={<div className="graph-area" />}>
-      <Graph key={props.folder} {...props} />
+      <Graph key={props.folder ?? "root"} {...props} />
     </Suspense>
   );
 }
 
-/** The top level: folders, and tasks not in any folder. */
-export function RootBody({ now }: { now: Date }) {
+/** Completed tasks from every folder, the latest first, by the day they were completed. */
+export function DoneBody({ now }: { now: Date }) {
   const { board } = useView();
-  const { linger } = useMarks();
   const { selected } = useSelection();
-  const [, navigate] = useLocation();
   const actions = useTaskActions();
-  const newFolder = useNewFolder();
-  const own = openTasks(board, null, linger);
-  return (
-    <>
-      <h2 className="group-title">文件夹</h2>
+  const days = new Map<string, Task[]>();
+  for (const t of board.snapshot.tasks.filter((t) => t.done_at !== null).sort((a, b) => b.done_at! - a.done_at!)) {
+    const day = formatDay(t.done_at!, now);
+    days.set(day, [...(days.get(day) ?? []), t]);
+  }
+  if (!days.size) return <p className="empty">还没有完成的事项。</p>;
+  return [...days].map(([day, tasks]) => (
+    <section key={day}>
+      <h2 className="group-title">{day}</h2>
       <div className="group">
-        {board.subfolders(null).map((f) => (
-          <FolderRow key={f.id} folder={f} board={board} onOpen={() => navigate(folderUrl(f.id))} />
+        {tasks.map((t) => (
+          <TaskRow key={t.id} task={t} board={board} now={now} path selected={selected === t.id} actions={actions} />
         ))}
-        <button className="row add-row" onClick={() => newFolder(null)}>
-          <div className="row-inner">
-            <Icon of={FolderPlus} />
-            新建文件夹
-          </div>
-        </button>
       </div>
-      {own.length > 0 && (
-        <>
-          <h2 className="group-title">不在文件夹里</h2>
-          <div className="group">
-            {own.map((t) => (
-              <TaskRow key={t.id} task={t} board={board} now={now} selected={selected === t.id} actions={actions} />
-            ))}
-          </div>
-        </>
-      )}
-    </>
-  );
+    </section>
+  ));
 }
 
 export function SearchResults({ query, now }: { query: string; now: Date }) {
@@ -211,9 +207,9 @@ export function useNewFolder() {
   };
 }
 
-/** Adds tasks by typing. In a folder it can chain each new task after the previous one; elsewhere
- * it adds to a folder picked beside it, the root by default. */
-export function QuickAdd({ folder }: { folder?: FolderId }) {
+/** Adds tasks by typing. In a folder (`null` for the root) it can chain each new task after the
+ * previous one; elsewhere it adds to a folder picked beside it, the root by default. */
+export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   const { board } = useView();
   const commit = useCommit();
   const { snack } = useFeedback();
@@ -222,7 +218,7 @@ export function QuickAdd({ folder }: { folder?: FolderId }) {
   const [target, setTarget] = useState<FolderId | null>(null);
   const [picking, setPicking] = useState(false);
   const last = useRef<TaskId | null>(null);
-  const into = folder ?? (target && board.folder(target) ? target : null);
+  const into = folder !== undefined ? folder : target && board.folder(target) ? target : null;
   // The app's widget opens `/?add` to type a new task straight away.
   const input = useRef<HTMLInputElement>(null);
   const [params] = useSearchParams();
@@ -259,7 +255,7 @@ export function QuickAdd({ folder }: { folder?: FolderId }) {
       {folder === undefined ? (
         <button type="button" className="qa-btn" onClick={() => setPicking(true)}>
           <Icon of={FolderIcon} size={16} />
-          {into ? board.folder(into)!.name : "根目录"}
+          {board.folderName(into)}
         </button>
       ) : (
         <button type="button" className={`qa-btn${chain ? " on" : ""}`} aria-pressed={chain} onClick={() => ((last.current = null), setChain(!chain))}>

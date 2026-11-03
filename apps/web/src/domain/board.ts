@@ -154,7 +154,12 @@ export class Board {
 
   /** Where a folder is, as people read it: `学习 / 毕业论文`, or `根目录`. */
   place(f: FolderId | null): string {
-    return f ? this.folderPath(f).slice(1).replaceAll("/", " / ") : "根目录";
+    return f ? this.folderPath(f).slice(1).replaceAll("/", " / ") : this.folderName(null);
+  }
+
+  /** A folder's name, or `根目录`. */
+  folderName(f: FolderId | null): string {
+    return f ? this.folders.get(f)!.name : "根目录";
   }
 
   /** The folder at a path such as `/工作/网站改版` (the leading `/` is optional). */

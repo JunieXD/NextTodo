@@ -315,12 +315,12 @@ svg { display: block; flex: none; }
 .snackbar button { height: 36px; padding: 0 12px; border-radius: 18px; color: var(--inverse-primary); font-weight: 600; }
 
 /* ---------- desktop ---------- */
-.desk { --side-w: 272px; --pane-w: 400px; display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr) var(--pane-w); height: 100dvh; transition: grid-template-columns .32s var(--ease); }
-.desk.side-closed { --side-w: 0px; }
-.desk.pane-closed { --pane-w: 0px; }
+.desk-cols { --side-w: 272px; --pane-w: 400px; display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr) var(--pane-w); height: 100%; transition: grid-template-columns .32s var(--ease); }
+.desk-cols.side-closed { --side-w: 0px; }
+.desk-cols.pane-closed { --pane-w: 0px; }
 .sidebar { background: var(--surface-low); border-right: 1px solid var(--outline-variant); overflow: hidden; min-width: 0; transition: border-color .32s; }
 .sb-inner { width: 272px; height: 100%; display: flex; flex-direction: column; }
-.desk.side-closed .sidebar { border-right-color: transparent; }
+.side-closed .sidebar { border-right-color: transparent; }
 .sb-foot { padding: 8px; border-top: 1px solid var(--outline-variant); }
 .sb-user { width: 100%; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 12px; }
 .sb-user:hover { background: var(--press); }
@@ -331,14 +331,13 @@ svg { display: block; flex: none; }
 .brand-mark { width: 26px; height: 26px; border-radius: 8px; background: var(--primary); color: var(--on-primary); display: grid; place-items: center; }
 .sidebar .search { margin: 0 12px 10px; height: 36px; }
 .sb-scroll { flex: 1; overflow-y: auto; padding: 0 8px 16px; }
-.sb-item { width: 100%; height: 36px; border-radius: 10px; display: flex; align-items: center; gap: 8px; padding: 0 10px; font-size: 14px; color: var(--on-surface); }
+.sb-item { width: 100%; height: 36px; margin-bottom: 2px; border-radius: 10px; display: flex; align-items: center; gap: 8px; padding: 0 10px; font-size: 14px; color: var(--on-surface); }
 .sb-item:hover { background: var(--press); }
 .sb-item.on { background: var(--secondary-container); color: var(--on-secondary-container); font-weight: 600; }
 .sb-item .count { margin-left: auto; font-size: 13px; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
 .sb-item .tw { width: 16px; display: grid; place-items: center; color: var(--outline); transition: transform .15s; }
 .sb-item .tw.open { transform: rotate(90deg); }
 .sb-label { margin: 18px 10px 6px; font-size: 12px; font-weight: 600; color: var(--on-surface-variant); }
-.sb-label button { color: inherit; font: inherit; }
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
 .main-tools { display: flex; justify-content: space-between; padding: 10px 14px 0; flex: none; }
 .main-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 2px 28px 14px; flex: none; }
@@ -354,13 +353,21 @@ svg { display: block; flex: none; }
 .desk .connect-banner { top: 12px; }
 .detail-pane { background: var(--surface-low); border-left: 1px solid var(--outline-variant); overflow: hidden; min-width: 0; transition: border-color .32s; }
 .pane-inner { width: 400px; height: 100%; overflow-y: auto; padding: 20px 0 32px; }
-.desk.pane-closed .detail-pane { border-left-color: transparent; }
+.pane-closed .detail-pane { border-left-color: transparent; }
 .detail-empty { height: 100%; display: grid; place-items: center; color: var(--outline); font-size: 14px; text-align: center; padding: 32px; }
 .desk .modal { left: 0; right: 0; margin: 0 auto; bottom: auto; top: 12vh; width: 440px; border-radius: 28px; max-height: 76vh; padding-bottom: 12px; }
 .desk .modal.enter { animation: dialog-in .25s var(--ease); }
 .desk .snackbar { left: 0; right: 0; margin: 0 auto; bottom: 24px; width: 440px; }
 .desk .row:hover > .row-inner { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 4%); }
 .desk .row.selected > .row-inner { background: var(--secondary-container); }
+
+/* ---------- macOS app ---------- */
+/* The window's buttons sit at the top left, over the page (tauri.conf.json); the bars around them
+   move the window (data-tauri-drag-region). */
+.macos .brand { visibility: hidden; }
+.macos .desk .main-tools { transition: padding-left .32s var(--ease); }
+.macos .side-closed .main-tools { padding-left: 84px; }
+.macos .phone .nav { padding-left: 84px; }
 
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .3s; }
 @media (prefers-reduced-motion: reduce) {

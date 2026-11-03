@@ -3,12 +3,14 @@
 // half open; a quick flick down goes from full to half, and from half to closed.
 
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useBack } from "./back";
 
 export function Sheet({ label, onClose, children }: { label: string; onClose(): void; children: ReactNode }) {
   const [full, setFull] = useState(false);
   const sheet = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const state = useRef({ full, onClose });
+  useBack(onClose);
   useEffect(() => {
     state.current = { full, onClose };
   });

@@ -18,6 +18,9 @@
         "minWidth": 360,
         "minHeight": 560,
         "visible": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 18, "y": 22 },
         "backgroundThrottling": "disabled"
       }
     ],

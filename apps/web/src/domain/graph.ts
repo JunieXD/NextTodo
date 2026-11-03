@@ -72,7 +72,7 @@ export interface Scene {
 }
 
 /** The graph of a folder, with or without finished tasks and subfolders. */
-export function scene(board: Board, folder: FolderId, { done, sub }: { done: boolean; sub: boolean }): Scene {
+export function scene(board: Board, folder: FolderId | null, { done, sub }: { done: boolean; sub: boolean }): Scene {
   const shown = (t: Task) => done || t.done_at === null;
   const folders = [folder];
   for (let i = 0; sub && i < folders.length; i++) folders.push(...board.subfolders(folders[i]).map((f) => f.id));

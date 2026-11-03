@@ -50,7 +50,7 @@ export function Login({ onSignIn, notice }: { onSignIn(request: () => Promise<Us
     </label>
   );
   return (
-    <div className="login">
+    <div className="login" data-tauri-drag-region="deep">
       <form className="login-card" onSubmit={submit}>
         <div className="login-brand">
           <span className="brand-mark">

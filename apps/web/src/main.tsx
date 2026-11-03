@@ -10,6 +10,8 @@ import "./index.css";
 import { applyTheme } from "./theme";
 
 applyTheme();
+// The macOS app draws under the title bar, around the window's buttons.
+if (app === "macos") document.documentElement.classList.add("macos");
 // The app carries its files in the package; only the web app needs a service worker for offline use.
 if (!native) registerSW({ immediate: true });
 await loadServer();

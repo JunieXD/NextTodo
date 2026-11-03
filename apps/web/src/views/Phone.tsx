@@ -1,11 +1,12 @@
 // The phone layout: one page at a time with a tab bar, details in a bottom sheet.
 
-import { ChevronLeft, CircleCheck, Folder as FolderIcon, Search } from "lucide-react";
+import { ChevronLeft, CircleCheck, Folder as FolderIcon, History, Search } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Redirect, useLocation } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
 import { formatToday } from "../domain/dates";
 import { useConnection, useSession, useView } from "../session";
+import { useBack } from "../ui/back";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { Sheet } from "../ui/Sheet";
@@ -13,7 +14,7 @@ import { app } from "../api/http";
 import { BackgroundTip } from "./Background";
 import { Detail } from "./Detail";
 import { FolderMenu } from "./FolderMenu";
-import { FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, RootBody, SearchResults } from "./lists";
+import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, SearchResults } from "./lists";
 import { folderUrl, useFolderView, useSelection } from "./nav";
 import { ConnectionNote } from "./status";
 
@@ -26,20 +27,21 @@ export function Phone({ onSettings }: { onSettings(): void }) {
   const folder = location.match(/^\/folders\/([^/]+)$/)?.[1] ?? null;
   const tab = location.startsWith("/folders") ? "folders" : "next";
 
-  // Deeper into the folders slides the new page in from the right; going back, the other way.
-  const depth = folder && board.folder(folder) ? 1 + board.depth(folder) : 1;
+  // Going deeper in a tab (into a folder, to what is done) slides the new page in from the right;
+  // going back, the other way.
+  const depth = tab === "next" ? Number(location === "/done") : folder && board.folder(folder) ? board.depth(folder) : 0;
   const [page, setPage] = useState({ tab, depth, anim: "" });
   if (page.tab !== tab || page.depth !== depth) {
-    const anim = tab === "folders" && page.tab === "folders" ? (depth > page.depth ? " anim-push" : " anim-pop") : "";
+    const anim = tab === page.tab ? (depth > page.depth ? " anim-push" : " anim-pop") : "";
     setPage({ tab, depth, anim });
   }
   const anim = page.anim;
 
   let screen: ReactNode;
-  if (tab === "next") screen = <NextScreen now={now} />;
-  else if (!folder) screen = <FoldersScreen key="root" anim={anim} now={now} />;
-  else if (!board.folder(folder)) screen = <Redirect to="/folders" replace />;
-  else screen = <FolderScreen key={folder} anim={anim} folder={folder} now={now} />;
+  if (location === "/done") screen = <DoneScreen key="done" anim={anim} now={now} />;
+  else if (tab === "next") screen = <NextScreen key="next" anim={anim} now={now} />;
+  else if (folder && !board.folder(folder)) screen = <Redirect to="/folders" replace />;
+  else screen = <FolderScreen key={folder ?? "root"} anim={anim} folder={folder} now={now} />;
 
   const tabButton = (id: string, label: string, icon: typeof FolderIcon, to: string) => (
     <button className={`tab${tab === id ? " on" : ""}`} onClick={() => navigate(to)}>
@@ -76,7 +78,7 @@ function Screen({ title, nav, anim = "", children, after }: { title: string; nav
   const [scrolled, setScrolled] = useState(false);
   return (
     <section className={`screen${scrolled ? " scrolled" : ""}${anim}`}>
-      <header className="nav">
+      <header className="nav" data-tauri-drag-region="deep">
         {nav ?? <span />}
         <span className="nav-title">{title}</span>
         <span />
@@ -89,13 +91,30 @@ function Screen({ title, nav, anim = "", children, after }: { title: string; nav
   );
 }
 
-function NextScreen({ now }: { now: Date }) {
+/** The top bar's way back to the page above, which Android's back button takes too. */
+function Back({ to, label }: { to: string; label: string }) {
+  const [, navigate] = useLocation();
+  const up = () => navigate(to);
+  useBack(up);
+  return (
+    <button className="back" onClick={up}>
+      <Icon of={ChevronLeft} size={22} />
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function NextScreen({ anim, now }: { anim: string; now: Date }) {
   const { board } = useView();
   const connection = useConnection();
+  const [, navigate] = useLocation();
   return (
-    <Screen title="接下来" after={<QuickAdd />}>
+    <Screen title="接下来" anim={anim} after={<QuickAdd />}>
       <div className="hero">
         <h1 className="large-title">接下来</h1>
+        <button className="icon-btn" onClick={() => navigate("/done")} aria-label="已完成" title="已完成">
+          <Icon of={History} />
+        </button>
       </div>
       <p className="subtitle">
         {formatToday(now)}，{board.next().length} 项可做
@@ -107,62 +126,60 @@ function NextScreen({ now }: { now: Date }) {
   );
 }
 
-function FoldersScreen({ anim, now }: { anim: string; now: Date }) {
-  const [query, setQuery] = useState("");
+function DoneScreen({ anim, now }: { anim: string; now: Date }) {
   return (
-    <Screen title="文件夹" anim={anim}>
+    <Screen title="已完成" nav={<Back to="/" label="接下来" />} anim={anim}>
       <div className="hero">
-        <h1 className="large-title">文件夹</h1>
+        <h1 className="large-title">已完成</h1>
       </div>
-      <label className="search" style={{ marginTop: 12 }}>
-        <Icon of={Search} size={18} />
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索全部事项" autoComplete="off" />
-      </label>
-      {query.trim() ? <SearchResults query={query} now={now} /> : <RootBody now={now} />}
+      <DoneBody now={now} />
     </Screen>
   );
 }
 
-function FolderScreen({ folder, anim, now }: { folder: FolderId; anim: string; now: Date }) {
+/** A folder, or the root (`null`). The root is where the folders are reached from, so it is always a
+ * list, with the search over all tasks. */
+function FolderScreen({ folder, anim, now }: { folder: FolderId | null; anim: string; now: Date }) {
   const { board } = useView();
-  const [, navigate] = useLocation();
   const [view] = useFolderView();
-  const f = board.folder(folder)!;
-  const parent = f.parent_id ? board.folder(f.parent_id)!.name : "文件夹";
-  const nav = (
-    <button className="back" onClick={() => navigate(folderUrl(f.parent_id))}>
-      <Icon of={ChevronLeft} size={22} />
-      <span>{parent}</span>
-    </button>
-  );
-  if (view === "graph") {
+  const [query, setQuery] = useState("");
+  const f = folder ? board.folder(folder)! : null;
+  const title = f ? f.name : "文件夹";
+  const nav = f && <Back to={folderUrl(f.parent_id)} label={f.parent_id ? board.folderName(f.parent_id) : "文件夹"} />;
+  const menu = folder && <FolderMenu folder={folder} />;
+  if (f && view === "graph") {
     return (
       <section className={`screen scrolled${anim}`}>
-        <header className="nav">
-          {nav}
-          <span className="nav-title">{f.name}</span>
-          <span className="nav-actions">
-            <FolderMenu folder={folder} />
-          </span>
+        <header className="nav" data-tauri-drag-region="deep">
+          {nav ?? <span />}
+          <span className="nav-title">{title}</span>
+          <span className="nav-actions">{menu}</span>
         </header>
         <div className="nav-space" />
         <div className="view-seg">
           <FolderViewSeg />
         </div>
-        <FolderGraph folder={folder} across={false} now={now} />
+        <FolderGraph folder={f.id} across={false} now={now} />
       </section>
     );
   }
   return (
-    <Screen title={f.name} nav={nav} anim={anim} after={<QuickAdd folder={folder} />}>
+    <Screen title={title} nav={nav} anim={anim} after={<QuickAdd folder={folder} />}>
       <div className="hero">
-        <h1 className="large-title">{f.name}</h1>
-        <FolderMenu folder={folder} />
+        <h1 className="large-title">{title}</h1>
+        {menu}
       </div>
-      <div className="view-seg">
-        <FolderViewSeg />
-      </div>
-      <FolderBody folder={folder} now={now} />
+      {f ? (
+        <div className="view-seg">
+          <FolderViewSeg />
+        </div>
+      ) : (
+        <label className="search" style={{ marginTop: 12 }}>
+          <Icon of={Search} size={18} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索全部事项" autoComplete="off" />
+        </label>
+      )}
+      {query.trim() ? <SearchResults query={query} now={now} /> : <FolderBody folder={folder} now={now} />}
     </Screen>
   );
 }

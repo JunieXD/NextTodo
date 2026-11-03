@@ -26,11 +26,13 @@ import type { TaskId } from "../api/types/TaskId";
 import { formatDue } from "../domain/dates";
 import { type Edge, lineage, scene } from "../domain/graph";
 import { useView } from "../session";
+import { useBack } from "../ui/back";
 import { useFeedback } from "../ui/feedback";
 import { Icon, Inbound } from "../ui/icons";
 import { useTaskActions } from "./actions";
 import { type Layout, type Size, edgeKey, layout, widest } from "./graph-layout";
 import { useMarks } from "./marks";
+import { useSelection } from "./nav";
 import { dueClass } from "./rows";
 
 const NODE_HEIGHT = 60;
@@ -43,7 +45,7 @@ type DepEdge = FlowEdge<{ d: string; marker: string }, "dep">;
 const nodeTypes = { task: TaskNodeView };
 const edgeTypes = { dep: DepEdgeView };
 
-export default function Graph(props: { folder: FolderId; across: boolean; now: Date }) {
+export default function Graph(props: { folder: FolderId | null; across: boolean; now: Date }) {
   return (
     <ReactFlowProvider>
       <Canvas {...props} />
@@ -51,10 +53,11 @@ export default function Graph(props: { folder: FolderId; across: boolean; now: D
   );
 }
 
-function Canvas({ folder, across, now }: { folder: FolderId; across: boolean; now: Date }) {
+function Canvas({ folder, across, now }: { folder: FolderId | null; across: boolean; now: Date }) {
   const { board } = useView();
   const { flash } = useMarks();
   const actions = useTaskActions();
+  const { selected } = useSelection();
   const { confirm } = useFeedback();
   const flow = useReactFlow();
   const wrap = useRef<HTMLDivElement>(null);
@@ -63,6 +66,7 @@ function Canvas({ folder, across, now }: { folder: FolderId; across: boolean; no
   const [sub, setSub] = useState(false);
   const [picked, setPicked] = useState<TaskId | null>(null);
   const [connect, setConnect] = useState<{ from: TaskId | null } | null>(null);
+  useBack(connect ? () => setConnect(null) : null);
 
   const s = useMemo(() => scene(board, folder, { done, sub }), [board, folder, done, sub]);
   const ids = s.tasks.map((t) => t.id).sort();
@@ -103,7 +107,8 @@ function Canvas({ folder, across, now }: { folder: FolderId; across: boolean; no
   const source = connect?.from && s.tasks.some((t) => t.id === connect.from) ? connect.from : null;
   const tap = (t: Task) => {
     if (!connect) {
-      setPicked(t.id);
+      // Tapping the open task again closes it, and the highlight goes with it.
+      setPicked(selected === t.id ? null : t.id);
       actions.open(t);
     } else if (!source) {
       setConnect({ from: t.id });
@@ -149,7 +154,7 @@ function Canvas({ folder, across, now }: { folder: FolderId; across: boolean; no
     const className = ["node", outside ? "ghost" : status, (meta || outside) && "has-meta", t.id === hl && "sel", !inChain(t.id) && "dim", source === t.id && "source", flash.has(t.id) && "unlocked"]
       .filter(Boolean)
       .join(" ");
-    const folder = outside ? (t.folder_id ? board.folder(t.folder_id)!.name : "根目录") : undefined;
+    const folder = outside ? board.folderName(t.folder_id) : undefined;
     nodes.push({ id: t.id, type: "task", position: at, ...laid!.node, handles, data: { task: t, className, folder, meta, onClick: () => tap(t) } });
   }
   const edges: DepEdge[] = s.edges.flatMap((e) => {

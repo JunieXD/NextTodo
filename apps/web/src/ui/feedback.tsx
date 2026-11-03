@@ -5,6 +5,7 @@ import { Dialog } from "radix-ui";
 import { X } from "lucide-react";
 import { type ReactNode, createContext, useContext, useMemo, useRef, useState } from "react";
 import type { Checked } from "../domain/text";
+import { useBack } from "./back";
 import { Icon } from "./icons";
 
 export const RootContext = createContext<HTMLElement | null>(null);
@@ -83,6 +84,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
 
 function DialogFrame({ title, close, children }: { title: string; close(): void; children: ReactNode }) {
   const root = useContext(RootContext);
+  useBack(close);
   return (
     <Dialog.Root open onOpenChange={(o) => !o && close()}>
       <Dialog.Portal container={root}>
@@ -143,9 +145,11 @@ function PromptDialog({ title, label, value = "", placeholder, ok, check, close 
   );
 }
 
-/** A panel for choosing or settings: a bottom sheet on phones, a centred card on desktops. */
-export function Modal({ title, onClose, children }: { title: string; onClose(): void; children: ReactNode }) {
+/** A panel for choosing or settings: a bottom sheet on phones, a centred card on desktops. Back goes
+ * to `onBack` when given, such as the page the panel came from, otherwise closes it. */
+export function Modal({ title, onClose, onBack, children }: { title: string; onClose(): void; onBack?: () => void; children: ReactNode }) {
   const root = useContext(RootContext);
+  useBack(onBack ?? onClose);
   return (
     <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal container={root}>

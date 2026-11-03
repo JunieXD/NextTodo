@@ -53,6 +53,16 @@ export function formatDue(due: Due, now: Date): string {
 /** `11月2日 星期一` */
 export const formatToday = (now: Date) => `${now.getMonth() + 1}月${now.getDate()}日 星期${WEEK[now.getDay()]}`;
 
+/** `今天`, `昨天`, `11月1日 周六`, with the year when it is not this year. */
+export function formatDay(ms: number, now: Date): string {
+  const d = new Date(ms);
+  const days = daysFrom(now, isoDate(d));
+  if (days === 0) return "今天";
+  if (days === -1) return "昨天";
+  const year = d.getFullYear() === now.getFullYear() ? "" : `${d.getFullYear()}年`;
+  return `${year}${d.getMonth() + 1}月${d.getDate()}日 周${WEEK[d.getDay()]}`;
+}
+
 /** `11月2日 10:29`, with the year when it is not this year. */
 export function formatMoment(ms: number, now: Date): string {
   const d = new Date(ms);

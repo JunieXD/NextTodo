@@ -8,6 +8,7 @@ import { navigate } from "wouter/use-browser-location";
 import type { Board } from "./domain/board";
 import { type Reminder, reminder, reminders } from "./domain/reminders";
 import type { Store } from "./sync/store";
+import { back } from "./ui/back";
 
 /** The app's own plugin, in `apps/android`. */
 interface NextTodoPlugin {
@@ -122,11 +123,7 @@ function open(url: string) {
 export async function listen() {
   await LocalNotifications.addListener("localNotificationActionPerformed", (e) => open(`nexttodo://task/${e.notification.extra.task}`));
   await App.addListener("appUrlOpen", (e) => open(e.url));
-  // Back goes back in the app, and from the home screen leaves it, as elsewhere on Android. The web
-  // view can't go back over pages opened without a tap, such as from a notification: those go home.
-  await App.addListener("backButton", ({ canGoBack }) => {
-    if (canGoBack) history.back();
-    else if (location.pathname !== "/" || location.search) navigate("/", { replace: true });
-    else void App.minimizeApp();
+  await App.addListener("backButton", () => {
+    if (!back()) void App.minimizeApp();
   });
 }

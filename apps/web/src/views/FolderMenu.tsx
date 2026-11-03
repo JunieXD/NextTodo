@@ -8,6 +8,7 @@ import type { FolderId } from "../api/types/FolderId";
 import { lastKey } from "../domain/apply";
 import { checkFolderName } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
+import { useBack } from "../ui/back";
 import { RootContext, useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { useNewFolder } from "./lists";
@@ -23,6 +24,8 @@ export function FolderMenu({ folder }: { folder: FolderId }) {
   const newFolder = useNewFolder();
   const [, navigate] = useLocation();
   const [moving, setMoving] = useState(false);
+  const [menu, setMenu] = useState(false);
+  useBack(menu ? () => setMenu(false) : null);
   const { board } = useView();
   const f = board.folder(folder);
   if (!f) return null;
@@ -35,7 +38,7 @@ export function FolderMenu({ folder }: { folder: FolderId }) {
     if (parent === f.parent_id) return;
     const sort_key = lastKey(store.getView().board.subfolders(parent).map((s) => s.sort_key));
     const r = commit([{ op: "folder.update", id: f.id, parent_id: parent, sort_key }]);
-    if (r) snack({ text: `已移到“${parent ? board.folder(parent)!.name : "根目录"}”`, action: "撤销", onAction: () => undo(r.id) });
+    if (r) snack({ text: `已移到“${board.folderName(parent)}”`, action: "撤销", onAction: () => undo(r.id) });
   };
   const remove = async () => {
     const inside = [...board.snapshot.tasks].filter((t) => t.folder_id && board.inSubtree(t.folder_id, f.id)).length;
@@ -49,7 +52,7 @@ export function FolderMenu({ folder }: { folder: FolderId }) {
 
   return (
     <>
-      <DropdownMenu.Root>
+      <DropdownMenu.Root open={menu} onOpenChange={setMenu}>
         <DropdownMenu.Trigger className="icon-btn" aria-label="文件夹操作">
           <Icon of={Ellipsis} />
         </DropdownMenu.Trigger>

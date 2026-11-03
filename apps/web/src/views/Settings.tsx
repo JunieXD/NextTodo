@@ -79,7 +79,7 @@ export function Settings({ onClose, onSignOut }: { onClose(): void; onSignOut():
   }
   if (typeof page === "object") {
     return (
-      <Modal title="令牌已生成" onClose={onClose}>
+      <Modal title="令牌已生成" onClose={onClose} onBack={() => setPage("main")}>
         <p className="empty">这是“{page.name}”的令牌，只显示这一次。在命令行里用 nexttodo login 登录，或者填进 agent 的 MCP 设置。</p>
         <div className="secret">{page.secret}</div>
         <div className="detail-actions flex justify-end gap-2">
@@ -247,7 +247,7 @@ function PasswordPage({ onDone, onClose }: { onDone(): void; onClose(): void }) 
     }
   };
   return (
-    <Modal title="修改密码" onClose={onClose}>
+    <Modal title="修改密码" onClose={onClose} onBack={onDone}>
       <form onSubmit={submit}>
         <label className="field">
           现在的密码
@@ -287,7 +287,7 @@ function TokenPage({ onCreated, onBack, onClose }: { onCreated(c: CreatedToken):
     }
   };
   return (
-    <Modal title="生成令牌" onClose={onClose}>
+    <Modal title="生成令牌" onClose={onClose} onBack={onBack}>
       <form onSubmit={submit}>
         <label className="field">
           <span>

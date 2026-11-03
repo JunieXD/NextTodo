@@ -95,7 +95,7 @@ export function Desktop({ onSettings }: { onSettings(): void }) {
         {main}
       </main>
       <aside className="detail-pane" inert={!open}>
-        <div className="pane-inner">{shown && <Detail key={shown} id={shown} now={now} onClose={close} />}</div>
+        <div className="pane-inner">{shown && <Detail key={shown} id={shown} now={now} closing={!open} onClose={close} />}</div>
       </aside>
     </div>
   );

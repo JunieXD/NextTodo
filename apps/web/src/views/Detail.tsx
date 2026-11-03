@@ -28,7 +28,9 @@ const who = (via: string | null) => (via ? `${via} ` : "");
 
 type TaskFields = Omit<Extract<Op, { op: "task.update" }>, "op" | "id">;
 
-export function Detail({ id, now, onClose }: { id: TaskId; now: Date; onClose?: () => void }) {
+/** `closing`: the desktop pane is sliding away with this task still in it. Its panels close at once,
+ * so their focus trap does not hold on to focus that has moved on, such as to a quick add. */
+export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; closing?: boolean; onClose?: () => void }) {
   const { board } = useView();
   const t = board.task(id);
   const actions = useTaskActions();
@@ -37,6 +39,7 @@ export function Detail({ id, now, onClose }: { id: TaskId; now: Date; onClose?: 
   const { pop } = useMarks();
   const { select } = useSelection();
   const [panel, setPanel] = useState<Panel>(null);
+  if (closing && panel) setPanel(null);
   if (!t) return <div className="detail-empty">该事项已删除</div>;
   const status = board.status(t);
   const update = (fields: TaskFields) => commit([{ op: "task.update", id: t.id, ...fields }]);

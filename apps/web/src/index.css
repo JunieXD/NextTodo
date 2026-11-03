@@ -86,6 +86,8 @@ svg { display: block; flex: none; }
 
 .scroll { flex: 1; overflow-y: auto; padding-top: calc(56px + var(--safe-top)); padding-bottom: calc(var(--tabbar-h) + 84px); }
 .scroll.fill { display: flex; flex-direction: column; overflow: hidden; padding-bottom: var(--tabbar-h); }
+/* Nothing scrolls here, so a long folder name keeps to two lines and leaves the graph its room. */
+.scroll.fill .large-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
 .hero { display: flex; align-items: flex-end; justify-content: space-between; padding: 4px 20px 0; }
 .large-title { margin: 0; font-size: 32px; line-height: 1.2; font-weight: 700; letter-spacing: -.01em; }
 .subtitle { margin: 4px 20px 6px; font-size: 15px; color: var(--on-surface-variant); }

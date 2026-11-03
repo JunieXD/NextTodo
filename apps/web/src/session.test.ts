@@ -241,11 +241,13 @@ test("a tab left open while the site's storage is cleared leaves a later sign-in
   server.cookie = null;
   const db = await openDB("nexttodo", 1);
   await Promise.all([db.clear("copies"), db.clear("outbox")]);
-  // Signing in again takes a moment.
-  await new Promise((r) => setTimeout(r, 5));
+  // Signed in again a minute later.
+  const now = Date.now;
+  vi.spyOn(Date, "now").mockImplementation(() => now() + 60_000);
   await (await tab()).open(as(u));
   const cookie = server.cookie!;
   await a.signOut();
+  vi.restoreAllMocks();
   expect([server.ended.has(cookie), login().user.id]).toEqual([false, u.id]);
 });
 

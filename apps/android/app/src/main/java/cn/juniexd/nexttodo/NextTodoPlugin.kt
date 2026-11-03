@@ -16,11 +16,16 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+/** One APK download at a time, whichever activity asked for it: each one has a plugin of its own. */
+private val installing = AtomicBoolean(false)
+
+/** Whether the APKs earlier runs of the app downloaded have gone. This run's stay: an installer may
+ * not have read them yet. */
+private var cleared = false
+
 /** What the web app asks of Android beyond the stock plugins: see `apps/web/src/android.ts`. */
 @CapacitorPlugin(name = "NextTodo")
 class NextTodoPlugin : Plugin() {
-    private val installing = AtomicBoolean(false)
-
     @PluginMethod
     fun updateWidget(call: PluginCall) {
         val tasks = call.getString("tasks")!!
@@ -81,9 +86,13 @@ class NextTodoPlugin : Plugin() {
         if (!installing.compareAndSet(false, true)) return call.resolve(JSObject().put("started", true))
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // A file of its own, which nothing writes again while the installer reads it; those of
-                // earlier downloads go.
-                val dir = File(context.cacheDir, "update").apply { deleteRecursively(); mkdirs() }
+                val dir = File(context.cacheDir, "update")
+                if (!cleared) {
+                    dir.deleteRecursively()
+                    cleared = true
+                }
+                dir.mkdirs()
+                // A file of its own, which nothing writes while the installer reads it.
                 val apk = File.createTempFile("NextTodo-", ".apk", dir)
                 apk.writeBytes(download(url))
                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apk)

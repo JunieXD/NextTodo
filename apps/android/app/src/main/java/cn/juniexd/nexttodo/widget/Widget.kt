@@ -92,10 +92,12 @@ object Widget {
         return Shown(token != null, items, ticked.keys)
     }
 
-    /** Takes a task done on the server out of the list, until the next list comes. Lists asked for
-     * before, which may still have it, are not written any more. */
-    private suspend fun drop(context: Context, task: String) {
+    /** Takes a task done on the server in session `token` out of the list, until the next list comes,
+     * unless signed in again since. Lists asked for before, which may still have it, are not written
+     * any more. */
+    private suspend fun drop(context: Context, task: String, token: String) {
         writing.withLock {
+            if (Server.token(context) != token) return@withLock
             val list = JSONArray(prefs(context).getString("tasks", "[]"))
             val kept = (0 until list.length()).map(list::getJSONObject).filter { it.getString("id") != task }
             written = asked.incrementAndGet()
@@ -148,9 +150,10 @@ object Widget {
             if (Server.token(context) != token) return
             cancelReminder(context, number)
             delay(LINGER_MS - (SystemClock.elapsedRealtime() - start))
-            drop(context, task)
+            drop(context, task, token)
         } finally {
-            ticked.update { it - task }
+            // Signed in again, the same task may have been ticked off in the new session meanwhile.
+            ticked.update { if (it[task]?.token == token) it - task else it }
             NextWidget().updateAll(context)
         }
         try {

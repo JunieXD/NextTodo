@@ -29,10 +29,9 @@ object WebUpdate {
     private fun prefs(context: Context) = context.getSharedPreferences("WebUpdate", Context.MODE_PRIVATE)
     private fun builds(context: Context) = File(context.filesDir, "web")
 
-    /** Before the bridge starts: picks the build to serve, has Capacitor serve it, and returns its
-     * directory; null for the APK's. Called again when the build tried does not report ready in time. */
+    /** Before the bridge starts: picks the build to serve, and has Capacitor serve it. */
     @Synchronized
-    fun start(context: Context): File? {
+    fun start(context: Context) {
         val prefs = prefs(context)
         // Builds downloaded for another APK may need what this one lacks, and Capacitor serves the
         // APK's after an update anyway.
@@ -45,22 +44,39 @@ object WebUpdate {
         val bad = if (sameApk) prefs.getStringSet("bad", null).orEmpty() else emptySet()
         val trying = built(prefs.getString("staged", null))
         val good = built(prefs.getString("good", null))
-        val serve = (trying ?: good)?.let { File(builds(context), it) }
         prefs.edit().clear()
             .putInt("apk", BuildConfig.VERSION_CODE)
             .putString("good", good)
             .putString("trying", trying)
             .putStringSet("bad", failed?.let { bad + it } ?: bad)
             .commit()
-        context.getSharedPreferences(WebView.WEBVIEW_PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putString(WebView.CAP_SERVER_PATH, serve?.path ?: "")
-            .commit()
-        running = serve?.name ?: bundled(context)
-        return serve
+        serve(context, trying ?: good)
     }
 
     /** Whether the build served is being tried, and has yet to report ready. */
     fun trying(context: Context) = prefs(context).contains("trying")
+
+    /** The build tried has not reported ready in time: given up for good, back to the one it was to
+     * replace, which `load` gets: its directory, or null for the APK's. A build downloaded meanwhile
+     * waits for the next start. Nothing happens should the build have reported ready since. */
+    @Synchronized
+    fun giveUp(context: Context, load: (File?) -> Unit) {
+        val prefs = prefs(context)
+        val failed = prefs.getString("trying", null) ?: return
+        File(builds(context), failed).deleteRecursively()
+        prefs.edit().remove("trying").putStringSet("bad", prefs.getStringSet("bad", null).orEmpty() + failed).commit()
+        load(serve(context, prefs.getString("good", null)))
+    }
+
+    /** Has Capacitor serve build `version`, or the APK's, from its next start; returns the directory. */
+    private fun serve(context: Context, version: String?): File? {
+        val dir = version?.let { File(builds(context), it) }
+        context.getSharedPreferences(WebView.WEBVIEW_PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putString(WebView.CAP_SERVER_PATH, dir?.path ?: "")
+            .commit()
+        running = version ?: bundled(context)
+        return dir
+    }
 
     /** The web app started: the build being tried works, and the ones before it can go. */
     @Synchronized
@@ -73,9 +89,10 @@ object WebUpdate {
     }
 
     /** Downloads the server's build when it is another one that this APK can run, and returns its
-     * version; nothing when there is none to download, or another download is under way. */
+     * version; nothing when there is none to download. Fails while another download is under way,
+     * maybe from another server, so that this check is not taken as done. */
     suspend fun update(context: Context): String? = withContext(Dispatchers.IO) {
-        if (!busy.compareAndSet(false, true)) return@withContext null
+        if (!busy.compareAndSet(false, true)) throw IOException("正在下载另一个版本")
         try {
             val server = Server.prefs(context).getString("server", null) ?: return@withContext null
             val info = JSONObject(String(download("$server/app/web.json")))

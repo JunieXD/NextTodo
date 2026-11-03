@@ -32,7 +32,8 @@ export const EVERY_MS = app === "android" ? 3600_000 : 6 * 3600_000;
 /** The server the checks below are of: another one starts afresh. */
 let server = "";
 let checked = 0;
-let checking = false;
+/** The server being checked, if one is. */
+let checking: string | null = null;
 
 /** Looks for updates, unless it did lately. One that fails, offline say, is tried again the next time.
  * With a macOS version installed already, it would only install that again: the app still runs the
@@ -44,12 +45,14 @@ export async function check() {
     checked = 0;
     if (pending?.kind === "apk") set(null);
   }
-  if (checking || Date.now() - checked < EVERY_MS || pending?.kind === "restart") return;
-  checking = true;
+  if (checking === server || Date.now() - checked < EVERY_MS || pending?.kind === "restart") return;
+  const from = (checking = server);
   // Each on its own: a web build that fails to download does not keep back an APK that fixes it.
-  const jobs: Promise<unknown>[] = app === "android" ? [NextTodo.updateWeb(), checkApk(server)] : [checkMac(server)];
+  const jobs: Promise<unknown>[] = app === "android" ? [NextTodo.updateWeb(), checkApk(from)] : [checkMac(from)];
   const failed = (await Promise.allSettled(jobs)).filter((r) => r.status === "rejected");
-  checking = false;
+  if (checking === from) checking = null;
+  // On another server since, which this check is not of: that one gets its own.
+  if (from !== server) return check();
   for (const f of failed) console.warn("检查更新失败", f.reason);
   if (!failed.length) checked = Date.now();
 }

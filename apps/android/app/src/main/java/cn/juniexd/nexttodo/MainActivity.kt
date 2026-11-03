@@ -12,16 +12,17 @@ class MainActivity : BridgeActivity() {
     /** The build tried has not reported ready: back to the one before, now. Reopening the app may
      * only bring this activity back, so the next start may be far off. */
     private val giveUp = Runnable {
-        if (!WebUpdate.trying(this)) return@Runnable
-        val dir = WebUpdate.start(this)
-        if (dir != null) bridge.setServerBasePath(dir.path) else bridge.setServerAssetPath(Bridge.DEFAULT_WEB_ASSET_DIR)
+        WebUpdate.giveUp(this) { dir ->
+            if (dir != null) bridge.setServerBasePath(dir.path) else bridge.setServerAssetPath(Bridge.DEFAULT_WEB_ASSET_DIR)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         registerPlugin(NextTodoPlugin::class.java)
         WebUpdate.start(this)
         super.onCreate(savedInstanceState)
-        if (WebUpdate.trying(this)) handler.postDelayed(giveUp, READY_MS)
+        // Without a WebView, Capacitor shows its error page and makes no bridge: nothing to give up.
+        if (bridge != null && WebUpdate.trying(this)) handler.postDelayed(giveUp, READY_MS)
     }
 
     override fun onDestroy() {

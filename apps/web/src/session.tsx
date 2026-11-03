@@ -33,7 +33,8 @@ function cachedLogin(): Login | null {
 }
 
 /** Set while a sign-out has not reached the server: the session lives on there, and its cookie must
- * not sign the app back in. */
+ * not sign the app back in. Finishing it also deletes what the sign-out may have left on the device,
+ * had the tab been closed before it was done. */
 const SIGNED_OUT = "nexttodo.signedOut";
 
 /** Ends the browser's session on the server. When the server can't be reached, or fails, that is
@@ -49,9 +50,10 @@ async function logout() {
 }
 
 /** What a tab tells the others: that a sign-in ended, so that its other tabs end too instead of
- * saving its data again; that the server turned a change down, which only the tab that sent it
- * hears, so that tabs that took it from the outbox drop it too. */
-type Message = { ended: string } | { rejected: MutationId };
+ * saving its data again; that someone signed in, so that tabs of anyone else end, and the user's own
+ * join the sign-in; that the server turned a change down, which only the tab that sent it hears, so
+ * that tabs that took it from the outbox drop it too. */
+type Message = { ended: string } | { signedIn: Login } | { rejected: MutationId };
 const tabs = new BroadcastChannel("nexttodo");
 
 /** Runs `f` while no other tab is signing in or out: what it finds on the device stays so until it
@@ -75,13 +77,15 @@ export class Session {
   connection: Connection = "connecting";
   private readonly watchers = new Set<() => void>();
   private listeners: Listeners = { rejected() {}, arrived() {}, unsaved() {}, signedOut() {} };
-  private closing?: Promise<void>;
+  /** How the session has ended here, once it has: when that is done, and whether the user's data
+   * stays on this device. */
+  private ended?: { done: Promise<void>; keep: boolean };
   private signingOut = false;
 
   constructor(
     public user: User,
     /** The sign-in this session belongs to. */
-    private readonly login: string,
+    private login: string,
     /** Its copy of the user's data on this device. */
     private readonly copy: string,
     saved: Saved,
@@ -115,7 +119,10 @@ export class Session {
 
   private readonly heard = ({ data }: MessageEvent<Message>) => {
     if ("rejected" in data) this.store.drop(data.rejected);
-    else if (data.ended === this.login) this.endedElsewhere(false);
+    else if ("ended" in data ? data.ended === this.login : data.signedIn.user.id !== this.user.id) this.endedElsewhere(false);
+    // Signed in as the same user again: the cookie is that sign-in's now, and so is this tab, unless
+    // it is leaving.
+    else if ("signedIn" in data && !this.ended) this.login = data.signedIn.id;
   };
 
   /** Ends the session here after it ended elsewhere, and tells the UI. When the server just stopped
@@ -124,7 +131,9 @@ export class Session {
   private endedElsewhere(keep: boolean) {
     // Signing out here brings the server's word that the session has ended: that is no news.
     if (this.signingOut) return;
-    void this.end(keep).then(() => this.listeners.signedOut());
+    void this.end(keep);
+    // Now rather than once that is done: changes made meanwhile would be neither saved nor sent.
+    this.listeners.signedOut();
   }
 
   listen(listeners: Listeners) {
@@ -143,41 +152,45 @@ export class Session {
     return () => this.watchers.delete(w);
   };
 
-  /** Signs in as `user`, from the copy on this device or a fresh one from the server. Anyone else's
-   * data left on this device goes. */
-  static async open(user: User): Promise<Session> {
-    const login = crypto.randomUUID();
+  /** Signs in with `request`, which asks the server and says who signed in, and opens their data:
+   * the copy on this device, or a fresh one from the server. Anyone else's data on this device goes. */
+  static async open(request: () => Promise<User>): Promise<Session> {
     const copy = crypto.randomUUID();
-    const saved = await turn(async () => {
-      localStorage.setItem(LOGIN, JSON.stringify({ id: login, user }));
-      localStorage.removeItem(SIGNED_OUT);
-      await forgetOthers(user.id);
-      return load(user.id, copy);
-    });
-    if (saved) return new Session(user, login, copy, saved);
-    const { seq, folders, tasks, dependencies } = await download(user.id);
-    return new Session(user, login, copy, { ...Store.empty(), seq, base: { folders, tasks, dependencies } });
+    // The request sets the browser's cookie: in turn, so that a sign-out in another tab can neither
+    // end this sign-in nor clear its cookie.
+    const { login, saved } = await turn(async () => claim(await request(), copy));
+    return start(login, copy, saved);
   }
 
   /** The session this device was in last time, if any. */
   static async resume(): Promise<Session | null> {
-    const resumed = await turn(async () => {
-      // Signed out offline last time: finish that, rather than be signed in again by the cookie.
-      if (localStorage.getItem(SIGNED_OUT)) return logout().then(() => "signed out" as const);
+    const copy = crypto.randomUUID();
+    const found = await turn(async () => {
+      if (localStorage.getItem(SIGNED_OUT)) {
+        // Signed out last time while the server could not hear it: finish that, rather than be
+        // signed in again by the cookie or opened from what is left.
+        const login = cachedLogin();
+        if (login) {
+          await forget(login.user.id);
+          localStorage.removeItem(LOGIN);
+          tabs.postMessage({ ended: login.id } satisfies Message);
+        }
+        await logout();
+        return null;
+      }
       const login = cachedLogin();
-      if (!login) return null;
-      const copy = crypto.randomUUID();
-      const saved = await load(login.user.id, copy);
-      return saved ? new Session(login.user, login.id, copy, saved) : null;
+      const saved = login && (await load(login.user.id, copy));
+      if (saved) return { login, saved };
+      // Nothing to open: ask the server who is signed in, in turn too, so that the answer still
+      // holds when acted on.
+      try {
+        return await claim(await api<User>("GET", "/me"), copy);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) return null;
+        throw e;
+      }
     });
-    if (resumed === "signed out") return null;
-    if (resumed) return resumed;
-    try {
-      return await Session.open(await api<User>("GET", "/me"));
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 401) return null;
-      throw e;
-    }
+    return found && start(found.login, copy, found.saved);
   }
 
   /** Asks the server whether the session still holds, and refreshes the user's details. */
@@ -202,28 +215,39 @@ export class Session {
     return this.end(false);
   }
 
-  /** Ends the session here, once; `keep` keeps the user's data on this device. */
+  /** Ends the session here; `keep` keeps the user's data on this device. Ending it again without
+   * `keep` deletes the data after all. */
   private end(keep: boolean): Promise<void> {
-    return (this.closing ??= (async () => {
-      tabs.removeEventListener("message", this.heard);
-      this.socket.stop();
-      await this.saver.close();
-      await turn(async () => {
-        const latest = cachedLogin();
-        const current = latest?.id === this.login;
-        if (keep) {
-          if (current) localStorage.removeItem(LOGIN);
-          return;
-        }
-        if (!current && latest?.user.id === this.user.id) return forgetCopy(this.user.id, this.copy);
-        await forget(this.user.id);
-        // The sign-in goes last: a sign-out cut short before has no data left to open with.
-        if (current) {
-          localStorage.removeItem(LOGIN);
-          tabs.postMessage({ ended: this.login } satisfies Message);
-        }
-      });
-    })());
+    if (this.ended && (keep || !this.ended.keep)) return this.ended.done;
+    const stopped = this.ended?.done ?? this.stop();
+    const done = stopped.then(() => turn(() => this.leave(keep)));
+    this.ended = { done, keep };
+    return done;
+  }
+
+  private async stop() {
+    this.socket.stop();
+    await this.saver.close();
+  }
+
+  /** Deletes what the session leaves on this device, unless `keep`; in `turn`. Until then the other
+   * tabs are heard, so that the sign-in ending elsewhere has the data deleted after all. */
+  private async leave(keep: boolean) {
+    tabs.removeEventListener("message", this.heard);
+    const latest = cachedLogin();
+    const current = latest?.id === this.login;
+    if (latest && !current && latest.user.id === this.user.id) {
+      // Signed in as the same user again since: the data is that sign-in's now.
+      if (!keep) await forgetCopy(this.user.id, this.copy);
+    } else if (!keep || (latest && !current)) {
+      // Kept for the same user only: someone else's sign-in deleted it, but this session may have
+      // saved some again since.
+      await forget(this.user.id);
+    }
+    // The sign-in goes last: a sign-out cut short before has no data left to open with.
+    if (current) localStorage.removeItem(LOGIN);
+    // To the sign-in's other tabs, whether or not it is still the latest.
+    if (!keep) tabs.postMessage({ ended: this.login } satisfies Message);
   }
 
   /** Signs out on the server, unless the browser has signed in again since in another tab: the
@@ -235,6 +259,24 @@ export class Session {
     });
     await this.close();
   }
+}
+
+/** Makes `user` the device's latest sign-in and loads their data; anyone else's goes. In `turn`. */
+async function claim(user: User, copy: string) {
+  const login: Login = { id: crypto.randomUUID(), user };
+  localStorage.setItem(LOGIN, JSON.stringify(login));
+  localStorage.removeItem(SIGNED_OUT);
+  tabs.postMessage({ signedIn: login } satisfies Message);
+  await forgetOthers(user.id);
+  return { login, saved: await load(user.id, copy) };
+}
+
+/** A session in `login`, from the user's data saved on this device, or else a fresh copy from the
+ * server. */
+async function start({ id, user }: Login, copy: string, saved: Saved | undefined) {
+  if (saved) return new Session(user, id, copy, saved);
+  const { seq, folders, tasks, dependencies } = await download(user.id);
+  return new Session(user, id, copy, { ...Store.empty(), seq, base: { folders, tasks, dependencies } });
 }
 
 /** The user's data from the server, unless this browser has signed in as someone else by now. */

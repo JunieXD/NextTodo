@@ -22,7 +22,7 @@ export function App() {
   if (state.kind === "out") {
     return (
       <Root className="app">
-        <Login notice={state.notice} onSignedIn={async (user) => setState({ kind: "in", session: await Session.open(user) })} />
+        <Login notice={state.notice} onSignIn={async (request) => setState({ kind: "in", session: await Session.open(request) })} />
       </Root>
     );
   }

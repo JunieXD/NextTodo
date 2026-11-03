@@ -6,7 +6,8 @@ import type { User } from "../api/types/User";
 import { Seg } from "../ui/controls";
 import { Icon } from "../ui/icons";
 
-export function Login({ onSignedIn, notice }: { onSignedIn(user: User): Promise<void>; notice?: string }) {
+/** `onSignIn` signs in with `request`, which asks the server and says who signed in. */
+export function Login({ onSignIn, notice }: { onSignIn(request: () => Promise<User>): Promise<void>; notice?: string }) {
   const invite = new URLSearchParams(location.search).get("invite") ?? "";
   const [mode, setMode] = useState<"login" | "register">(invite ? "register" : "login");
   const [form, setForm] = useState({ invite, username: "", display_name: "", password: "" });
@@ -25,9 +26,11 @@ export function Login({ onSignedIn, notice }: { onSignedIn(user: User): Promise<
         mode === "login"
           ? { username: form.username.trim(), password: form.password, device: deviceName() }
           : { ...form, invite: form.invite.trim(), username: form.username.trim(), display_name: form.display_name.trim(), device: deviceName() };
-      const session = await api<Session>("POST", mode === "login" ? "/auth/login" : "/auth/register", body);
-      if (invite) history.replaceState(null, "", "/");
-      await onSignedIn(session.user);
+      await onSignIn(async () => {
+        const session = await api<Session>("POST", mode === "login" ? "/auth/login" : "/auth/register", body);
+        if (invite) history.replaceState(null, "", "/");
+        return session.user;
+      });
     } catch (e) {
       if (!(e instanceof ApiError)) throw e;
       setError({ message: e.message, field: e.field });

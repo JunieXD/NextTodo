@@ -77,6 +77,8 @@ object Widget {
         val watched = listOf(prefs(context), Server.prefs(context))
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> trySend(shown(context)) }
         watched.forEach { it.registerOnSharedPreferenceChangeListener(listener) }
+        // Changed maybe since read for the first composition, before the listener was there.
+        trySend(shown(context))
         awaitClose { watched.forEach { it.unregisterOnSharedPreferenceChangeListener(listener) } }
     }
 

@@ -3,11 +3,15 @@
 
 mod reminders;
 
+use std::process::Command;
+
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{ActivationPolicy, AppHandle, Emitter, Manager, RunEvent, WindowEvent};
+use tauri::webview::NewWindowResponse;
+use tauri::{ActivationPolicy, AppHandle, Emitter, Manager, RunEvent, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_notification::NotificationExt;
 
 /// Started at login: in the menu bar only, without the window.
 const HIDDEN: &str = "--hidden";
@@ -18,6 +22,22 @@ fn show(app: &AppHandle) {
     let window = app.get_webview_window("main").expect("the main window is in tauri.conf.json");
     // Nothing to do about a window that the system won't show.
     let _ = window.show().and_then(|()| window.unminimize()).and_then(|()| window.set_focus());
+}
+
+/// The main window of tauri.conf.json, where it is left to be made here: links that would open a
+/// new one, like those in descriptions, open in the default browser or mail app instead.
+fn window(app: &AppHandle) -> tauri::Result<()> {
+    let config = app.config().app.windows.iter().find(|w| w.label == "main").expect("the main window is in tauri.conf.json");
+    WebviewWindowBuilder::from_config(app, config)?
+        .on_new_window(|url, _| {
+            if matches!(url.scheme(), "http" | "https" | "mailto") {
+                // Nothing to do about a link the system won't open.
+                let _ = Command::new("/usr/bin/open").arg(url.as_str()).status();
+            }
+            NewWindowResponse::Deny
+        })
+        .build()?;
+    Ok(())
 }
 
 /// The window, with the quick add field focused.
@@ -69,10 +89,22 @@ pub fn run() {
                 .build(),
         )
         .manage(reminders::Reminders::default())
-        .invoke_handler(tauri::generate_handler![reminders::set_reminders])
+        .invoke_handler(tauri::generate_handler![reminders::set_reminders, reminders::clear_reminders])
         .setup(move |app| {
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
+            window(app.handle())?;
             tray(app.handle())?;
+            // A click on a reminder opens its task.
+            let handle = app.handle().clone();
+            app.notification().on_action(move |action| {
+                if action.action_id() != "tap" {
+                    return;
+                }
+                if let Some(task) = action.notification().and_then(|n| n.extra().get("task")) {
+                    show(&handle);
+                    let _ = handle.emit_to("main", "open-task", task);
+                }
+            })?;
             // Taken by another app, the shortcut does nothing; the menu bar icon still works.
             if let Err(e) = app.global_shortcut().register(shortcut) {
                 eprintln!("快捷键 ⌃⌥Space 没能注册：{e}");

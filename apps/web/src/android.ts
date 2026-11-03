@@ -22,7 +22,8 @@ export const NextTodo = registerPlugin<NextTodoPlugin>("NextTodo");
 /** How many reminders are kept scheduled ahead: the system limits an app's alarms. */
 const AHEAD = 50;
 
-/** Changes coming close together are handled once. */
+/** Changes coming close together are handled once, at most this long after the first: a stream of
+ * them does not hold back a reminder. */
 const SETTLE_MS = 2000;
 
 /** Updates and clearing go one at a time, across sessions too: an update may wait for the user to
@@ -80,13 +81,15 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
     });
   };
   const changed = () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => inTurn(update).catch(failed), SETTLE_MS);
+    timer ??= setTimeout(() => {
+      timer = undefined;
+      inTurn(update).catch(failed);
+    }, SETTLE_MS);
   };
   const shown = () => document.visibilityState === "visible" && changed();
   const unsubscribe = store.subscribe(changed);
   document.addEventListener("visibilitychange", shown);
-  changed();
+  inTurn(update).catch(failed);
   return async () => {
     unsubscribe();
     document.removeEventListener("visibilitychange", shown);

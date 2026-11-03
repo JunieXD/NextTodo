@@ -18,6 +18,8 @@ pub struct Reminder {
     body: String,
     /// When to show it, in Unix milliseconds.
     at: i64,
+    /// The task, which a click on the reminder opens.
+    task: String,
 }
 
 #[derive(Default)]
@@ -37,6 +39,12 @@ pub fn set_reminders(state: State<Reminders>, reminders: Vec<Reminder>) {
     state.changed.notify_one();
 }
 
+/// Takes back every reminder, those due but not shown yet too: signed out.
+#[tauri::command]
+pub fn clear_reminders(state: State<Reminders>) {
+    state.list.lock().expect("never poisoned").clear();
+}
+
 fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).expect("after 1970").as_millis() as i64
 }
@@ -51,7 +59,7 @@ pub fn start(app: AppHandle) {
             let (due, rest): (Vec<_>, Vec<_>) = list.drain(..).partition(|r| r.at <= now);
             *list = rest;
             for r in due {
-                if let Err(e) = app.notification().builder().title(&r.title).body(&r.body).show() {
+                if let Err(e) = app.notification().builder().title(&r.title).body(&r.body).extra("task", &r.task).show() {
                     eprintln!("提醒没能弹出：{e}");
                 }
             }

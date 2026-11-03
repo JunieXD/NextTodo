@@ -19,7 +19,8 @@ serde = { version = "1", features = ["derive"] }
 tauri = { version = "2.12.5", features = ["tray-icon", "image-png"] }
 tauri-plugin-autostart = "2.7.0"
 tauri-plugin-global-shortcut = "2.4.1"
-tauri-plugin-http = "2.8.3"
+# Without the default cookie jar: the app signs in with its token only.
+tauri-plugin-http = { version = "2.8.3", default-features = false, features = ["rustls-tls", "http2", "charset", "system-proxy"] }
 tauri-plugin-notification = "2.8.0"
 
 [lints.rust]

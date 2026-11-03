@@ -12,7 +12,7 @@ use tauri_plugin_notification::NotificationExt;
 /// a reminder due meanwhile would otherwise come as late as the sleep was long.
 const LOOK_AGAIN: Duration = Duration::from_secs(30);
 
-#[derive(Deserialize)]
+#[derive(Deserialize, PartialEq)]
 pub struct Reminder {
     title: String,
     body: String,
@@ -28,7 +28,12 @@ pub struct Reminders {
 
 #[tauri::command]
 pub fn set_reminders(state: State<Reminders>, reminders: Vec<Reminder>) {
-    *state.list.lock().expect("never poisoned") = reminders;
+    let mut list = state.list.lock().expect("never poisoned");
+    // The list handed over has only the ones to come. Ones due already that the thread has yet to
+    // show, as when the Mac has just woken, are still shown, once.
+    let now = now_ms();
+    list.retain(|r| r.at <= now && !reminders.contains(r));
+    list.extend(reminders);
     state.changed.notify_one();
 }
 

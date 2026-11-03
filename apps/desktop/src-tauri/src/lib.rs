@@ -5,7 +5,7 @@ mod reminders;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
+use tauri::{ActivationPolicy, AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 
@@ -13,6 +13,8 @@ use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 const HIDDEN: &str = "--hidden";
 
 fn show(app: &AppHandle) {
+    // Started at login in the menu bar only, the app takes its place in the Dock with the window.
+    let _ = app.set_activation_policy(ActivationPolicy::Regular);
     let window = app.get_webview_window("main").expect("the main window is in tauri.conf.json");
     // Nothing to do about a window that the system won't show.
     let _ = window.show().and_then(|()| window.unminimize()).and_then(|()| window.set_focus());
@@ -76,7 +78,9 @@ pub fn run() {
                 eprintln!("快捷键 ⌃⌥Space 没能注册：{e}");
             }
             reminders::start(app.handle().clone());
-            if !std::env::args().any(|a| a == HIDDEN) {
+            if std::env::args().any(|a| a == HIDDEN) {
+                app.set_activation_policy(ActivationPolicy::Accessory);
+            } else {
                 show(app.handle());
             }
             Ok(())

@@ -3,7 +3,7 @@
 
 import { ChevronRight, CircleCheck, Folder as FolderIcon, PanelLeft, PanelRight, Search } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import { Redirect, useLocation } from "wouter";
+import { Redirect, useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
 import { formatToday } from "../domain/dates";
 import { useConnection, useSession, useView } from "../session";
@@ -20,6 +20,9 @@ export function Desktop({ sideOpen, paneOpen, toggleSide, togglePane, onSettings
   const { selected } = useSelection();
   const now = useNow();
   const [query, setQuery] = useState("");
+  // Quick add (`/?add`) is on the page of what to do next, which a search covers.
+  const [params] = useSearchParams();
+  if (params.has("add") && query) setQuery("");
   const [view] = useFolderView();
   const folder = location.match(/^\/folders\/([^/]+)$/)?.[1] ?? null;
   const at = location.startsWith("/folders") ? (folder ?? "root") : "next";

@@ -4,11 +4,12 @@
   "description": "What the web app in the main window may use.",
   "windows": ["main"],
   "permissions": [
-    "core:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
     "autostart:default",
     {
       "identifier": "http:default",
-      "allow": [{ "url": "https://*" }, { "url": "http://*" }]
+      "allow": [{ "url": "https://*:*" }, { "url": "http://*:*" }]
     }
   ]
 }

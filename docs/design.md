@@ -143,7 +143,7 @@ tasks:
 
 - 用户名加密码登录，密码用 Argon2id 存储。
 - 第一个管理员在服务器上用命令行创建。其他人注册需要邀请码，邀请码由管理员生成，每个只能用一次。
-- 登录后每台设备得到一个会话令牌：网页存在 HttpOnly Cookie 里，App 存在系统安全存储里。设置里可以看到并注销各设备。
+- 登录后每台设备得到一个会话令牌：网页存在 HttpOnly Cookie 里，App 存在 App 私有的存储里（Android 是 SharedPreferences，小组件也要读；macOS 是 WebView 的 `localStorage`），没有另外加密。设置里可以看到并注销各设备。
 - 每个用户的数据完全隔离。所有表都带 `owner_id`，服务端在每个查询上按用户过滤。
 - 第一版不做共享。以后要做文件夹共享时，加成员表并扩展同步的可见范围即可，现有数据不用改。
 
@@ -213,7 +213,7 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 | 类型共享 | ts-rs 从 Rust 类型生成 TypeScript 类型 |
 
 - 前端离线时需要自己计算派生状态和排序，所以这部分算法在 TypeScript 里也实现一份，和 Rust 版用同一套测试数据校验。
-- Rust 部分是一个 Cargo workspace（包括 Tauri 的 `src-tauri`），前端部分是一个 pnpm workspace。
+- Rust 部分是一个 Cargo workspace，Tauri 的 `src-tauri` 单独一个（免得 `cargo test` 每次都编译 Tauri）；前端部分是一个 pnpm workspace。
 
 ### 哈希用途
 

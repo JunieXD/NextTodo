@@ -1,6 +1,7 @@
 // The signed-in app: the layout for the screen size, settings, and what the session reports.
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "wouter";
 import { app } from "../api/http";
 import type { LogEntry } from "../api/types/LogEntry";
 import type { Board } from "../domain/board";
@@ -16,6 +17,9 @@ import { Settings } from "./Settings";
 export function Main({ session, onSignedOut }: { session: Session; onSignedOut(notice?: string): void }) {
   const wide = useWide();
   const [settings, setSettings] = useState(false);
+  // Quick add from the widget, the menu bar or the shortcut (`/?add`) is not to be covered.
+  const [params] = useSearchParams();
+  if (params.has("add") && settings) setSettings(false);
   const [sideOpen, setSideOpen] = useState(true);
   const [paneOpen, setPaneOpen] = useState(true);
   const signOut = async () => {

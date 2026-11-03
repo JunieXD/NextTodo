@@ -19,6 +19,9 @@ interface NextTodoPlugin {
 
 export const NextTodo = registerPlugin<NextTodoPlugin>("NextTodo");
 
+/** How many reminders are kept scheduled ahead: the system limits an app's alarms. */
+const AHEAD = 50;
+
 /** Changes coming close together are handled once. */
 const SETTLE_MS = 2000;
 
@@ -45,7 +48,7 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
     const { board } = store.getView();
     await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board)) });
     const now = new Date();
-    const wanted = reminders(board, now);
+    const wanted = reminders(board, now).slice(0, AHEAD);
     // Without the permission for exact alarms, the plugin would open the system settings on every
     // schedule; ask for inexact ones instead. The settings page offers to allow it.
     const exact = (await LocalNotifications.checkExactNotificationSetting()).exact_alarm === "granted";

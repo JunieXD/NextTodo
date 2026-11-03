@@ -2,16 +2,22 @@
 
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { useEffect, useState } from "react";
+import { useFeedback } from "../ui/feedback";
 
 export function StartAtLogin() {
+  const { snack } = useFeedback();
   const [on, setOn] = useState<boolean | null>(null);
   useEffect(() => {
-    isEnabled().then(setOn);
-  }, []);
+    isEnabled().then(setOn, (e) => snack(`没能读出开机自启的设置：${e}`));
+  }, [snack]);
   if (on === null) return null;
   const toggle = async () => {
-    await (on ? disable() : enable());
-    setOn(await isEnabled());
+    try {
+      await (on ? disable() : enable());
+      setOn(await isEnabled());
+    } catch (e) {
+      snack(`没能${on ? "关闭" : "开启"}开机自启：${e}`);
+    }
   };
   return (
     <>

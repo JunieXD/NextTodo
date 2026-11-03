@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Build
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.core.app.NotificationManagerCompat
 import androidx.glance.appwidget.updateAll
@@ -24,6 +25,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.sync.Mutex
@@ -34,8 +36,8 @@ import org.json.JSONArray
 /** A task as the widget shows it. Its number is the id of its reminder. */
 data class Item(val id: String, val number: Int, val title: String, val folder: String, val due: Due?)
 
-/** What the widget shows: the list, or that the app is signed out. */
-data class Shown(val signedIn: Boolean, val items: List<Item>)
+/** What the widget shows: the list with the tasks just ticked off in it, or that the app is signed out. */
+data class Shown(val signedIn: Boolean, val items: List<Item>, val ticked: Set<String>)
 
 /** The widget's list, kept in its own preferences: written by the app, or fetched from the server. */
 object Widget {
@@ -69,7 +71,23 @@ object Widget {
     }
 
     /** What to show now. */
-    fun shown(context: Context) = Shown(Server.token(context) != null, items(context))
+    fun shown(context: Context) = Shown(Server.token(context) != null, items(context), prefs(context).getStringSet("ticked", emptySet())!!)
+
+    /** Shows a task as done, or not any more, while it is being completed. */
+    private suspend fun tick(context: Context, task: String, on: Boolean) {
+        synchronized(this) {
+            val ticked = prefs(context).getStringSet("ticked", emptySet())!!
+            prefs(context).edit().putStringSet("ticked", if (on) ticked + task else ticked - task).apply()
+        }
+        NextWidget().updateAll(context)
+    }
+
+    /** Takes a task done on the server out of the list, until the next list comes. */
+    private suspend fun drop(context: Context, task: String) {
+        val list = JSONArray(prefs(context).getString("tasks", "[]"))
+        val kept = JSONArray((0 until list.length()).map(list::getJSONObject).filter { it.getString("id") != task })
+        write(context, asked.incrementAndGet(), kept.toString())
+    }
 
     /** What to show, each time the list or the sign-in changes: an empty list stays empty when the
      * app signs in or out. */
@@ -96,24 +114,34 @@ object Widget {
         if (Server.token(context) == token) write(context, number, tasks)
     }
 
-    /** Marks a task done, takes back its reminder (`number`), and fetches the list again. */
+    /** Marks a task done, takes back its reminder (`number`), and fetches the list again. The task
+     * shows as done at once, and stays a moment before it goes, as in the app. */
     suspend fun complete(context: Context, task: String, number: Int) {
         val token = Server.token(context) ?: return
+        val start = SystemClock.elapsedRealtime()
+        tick(context, task, true)
         try {
             Server.complete(context, token, task)
         } catch (e: Exception) {
+            tick(context, task, false)
             if (e is HttpError && e.status == 401) ended(context, token) else toast(context, "完成失败：${e.message}")
             return
         }
         // Signed in again meanwhile, maybe as someone else, whose reminder this number may be.
-        if (Server.token(context) != token) return
+        if (Server.token(context) != token) return tick(context, task, false)
         cancelReminder(context, number)
+        delay(LINGER_MS - (SystemClock.elapsedRealtime() - start))
+        drop(context, task)
+        tick(context, task, false)
         try {
             refresh(context)
         } catch (e: Exception) {
             toast(context, "刷新失败：${e.message}")
         }
     }
+
+    /** How long a task ticked off stays in the list, as in the app (`apps/web/src/views/marks.tsx`). */
+    private const val LINGER_MS = 900L
 
     /** The server says the session `token` has ended: unless the app has signed in again since, sign
      * out, and the widget asks to sign in again. */

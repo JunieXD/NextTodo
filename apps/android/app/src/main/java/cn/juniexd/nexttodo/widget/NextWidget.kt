@@ -24,20 +24,23 @@ import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
-import androidx.glance.appwidget.lazy.items
+import androidx.glance.appwidget.lazy.itemsIndexed
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.color.ColorProvider
 import androidx.glance.layout.Alignment
+import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
+import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
 import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
+import androidx.glance.text.TextDecoration
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import cn.juniexd.nexttodo.MainActivity
@@ -52,6 +55,10 @@ private object Colors {
     val primary = ColorProvider(day = Color(0xFF1B6B51), night = Color(0xFF8BD6B6))
     val overdue = ColorProvider(day = Color(0xFFBA1A1A), night = Color(0xFFFFB4AB))
     val today = ColorProvider(day = Color(0xFF8A5100), night = Color(0xFFFFB870))
+    val onPrimary = ColorProvider(day = Color(0xFFFFFFFF), night = Color(0xFF003827))
+    val done = ColorProvider(day = Color(0xFF707973), night = Color(0xFF89938D))
+    /** Fainter than outline-variant: the widget can't draw the app's half-pixel lines. */
+    val divider = ColorProvider(day = Color(0xFFDDE4DF), night = Color(0xFF2A302D))
 }
 
 private val TaskKey = ActionParameters.Key<String>("task")
@@ -69,13 +76,13 @@ class NextWidget : GlanceAppWidget() {
         // only recompose: what to show is read here, again on every change.
         provideContent {
             val shown by changes.collectAsState(Widget.shown(context))
-            Content(context, shown.items, shown.signedIn, LocalDateTime.now())
+            Content(context, shown, LocalDateTime.now())
         }
     }
 }
 
 @Composable
-private fun Content(context: Context, items: List<Item>, signedIn: Boolean, now: LocalDateTime) {
+private fun Content(context: Context, shown: Shown, now: LocalDateTime) {
     Column(GlanceModifier.fillMaxSize().background(Colors.background).cornerRadius(20.dp).padding(horizontal = 14.dp, vertical = 10.dp)) {
         Row(GlanceModifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -88,26 +95,48 @@ private fun Content(context: Context, items: List<Item>, signedIn: Boolean, now:
             Icon(R.drawable.ic_widget_add, "添加事项", open(context, "nexttodo://add"))
         }
         when {
-            !signedIn -> Note("打开 NextTodo 登录", GlanceModifier.clickable(open(context, "nexttodo://home")))
-            items.isEmpty() -> Note("暂无可做的事项")
+            !shown.signedIn -> Note("打开 NextTodo 登录", GlanceModifier.clickable(open(context, "nexttodo://home")))
+            shown.items.isEmpty() -> Note("暂无可做的事项")
             else -> LazyColumn {
-                items(items) { item -> TaskRow(context, item, now) }
+                itemsIndexed(shown.items) { i, item ->
+                    Column {
+                        if (i > 0) Divider()
+                        TaskRow(context, item, item.id in shown.ticked, now)
+                    }
+                }
             }
         }
     }
 }
 
+/** A line between tasks, from where the titles start, as in the app's lists. */
 @Composable
-private fun TaskRow(context: Context, item: Item, now: LocalDateTime) {
-    Row(GlanceModifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Image(
-            ImageProvider(R.drawable.ic_widget_check),
-            "标为完成",
-            GlanceModifier.size(26.dp).padding(2.dp).clickable(actionRunCallback<CompleteAction>(actionParametersOf(TaskKey to item.id, NumberKey to item.number))),
-            colorFilter = ColorFilter.tint(Colors.primary),
-        )
+private fun Divider() {
+    Box(GlanceModifier.fillMaxWidth().padding(start = 36.dp)) {
+        Spacer(GlanceModifier.fillMaxWidth().height(1.dp).background(Colors.divider))
+    }
+}
+
+/** A task; one `ticked` off is shown done, while it is being completed. */
+@Composable
+private fun TaskRow(context: Context, item: Item, ticked: Boolean, now: LocalDateTime) {
+    Row(GlanceModifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (ticked) {
+            Box(GlanceModifier.size(26.dp).padding(2.dp), contentAlignment = Alignment.Center) {
+                Image(ImageProvider(R.drawable.ic_widget_dot), "已完成", GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(Colors.primary))
+                Image(ImageProvider(R.drawable.ic_widget_tick), null, GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(Colors.onPrimary))
+            }
+        } else {
+            Image(
+                ImageProvider(R.drawable.ic_widget_check),
+                "标为完成",
+                GlanceModifier.size(26.dp).padding(2.dp).clickable(actionRunCallback<CompleteAction>(actionParametersOf(TaskKey to item.id, NumberKey to item.number))),
+                colorFilter = ColorFilter.tint(Colors.primary),
+            )
+        }
         Column(GlanceModifier.defaultWeight().padding(start = 10.dp).clickable(open(context, "nexttodo://task/${item.id}"))) {
-            Text(item.title, style = TextStyle(color = Colors.text, fontSize = 15.sp), maxLines = 1)
+            val title = if (ticked) TextStyle(color = Colors.done, fontSize = 15.sp, textDecoration = TextDecoration.LineThrough) else TextStyle(color = Colors.text, fontSize = 15.sp)
+            Text(item.title, style = title, maxLines = 1)
             val meta = listOfNotNull(item.folder.takeIf { it.isNotEmpty() }, item.due?.label(now)).joinToString(" · ")
             if (meta.isNotEmpty()) {
                 val color = when {

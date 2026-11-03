@@ -4,6 +4,7 @@
 
 import "fake-indexeddb/auto";
 import { openDB } from "idb";
+import { v7 as uuidv7 } from "uuid";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { User } from "./api/types/User";
 import type { Session } from "./session";
@@ -199,6 +200,29 @@ test("signing out while another tab signs in as the same user leaves that sign-i
   expect([server.ended.has(cookie), login().user.id, marked()]).toEqual([false, u.id, undefined]);
   await b.signOut();
   expect(server.ended.has(cookie)).toBe(true);
+});
+
+test("a sign-in or sign-out heard late leaves a later sign-in alone", async () => {
+  const [u, v] = [user(17), user(18)];
+  const earlier = uuidv7();
+  const b = await signIn(u);
+  const heard = watch(b);
+  const { id } = change(b);
+  await vi.waitFor(() => expect(b.store.unconfirmed).toHaveLength(2));
+  const late = new BroadcastChannel("nexttodo");
+  late.postMessage({ signedOut: { id: earlier, user: u } });
+  late.postMessage({ signedIn: { id: earlier, user: v } });
+  // Messages come in order: once the change is dropped, the two before it have been heard.
+  late.postMessage({ rejected: id });
+  await vi.waitFor(() => expect(b.store.unconfirmed).toHaveLength(1));
+  late.close();
+  expect([heard.signedOut, login().user.id]).toEqual([false, u.id]);
+});
+
+test("a session ended before the UI listens tells it once it does", async () => {
+  const a = await signIn(user(19));
+  kick(sockets.at(-1)!);
+  expect(watch(a).signedOut).toBe(true);
 });
 
 test("signing out after the server stopped accepting the session deletes the data after all", async () => {

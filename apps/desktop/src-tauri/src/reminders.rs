@@ -28,14 +28,19 @@ pub struct Reminders {
     changed: Condvar,
 }
 
+/// The kind of notification a reminder is: one with an 打开 button. Only with a button does macOS
+/// wait for a click on the notification and report it.
+pub const KIND: &str = "reminder";
+pub const OPEN: &str = "open";
+
+/// Takes over the reminders to come, and those due since the last handover that are still wanted.
+/// One of those the thread has yet to show, as when the Mac has just woken, is still shown, once.
 #[tauri::command]
 pub fn set_reminders(state: State<Reminders>, reminders: Vec<Reminder>) {
     let mut list = state.list.lock().expect("never poisoned");
-    // The list handed over has only the ones to come. Ones due already that the thread has yet to
-    // show, as when the Mac has just woken, are still shown, once.
     let now = now_ms();
-    list.retain(|r| r.at <= now && !reminders.contains(r));
-    list.extend(reminders);
+    let kept: Vec<_> = reminders.into_iter().filter(|r| r.at > now || list.contains(r)).collect();
+    *list = kept;
     state.changed.notify_one();
 }
 
@@ -59,7 +64,7 @@ pub fn start(app: AppHandle) {
             let (due, rest): (Vec<_>, Vec<_>) = list.drain(..).partition(|r| r.at <= now);
             *list = rest;
             for r in due {
-                if let Err(e) = app.notification().builder().title(&r.title).body(&r.body).extra("task", &r.task).show() {
+                if let Err(e) = app.notification().builder().title(&r.title).body(&r.body).action_type_id(KIND).extra("task", &r.task).show() {
                     eprintln!("提醒没能弹出：{e}");
                 }
             }

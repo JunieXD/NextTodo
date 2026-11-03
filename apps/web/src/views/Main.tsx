@@ -1,7 +1,7 @@
 // The signed-in app: the layout for the screen size, settings, and what the session reports.
 
 import { useEffect, useState } from "react";
-import { useSearchParams } from "wouter";
+import { useLocation, useSearchParams } from "wouter";
 import { app } from "../api/http";
 import type { LogEntry } from "../api/types/LogEntry";
 import type { Board } from "../domain/board";
@@ -17,11 +17,18 @@ import { Settings } from "./Settings";
 export function Main({ session, onSignedOut }: { session: Session; onSignedOut(notice?: string): void }) {
   const wide = useWide();
   const [settings, setSettings] = useState(false);
-  // Quick add from the widget, the menu bar or the shortcut (`/?add`) is not to be covered.
-  const [params] = useSearchParams();
-  if (params.has("add") && settings) setSettings(false);
   const [sideOpen, setSideOpen] = useState(true);
   const [paneOpen, setPaneOpen] = useState(true);
+  // Opened from outside the app: quick add from the widget, the menu bar or the shortcut (`/?add`), a
+  // task from the widget or a reminder (`/?open=<task>`). Settings and a closed pane make way.
+  const [params] = useSearchParams();
+  const [, navigate] = useLocation();
+  const open = params.get("open");
+  if ((open || params.has("add")) && settings) setSettings(false);
+  if (open && !paneOpen) setPaneOpen(true);
+  useEffect(() => {
+    if (open) navigate(`/?t=${open}`, { replace: true, state: { sheet: true } });
+  }, [open, navigate]);
   const signOut = async () => {
     await session.signOut();
     onSignedOut();

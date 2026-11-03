@@ -11,7 +11,7 @@ use tauri::webview::NewWindowResponse;
 use tauri::{ActivationPolicy, AppHandle, Emitter, Manager, RunEvent, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
-use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_notification::{Action, ActionType, NotificationExt};
 
 /// Started at login: in the menu bar only, without the window.
 const HIDDEN: &str = "--hidden";
@@ -94,10 +94,12 @@ pub fn run() {
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
             window(app.handle())?;
             tray(app.handle())?;
-            // A click on a reminder opens its task.
+            // A click on a reminder, or on its button, opens its task.
+            let open = Action::builder(reminders::OPEN, "打开").build();
+            app.notification().register_action_types(vec![ActionType::builder(reminders::KIND).actions(vec![open]).build()])?;
             let handle = app.handle().clone();
             app.notification().on_action(move |action| {
-                if action.action_id() != "tap" {
+                if !matches!(action.action_id(), "tap" | reminders::OPEN) {
                     return;
                 }
                 if let Some(task) = action.notification().and_then(|n| n.extra().get("task")) {

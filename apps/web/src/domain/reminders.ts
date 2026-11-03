@@ -23,10 +23,10 @@ export function reminder(board: Board, t: Task): Reminder | null {
   return { id: t.number, at, title: t.title, body: `${formatDue(t.due, at)} 截止${where}`, task: t.id };
 }
 
-/** The reminders due after `now`, earliest first. */
-export function reminders(board: Board, now: Date): Reminder[] {
+/** The reminders due after `after`, earliest first. */
+export function reminders(board: Board, after: Date): Reminder[] {
   return board.snapshot.tasks
     .flatMap((t) => reminder(board, t) ?? [])
-    .filter((r) => r.at > now)
+    .filter((r) => r.at > after)
     .sort((a, b) => a.at.getTime() - b.at.getTime());
 }

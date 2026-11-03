@@ -112,7 +112,7 @@ export const clear = () =>
  * `nexttodo://home`. */
 function open(url: string) {
   const [, kind, id] = /^nexttodo:\/\/(task|add|home)\/?(.*)$/.exec(url) ?? [];
-  if (kind === "task") navigate(`/?t=${id}`, { state: { sheet: true } });
+  if (kind === "task") navigate(`/?open=${id}`);
   else if (kind === "add") navigate("/?add");
   else if (kind === "home") navigate("/");
 }

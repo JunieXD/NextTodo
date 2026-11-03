@@ -19,7 +19,15 @@ const hand = (list: { title: string; body: string; at: number; task: string }[])
  * how to stop and clear them. */
 export function watch(store: Store, failed: (e: unknown) => void): () => Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const update = () => hand(reminders(store.getView().board, new Date()).map((r) => ({ title: r.title, body: r.body, at: r.at.getTime(), task: r.task })));
+  // A handover carries the reminders due since the last one too, which the app may not have shown
+  // yet: of those, it shows the ones still wanted, and only those.
+  let since = new Date();
+  const update = () => {
+    const now = new Date();
+    const list = reminders(store.getView().board, since);
+    since = now;
+    return hand(list.map((r) => ({ title: r.title, body: r.body, at: r.at.getTime(), task: r.task })));
+  };
   const changed = () => {
     timer ??= setTimeout(() => {
       timer = undefined;
@@ -42,5 +50,5 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
 /** Listens for quick add from the menu bar icon and the global shortcut, and for clicks on reminders. */
 export async function listen() {
   await on("quick-add", () => navigate("/?add"));
-  await on<string>("open-task", (e) => navigate(`/?t=${e.payload}`, { state: { sheet: true } }));
+  await on<string>("open-task", (e) => navigate(`/?open=${e.payload}`));
 }

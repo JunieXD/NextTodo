@@ -16,21 +16,28 @@ export class ApiError extends Error {
 
 export const OFFLINE = "offline";
 
+/** How long a request may take, its answer included: some are made while the other tabs wait to
+ * sign in or out. */
+const TIMEOUT_MS = 20_000;
+
 export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
+  let text: string;
   try {
     res = await fetch(`/api/v1${path}`, {
       method,
       headers: body === undefined ? {} : { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
     });
+    text = await res.text();
   } catch {
     throw new ApiError(0, OFFLINE, "连不上服务器，请检查网络");
   }
   if (res.status === 204) return undefined as T;
-  if (res.ok) return (await res.json()) as T;
+  if (res.ok) return JSON.parse(text) as T;
   // A proxy in between may answer with a page of its own.
-  const error: Partial<ErrorBody> = await res.json().catch(() => ({}));
+  const error: Partial<ErrorBody> = res.headers.get("Content-Type")?.startsWith("application/json") ? JSON.parse(text) : {};
   const field = (error.details as { field?: string } | undefined)?.field;
   throw new ApiError(res.status, error.code ?? "error", error.message ?? `服务器出错了（${res.status}）`, field);
 }

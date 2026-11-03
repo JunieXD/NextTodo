@@ -32,8 +32,8 @@ export function Login({ onSignIn, notice }: { onSignIn(request: () => Promise<Us
         return session.user;
       });
     } catch (e) {
-      if (!(e instanceof ApiError)) throw e;
-      setError({ message: e.message, field: e.field });
+      // Saving on this device can fail too, say in a private window.
+      setError(e instanceof ApiError ? { message: e.message, field: e.field } : { message: `没能登录：${e}` });
       setBusy(false);
     }
   };

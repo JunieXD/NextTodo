@@ -91,7 +91,8 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, rows: string,
 
     const down = (e: PointerEvent) => {
       const row = (e.target as Element).closest<HTMLElement>(rows);
-      if (!e.isPrimary || e.button !== 0 || !row || row.parentElement !== el || lifted) return;
+      // With Control held, a Mac takes the click for a right click: it opens the row's menu.
+      if (!e.isPrimary || e.button !== 0 || e.ctrlKey || !row || row.parentElement !== el || lifted) return;
       spent = null;
       press = { id: e.pointerId, x: e.clientX, y: e.clientY, row, timer: e.pointerType === "mouse" ? undefined : setTimeout(lift, HOLD_MS) };
     };

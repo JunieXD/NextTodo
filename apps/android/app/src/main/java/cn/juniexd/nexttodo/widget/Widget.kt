@@ -22,7 +22,6 @@ import com.capacitorjs.plugins.localnotifications.TimedNotificationPublisher
 import java.time.LocalDate
 import java.time.LocalTime
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
@@ -46,19 +45,24 @@ data class Shown(val signedIn: Boolean, val items: List<Item>, val ticked: Set<S
 object Widget {
     private fun prefs(context: Context) = context.getSharedPreferences("widget", Context.MODE_PRIVATE)
 
-    /** Lists are numbered as they are asked for, and one is written only when no later one has been. */
-    private val asked = AtomicLong()
-    private var written = 0L
+    /** A list is as of a change on the server, by its sequence number, kept with it: one never
+     * replaces a newer one. The app's copy can be behind the server's, just started or back from
+     * being frozen in the background, and its list older than the one the widget fetched. A list
+     * as of no change, the empty one of signing out, replaces any, and any replaces it. */
+    private const val SEQ = "seq"
     private val writing = Mutex()
 
-    /** Shows `tasks`, the app's list, as JSON in the shape of the `next` tool's data. */
-    suspend fun show(context: Context, tasks: String) = write(context, asked.incrementAndGet(), tasks)
+    /** Shows `tasks`, the app's list, as JSON in the shape of the `next` tool's data, as of the
+     * change `seq` its copy has. */
+    suspend fun show(context: Context, tasks: String, seq: Long?) = write(context, tasks, seq)
 
-    private suspend fun write(context: Context, number: Long, tasks: String) {
+    private suspend fun write(context: Context, tasks: String, seq: Long?) {
         writing.withLock {
-            if (number < written) return
-            written = number
-            prefs(context).edit().putString("tasks", tasks).apply()
+            val prefs = prefs(context)
+            if (seq != null && prefs.contains(SEQ) && seq < prefs.getLong(SEQ, 0)) return
+            val edit = prefs.edit().putString("tasks", tasks)
+            if (seq != null) edit.putLong(SEQ, seq) else edit.remove(SEQ)
+            edit.apply()
         }
         NextWidget().updateAll(context)
     }
@@ -92,16 +96,17 @@ object Widget {
         return Shown(token != null, items, ticked.keys)
     }
 
-    /** Takes a task done on the server in session `token` out of the list, until the next list comes,
-     * unless signed in again since. Lists asked for before, which may still have it, are not written
-     * any more. */
-    private suspend fun drop(context: Context, task: String, token: String) {
+    /** Takes a task done on the server in session `token`, by the change `seq`, out of the list,
+     * unless signed in again since, or the list is as of that change already. The list is then as
+     * of it: lists from before, which may still have the task, are not written any more. Until the
+     * next one comes, it may miss changes from elsewhere just before. */
+    private suspend fun drop(context: Context, task: String, token: String, seq: Long) {
         writing.withLock {
-            if (Server.token(context) != token) return@withLock
-            val list = JSONArray(prefs(context).getString("tasks", "[]"))
+            val prefs = prefs(context)
+            if (Server.token(context) != token || (prefs.contains(SEQ) && prefs.getLong(SEQ, 0) >= seq)) return@withLock
+            val list = JSONArray(prefs.getString("tasks", "[]"))
             val kept = (0 until list.length()).map(list::getJSONObject).filter { it.getString("id") != task }
-            written = asked.incrementAndGet()
-            prefs(context).edit().putString("tasks", JSONArray(kept).toString()).apply()
+            prefs.edit().putString("tasks", JSONArray(kept).toString()).putLong(SEQ, seq).apply()
         }
         NextWidget().updateAll(context)
     }
@@ -119,17 +124,16 @@ object Widget {
     }
 
     /** Fetches the list from the server when signed in. An answer for a session that has ended
-     * meanwhile, or older than a list written since, is dropped. */
+     * meanwhile is dropped. */
     suspend fun refresh(context: Context) {
         val token = Server.token(context) ?: return
-        val number = asked.incrementAndGet()
-        val tasks = try {
+        val (tasks, seq) = try {
             Server.next(context, token)
         } catch (e: HttpError) {
             if (e.status == 401) return ended(context, token)
             throw e
         }
-        if (Server.token(context) == token) write(context, number, tasks)
+        if (Server.token(context) == token) write(context, tasks, seq)
     }
 
     /** Marks a task done, takes back its reminder (`number`), and fetches the list again. The task
@@ -140,7 +144,7 @@ object Widget {
         shown(context).items.withIndex().find { it.value.id == task }?.let { row -> ticked.update { it + (task to Ticked(row, token)) } }
         try {
             NextWidget().updateAll(context)
-            try {
+            val seq = try {
                 Server.complete(context, token, task)
             } catch (e: Exception) {
                 if (e is HttpError && e.status == 401) ended(context, token) else toast(context, "完成失败：${e.message}")
@@ -150,7 +154,7 @@ object Widget {
             if (Server.token(context) != token) return
             cancelReminder(context, number)
             delay(LINGER_MS - (SystemClock.elapsedRealtime() - start))
-            drop(context, task, token)
+            drop(context, task, token, seq)
         } finally {
             // Signed in again, the same task may have been ticked off in the new session meanwhile.
             ticked.update { if (it[task]?.token == token) it - task else it }
@@ -169,7 +173,7 @@ object Widget {
     /** The server says the session `token` has ended: unless the app has signed in again since, sign
      * out, and the widget asks to sign in again. */
     private suspend fun ended(context: Context, token: String) {
-        if (Server.ended(context, token)) write(context, asked.incrementAndGet(), "[]")
+        if (Server.ended(context, token)) write(context, "[]", null)
     }
 
     /** Takes back a reminder the app scheduled with Capacitor's LocalNotifications (8.3), the way the

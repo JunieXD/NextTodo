@@ -3,5 +3,5 @@
     <string name="app_name">NextTodo</string>
     <string name="title_activity_main">NextTodo</string>
     <string name="package_name">cn.juniexd.nexttodo</string>
-    <string name="widget_description">显示当前可做的事项，点按即可完成</string>
+    <string name="widget_description">显示当前可做的事项，点圆圈即可完成</string>
 </resources>

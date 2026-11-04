@@ -50,6 +50,18 @@ async fn a_plan_builds_folders_tasks_and_dependencies_and_undoes_as_one_batch() 
 }
 
 #[tokio::test]
+async fn a_read_says_which_change_it_is_as_of() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let before = t.ok(&s, "next", json!({})).await["seq"].as_i64().unwrap();
+    let added = t.ok(&s, "add", json!({ "title": "交电费" })).await;
+    assert_eq!(added.get("seq"), None, "a write gives its batch instead");
+    let batch = added["data"]["batch"].as_i64().unwrap();
+    assert!(before < batch);
+    assert_eq!(t.ok(&s, "next", json!({})).await["seq"], batch);
+}
+
+#[tokio::test]
 async fn completing_a_task_reports_what_it_unlocks() {
     let t = TestApp::new();
     let s = t.admin().await;

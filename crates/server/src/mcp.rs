@@ -54,7 +54,7 @@ impl ServerHandler for Mcp {
         let auth = parts.extensions.remove::<Auth>().expect("authenticate runs before every request");
         let args = Value::Object(request.arguments.unwrap_or_default());
         let result = match tools::call(&self.state, auth, &request.name, args, None).await {
-            Ok(output) => CallToolResult::success(vec![ContentBlock::text(output.text)]),
+            Ok(reply) => CallToolResult::success(vec![ContentBlock::text(reply.output.text)]),
             Err(e) => CallToolResult::error(vec![ContentBlock::text(e.describe())]),
         };
         Ok(result.into())

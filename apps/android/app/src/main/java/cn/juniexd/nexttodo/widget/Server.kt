@@ -30,14 +30,16 @@ object Server {
         return true
     }
 
-    /** The ready tasks, as JSON in the shape of the `next` tool's data. */
-    suspend fun next(context: Context, token: String): String =
-        JSONObject(post(context, token, "/tools/next", JSONObject())).getJSONArray("data").toString()
+    /** The ready tasks, as JSON in the shape of the `next` tool's data, and the change they are as of. */
+    suspend fun next(context: Context, token: String): Pair<String, Long> {
+        val reply = JSONObject(post(context, token, "/tools/next", JSONObject()))
+        return reply.getJSONArray("data").toString() to reply.getLong("seq")
+    }
 
-    /** Marks a task done; one done already stays so. */
-    suspend fun complete(context: Context, token: String, task: String) {
+    /** Marks a task done; one done already stays so. Returns the change that did it. */
+    suspend fun complete(context: Context, token: String, task: String): Long {
         val op = JSONObject().put("op", "task.update").put("id", task).put("done", true)
-        post(context, token, "/mutations", JSONObject().put("id", uuid7()).put("ops", JSONArray().put(op)))
+        return JSONObject(post(context, token, "/mutations", JSONObject().put("id", uuid7()).put("ops", JSONArray().put(op)))).getLong("seq")
     }
 
     /** Throws `HttpError` with the server's message when the server turns the request down. */

@@ -117,10 +117,16 @@ private fun Divider() {
     }
 }
 
-/** A task; one `ticked` off is shown done, while it is being completed. */
+/** A task; one `ticked` off is shown done, while it is being completed. The circle completes it,
+ * the rest of the row opens it. The row is the first of the two to have an action: a launcher that
+ * takes a tap anywhere on a row of a list as a tap on the row runs the first action it finds in it,
+ * which is so the harmless one. */
 @Composable
 private fun TaskRow(context: Context, item: Item, ticked: Boolean, now: LocalDateTime) {
-    Row(GlanceModifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        GlanceModifier.fillMaxWidth().padding(vertical = 8.dp).clickable(open(context, "nexttodo://task/${item.id}")),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         if (ticked) {
             Box(GlanceModifier.size(26.dp).padding(2.dp), contentAlignment = Alignment.Center) {
                 Image(ImageProvider(R.drawable.ic_widget_dot), "已完成", GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(Colors.primary))
@@ -134,7 +140,7 @@ private fun TaskRow(context: Context, item: Item, ticked: Boolean, now: LocalDat
                 colorFilter = ColorFilter.tint(Colors.primary),
             )
         }
-        Column(GlanceModifier.defaultWeight().padding(start = 10.dp).clickable(open(context, "nexttodo://task/${item.id}"))) {
+        Column(GlanceModifier.defaultWeight().padding(start = 10.dp)) {
             val title = if (ticked) TextStyle(color = Colors.done, fontSize = 15.sp, textDecoration = TextDecoration.LineThrough) else TextStyle(color = Colors.text, fontSize = 15.sp)
             Text(item.title, style = title, maxLines = 1)
             val meta = listOfNotNull(item.folder.takeIf { it.isNotEmpty() }, item.due?.label(now)).joinToString(" · ")

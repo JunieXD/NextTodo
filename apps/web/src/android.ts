@@ -12,8 +12,9 @@ import { back } from "./ui/back";
 
 /** The app's own plugin, in `apps/android`. */
 interface NextTodoPlugin {
-  /** Hands the widget its list, as JSON in the shape of the `next` tool's data. */
-  updateWidget(o: { tasks: string }): Promise<void>;
+  /** Hands the widget its list, as JSON in the shape of the `next` tool's data, as of the change
+   * `seq`; without one, as when signing out, it replaces whatever the widget has. */
+  updateWidget(o: { tasks: string; seq?: number }): Promise<void>;
   /** The system settings page of this app, where autostart and battery use are allowed. */
   openAppSettings(): Promise<void>;
   /** The APK's version, and its native version, which builds of the web app may need. */
@@ -57,7 +58,9 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
   let timer: ReturnType<typeof setTimeout> | undefined;
   const update = async () => {
     const { board } = store.getView();
-    await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board)) });
+    // With the change the copy is as of: the widget keeps a list it fetched since, should the copy
+    // be behind the server.
+    await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board)), seq: store.since });
     const now = new Date();
     const wanted = reminders(board, now).slice(0, AHEAD);
     // Without the permission for exact alarms, the plugin would open the system settings on every

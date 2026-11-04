@@ -21,6 +21,7 @@ use serde_json::Value;
 use crate::AppState;
 use crate::auth::Auth;
 use crate::error::{ApiError, Json, from_value};
+use crate::store;
 use args::*;
 use write::{Write, WriteCx};
 
@@ -29,6 +30,16 @@ use write::{Write, WriteCx};
 pub struct Output {
     pub text: String,
     pub data: Value,
+}
+
+/// A tool's answer as sent. A read tool's also says what it is as of: it includes every change up
+/// to `seq`, as `/changes` numbers them.
+#[derive(Serialize)]
+pub struct Reply {
+    #[serde(flatten)]
+    pub output: Output,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seq: Option<i64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -114,10 +125,19 @@ fn find_task<'a>(b: &Board<'a>, number: i64) -> Result<&'a Task, ApiError> {
 }
 
 /// Runs a tool. `id` makes a write idempotent: the same id returns the first result.
-pub async fn call(st: &AppState, auth: Auth, name: &str, args: Value, id: Option<MutationId>) -> Result<Output, ApiError> {
+pub async fn call(st: &AppState, auth: Auth, name: &str, args: Value, id: Option<MutationId>) -> Result<Reply, ApiError> {
     let now = st.clock.now();
     match parse_call(name, args)? {
-        Call::Read(run) => st.db.call(move |c| run(c, &Cx { owner: &auth.user_id, now })).await,
+        // The read and the sequence number come from the same call on the one connection: no
+        // change can come between them.
+        Call::Read(run) => {
+            st.db
+                .call(move |c| {
+                    let output = run(c, &Cx { owner: &auth.user_id, now })?;
+                    Ok(Reply { output, seq: Some(store::latest_seq(c, &auth.user_id)?) })
+                })
+                .await
+        }
         Call::Write(build) => {
             auth.require_write()?;
             let hub = st.hub.clone();
@@ -125,7 +145,7 @@ pub async fn call(st: &AppState, auth: Auth, name: &str, args: Value, id: Option
                 .call(move |c| {
                     let output = write::run(c, &auth, id, now, build)?;
                     hub.changed(&auth.user_id);
-                    Ok(output)
+                    Ok(Reply { output, seq: None })
                 })
                 .await
         }
@@ -142,7 +162,7 @@ pub async fn call_tool(
     Path(name): Path<String>,
     headers: HeaderMap,
     Json(args): Json<Value>,
-) -> Result<Json<Output>, ApiError> {
+) -> Result<Json<Reply>, ApiError> {
     let id = headers
         .get("idempotency-key")
         .map(|v| {

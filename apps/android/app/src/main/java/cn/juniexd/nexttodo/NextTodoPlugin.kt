@@ -29,9 +29,11 @@ class NextTodoPlugin : Plugin() {
     @PluginMethod
     fun updateWidget(call: PluginCall) {
         val tasks = call.getString("tasks")!!
+        // Not `getLong`: that gives nothing for a number small enough to arrive as an Int.
+        val seq = call.data.takeIf { it.has("seq") }?.getLong("seq")
         CoroutineScope(Dispatchers.Default).launch {
             try {
-                Widget.show(context, tasks)
+                Widget.show(context, tasks, seq)
                 call.resolve()
             } catch (e: Exception) {
                 call.reject(e.message, e)

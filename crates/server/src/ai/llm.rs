@@ -1,12 +1,16 @@
 //! The providers' OpenAI-compatible chat APIs: what to send each of them, and reading the answer.
 //! See `docs/ai.md#模型配置`.
 
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, ErrorKind};
+use std::net::IpAddr;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use ts_rs::TS;
+use ureq::http::Uri;
+use ureq::unversioned::resolver::{DefaultResolver, ResolvedSocketAddrs, Resolver};
+use ureq::unversioned::transport::{DefaultConnector, NextTimeout};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
@@ -159,6 +163,12 @@ impl Failure {
     fn new(message: impl Into<String>) -> Self {
         Failure { status: None, message: message.into() }
     }
+
+    /// Without the key, should the API have repeated it, and short: the message is kept with the
+    /// job, where anyone with a token reads it.
+    fn without(self, key: &str) -> Self {
+        Failure { message: self.message.replace(key, "***").chars().take(300).collect(), ..self }
+    }
 }
 
 /// Where chats go: the provider's API, or a stand-in in tests. Calls block.
@@ -203,8 +213,8 @@ pub fn body(c: &Config, p: &Provider, prompt: &Prompt, json: bool) -> Value {
     b
 }
 
-/// The API over HTTPS. It is the user's own address the server calls, so: HTTPS only, no
-/// redirects, and only so much read back.
+/// The API over HTTPS. It is the user's own address the server calls, so: HTTPS only, public
+/// addresses only, no redirects, and only so much read back.
 pub struct Https;
 
 /// How much of the model's answer is taken.
@@ -214,31 +224,77 @@ const MAX_STREAM: u64 = 64 << 20;
 /// How much of an error answer is read.
 const MAX_ERROR: u64 = 64 << 10;
 
+/// Whether `ip` is reachable from anywhere, not only from the server or its network.
+fn public(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            let [a, b, ..] = v4.octets();
+            // 0.0.0.0/8 is "this network", 100.64.0.0/10 a carrier's.
+            !(v4.is_private() || v4.is_loopback() || v4.is_link_local() || v4.is_broadcast() || v4.is_multicast() || v4.is_documentation())
+                && a != 0
+                && !(a == 100 && b & 0xc0 == 64)
+        }
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => public(v4.into()),
+            None => !(v6.is_loopback() || v6.is_unspecified() || v6.is_multicast() || v6.is_unique_local() || v6.is_unicast_link_local()),
+        },
+    }
+}
+
+const NOT_PUBLIC: &str = "接口地址不是公网地址，服务器不会访问";
+
+/// Resolves names as usual and keeps only public addresses, whatever a name resolves to. The
+/// connection goes to the addresses kept, so a name resolving differently later changes nothing.
+#[derive(Debug, Default)]
+struct PublicOnly(DefaultResolver);
+
+impl Resolver for PublicOnly {
+    fn resolve(&self, uri: &Uri, config: &ureq::config::Config, timeout: NextTimeout) -> Result<ResolvedSocketAddrs, ureq::Error> {
+        let mut kept = self.empty();
+        for addr in self.0.resolve(uri, config, timeout)?.iter().filter(|a| public(a.ip())) {
+            kept.push(*addr);
+        }
+        if kept.is_empty() {
+            return Err(ureq::Error::Io(std::io::Error::new(ErrorKind::PermissionDenied, NOT_PUBLIC)));
+        }
+        Ok(kept)
+    }
+}
+
 fn agent(timeout: Duration) -> ureq::Agent {
-    ureq::Agent::config_builder().https_only(true).max_redirects(0).http_status_as_error(false).timeout_global(Some(timeout)).build().into()
+    let config = ureq::Agent::config_builder()
+        .https_only(true)
+        // It connects itself, so that the addresses are the ones checked.
+        .proxy(None)
+        .max_redirects(0)
+        .http_status_as_error(false)
+        .timeout_global(Some(timeout))
+        .build();
+    ureq::Agent::with_parts(config, DefaultConnector::default(), PublicOnly::default())
 }
 
 fn transport(e: ureq::Error) -> Failure {
     Failure::new(match e {
         ureq::Error::Timeout(_) => "接口超时".to_owned(),
         ureq::Error::BodyExceedsLimit(_) => "接口的回复过长".to_owned(),
+        ureq::Error::Io(e) if e.kind() == ErrorKind::PermissionDenied => NOT_PUBLIC.to_owned(),
         e => format!("无法连接接口：{e}"),
     })
 }
 
-/// The message in an API's error answer, shortened: OpenAI's `error.message`, or what others write,
-/// such as ECNU's `detail`.
-fn api_message(v: &Value) -> String {
-    let message = [&v["error"]["message"], &v["error"], &v["message"], &v["detail"], &v["detail"][0]["msg"]]
+/// The message in an API's error answer: OpenAI's `error.message`, or what others write, such as
+/// ECNU's `detail`.
+fn api_message(v: &Value) -> &str {
+    [&v["error"]["message"], &v["error"], &v["message"], &v["detail"], &v["detail"][0]["msg"]]
         .into_iter()
         .find_map(Value::as_str)
-        .unwrap_or_default();
-    message.chars().take(200).collect()
+        .unwrap_or_default()
 }
 
 /// The error an API answered with: its message, or just the status.
 fn refused(status: u16, body: &str) -> Failure {
-    let message = api_message(&serde_json::from_str(body).unwrap_or_default());
+    let v: Value = serde_json::from_str(body).unwrap_or_default();
+    let message = api_message(&v);
     Failure {
         status: Some(status),
         message: if message.is_empty() { format!("接口返回 {status}") } else { format!("接口返回 {status}：{message}") },
@@ -264,10 +320,8 @@ impl Https {
         let text = body.with_config().limit(MAX_ERROR).lossy_utf8(true).read_to_string().unwrap_or_default();
         Err(refused(status, &text))
     }
-}
 
-impl Api for Https {
-    fn chat(&self, c: &Config, prompt: &Prompt, json: bool, timeout: Duration) -> Result<String, Failure> {
+    fn answer(&self, c: &Config, prompt: &Prompt, json: bool, timeout: Duration) -> Result<String, Failure> {
         let p = c.check().map_err(Failure::new)?;
         let body = self.send(c, agent(timeout).post(c.url("/chat/completions")), &body(c, p, prompt, json))?;
         let streamed = body.mime_type() == Some("text/event-stream");
@@ -279,7 +333,7 @@ impl Api for Https {
         Ok(answer)
     }
 
-    fn models(&self, c: &Config) -> Result<Vec<String>, Failure> {
+    fn list(&self, c: &Config) -> Result<Vec<String>, Failure> {
         c.check().map_err(Failure::new)?;
         let res = agent(Duration::from_secs(20))
             .get(c.url("/models"))
@@ -291,6 +345,16 @@ impl Api for Https {
         let mut ids: Vec<String> = v["data"].as_array().into_iter().flatten().filter_map(|m| m["id"].as_str().map(str::to_owned)).collect();
         ids.sort();
         Ok(ids)
+    }
+}
+
+impl Api for Https {
+    fn chat(&self, c: &Config, prompt: &Prompt, json: bool, timeout: Duration) -> Result<String, Failure> {
+        self.answer(c, prompt, json, timeout).map_err(|f| f.without(&c.api_key))
+    }
+
+    fn models(&self, c: &Config) -> Result<Vec<String>, Failure> {
+        self.list(c).map_err(|f| f.without(&c.api_key))
     }
 }
 
@@ -367,6 +431,39 @@ mod tests {
         }
         assert!(Config { api_key: "a b".into(), ..config("ecnu", Thinking::Off) }.check().is_err());
         assert!(Config { model: String::new(), ..config("ecnu", Thinking::Off) }.check().is_err());
+    }
+
+    #[test]
+    fn only_public_addresses_are_called() {
+        for ip in ["8.8.8.8", "2606:4700::1111", "::ffff:1.1.1.1"] {
+            assert!(public(ip.parse().unwrap()), "{ip}");
+        }
+        let private = [
+            "127.0.0.1",
+            "10.1.2.3",
+            "172.17.0.1",
+            "192.168.1.1",
+            "169.254.169.254",
+            "100.100.1.1",
+            "0.0.0.0",
+            "::1",
+            "fd00::1",
+            "fe80::1",
+            "::ffff:10.0.0.1",
+        ];
+        for ip in private {
+            assert!(!public(ip.parse().unwrap()), "{ip}");
+        }
+        for url in ["https://127.0.0.1:9/v1", "https://localhost:9/v1", "https://[::1]:9/v1"] {
+            let c = Config { base_url: url.into(), ..config("custom", Thinking::Off) };
+            assert_eq!(Https.models(&c).unwrap_err().message, NOT_PUBLIC, "{url}");
+        }
+    }
+
+    #[test]
+    fn a_key_in_a_message_is_not_kept() {
+        let echoed = refused(401, r#"{"error":{"message":"invalid token: sk-secret-1234"}}"#).without("sk-secret-1234");
+        assert_eq!(echoed.message, "接口返回 401：invalid token: ***");
     }
 
     #[test]

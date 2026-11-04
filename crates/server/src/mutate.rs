@@ -5,7 +5,7 @@ use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
     AiJob, AiJobId, Change, Dependency, Effect, Folder, FolderId, JobState, Link, MutationId, SortKey, Task, TaskId,
 };
-use nexttodo_core::ops::{Mutation, Op};
+use nexttodo_core::ops::{MAX_OPS, Mutation, Op};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 use ts_rs::TS;
@@ -54,8 +54,12 @@ pub fn earlier(c: &Connection, actor: &Actor, id: MutationId) -> Result<Option<A
     Ok(Some(Applied { seq, effects }))
 }
 
-/// Applies the operations inside the caller's transaction and returns what changed.
+/// Applies the operations inside the caller's transaction and returns what changed. At most
+/// `MAX_OPS` at once, however they were made: one change is one transaction on the one connection.
 pub fn run(c: &Connection, actor: &Actor, ops: &[Op], now: i64) -> Result<Vec<Effect>, ApiError> {
+    if ops.len() > MAX_OPS {
+        return Err(ApiError::invalid(format!("每次最多 {MAX_OPS} 个操作，本次有 {} 个", ops.len()), None));
+    }
     let mut cx = Cx { c, owner: actor.owner, via: actor.via.map(str::to_owned), now, effects: Vec::new() };
     for op in ops {
         cx.op(op)?;

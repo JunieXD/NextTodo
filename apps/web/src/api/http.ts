@@ -71,10 +71,10 @@ export class ApiError extends Error {
 export const OFFLINE = "offline";
 
 /** How long a request may take, its answer included: some are made while the other tabs wait to
- * sign in or out. */
+ * sign in or out. Those that wait for a model give their own. */
 const TIMEOUT_MS = 20_000;
 
-export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function api<T>(method: string, path: string, body?: unknown, timeoutMs = TIMEOUT_MS): Promise<T> {
   let res: Response;
   let text: string;
   try {
@@ -86,14 +86,14 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     text = await res.text();
   } catch {
     throw new ApiError(0, OFFLINE, "无法连接服务器，请检查网络");
   }
-  if (res.status === 204) return undefined as T;
-  if (res.ok) return JSON.parse(text) as T;
+  // 202 and 204 come without a body.
+  if (res.ok) return (text ? JSON.parse(text) : undefined) as T;
   const error = parseError(text);
   const field = (error.details as { field?: string } | undefined)?.field;
   throw new ApiError(res.status, error.code ?? "error", error.message ?? `服务器错误（${res.status}）`, field);

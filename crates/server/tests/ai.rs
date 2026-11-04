@@ -394,3 +394,17 @@ async fn agents_see_the_jobs_and_how_they_stand() {
     let log = t.ok(&s, "log", json!({})).await;
     assert!(log["text"].as_str().unwrap().contains("提交 AI 整理 “读完第三章，然后写一篇读书笔记…”"), "{}", log["text"]);
 }
+
+#[tokio::test]
+async fn an_answer_too_big_for_one_change_fails() {
+    let (t, fake) = server();
+    let s = t.admin().await;
+    t.call("PUT", "/ai/settings", Some(&s), Some(config())).await;
+    let tasks: Vec<Value> = (0..1000).map(|i| json!({ "title": format!("第 {i} 项") })).collect();
+    fake.answer(Ok(&json!({ "tasks": tasks }).to_string()));
+    let job = id();
+    t.mutate(&s, json!([create(&job, "很多事", None)])).await;
+    let snap = until(&t, &s, |s| job_state(s, &job).is_some_and(|(state, _)| state == "failed")).await;
+    assert_eq!(job_state(&snap, &job).unwrap().1, "每次最多 1000 个操作，本次有 1001 个");
+    assert!(titles(&snap).is_empty());
+}

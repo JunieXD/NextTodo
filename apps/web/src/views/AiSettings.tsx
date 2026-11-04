@@ -100,10 +100,11 @@ export function AiPage({ onBack, onClose }: { onBack(): void; onClose(): void })
       setBusy(false);
     }
   };
-  const test = () => run(async () => setResult(await api<AiTestResult>("POST", "/ai/test", input)));
+  // Longer than the server waits for the model, a minute, so that its answer comes back.
+  const test = () => run(async () => setResult(await api<AiTestResult>("POST", "/ai/test", input, 70_000)));
   const listModels = () =>
     run(async () => {
-      const { models } = await api<AiModels>("POST", "/ai/models", input);
+      const { models } = await api<AiModels>("POST", "/ai/models", input, 30_000);
       setModels(models);
       if (!models.length) snack("接口没有列出模型，请手动填写");
     });

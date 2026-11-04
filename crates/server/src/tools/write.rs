@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 
 use nexttodo_core::board::{Board, Snapshot, Status};
 use nexttodo_core::model::{Change, Due, Effect, FolderId, MutationId, Name, Task, TaskId};
-use nexttodo_core::ops::{MAX_OPS, Op};
+use nexttodo_core::ops::Op;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -60,9 +60,6 @@ pub fn run(c: &mut Connection, auth: &Auth, id: Option<MutationId>, now: i64, bu
     }
     let snap = store::snapshot(&tx, &auth.user_id)?;
     let write = build(&WriteCx { c: &tx, owner: &auth.user_id, board: &Board::new(&snap) })?;
-    if write.ops.len() > MAX_OPS {
-        return Err(ApiError::invalid(format!("每次最多 {MAX_OPS} 个操作，本次有 {} 个", write.ops.len()), None));
-    }
     let effects = mutate::run(&tx, &actor, &write.ops, now)?;
     // Rendered inside the transaction, so a preview still sees what it would have made.
     let after = store::snapshot(&tx, &auth.user_id)?;

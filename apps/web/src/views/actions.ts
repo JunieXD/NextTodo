@@ -1,5 +1,6 @@
-// What can be done to tasks from anywhere: complete or reopen, delete, open or close, link.
+// What can be done to tasks from anywhere: complete or reopen, move, delete, open or close, link.
 
+import type { FolderId } from "../api/types/FolderId";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import { useCommit, useSession, useUndo } from "../session";
@@ -46,6 +47,12 @@ export function useTaskActions(): RowActions & { link(before: TaskId, after: Tas
       );
       const text = unlocked.length === 1 ? `解锁了“${unlocked[0].title}”` : unlocked.length ? `解锁了 ${unlocked.length} 项` : `已完成“${t.title}”`;
       snack({ text, action: "撤销", onAction: () => undo(r.id) });
+    },
+
+    move(t: Task, folder: FolderId | null) {
+      if (folder === t.folder_id) return;
+      const r = commit([{ op: "task.update", id: t.id, folder_id: folder }]);
+      if (r) snack({ text: `已移至“${board().folderName(folder)}”`, action: "撤销", onAction: () => undo(r.id) });
     },
 
     remove(t) {

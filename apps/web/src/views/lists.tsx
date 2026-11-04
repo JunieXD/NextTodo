@@ -5,6 +5,7 @@ import { ChevronRight, Folder as FolderIcon, FolderPlus, List, Plus, Workflow } 
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation, useSearchParams } from "wouter";
+import type { Folder } from "../api/types/Folder";
 import type { FolderId } from "../api/types/FolderId";
 import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
@@ -12,13 +13,16 @@ import type { TaskId } from "../api/types/TaskId";
 import { lastKey } from "../domain/apply";
 import type { Board } from "../domain/board";
 import { type DueKind, dueKind, formatDay } from "../domain/dates";
-import { checkFolderName, checkTitle } from "../domain/text";
+import { rekey } from "../domain/reorder";
+import { checkTitle } from "../domain/text";
 import { useCommit, useSession, useView } from "../session";
 import { draft, keepDraft } from "../sync/drafts";
 import { useFeedback } from "../ui/feedback";
 import { Seg } from "../ui/controls";
 import { Chain, Icon } from "../ui/icons";
 import { useTaskActions } from "./actions";
+import { useRowDrag } from "./drag";
+import { useNewFolder } from "./FolderMenu";
 import { useMarks } from "./marks";
 import { folderUrl, useFolderView, useSelection } from "./nav";
 import { FolderPicker } from "./pickers";
@@ -71,9 +75,7 @@ export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date
   const { board } = useView();
   const { linger } = useMarks();
   const { selected } = useSelection();
-  const [, navigate] = useLocation();
   const actions = useTaskActions();
-  const newFolder = useNewFolder();
   const [doneOpen, setDoneOpen] = useState(false);
   const subs = board.subfolders(folder);
   const open = openTasks(board, folder, linger);
@@ -83,19 +85,7 @@ export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date
       {(subs.length > 0 || folder === null) && (
         <>
           <h2 className="group-title">文件夹</h2>
-          <div className="group">
-            {subs.map((f) => (
-              <FolderRow key={f.id} folder={f} board={board} onOpen={() => navigate(folderUrl(f.id))} />
-            ))}
-            {folder === null && (
-              <button className="row add-row" onClick={() => newFolder(null)}>
-                <div className="row-inner">
-                  <Icon of={FolderPlus} />
-                  新建文件夹
-                </div>
-              </button>
-            )}
-          </div>
+          <FolderList folder={folder} folders={subs} />
         </>
       )}
       {open.length + done.length > 0 ? (
@@ -123,6 +113,40 @@ export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date
         subs.length === 0 && <p className="empty">暂无事项。可在下方输入，或让 agent 拆分计划。</p>
       )}
     </>
+  );
+}
+
+/** The folders in `folder`, which can be dragged into another order; in the root, also a row to make
+ * one. */
+function FolderList({ folder, folders }: { folder: FolderId | null; folders: Folder[] }) {
+  const { board } = useView();
+  const commit = useCommit();
+  const [, navigate] = useLocation();
+  const newFolder = useNewFolder();
+  const list = useRef<HTMLDivElement>(null);
+  useRowDrag(list, ".folder-row", {
+    range: () => ({ min: 0, max: folders.length - 1 }),
+    drop(from, to) {
+      if (to === from) return;
+      const wanted = folders.filter((_, i) => i !== from);
+      wanted.splice(to, 0, folders[from]);
+      commit(rekey(wanted, folders[from].id).map((k): Op => ({ op: "folder.update", ...k })));
+    },
+  });
+  return (
+    <div className="group reorderable" ref={list}>
+      {folders.map((f) => (
+        <FolderRow key={f.id} folder={f} board={board} onOpen={() => navigate(folderUrl(f.id))} />
+      ))}
+      {folder === null && (
+        <button className="row add-row" onClick={() => newFolder(null)}>
+          <div className="row-inner">
+            <Icon of={FolderPlus} />
+            新建文件夹
+          </div>
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -193,19 +217,6 @@ export function SearchResults({ query, now }: { query: string; now: Date }) {
       </div>
     </>
   );
-}
-
-/** Asks for a name and makes a folder inside `parent`. */
-export function useNewFolder() {
-  const { prompt, snack } = useFeedback();
-  const commit = useCommit();
-  const { store } = useSession();
-  return async (parent: FolderId | null) => {
-    const name = await prompt({ title: "新建文件夹", label: "名称", ok: "新建", check: checkFolderName });
-    if (name === null) return;
-    const sort_key = lastKey(store.getView().board.subfolders(parent).map((f) => f.sort_key));
-    if (commit([{ op: "folder.create", id: uuidv7(), name, sort_key, ...(parent && { parent_id: parent }) }])) snack(`已新建“${name}”`);
-  };
 }
 
 /** Adds tasks by typing. In a folder (`null` for the root) it can chain each new task after the

@@ -1,7 +1,8 @@
 // Rows in lists: tasks, folders, and the folder view's tasks with the dependency rail on the left.
 
-import { ChevronRight, Clock, Folder as FolderIcon, Check as CheckIcon, Trash2 } from "lucide-react";
-import { type ReactNode, useEffect, useRef } from "react";
+import { ChevronRight, Clock, Folder as FolderIcon, FolderInput, Check as CheckIcon, PanelRightOpen, RotateCcw, Trash2 } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import type { FolderId } from "../api/types/FolderId";
 import type { Op } from "../api/types/Op";
 import type { Folder } from "../api/types/Folder";
 import type { Task } from "../api/types/Task";
@@ -14,12 +15,16 @@ import { useCommit } from "../session";
 import { useFeedback } from "../ui/feedback";
 import { Check } from "../ui/controls";
 import { Icon, Inbound, Outbound } from "../ui/icons";
+import { ContextMenu, type MenuItem } from "../ui/menu";
 import { useRowDrag } from "./drag";
+import { FolderContextMenu } from "./FolderMenu";
 import { useMarks } from "./marks";
+import { FolderPicker } from "./pickers";
 
 export interface RowActions {
   open(t: Task): void;
   toggle(t: Task): void;
+  move(t: Task, folder: FolderId | null): void;
   remove(t: Task): void;
 }
 
@@ -79,28 +84,41 @@ export function TaskRow({
   }
   const inner = useRef<HTMLDivElement>(null);
   const swiped = useSwipe(inner, (dx) => (dx > 0 ? actions.toggle(t) : actions.remove(t)));
+  const [moving, setMoving] = useState(false);
+  const menu: MenuItem[] = [
+    ...(selected ? [] : [{ icon: PanelRightOpen, label: "打开", onSelect: () => actions.open(t) }]),
+    t.done_at === null ? { icon: CheckIcon, label: "标为完成", onSelect: () => actions.toggle(t) } : { icon: RotateCcw, label: "重新打开", onSelect: () => actions.toggle(t) },
+    { icon: FolderInput, label: "移动到…", onSelect: () => setMoving(true) },
+    { icon: Trash2, label: "删除", danger: true, onSelect: () => actions.remove(t) },
+  ];
   const cls = ["row", "task", status, marks.flash.has(t.id) && "unlocked", selected && "selected"].filter(Boolean).join(" ");
+  // The picker is not inside the row, where its clicks would also open the task.
   return (
-    <div className={cls} onClick={() => !swiped.current && actions.open(t)}>
-      <div className="swipe-bg">
-        <span>
-          <Icon of={CheckIcon} size={18} />
-          完成
-        </span>
-        <span>
-          删除
-          <Icon of={Trash2} size={18} />
-        </span>
-      </div>
-      <div className="row-inner" ref={inner}>
-        <Check status={status} pop={marks.pop === t.id} left={railX === undefined ? undefined : railX - 12} onToggle={() => actions.toggle(t)} />
-        {/* The whole row opens the task; this button is how keyboards and screen readers get there. */}
-        <button type="button" className="task-main">
-          <span className="task-title">{t.title}</span>
-          {meta.length > 0 && <span className="task-meta">{meta}</span>}
-        </button>
-      </div>
-    </div>
+    <>
+      <ContextMenu items={menu}>
+        <div className={cls} onClick={() => !swiped.current && actions.open(t)}>
+          <div className="swipe-bg">
+            <span>
+              <Icon of={CheckIcon} size={18} />
+              完成
+            </span>
+            <span>
+              删除
+              <Icon of={Trash2} size={18} />
+            </span>
+          </div>
+          <div className="row-inner" ref={inner}>
+            <Check status={status} pop={marks.pop === t.id} left={railX === undefined ? undefined : railX - 12} onToggle={() => actions.toggle(t)} />
+            {/* The whole row opens the task; this button is how keyboards and screen readers get there. */}
+            <button type="button" className="task-main">
+              <span className="task-title">{t.title}</span>
+              {meta.length > 0 && <span className="task-meta">{meta}</span>}
+            </button>
+          </div>
+        </div>
+      </ContextMenu>
+      {moving && <FolderPicker title="移动到" current={t.folder_id} onPick={(f: FolderId | null) => actions.move(t, f)} onClose={() => setMoving(false)} />}
+    </>
   );
 }
 
@@ -162,20 +180,22 @@ export function FolderRow({ folder, board, onOpen }: { folder: Folder; board: Bo
   const ready = own.filter((t) => board.status(t) === "ready").length;
   const sub = own.length ? `${ready} 项可做，共 ${own.length} 项待办` : `${board.subfolders(folder.id).length} 个文件夹`;
   return (
-    <button className="row folder-row" onClick={onOpen}>
-      <div className="row-inner">
-        <span className="folder-ic">
-          <Icon of={FolderIcon} size={18} />
-        </span>
-        <span className="folder-main">
-          <span>{folder.name}</span>
-          <span className="folder-sub">{sub}</span>
-        </span>
-        <span className="chev">
-          <Icon of={ChevronRight} size={18} />
-        </span>
-      </div>
-    </button>
+    <FolderContextMenu folder={folder.id}>
+      <button className="row folder-row" onClick={onOpen}>
+        <div className="row-inner">
+          <span className="folder-ic">
+            <Icon of={FolderIcon} size={18} />
+          </span>
+          <span className="folder-main">
+            <span>{folder.name}</span>
+            <span className="folder-sub">{sub}</span>
+          </span>
+          <span className="chev">
+            <Icon of={ChevronRight} size={18} />
+          </span>
+        </div>
+      </button>
+    </FolderContextMenu>
   );
 }
 
@@ -230,7 +250,7 @@ export function RailList({ tasks, board, now, selected, actions }: { tasks: Task
   const commit = useCommit();
   const { snack } = useFeedback();
   const list = useRef<HTMLDivElement>(null);
-  useRowDrag(list, RAIL_ROW, {
+  useRowDrag(list, ".row.task", {
     range: (from) => range(board, tasks, from),
     drop(from, to) {
       const t = tasks[from];
@@ -245,7 +265,7 @@ export function RailList({ tasks, board, now, selected, actions }: { tasks: Task
     },
   });
   return (
-    <div className="rail-list" ref={list} style={{ "--gutter": `${rail.gutter}px`, "--sep-left": `${rail.gutter}px` } as React.CSSProperties}>
+    <div className="rail-list reorderable" ref={list} style={{ "--gutter": `${rail.gutter}px`, "--sep-left": `${rail.gutter}px` } as React.CSSProperties}>
       <svg className="rail" width={rail.gutter} height={rail.height}>
         {rail.paths.map((p) => (
           <path key={p.key} d={p.d} className={p.live ? "live" : undefined} />

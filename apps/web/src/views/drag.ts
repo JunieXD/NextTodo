@@ -1,9 +1,11 @@
-// Long-press a row of a rail list, then drag it up or down to put it elsewhere.
+// Drag a row of a list up or down to put it elsewhere: a finger long-presses it first, so as not to
+// take a scroll or a swipe for a drag; a mouse just drags it.
 
 import { type RefObject, useEffect, useRef } from "react";
 
 const HOLD_MS = 450;
-/** Moving further than this before the hold is over is a scroll or a swipe, not a drag. */
+/** A finger moving further than this before the hold is over scrolls or swipes; a mouse moving this
+ * far drags. */
 const SLOP = 8;
 const EDGE = 56;
 const SCROLL_STEP = 8;
@@ -16,8 +18,9 @@ export interface Drag {
   drop(from: number, to: number): void;
 }
 
-/** Rows are `height` tall. A drag stops without a drop when rows come, go or move meanwhile. */
-export function useRowDrag(list: RefObject<HTMLDivElement | null>, height: number, drag: Drag) {
+/** Drags the children of `list` that match `rows`, all as tall as each other. A drag stops without
+ * a drop when rows come, go or move meanwhile. */
+export function useRowDrag(list: RefObject<HTMLDivElement | null>, rows: string, drag: Drag) {
   const latest = useRef(drag);
   useEffect(() => {
     latest.current = drag;
@@ -27,17 +30,18 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, height: numbe
     const scroller = el.closest<HTMLElement>(".scroll, .main-scroll")!;
     // The pointer whose press became a drag: letting it go is not also a tap.
     let spent: number | null = null;
-    let press: { id: number; x: number; y: number; row: HTMLElement; timer: ReturnType<typeof setTimeout> } | null = null;
-    let lifted: { id: number; row: HTMLElement; rows: HTMLElement[]; from: number; startY: number; startScroll: number; y: number; min: number; max: number; target: number; frame: number } | null = null;
+    // A mouse's press has no timer: it drags as soon as it moves.
+    let press: { id: number; x: number; y: number; row: HTMLElement; timer?: ReturnType<typeof setTimeout> } | null = null;
+    let lifted: { id: number; row: HTMLElement; rows: HTMLElement[]; height: number; from: number; startY: number; startScroll: number; y: number; min: number; max: number; target: number; frame: number } | null = null;
 
     // The other rows make way where the row may go; it follows the pointer anyway.
     const layout = () => {
       const l = lifted!;
       const dy = l.y - l.startY + scroller.scrollTop - l.startScroll;
-      l.target = Math.min(Math.max(l.from + Math.round(dy / height), 0), l.rows.length - 1);
+      l.target = Math.min(Math.max(l.from + Math.round(dy / l.height), 0), l.rows.length - 1);
       const to = Math.min(Math.max(l.target, l.min), l.max);
       l.rows.forEach((r, i) => {
-        const shift = i === l.from ? dy : l.from < i && i <= to ? -height : to <= i && i < l.from ? height : 0;
+        const shift = i === l.from ? dy : l.from < i && i <= to ? -l.height : to <= i && i < l.from ? l.height : 0;
         r.style.transform = shift ? `translateY(${shift}px)` : "";
       });
     };
@@ -55,10 +59,10 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, height: numbe
     const lift = () => {
       const { id, y, row } = press!;
       press = null;
-      const rows = [...el.querySelectorAll<HTMLElement>(":scope > .row")];
-      const from = rows.indexOf(row);
+      const all = [...el.querySelectorAll<HTMLElement>(`:scope > ${rows}`)];
+      const from = all.indexOf(row);
       const { min, max } = latest.current.range(from);
-      lifted = { id, row, rows, from, startY: y, startScroll: scroller.scrollTop, y, min, max, target: from, frame: 0 };
+      lifted = { id, row, rows: all, height: row.offsetHeight, from, startY: y, startScroll: scroller.scrollTop, y, min, max, target: from, frame: 0 };
       row.dataset.lifted = "";
       el.classList.add("reordering");
       row.setPointerCapture(id);
@@ -86,14 +90,17 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, height: numbe
     rowsChanged.observe(el, { childList: true });
 
     const down = (e: PointerEvent) => {
-      const row = (e.target as Element).closest<HTMLElement>(".row.task");
+      const row = (e.target as Element).closest<HTMLElement>(rows);
       if (!e.isPrimary || e.button !== 0 || !row || row.parentElement !== el || lifted) return;
       spent = null;
-      press = { id: e.pointerId, x: e.clientX, y: e.clientY, row, timer: setTimeout(lift, HOLD_MS) };
+      press = { id: e.pointerId, x: e.clientX, y: e.clientY, row, timer: e.pointerType === "mouse" ? undefined : setTimeout(lift, HOLD_MS) };
     };
     // Moves and the release are heard wherever they happen, also outside the list.
     const move = (e: PointerEvent) => {
-      if (press?.id === e.pointerId && Math.hypot(e.clientX - press.x, e.clientY - press.y) > SLOP) cancelPress();
+      if (press?.id === e.pointerId && Math.hypot(e.clientX - press.x, e.clientY - press.y) > SLOP) {
+        if (press.timer === undefined) lift();
+        else cancelPress();
+      }
       if (lifted?.id !== e.pointerId) return;
       lifted.y = e.clientY;
       layout();
@@ -135,5 +142,5 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, height: numbe
       el.removeEventListener("contextmenu", menu);
       el.removeEventListener("click", click, true);
     };
-  }, [list, height]);
+  }, [list, rows]);
 }

@@ -1,5 +1,5 @@
-// Moving a task by hand in a list ordered by dependencies: how far it may go, and the sort keys
-// that put the list in the new order.
+// Moving a task by hand in a list ordered by dependencies, or a folder among its siblings: how far a
+// task may go, and the sort keys that put a list in the new order.
 
 import { generateNKeysBetween } from "fractional-indexing";
 import type { Task } from "../api/types/Task";
@@ -39,12 +39,14 @@ export function range(board: Board, list: Task[], from: number): Range {
   return { min: above + 1, max: below < 0 ? rest.length : below, above: above < 0 ? undefined : rest[above], below: below < 0 ? undefined : rest[below] };
 }
 
+type Keyed = { id: string; sort_key: string };
+
 /** New sort keys that keep `list` in this order. With keys increasing down a list that respects the
  * dependencies, the list orders itself this way, and so does anything else ordered by key alone.
  * The tasks whose keys already increase, as many as possible, keep them. */
-export function rekey(list: Task[], moved: TaskId): { id: TaskId; sort_key: string }[] {
+export function rekey(list: Keyed[], moved: string): Keyed[] {
   const keep = new Set(increasing(list.filter((t) => t.id !== moved)).map((t) => t.id));
-  const keys: { id: TaskId; sort_key: string }[] = [];
+  const keys: Keyed[] = [];
   for (let i = 0; i < list.length; ) {
     if (keep.has(list[i].id)) {
       i++;
@@ -60,7 +62,7 @@ export function rekey(list: Task[], moved: TaskId): { id: TaskId; sort_key: stri
 }
 
 /** A longest run of tasks, in list order, whose keys strictly increase. */
-function increasing(list: Task[]): Task[] {
+function increasing(list: Keyed[]): Keyed[] {
   // tails[n] ends the best run of length n + 1 found so far; prev links each task to the one before
   // it in its run.
   const tails: number[] = [];
@@ -76,7 +78,7 @@ function increasing(list: Task[]): Task[] {
     prev[i] = lo > 0 ? tails[lo - 1] : -1;
     tails[lo] = i;
   });
-  const run: Task[] = [];
+  const run: Keyed[] = [];
   for (let i = tails.at(-1) ?? -1; i >= 0; i = prev[i]) run.push(list[i]);
   return run.reverse();
 }

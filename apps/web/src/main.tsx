@@ -6,10 +6,12 @@ import { app, desktopOs, loadServer, native } from "./api/http";
 import * as android from "./android";
 import * as desktop from "./desktop";
 import { ErrorBoundary } from "./ui/ErrorBoundary";
+import { limitBrowserMenu } from "./ui/menu";
 import "./index.css";
 import { applyTheme } from "./theme";
 
 applyTheme();
+limitBrowserMenu();
 // The macOS app draws under the title bar, around the window's buttons.
 if (app === "desktop" && desktopOs === "macOS") document.documentElement.classList.add("macos");
 // The app carries its files in the package; only the web app needs a service worker for offline use.

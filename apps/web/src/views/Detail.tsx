@@ -35,7 +35,6 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
   const t = board.task(id);
   const actions = useTaskActions();
   const commit = useCommit();
-  const { snack } = useFeedback();
   const { pop } = useMarks();
   const { select } = useSelection();
   const [panel, setPanel] = useState<Panel>(null);
@@ -43,9 +42,6 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
   if (!t) return <div className="detail-empty">该事项已删除</div>;
   const status = board.status(t);
   const update = (fields: TaskFields) => commit([{ op: "task.update", id: t.id, ...fields }]);
-  const move = (f: string | null) => {
-    if (f !== t.folder_id && update({ folder_id: f })) snack(`已移至“${board.folderName(f)}”`);
-  };
 
   return (
     <div className="detail">
@@ -106,7 +102,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
         <FolderPicker
           title="移动到"
           current={t.folder_id}
-          onPick={move}
+          onPick={(f) => actions.move(t, f)}
           onClose={() => setPanel(null)}
         />
       )}

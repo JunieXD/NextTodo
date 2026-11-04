@@ -11,7 +11,7 @@ import { useBack } from "../ui/back";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { Detail } from "./Detail";
-import { FolderMenu } from "./FolderMenu";
+import { FolderContextMenu, FolderMenu } from "./FolderMenu";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, SearchResults } from "./lists";
 import { folderUrl, useFolderView, useSelection } from "./nav";
 
@@ -140,21 +140,23 @@ function Sidebar({ at, query, setQuery, onSettings }: { at: FolderId | "next" | 
     const count = board.contents(id).filter((t) => t.done_at === null).length;
     return (
       <div key={id ?? "root"}>
-        <button className={`sb-item${at === (id ?? "root") ? " on" : ""}`} style={{ paddingLeft: 10 + depth * 18 }} onClick={() => go(folderUrl(id))}>
-          <span
-            className={`tw${kids.length && open ? " open" : ""}`}
-            onClick={(e) => {
-              if (!kids.length) return;
-              e.stopPropagation();
-              toggle(id);
-            }}
-          >
-            {kids.length > 0 && <Icon of={ChevronRight} size={14} width={2.2} />}
-          </span>
-          <Icon of={id ? FolderIcon : FolderRoot} size={18} />
-          <span className="truncate">{board.folderName(id)}</span>
-          <span className="count">{count || ""}</span>
-        </button>
+        <FolderContextMenu folder={id}>
+          <button className={`sb-item${at === (id ?? "root") ? " on" : ""}`} style={{ paddingLeft: 10 + depth * 18 }} onClick={() => go(folderUrl(id))}>
+            <span
+              className={`tw${kids.length && open ? " open" : ""}`}
+              onClick={(e) => {
+                if (!kids.length) return;
+                e.stopPropagation();
+                toggle(id);
+              }}
+            >
+              {kids.length > 0 && <Icon of={ChevronRight} size={14} width={2.2} />}
+            </span>
+            <Icon of={id ? FolderIcon : FolderRoot} size={18} />
+            <span className="truncate">{board.folderName(id)}</span>
+            <span className="count">{count || ""}</span>
+          </button>
+        </FolderContextMenu>
         {open && kids.map((f) => tree(f.id, depth + 1))}
       </div>
     );

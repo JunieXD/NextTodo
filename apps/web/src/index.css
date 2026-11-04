@@ -404,11 +404,11 @@ svg { display: block; flex: none; }
 .detail-actions { margin: 22px 16px 0; }
 
 /* Dragging a row of a rail list to another place. */
-.rail-list > .row { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.reorderable > .row { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .rail-list.reordering .rail { opacity: 0; }
-.rail-list.reordering > .row { transition: transform .2s var(--ease); }
-.rail-list > .row[data-lifted] { z-index: 4; transition: none; box-shadow: var(--shadow-3); }
-.rail-list > .row[data-lifted] > .row-inner { background: var(--group-bg); }
+.reorderable.reordering > .row { transition: transform .2s var(--ease); }
+.reorderable > .row[data-lifted] { z-index: 4; transition: none; box-shadow: var(--shadow-3); }
+.reorderable > .row[data-lifted] > .row-inner { background: var(--group-bg); }
 
 /* The Android app's first-start tip. */
 .tip-card { margin: 8px 16px 4px; padding: 14px 16px 6px; border-radius: 14px; background: var(--secondary-container); color: var(--on-secondary-container); font-size: 14px; line-height: 1.5; }

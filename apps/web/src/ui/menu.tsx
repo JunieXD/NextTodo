@@ -3,7 +3,7 @@
 
 import type { LucideIcon } from "lucide-react";
 import { ContextMenu as Context } from "radix-ui";
-import { type ReactElement, useContext, useRef } from "react";
+import { type ReactElement, useContext, useState } from "react";
 import { RootContext } from "./feedback";
 import { Icon } from "./icons";
 
@@ -20,20 +20,17 @@ export const itemClass = (item: MenuItem) => `menu-item${item.danger ? " danger-
  * touch screen: a long press of a finger or pen picks a row up to drag it. */
 export function ContextMenu({ items, children }: { items: MenuItem[]; children: ReactElement }) {
   const root = useContext(RootContext);
-  const touched = useRef(false);
+  // Radix opens the menu on a long press itself, and on the browser's menu that comes of one. Off
+  // from a touch on, which also stops the long press begun (Radix 2.4); on again for a mouse, or for
+  // the menu key.
+  const [touched, setTouched] = useState(false);
   return (
     <Context.Root>
-      {/* Radix opens the menu on a long press itself, and on the browser's menu that comes of one:
-          kept from both, as an event handled already. */}
       <Context.Trigger
         asChild
-        onPointerDown={(e) => {
-          touched.current = e.pointerType !== "mouse";
-          if (touched.current) e.preventDefault();
-        }}
-        onContextMenu={(e) => {
-          if (touched.current) e.preventDefault();
-        }}
+        disabled={touched}
+        onPointerDown={(e) => setTouched(e.pointerType !== "mouse")}
+        onKeyDown={() => setTouched(false)}
       >
         {children}
       </Context.Trigger>

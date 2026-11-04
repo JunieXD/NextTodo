@@ -45,27 +45,33 @@ data class Shown(val signedIn: Boolean, val items: List<Item>, val ticked: Set<S
 object Widget {
     private fun prefs(context: Context) = context.getSharedPreferences("widget", Context.MODE_PRIVATE)
 
-    /** A list is as of a change on the server, by its sequence number, kept with it: one never
-     * replaces a newer one. The app's copy can be behind the server's, just started or back from
-     * being frozen in the background, and its list older than the one the widget fetched. A list
-     * as of no change, the empty one of signing out, replaces any, and any replaces it. */
+    /** A list is as of a change on the server, by its sequence number, kept with it: one as of an
+     * earlier change than the list kept is not written. The app's copy can be behind the server's,
+     * just started or back from being frozen in the background, and its list older than the one the
+     * widget fetched. A list as of no change, the empty one of signing out, replaces any, and any
+     * replaces it. */
     private const val SEQ = "seq"
+
+    /** Changes go one at a time, each checking, the session too, on what the one before left. */
     private val writing = Mutex()
 
-    /** Shows `tasks`, the app's list, as JSON in the shape of the `next` tool's data, as of the
-     * change `seq` its copy has. */
-    suspend fun show(context: Context, tasks: String, seq: Long?) = write(context, tasks, seq)
-
-    private suspend fun write(context: Context, tasks: String, seq: Long?) {
-        writing.withLock {
-            val prefs = prefs(context)
-            if (seq != null && prefs.contains(SEQ) && seq < prefs.getLong(SEQ, 0)) return
-            val edit = prefs.edit().putString("tasks", tasks)
-            if (seq != null) edit.putLong(SEQ, seq) else edit.remove(SEQ)
-            edit.apply()
-        }
-        NextWidget().updateAll(context)
+    /** Runs `change` on the preferences in turn, and shows the list again when it changed them. */
+    private suspend fun update(context: Context, change: (SharedPreferences) -> Boolean) {
+        if (writing.withLock { change(prefs(context)) }) NextWidget().updateAll(context)
     }
+
+    /** Keeps `tasks`, as of the change `seq`, unless the list kept is as of a later one. */
+    private fun keep(prefs: SharedPreferences, tasks: String, seq: Long?): Boolean {
+        if (seq != null && prefs.contains(SEQ) && seq < prefs.getLong(SEQ, 0)) return false
+        val edit = prefs.edit().putString("tasks", tasks)
+        if (seq != null) edit.putLong(SEQ, seq) else edit.remove(SEQ)
+        edit.apply()
+        return true
+    }
+
+    /** Shows `tasks`, the app's list, as JSON in the shape of the `next` tool's data, as of the
+     * change `seq` its copy has. The app's lists come in the order of its sign-ins and sign-outs. */
+    suspend fun show(context: Context, tasks: String, seq: Long?) = update(context) { keep(it, tasks, seq) }
 
     private fun items(context: Context): List<Item> {
         val list = JSONArray(prefs(context).getString("tasks", "[]"))
@@ -97,18 +103,15 @@ object Widget {
     }
 
     /** Takes a task done on the server in session `token`, by the change `seq`, out of the list,
-     * unless signed in again since, or the list is as of that change already. The list is then as
-     * of it: lists from before, which may still have the task, are not written any more. Until the
-     * next one comes, it may miss changes from elsewhere just before. */
-    private suspend fun drop(context: Context, task: String, token: String, seq: Long) {
-        writing.withLock {
-            val prefs = prefs(context)
-            if (Server.token(context) != token || (prefs.contains(SEQ) && prefs.getLong(SEQ, 0) >= seq)) return@withLock
-            val list = JSONArray(prefs.getString("tasks", "[]"))
-            val kept = (0 until list.length()).map(list::getJSONObject).filter { it.getString("id") != task }
-            prefs.edit().putString("tasks", JSONArray(kept).toString()).putLong(SEQ, seq).apply()
-        }
-        NextWidget().updateAll(context)
+     * unless signed in again since. Lists from before that change, which may still have the task,
+     * are not written any more. Until the list fetched next comes, this one may miss changes made
+     * elsewhere meanwhile, the task opened again too. */
+    private suspend fun drop(context: Context, task: String, token: String, seq: Long) = update(context) { prefs ->
+        if (Server.token(context) != token) return@update false
+        val list = JSONArray(prefs.getString("tasks", "[]"))
+        val kept = (0 until list.length()).map(list::getJSONObject).filter { it.getString("id") != task }
+        prefs.edit().putString("tasks", JSONArray(kept).toString()).putLong(SEQ, maxOf(seq, prefs.getLong(SEQ, seq))).apply()
+        true
     }
 
     /** What to show, each time the list or the sign-in changes: an empty list stays empty when the
@@ -133,7 +136,7 @@ object Widget {
             if (e.status == 401) return ended(context, token)
             throw e
         }
-        if (Server.token(context) == token) write(context, tasks, seq)
+        update(context) { Server.token(context) == token && keep(it, tasks, seq) }
     }
 
     /** Marks a task done, takes back its reminder (`number`), and fetches the list again. The task
@@ -173,7 +176,7 @@ object Widget {
     /** The server says the session `token` has ended: unless the app has signed in again since, sign
      * out, and the widget asks to sign in again. */
     private suspend fun ended(context: Context, token: String) {
-        if (Server.ended(context, token)) write(context, "[]", null)
+        update(context) { Server.ended(context, token) && keep(it, "[]", null) }
     }
 
     /** Takes back a reminder the app scheduled with Capacitor's LocalNotifications (8.3), the way the

@@ -17,6 +17,8 @@ tauri-build = { version = "2.7.4", features = [] }
 [dependencies]
 # Links from the page, in the default browser or mail app.
 open = "5.4.5"
+# The TLS crypto the updater's downloads need: its client brings none (src/updates.rs).
+rustls = { version = "0.23.46", default-features = false, features = ["ring"] }
 serde = { version = "1", features = ["derive"] }
 # `generate_context!` writes the plugins' settings of tauri.conf.json as `serde_json` values.
 serde_json = "1"

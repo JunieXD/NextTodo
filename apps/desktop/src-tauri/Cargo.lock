@@ -2384,6 +2384,7 @@ name = "nexttodo-desktop"
 version = "0.1.0"
 dependencies = [
  "open",
+ "rustls",
  "serde",
  "serde_json",
  "tauri",

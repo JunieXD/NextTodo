@@ -29,6 +29,9 @@ pub async fn update(app: AppHandle, downloaded: State<'_, Downloaded>, server: S
     let Some(update) = updater.restore_update(manifest).map_err(|e| format!("检查更新失败：{e}"))? else {
         return Ok(None);
     };
+    // The plugin's client brings no TLS crypto, and panics with none installed: its own check
+    // installs ring, which restoring an update skips. Installing fails only when one is already.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let bytes = update.download(|_, _| {}, || {}).await.map_err(|e| format!("下载更新失败：{e}"))?;
     let version = update.version.clone();
     if cfg!(windows) {

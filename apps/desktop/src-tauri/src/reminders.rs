@@ -8,7 +8,7 @@ use serde::Deserialize;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 
-/// The longest wait between looks at the clock. The wait's own clock stops while the Mac sleeps, so
+/// The longest wait between looks at the clock. The wait's own clock stops while the computer sleeps, so
 /// a reminder due meanwhile would otherwise come as late as the sleep was long.
 const LOOK_AGAIN: Duration = Duration::from_secs(30);
 
@@ -41,7 +41,7 @@ pub const KIND: &str = "reminder";
 pub const OPEN: &str = "open";
 
 /// Takes over the reminders to come, and those due since the last handover that are still wanted:
-/// one due after the thread last looked, as when the Mac has just woken, is still shown, once. Those
+/// one due after the thread last looked, as when the computer has just woken, is still shown, once. Those
 /// due before were shown then, if they were to be; unless the clock has gone back since.
 #[tauri::command]
 pub fn set_reminders(state: State<Reminders>, reminders: Vec<Reminder>) {
@@ -72,11 +72,14 @@ pub fn start(app: AppHandle) {
             queue.list = rest;
             queue.looked = now;
             for r in due {
-                if let Err(e) = app.notification().builder().title(&r.title).body(&r.body).action_type_id(KIND).extra("task", &r.task).show() {
+                if let Err(e) =
+                    app.notification().builder().title(&r.title).body(&r.body).action_type_id(KIND).extra("task", &r.task).show()
+                {
                     eprintln!("提醒弹出失败：{e}");
                 }
             }
-            let wait = queue.list.iter().map(|r| r.at - now).min().map_or(LOOK_AGAIN, |ms| LOOK_AGAIN.min(Duration::from_millis(ms as u64)));
+            let wait =
+                queue.list.iter().map(|r| r.at - now).min().map_or(LOOK_AGAIN, |ms| LOOK_AGAIN.min(Duration::from_millis(ms as u64)));
             queue = state.changed.wait_timeout(queue, wait).expect("never poisoned").0;
         }
     });

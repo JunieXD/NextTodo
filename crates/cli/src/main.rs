@@ -25,7 +25,7 @@ struct Cli {
 enum Command {
     #[command(about = "用用户名和密码登录，生成令牌存到配置文件")]
     Login {
-        #[arg(long, help = "服务器地址，如 https://todo.juniexd.cn")]
+        #[arg(long, help = "服务器地址，如 https://todo.example.com")]
         url: Option<String>,
         #[arg(long, default_value = "命令行", help = "令牌名，会显示在改动记录里")]
         name: String,

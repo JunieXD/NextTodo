@@ -90,7 +90,7 @@ function Updates() {
     const shown = () => document.visibilityState === "visible" && void check();
     void check();
     document.addEventListener("visibilitychange", shown);
-    // The macOS app may stay open, or in the menu bar, for days.
+    // The desktop app may stay open, or in the menu bar or tray, for days.
     const timer = setInterval(() => void check(), EVERY_MS);
     return () => {
       document.removeEventListener("visibilitychange", shown);
@@ -99,7 +99,7 @@ function Updates() {
   }, []);
   useEffect(() => {
     if (pending?.kind === "apk") snack({ text: `NextTodo ${pending.version} 可以安装了`, action: "安装", onAction: () => void install(pending.url, snack), ms: 8000 });
-    if (pending?.kind === "restart") snack({ text: "新版本已安装，重启后生效", action: "重启", onAction: () => void restart(), ms: 8000 });
+    if (pending?.kind === "restart") snack({ text: "新版本已准备好，重启后生效", action: "重启", onAction: () => void restart(snack), ms: 8000 });
   }, [pending, snack]);
   return null;
 }

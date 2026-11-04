@@ -1,5 +1,5 @@
-// What only the macOS app does: deadline reminders, shown by the app while it runs, and quick add
-// from the menu bar and the global shortcut. See docs/macos.md.
+// What only the desktop app does: deadline reminders, shown by the app while it runs, and quick add
+// from the menu bar or tray icon and the global shortcut. See docs/desktop.md.
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen as on } from "@tauri-apps/api/event";
@@ -48,7 +48,8 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
   };
 }
 
-/** Listens for quick add from the menu bar icon and the global shortcut, and for clicks on reminders. */
+/** Listens for quick add from the menu bar or tray icon and the global shortcut, and for clicks on
+ * reminders. */
 export async function listen() {
   await on("quick-add", () => navigate("/?add"));
   await on<string>("open-task", (e) => navigate(`/?open=${e.payload}`));

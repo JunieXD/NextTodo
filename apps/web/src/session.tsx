@@ -14,7 +14,7 @@ import type { SeqSnapshot } from "./api/types/SeqSnapshot";
 import type { User } from "./api/types/User";
 import { Rejected } from "./domain/apply";
 import * as android from "./android";
-import * as macos from "./macos";
+import * as desktop from "./desktop";
 import { type Saver, forget, forgetCopy, forgetOthers, load, saver } from "./sync/persist";
 import { type Connection, Socket } from "./sync/socket";
 import { type Saved, Store } from "./sync/store";
@@ -140,7 +140,7 @@ export class Session {
     });
     this.socket.start();
     tabs.addEventListener("message", this.heard);
-    if (app) this.unwatch = (app === "android" ? android : macos).watch(this.store, (e) => this.listeners.appFailed(e));
+    if (app) this.unwatch = (app === "android" ? android : desktop).watch(this.store, (e) => this.listeners.appFailed(e));
   }
 
   private readonly heard = ({ data }: MessageEvent<Message>) => {

@@ -64,7 +64,7 @@ export function Login({ onSignIn, notice }: { onSignIn(request: () => Promise<Us
           onChange={(m) => (setMode(m), setError(null))}
         />
         {notice && !error && <p className="form-error">{notice}</p>}
-        {native && field("server", "服务器地址", { autoComplete: "url", autoCapitalize: "none", inputMode: "url" })}
+        {native && field("server", "服务器地址", { autoComplete: "url", autoCapitalize: "none", inputMode: "url", placeholder: "todo.example.com" })}
         {mode === "register" && field("invite", "邀请码", { autoComplete: "off" })}
         {field("username", "用户名", { autoComplete: "username", autoCapitalize: "none" }, mode === "register" ? "字母、数字和下划线，3–32 位" : undefined)}
         {mode === "register" && field("display_name", "显示名", { autoComplete: "nickname" }, "向他人显示的名称")}

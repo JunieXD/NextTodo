@@ -187,7 +187,7 @@ export function Settings({ onClose, onSignOut }: { onClose(): void; onSignOut():
       )}
 
       {app === "android" && <BackgroundSettings />}
-      {app === "macos" && <StartAtLogin />}
+      {app === "desktop" && <StartAtLogin />}
 
       <h2 className="group-title">外观</h2>
       <div style={{ margin: "0 16px" }}>

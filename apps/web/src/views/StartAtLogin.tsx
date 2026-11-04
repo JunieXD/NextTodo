@@ -1,8 +1,11 @@
-// In the macOS app: starting at login, in the menu bar only.
+// In the desktop app: starting at login, in the menu bar or tray only.
 
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { useEffect, useState } from "react";
+import { desktopOs } from "../api/http";
 import { useFeedback } from "../ui/feedback";
+
+const TRAY = desktopOs === "Windows" ? "系统托盘" : "菜单栏";
 
 export function StartAtLogin() {
   const { snack } = useFeedback();
@@ -27,7 +30,7 @@ export function StartAtLogin() {
           <div className="row-inner">
             <span className="folder-main">
               <span>登录时启动</span>
-              <span className="folder-sub">{on ? "已开启：启动后仅显示在菜单栏，提醒照常" : "开启后登录时自动启动，仅显示在菜单栏"}</span>
+              <span className="folder-sub">{on ? `已开启：启动后仅显示在${TRAY}，提醒照常` : `开启后登录时自动启动，仅显示在${TRAY}`}</span>
             </span>
             <button className="text-btn" onClick={toggle}>
               {on ? "关闭" : "开启"}

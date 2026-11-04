@@ -2,7 +2,7 @@
 # Run on the server by deploy.sh, with the new compose.yaml uploaded next to the running one as
 # compose.yaml.new: switches to the new version, and back to the one before when it doesn't answer.
 #
-#   ssh rcvps bash -s -- <directory> <tag> <port> < deploy/switch.sh
+#   ssh <host> bash -s -- <directory> <tag> <port> < deploy/switch.sh
 set -euo pipefail
 cd "$1"
 
@@ -10,7 +10,7 @@ cd "$1"
 mkdir -p data
 chown -R 65534:65534 data
 
-printf 'NEXTTODO_TAG=%s\nNEXTTODO_PORT=%s\n' "$2" "$3" > .env.new
+printf 'NEXTTODO_IMAGE=nexttodo:%s\nNEXTTODO_PORT=%s\n' "$2" "$3" > .env.new
 docker compose --env-file .env.new -f compose.yaml.new config -q
 if [[ -f .env ]]; then
   cp compose.yaml compose.yaml.prev

@@ -1,7 +1,11 @@
-# The server and the built web app, nothing else. Built by deploy.sh from a staging directory that
-# holds the static Linux binary and `web/`.
+# The server and the built web app, nothing else. Built from the directory deploy/build.sh fills,
+# which holds a static Linux server binary for each architecture and `web/`.
 FROM scratch
-COPY nexttodo-server /nexttodo-server
+ARG TARGETARCH
+LABEL org.opencontainers.image.source=https://github.com/JunieXD/NextTodo \
+      org.opencontainers.image.description="NextTodo 服务端和网页端" \
+      org.opencontainers.image.licenses=MIT
+COPY nexttodo-server-${TARGETARCH} /nexttodo-server
 COPY web /web
 ENV NEXTTODO_DATA=/data NEXTTODO_WEB=/web NEXTTODO_LISTEN=0.0.0.0:8080
 USER 65534:65534

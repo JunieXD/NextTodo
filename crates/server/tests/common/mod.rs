@@ -62,8 +62,8 @@ impl TestApp {
 
     /// Creates the administrator and returns a session secret.
     pub async fn admin(&self) -> String {
-        auth::create_admin(&self.state, "junie".into(), "Junie".into(), "correct horse".into()).await.unwrap();
-        self.login("junie", "correct horse").await.body["secret"].as_str().unwrap().to_owned()
+        auth::create_admin(&self.state, "alice".into(), "Alice".into(), "correct horse".into()).await.unwrap();
+        self.login("alice", "correct horse").await.body["secret"].as_str().unwrap().to_owned()
     }
 
     /// The id of the user a session belongs to.

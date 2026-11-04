@@ -139,7 +139,7 @@ Android 的返回键（含侧滑返回）一次退一步：
 - 图形是一段清单：左边一条轨道串起三项，从上到下是已完成（实心圆点，对勾镂空）、可做（圆环）、等待中（虚线圆环），右边各有一条标题，画法和 App 里的事项状态一致。
 - 底板是圆角方块，从左上 `#2E8E6C` 渐变到右下 `#14563F`。图形是白色；轨道、等待中的圆环和它的标题用 `#A6F2D1`；已完成的标题是半透明的白色。
 - 单色的场合（macOS 菜单栏的模板图，Android 的通知小图标和主题图标）整个图形只用一种颜色，浅色部分降低不透明度。
-- 图标文件都由 `apps/web/scripts/icons.js` 生成：网页的 `icon.svg`（也是浏览器标签页图标和左栏、登录页的品牌标）和各尺寸 PNG，Android 自适应图标的背景、前景、单色三层和通知小图标，macOS 的 `icon.icns`、各尺寸 PNG 和菜单栏图标。改图形只改这个脚本，然后在 `apps/web` 下运行 `node scripts/icons.js`；脚本要用 `rsvg-convert`（librsvg）和 macOS 自带的 `iconutil`。
+- 图标文件都由 `apps/web/scripts/icons.js` 生成：网页的 `icon.svg`（也是浏览器标签页图标和左栏、登录页的品牌标）和各尺寸 PNG，Android 自适应图标的背景、前景、单色三层和通知小图标，macOS 的 `icon.icns`、各尺寸 PNG 和菜单栏图标，Windows 的 `icon.ico`（也是托盘图标）。改图形只改这个脚本，然后在 `apps/web` 下运行 `node scripts/icons.js`；脚本要用 `rsvg-convert`（librsvg）和 macOS 自带的 `iconutil`。
 
 ## 交互细节
 

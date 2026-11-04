@@ -2,7 +2,7 @@
 
 ## 定位
 
-个人待办应用，核心是事项之间的先后关系：事项和依赖组成一张有向无环图，首页随时列出“现在能做的事”。文件夹可以无限嵌套，用来分开不同的项目。手机优先，网页、Android、macOS 实时同步，离线也能用。agent 通过 API、命令行和 MCP 管理整个待办。支持多个账号，朋友凭邀请码注册，各用各的。
+个人待办应用，核心是事项之间的先后关系：事项和依赖组成一张有向无环图，首页随时列出“现在能做的事”。文件夹可以无限嵌套，用来分开不同的项目。手机优先，网页、Android、macOS、Windows 实时同步，离线也能用。agent 通过 API、命令行和 MCP 管理整个待办。支持多个账号，朋友凭邀请码注册，各用各的。
 
 ## 概念和规则
 
@@ -148,7 +148,7 @@ tasks:
 
 - 用户名加密码登录，密码用 Argon2id 存储。
 - 第一个管理员在服务器上用命令行创建。其他人注册需要邀请码，邀请码由管理员生成，每个只能用一次。
-- 登录后每台设备得到一个会话令牌：网页存在 HttpOnly Cookie 里，App 存在 App 私有的存储里（Android 是 SharedPreferences，小组件也要读；macOS 是 WebView 的 `localStorage`），没有另外加密。设置里可以看到并注销各设备。
+- 登录后每台设备得到一个会话令牌：网页存在 HttpOnly Cookie 里，App 存在 App 私有的存储里（Android 是 SharedPreferences，小组件也要读；桌面 App 是 WebView 的 `localStorage`），没有另外加密。设置里可以看到并注销各设备。
 - 每个用户的数据完全隔离。所有表都带 `owner_id`，服务端在每个查询上按用户过滤。
 - 第一版不做共享。以后要做文件夹共享时，加成员表并扩展同步的可见范围即可，现有数据不用改。
 
@@ -198,12 +198,12 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
   - 澎湃 OS 需要给 NextTodo 开“自启动”，后台刷新才不会被系统清掉；App 首次启动时引导设置。
 - 用自签名的密钥打正式版 APK，直接安装。密钥不进仓库。
 
-### macOS
+### 桌面（macOS 和 Windows）
 
-- Tauri 2 外壳加载打包在安装包里的前端。
-- 菜单栏图标：点开就能快速添加，也可以用全局快捷键呼出。
+- Tauri 2 外壳加载打包在安装包里的前端，macOS 版和 Windows 版是同一套代码。
+- 菜单栏（macOS）或系统托盘（Windows）图标：点开就能快速添加，也可以用全局快捷键呼出。
 - App 运行时弹出截止提醒通知；可以设置开机自启。
-- 不做苹果签名。首次打开需要右键选“打开”。
+- 不做苹果签名和 Windows 代码签名，首次打开时按系统提示放行。细节见[桌面 App](desktop.md)。
 
 ## 技术栈
 
@@ -214,7 +214,7 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 | 命令行 `crates/cli` | Rust：clap、ureq（HTTP）、serde-saphyr（读 YAML 计划） |
 | 前端 `apps/web` | React、Vite、TypeScript、Tailwind CSS、Radix、React Flow + elkjs、react-markdown + remark-gfm、vite-plugin-pwa、Lucide（图标）；动效用 CSS 动画 |
 | Android `apps/android` | Capacitor，小组件用 Kotlin + Jetpack Glance |
-| macOS `apps/desktop` | Tauri 2 |
+| 桌面 `apps/desktop` | Tauri 2（macOS、Windows） |
 | 类型共享 | ts-rs 从 Rust 类型生成 TypeScript 类型 |
 
 - 前端离线时需要自己计算派生状态和排序，所以这部分算法在 TypeScript 里也实现一份，和 Rust 版用同一套测试数据校验。
@@ -227,26 +227,24 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 ## 部署
 
 - 服务端是一个进程、一个端口：同时提供 API、WebSocket、MCP 和网页静态文件。静态文件在构建时预先压缩好，放在镜像里，见[网页端](web.md#部署)。
-- 在本机用 `cargo-zigbuild` 交叉编译 x86_64 Linux 静态二进制，打成基于 `scratch` 的镜像，通过 `docker save | ssh rcvps docker load` 传到服务器。服务器上不编译。
-- 服务器目录 `/opt/1panel/www/sites/NextTodo/`：`compose.yaml` 和 `data/`（SQLite 数据库和快照）。只监听 `127.0.0.1`。
-- 域名 `todo.juniexd.cn`：由 1Panel 反向代理，开启 WebSocket，使用 `*.juniexd.cn` 证书。反向代理要把原来的 `Host` 传过去（或设 `X-Forwarded-Host`），网页的同步连接靠它确认是同源页面。
+- 自己部署：用 GHCR 上的镜像 `ghcr.io/juniexd/nexttodo`（amd64 和 arm64），`docker compose` 启动，数据在挂载的 `data/` 里；前面放一个提供 HTTPS 的反向代理。步骤见[部署](deploy.md)。
+- 镜像基于 `scratch`，里面只有静态链接的 Linux 服务端和网页文件（含 [App 更新](#app-更新)），容器以 65534 用户运行，只监听容器里的 8080。镜像在 Mac 上用 `cargo-zigbuild` 交叉编译后打包，服务器上不编译。
+- 反向代理要开启 WebSocket，并把原来的 `Host` 传过去（或设 `X-Forwarded-Host`），网页的同步连接靠它确认是同源页面。
 - 服务端启动时和之后每天用 `VACUUM INTO` 做一次数据库快照，放在 `data/snapshots/snapshot-<Unix 秒>.db`，保留最近 7 份。恢复时停掉服务，用快照替换 `data/nexttodo.db`（并删掉旁边的 `-wal`、`-shm` 文件）再启动。
-- 部署用一条命令完成：`deploy/deploy.sh`（`--build` 只在本机构建镜像）。它同时构建 [App 更新](#app-更新)用的 Android 正式包和 macOS 更新包，签名密钥从环境变量读取，不进仓库；本机的 `~/.config/nexttodo/deploy.sh` 从钥匙串取出密码再调用它。镜像里只有服务端和网页文件（含 App 更新），容器以 65534 用户运行，每次部署把 `data/` 整个交给这个用户；服务端端口默认映射到 `127.0.0.1:8790`，第一次部署前确认服务器上没被占用。
-- 服务器上由 `deploy/switch.sh` 换版本：先检查新配置，保留旧的 `compose.yaml` 和 `.env`，启动后 30 秒内首页没有响应就换回上一个版本。
-- 替换 Vikunja：NextTodo 上线后，把 `/opt/1panel/www/sites/vikunja` 备份到外接盘 `Backups/`，停掉并删除 Vikunja，再把 `todo.juniexd.cn` 的反向代理指向 NextTodo。
+- 发布：`deploy/build.sh` 构建镜像内容和各端安装包，`deploy/release.sh` 把镜像推到 GHCR、安装包传到 GitHub Releases；`deploy/deploy.sh` 经 ssh 部署到自己的服务器，换版本失败时自动换回上一个。签名密钥从环境变量读取，不进仓库。见[部署](deploy.md#构建发布)。
 
 ## App 更新
 
-两个 App 都从自己登录的服务器拿更新，不经应用商店。更新文件随 `deploy/deploy.sh` 一起部署，放在网页静态文件的 `/app/` 下，服务端不加接口。
+各个 App 都从自己登录的服务器拿更新，不经应用商店，所以 App 的版本总是跟着服务端走。更新文件打包在服务端镜像里，放在网页静态文件的 `/app/` 下，服务端不加接口；文件里的下载地址都是相对路径，同一个镜像部署在哪个域名下都能用。
 
 | | 网页部分 | 原生部分 |
 |---|---|---|
 | Android | 热更新：只下载变了的文件，下次打开 App 生效，新版本打不开就退回 | 下载新 APK，由系统弹出安装确认 |
-| macOS | 网页打包在 App 里，随整包更新 | Tauri 官方更新插件：后台下载整个新版本、校验签名，重启生效 |
+| 桌面 | 网页打包在 App 里，随整包更新 | Tauri 官方更新插件：后台下载整个新版本、校验签名，重启生效 |
 
-- 平时的改动几乎都在网页部分，Android 只在原生部分（`apps/android`、Capacitor 配置和插件）改了时才要装新 APK；macOS 每次发布都是整包，几 MB。
-- 只从登录的服务器经 HTTPS 下载，和网页端一样信任这台服务器。APK 由系统校验签名，必须和已装的一致；macOS 更新包用单独的更新密钥签名，App 里带着公钥校验。
-- 每次部署除了服务端镜像，还构建 Android 正式包和 macOS 更新包，连同版本说明一起放进镜像的 `/app/`。细节见 [Android](android.md#更新) 和 [macOS](macos.md#更新)。
+- 平时的改动几乎都在网页部分，Android 只在原生部分（`apps/android`、Capacitor 配置和插件）改了时才要装新 APK；桌面 App 每次发布都是整包，几 MB。
+- 只从登录的服务器经 HTTPS 下载，和网页端一样信任这台服务器。APK 由系统校验签名，必须和已装的一致；桌面更新包用单独的更新密钥签名，App 里带着公钥校验。
+- 每次构建除了服务端，还构建 Android 正式包和桌面更新包，连同版本说明一起放进镜像的 `/app/`。细节见 [Android](android.md#更新) 和[桌面 App](desktop.md#更新)。
 
 ## 性能目标
 
@@ -263,10 +261,11 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 | 2 | agent 接入：命令行、`apply`、MCP、skill、改动记录和撤销 |
 | 3 | 网页：列表、文件夹、详情、Markdown、实时同步、离线 |
 | 4 | 关系图：电脑端和手机端两套交互 |
-| 5 | 部署到 rcvps，替换 Vikunja |
+| 5 | 部署上线 |
 | 6 | Android App、小组件、截止提醒 |
 | 7 | macOS App |
+| 8 | Windows App，开源发布 |
 
 ## 不做
 
-标签、优先级、看板、甘特图、日历视图、评论、附件、重复任务、子任务（用依赖和描述里的清单代替）、团队协作。第一版不做共享、网页提醒、macOS 小组件和 iOS App。
+标签、优先级、看板、甘特图、日历视图、评论、附件、重复任务、子任务（用依赖和描述里的清单代替）、团队协作。第一版不做共享、网页提醒、桌面小组件、iOS App 和 Linux 桌面 App（Linux 上用网页端）。

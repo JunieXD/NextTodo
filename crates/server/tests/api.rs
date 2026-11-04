@@ -11,16 +11,16 @@ use tower::ServiceExt;
 async fn login_sessions_and_logout() {
     let t = TestApp::new();
     let admin = t.admin().await;
-    assert_eq!(t.login("junie", "wrong password").await.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(t.login("alice", "wrong password").await.status, StatusCode::UNAUTHORIZED);
     assert_eq!(t.login("nobody", "correct horse").await.status, StatusCode::UNAUTHORIZED);
 
-    let login = t.login("JUNIE", "correct horse").await;
+    let login = t.login("ALICE", "correct horse").await;
     assert_eq!(login.status, StatusCode::OK, "usernames are case-insensitive");
     let cookie = login.headers[header::SET_COOKIE].to_str().unwrap();
     assert!(cookie.starts_with("nt_session=nt_") && cookie.contains("HttpOnly") && cookie.contains("Secure"));
 
     let me = t.call("GET", "/me", Some(&admin), None).await;
-    assert_eq!(me.body["username"], "junie");
+    assert_eq!(me.body["username"], "alice");
     assert_eq!(me.body["is_admin"], true);
 
     let via_cookie =
@@ -386,7 +386,7 @@ async fn bad_input_names_the_field() {
             .body(Body::from(body.to_owned()))
             .unwrap()
     };
-    let login = r#"{"username":"junie","password":"correct horse","device":"x"}"#;
+    let login = r#"{"username":"alice","password":"correct horse","device":"x"}"#;
     let form = t.app.clone().oneshot(raw("text/plain", login)).await.unwrap();
     assert_eq!(form.status(), StatusCode::BAD_REQUEST, "a cross-site form cannot log anyone in");
     let trailing = t.app.clone().oneshot(raw("application/json", &format!("{login} garbage"))).await.unwrap();
@@ -399,7 +399,7 @@ async fn bad_input_names_the_field() {
 async fn changing_the_password_signs_out_other_devices() {
     let t = TestApp::new();
     let here = t.admin().await;
-    let phone = t.login("junie", "correct horse").await.body["secret"].as_str().unwrap().to_owned();
+    let phone = t.login("alice", "correct horse").await.body["secret"].as_str().unwrap().to_owned();
     let token = t.call("POST", "/tokens", Some(&here), Some(json!({ "name": "Claude Code", "scope": "write" }))).await.body;
     let agent = token["secret"].as_str().unwrap();
 
@@ -418,8 +418,8 @@ async fn changing_the_password_signs_out_other_devices() {
     assert_eq!(t.call("GET", "/me", Some(&here), None).await.status, StatusCode::OK, "this device stays signed in");
     assert_eq!(t.call("GET", "/me", Some(&phone), None).await.status, StatusCode::UNAUTHORIZED);
     assert_eq!(t.call("GET", "/me", Some(agent), None).await.status, StatusCode::OK, "API tokens keep working");
-    assert_eq!(t.login("junie", "correct horse").await.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(t.login("junie", "new password").await.status, StatusCode::OK);
+    assert_eq!(t.login("alice", "correct horse").await.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(t.login("alice", "new password").await.status, StatusCode::OK);
 
     let renamed = t.call("PATCH", "/me", Some(&here), Some(json!({ "display_name": "小 J" }))).await;
     assert_eq!(renamed.body["display_name"], "小 J");

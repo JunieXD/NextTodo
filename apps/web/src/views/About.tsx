@@ -22,7 +22,7 @@ export function About() {
           <div className="row">
             <div className="row-inner">
               <span className="folder-main">
-                <span>{pending.kind === "apk" ? "有新版本" : "新版本已安装"}</span>
+                <span>{pending.kind === "apk" ? "有新版本" : "新版本已准备好"}</span>
                 <span className="folder-sub">{pending.kind === "apk" ? `${pending.version}，下载后由系统安装` : `${pending.version}，重启后生效`}</span>
               </span>
               {pending.kind === "apk" ? (
@@ -30,7 +30,7 @@ export function About() {
                   下载安装
                 </button>
               ) : (
-                <button className="text-btn" onClick={() => void restart()}>
+                <button className="text-btn" onClick={() => void restart(snack)}>
                   重启
                 </button>
               )}

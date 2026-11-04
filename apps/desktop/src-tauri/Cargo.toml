@@ -15,6 +15,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
+# Links from the page, in the default browser or mail app.
+open = "5.4.5"
 serde = { version = "1", features = ["derive"] }
 # `generate_context!` writes the plugins' settings of tauri.conf.json as `serde_json` values.
 serde_json = "1"
@@ -24,6 +26,8 @@ tauri-plugin-global-shortcut = "2.4.1"
 # Without the default cookie jar: the app signs in with its token only.
 tauri-plugin-http = { version = "2.8.3", default-features = false, features = ["rustls-tls", "http2", "charset", "system-proxy"] }
 tauri-plugin-notification = "2.8.0"
+# Started again on Windows, the app shows the window of the one running, as macOS does by itself.
+tauri-plugin-single-instance = "2.5.5"
 tauri-plugin-updater = "2.14.1"
 
 [lints.rust]

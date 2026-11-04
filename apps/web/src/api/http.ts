@@ -1,7 +1,7 @@
 // Requests to the server. The web app is served by the server and signs in with an HttpOnly cookie,
-// so it handles no token. The Android and macOS apps talk to the server they were told about and sign
-// in with a token, both kept in Capacitor Preferences (`localStorage` outside Capacitor), where the
-// Android widget reads them too. See docs/android.md and docs/macos.md.
+// so it handles no token. The Android and desktop apps talk to the server they were told about and
+// sign in with a token, both kept in Capacitor Preferences (`localStorage` outside Capacitor), where
+// the Android widget reads them too. See docs/android.md and docs/desktop.md.
 
 import { Capacitor } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
@@ -9,12 +9,13 @@ import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { ErrorBody } from "./types/ErrorBody";
 
 /** The app this runs in, if any. */
-export const app = Capacitor.isNativePlatform() ? "android" : "__TAURI_INTERNALS__" in globalThis ? "macos" : null;
+export const app = Capacitor.isNativePlatform() ? "android" : "__TAURI_INTERNALS__" in globalThis ? "desktop" : null;
 
 /** Running in an app rather than a browser. */
 export const native = app !== null;
 
-export const DEFAULT_SERVER = "https://todo.juniexd.cn";
+/** The system the desktop app runs on. */
+export const desktopOs = /Windows/.test(navigator.userAgent) ? "Windows" : "macOS";
 
 /** In the app, where the server is and the session's token; empty in the browser. */
 const server = { url: "", token: undefined as string | undefined };
@@ -22,7 +23,7 @@ const server = { url: "", token: undefined as string | undefined };
 /** Reads where the app connects to. Call before anything talks to the server. */
 export async function loadServer() {
   if (!native) return;
-  server.url = (await Preferences.get({ key: "server" })).value ?? DEFAULT_SERVER;
+  server.url = (await Preferences.get({ key: "server" })).value ?? "";
   server.token = (await Preferences.get({ key: "token" })).value ?? undefined;
 }
 
@@ -81,7 +82,7 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
     if (server.token) headers.Authorization = `Bearer ${server.token}`;
     // From another origin than the server's: the Android app's fetch goes through CapacitorHttp, the
     // macOS app's through Tauri's HTTP plugin, so that the server needs no CORS.
-    res = await (app === "macos" ? tauriFetch : fetch)(`${server.url}/api/v1${path}`, {
+    res = await (app === "desktop" ? tauriFetch : fetch)(`${server.url}/api/v1${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -109,7 +110,7 @@ function parseError(text: string): Partial<ErrorBody> {
 
 /** How this browser shows up among the user's devices, such as `Chrome · macOS`. */
 export function deviceName(): string {
-  if (app) return app === "android" ? "NextTodo App · Android" : "NextTodo App · macOS";
+  if (app) return `NextTodo App · ${app === "android" ? "Android" : desktopOs}`;
   const ua = navigator.userAgent;
   const browser = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "浏览器";
   const os = /iPhone|iPad/.test(ua) ? "iOS" : /Android/.test(ua) ? "Android" : /Mac OS/.test(ua) ? "macOS" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : "";

@@ -51,7 +51,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 // 依赖
 { "before": "<前置 id>", "after": "<后续 id>", "created_at": … }
 // 用户
-{ "id": "…", "username": "junie", "display_name": "Junie", "is_admin": true }
+{ "id": "…", "username": "alice", "display_name": "Alice", "is_admin": true }
 // 邀请码
 { "code": "Kx7Pq2Lm9AbC", "created_at": …, "used_by": "friend", "used_at": … }  // used_by 是注册者的用户名
 // 令牌（不含明文）

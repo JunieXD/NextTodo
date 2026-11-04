@@ -1,17 +1,17 @@
 // Draws the logo (docs/ui.md#产品图标) and writes every icon made from it: the web's, Android's and
-// macOS's. Run it from apps/web with `node scripts/icons.js` after changing the logo; it needs
-// rsvg-convert (librsvg) and macOS's iconutil.
+// the desktop app's. Run it from apps/web with `node scripts/icons.js` after changing the logo; it
+// needs rsvg-convert (librsvg) and macOS's iconutil.
 //
 // The logo is a list as the app draws one: a rail with three tasks on it, done, ready and waiting,
 // each with its title bar. Every shape is a path, so the same drawing serves SVG and Android's
 // vector drawables, which have no circles, dashes or masks.
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const ANDROID = "../android/app/src/main/res/drawable";
-const MACOS = "../desktop/src-tauri/icons";
+const DESKTOP = "../desktop/src-tauri/icons";
 
 // ---------- the drawing, on a 1024 tile ----------
 
@@ -208,16 +208,39 @@ writeFileSync(`${ANDROID}/ic_stat_nexttodo.xml`, vector(24, fit(24, 2), MONO("#F
 
 // macOS: the tile inset with a shadow as macOS draws app icons, and a template image for the menu bar.
 const mac = tileSvg({ inset: 100, radius: 185, shadow: true });
-png(mac, 32, `${MACOS}/32x32.png`);
-png(mac, 128, `${MACOS}/128x128.png`);
-png(mac, 256, `${MACOS}/128x128@2x.png`);
+png(mac, 32, `${DESKTOP}/32x32.png`);
+png(mac, 128, `${DESKTOP}/128x128.png`);
+png(mac, 256, `${DESKTOP}/128x128@2x.png`);
 const set = join(tmp, "icon.iconset");
 execFileSync("mkdir", [set]);
 for (const s of [16, 32, 128, 256, 512]) {
   png(mac, s, join(set, `icon_${s}x${s}.png`));
   png(mac, s * 2, join(set, `icon_${s}x${s}@2x.png`));
 }
-execFileSync("iconutil", ["-c", "icns", "-o", `${MACOS}/icon.icns`, set]);
-png(glyphSvg(36, 2, MONO("#000000")), 36, `${MACOS}/tray.png`);
+execFileSync("iconutil", ["-c", "icns", "-o", `${DESKTOP}/icon.icns`, set]);
+png(glyphSvg(36, 2, MONO("#000000")), 36, `${DESKTOP}/tray.png`);
+
+// Windows: the tile in the sizes Windows asks for, in one .ico of PNGs; the tray shows it too.
+const sizes = [16, 24, 32, 48, 64, 256];
+const images = sizes.map((s) => {
+  const out = join(tmp, `${s}.png`);
+  png(tile, s, out);
+  return readFileSync(out);
+});
+const ico = Buffer.alloc(6 + 16 * sizes.length);
+ico.writeUInt16LE(1, 2); // an icon
+ico.writeUInt16LE(sizes.length, 4);
+let offset = ico.length;
+sizes.forEach((s, i) => {
+  const entry = 6 + 16 * i;
+  ico.writeUInt8(s % 256, entry); // width and height, 0 for 256
+  ico.writeUInt8(s % 256, entry + 1);
+  ico.writeUInt16LE(1, entry + 4); // colour planes
+  ico.writeUInt16LE(32, entry + 6); // bits per pixel
+  ico.writeUInt32LE(images[i].length, entry + 8);
+  ico.writeUInt32LE(offset, entry + 12);
+  offset += images[i].length;
+});
+writeFileSync(`${DESKTOP}/icon.ico`, Buffer.concat([ico, ...images]));
 
 rmSync(tmp, { recursive: true });

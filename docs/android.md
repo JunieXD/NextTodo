@@ -15,7 +15,7 @@ Android App（包括小米澎湃 OS）：Capacitor 外壳加载打包在安装�
 
 App 的页面来自 `https://localhost`，和服务器不同源，所以不用 Cookie：
 
-- 登录页多一个“服务器地址”栏，默认 `https://todo.juniexd.cn`。
+- 登录页多一个“服务器地址”栏，第一次登录时填写，不写协议时按 `https://`。
 - 登录得到的会话令牌和服务器地址存在 Capacitor Preferences（Android 的 SharedPreferences，App 私有）；小组件从同一处读取。App 不参加系统备份（`allowBackup="false"`），令牌不会进云端备份。
 - HTTP 请求加 `Authorization: Bearer <令牌>`，经 Capacitor 的原生 HTTP 发出（`CapacitorHttp`），不受跨域限制，服务端不需要 CORS。Capacitor 不给 POST 等写请求转发 `AbortSignal`，所以网页端请求的 20 秒期限在 App 里只对 GET 有效，登录、注销等写请求要等系统的网络超时。
 - WebSocket 在 `hello` 里带令牌（见 [API](api.md#同步协议)）。
@@ -58,7 +58,7 @@ Jetpack Glance 写的“接下来”小组件：
 
 总体见[总体设计](design.md#app-更新)。
 
-**版本**：原生版本是改过原生部分的提交数（`apps/android`、`apps/web/capacitor.config.ts`、`apps/web/package.json`，后者里有 Capacitor 插件的版本），写进 APK（`BuildConfig`）。`versionCode` 仍是全部提交数，只增不减；`versionName` 是 `0.1.<全部提交数>`，和同一次构建的 macOS App 一样。
+**版本**：原生版本是改过原生部分的提交数（`apps/android`、`apps/web/capacitor.config.ts`、`apps/web/package.json`，后者里有 Capacitor 插件的版本），写进 APK（`BuildConfig`）。`versionCode` 仍是全部提交数，只增不减；`versionName` 是 `0.1.<全部提交数>`，和同一次构建的桌面 App 一样。
 
 **网页热更新**：
 
@@ -80,7 +80,7 @@ Jetpack Glance 写的“接下来”小组件：
 - 需要 Android SDK（`ANDROID_HOME`）和 JDK 21（Capacitor 8 的 Gradle 版本还不支持更新的 JDK）。
 - `pnpm android:build`（在 `apps/web` 下）：构建网页端、`cap sync android`，再用 Gradle 打 release APK。
 - 正式版用自签名的密钥签名，直接安装。密钥库和密码不进仓库：路径和密码从环境变量 `NEXTTODO_KEYSTORE`、`NEXTTODO_KEYSTORE_PASSWORD` 读取。
-- 版本号见[更新](#更新)。发布用的 APK 由 `deploy/deploy.sh` 构建，随服务端一起部署。
+- 版本号见[更新](#更新)。发布用的 APK 由 `deploy/build.sh` 构建，放进服务端镜像，也上传到 GitHub Releases，见[部署](deploy.md#构建发布)。
 
 ## 测试
 

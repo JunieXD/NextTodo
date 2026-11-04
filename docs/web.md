@@ -1,6 +1,6 @@
 # 网页端
 
-`apps/web`：React 单页应用，也是 Android 和 macOS App 的前端。产品和界面的规格见[总体设计](design.md)和[界面](ui.md)，同步协议见 [API](api.md#同步协议)。
+`apps/web`：React 单页应用，也是 Android 和桌面 App 的前端。产品和界面的规格见[总体设计](design.md)和[界面](ui.md)，同步协议见 [API](api.md#同步协议)。
 
 ## 结构
 

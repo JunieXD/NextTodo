@@ -1,15 +1,16 @@
-//! The macOS app: the web app in a window that closing only hides, a menu bar icon and a global
-//! shortcut for quick add, deadline reminders while it runs, and updates. See docs/macos.md.
+//! The desktop app, for macOS and Windows: the web app in a window that closing only hides, a menu
+//! bar or tray icon and a global shortcut for quick add, deadline reminders while it runs, and
+//! updates. See docs/desktop.md.
 
 mod reminders;
 mod updates;
 
-use std::process::Command;
-
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::webview::NewWindowResponse;
-use tauri::{ActivationPolicy, AppHandle, Emitter, Manager, RunEvent, WebviewWindowBuilder, WindowEvent};
+#[cfg(target_os = "macos")]
+use tauri::{ActivationPolicy, RunEvent};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_notification::{Action, ActionType, NotificationExt};
@@ -19,6 +20,7 @@ const HIDDEN: &str = "--hidden";
 
 fn show(app: &AppHandle) {
     // Started at login in the menu bar only, the app takes its place in the Dock with the window.
+    #[cfg(target_os = "macos")]
     let _ = app.set_activation_policy(ActivationPolicy::Regular);
     let window = app.get_webview_window("main").expect("the main window is in tauri.conf.json");
     // Nothing to do about a window that the system won't show.
@@ -33,7 +35,7 @@ fn window(app: &AppHandle) -> tauri::Result<()> {
         .on_new_window(|url, _| {
             if matches!(url.scheme(), "http" | "https" | "mailto") {
                 // Nothing to do about a link the system won't open.
-                let _ = Command::new("/usr/bin/open").arg(url.as_str()).status();
+                let _ = open::that_detached(url.as_str());
             }
             NewWindowResponse::Deny
         })
@@ -52,8 +54,13 @@ fn tray(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "打开 NextTodo", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&add, &open, &PredefinedMenuItem::separator(app)?, &quit])?;
+    // macOS tints a one-colour image to suit the menu bar; the Windows tray shows the app icon.
+    #[cfg(target_os = "macos")]
+    let icon = tauri::include_image!("icons/tray.png");
+    #[cfg(not(target_os = "macos"))]
+    let icon = app.default_window_icon().expect("tauri.conf.json has the app icon").clone();
     TrayIconBuilder::new()
-        .icon(tauri::include_image!("icons/tray.png"))
+        .icon(icon)
         .icon_as_template(true)
         .tooltip("NextTodo")
         .menu(&menu)
@@ -74,9 +81,10 @@ fn tray(app: &AppHandle) -> tauri::Result<()> {
 }
 
 pub fn run() {
-    // ⌃⌥Space, from any app.
+    // ⌃⌥Space on macOS, Ctrl+Alt+Space on Windows, from any app.
     let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::Space);
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| show(app)))
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -91,6 +99,7 @@ pub fn run() {
                 .build(),
         )
         .manage(reminders::Reminders::default())
+        .manage(updates::Downloaded::default())
         .invoke_handler(tauri::generate_handler![reminders::set_reminders, reminders::clear_reminders, updates::update, updates::restart])
         .setup(move |app| {
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
@@ -109,12 +118,13 @@ pub fn run() {
                     let _ = handle.emit_to("main", "open-task", task);
                 }
             })?;
-            // Taken by another app, the shortcut does nothing; the menu bar icon still works.
+            // Taken by another app, the shortcut does nothing; the menu bar or tray icon still works.
             if let Err(e) = app.global_shortcut().register(shortcut) {
-                eprintln!("快捷键 ⌃⌥Space 注册失败：{e}");
+                eprintln!("全局快捷键注册失败：{e}");
             }
             reminders::start(app.handle().clone());
             if std::env::args().any(|a| a == HIDDEN) {
+                #[cfg(target_os = "macos")]
                 app.set_activation_policy(ActivationPolicy::Accessory);
             } else {
                 show(app.handle());
@@ -122,7 +132,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the window keeps the app in the menu bar, syncing and reminding.
+            // Closing the window keeps the app in the menu bar or tray, syncing and reminding.
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
@@ -130,10 +140,11 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("the app starts")
-        .run(|app, event| {
+        .run(|_app, _event| {
             // Clicking the Dock icon brings the window back.
-            if let RunEvent::Reopen { .. } = event {
-                show(app);
+            #[cfg(target_os = "macos")]
+            if let RunEvent::Reopen { .. } = _event {
+                show(_app);
             }
         });
 }

@@ -132,7 +132,7 @@ $ nexttodo graph 工作
 
 ```sh
 cargo install --path crates/cli          # 安装 nexttodo
-nexttodo login --url https://todo.juniexd.cn --name "Claude Code"
+nexttodo login --url https://todo.example.com --name "Claude Code"
 ```
 
 - `login` 用用户名和密码登录，生成一个以 `--name` 命名（默认“命令行”）的读写令牌，加 `--read-only` 生成只读令牌。令牌存在 `~/.config/nexttodo/config.json`（权限 600），登录用的会话随即注销。
@@ -141,21 +141,21 @@ nexttodo login --url https://todo.juniexd.cn --name "Claude Code"
 
 ## MCP
 
-- 地址 `https://todo.juniexd.cn/mcp`，请求头 `Authorization: Bearer <令牌>`。
+- 地址 `https://todo.example.com/mcp`，请求头 `Authorization: Bearer <令牌>`。
 - 工具的结果是上面的文本；出错时返回 `isError` 和错误说明。
 - 查询工具标注为只读，`delete` 标注为破坏性，客户端可以据此决定是否需要确认。
 
 Claude Code：
 
 ```sh
-claude mcp add --transport http nexttodo https://todo.juniexd.cn/mcp --header "Authorization: Bearer <令牌>"
+claude mcp add --transport http nexttodo https://todo.example.com/mcp --header "Authorization: Bearer <令牌>"
 ```
 
 Codex（`~/.codex/config.toml`）：
 
 ```toml
 [mcp_servers.nexttodo]
-url = "https://todo.juniexd.cn/mcp"
+url = "https://todo.example.com/mcp"
 bearer_token_env_var = "NEXTTODO_TOKEN"
 ```
 

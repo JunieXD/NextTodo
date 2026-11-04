@@ -7,7 +7,7 @@ async fn snapshots_hold_the_data_and_only_the_newest_are_kept() {
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("nexttodo.db");
     let state = AppState::new(Db::open(&file).unwrap(), Clock::system());
-    auth::create_admin(&state, "junie".into(), "Junie".into(), "correct horse".into()).await.unwrap();
+    auth::create_admin(&state, "alice".into(), "Alice".into(), "correct horse".into()).await.unwrap();
     let snapshots = dir.join("snapshots");
     // A partial copy left by a crash doesn't get in the way; files put there by hand stay.
     std::fs::create_dir_all(&snapshots).unwrap();
@@ -30,6 +30,6 @@ async fn snapshots_hold_the_data_and_only_the_newest_are_kept() {
     assert_eq!(names, expected);
     let copy = Connection::open(last.unwrap()).unwrap();
     let user: String = copy.query_row("SELECT username FROM users", [], |r| r.get(0)).unwrap();
-    assert_eq!(user, "junie");
+    assert_eq!(user, "alice");
     std::fs::remove_dir_all(dir).unwrap();
 }

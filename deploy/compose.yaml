@@ -1,12 +1,12 @@
-# On the server, in /opt/1panel/www/sites/NextTodo next to `data/`. deploy.sh copies it there and
-# sets NEXTTODO_TAG and NEXTTODO_PORT in `.env`.
+# Runs NextTodo with its database in ./data, which must belong to user 65534, the one the server
+# runs as. It listens on 127.0.0.1 only, for a reverse proxy on the same machine that serves HTTPS.
+# See docs/deploy.md.
 services:
   nexttodo:
-    image: nexttodo:${NEXTTODO_TAG}
+    image: ${NEXTTODO_IMAGE:-ghcr.io/juniexd/nexttodo:latest}
     restart: unless-stopped
-    # Only the reverse proxy on this machine reaches it.
     ports:
-      - "127.0.0.1:${NEXTTODO_PORT}:8080"
+      - "127.0.0.1:${NEXTTODO_PORT:-8080}:8080"
     volumes:
       - ./data:/data
     environment:

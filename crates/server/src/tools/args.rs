@@ -16,6 +16,15 @@ pub struct ListArgs {
     #[serde(default)]
     #[schemars(description = "同时列出已完成的事项")]
     pub all: bool,
+    #[schemars(description = "最多列出多少项，默认 50，最多 500", range(min = 1, max = 500))]
+    pub limit: Option<u32>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NextArgs {
+    #[schemars(description = "最多列出多少项，默认 50，最多 500", range(min = 1, max = 500))]
+    pub limit: Option<u32>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -30,6 +39,8 @@ pub struct ShowArgs {
 pub struct SearchArgs {
     #[schemars(description = "关键词")]
     pub query: String,
+    #[schemars(description = "最多列出多少项，默认 50，最多 500", range(min = 1, max = 500))]
+    pub limit: Option<u32>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -48,7 +59,7 @@ pub struct GraphArgs {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LogArgs {
-    #[schemars(description = "条数，默认 20，最多 100", range(min = 1, max = 100))]
+    #[schemars(description = "条数，默认 10，最多 100", range(min = 1, max = 100))]
     pub limit: Option<u32>,
 }
 
@@ -80,8 +91,15 @@ pub struct EditArgs {
     pub task: i64,
     #[schemars(with = "Option<String>", description = "新标题")]
     pub title: Option<Title>,
-    #[schemars(with = "Option<String>", description = "新描述，Markdown，整段替换")]
+    #[schemars(with = "Option<String>", description = "新描述，Markdown，整段替换；只改其中一段时用 replace 或 append")]
     pub description: Option<Description>,
+    #[serde(default)]
+    #[schemars(
+        description = "在服务端当时的描述上依次替换：old 必须恰好出现一次，找不到说明已被改过，先 show 再改。别处同时改的内容不受影响"
+    )]
+    pub replace: Vec<Replace>,
+    #[schemars(description = "在描述末尾另起一行追加，在 replace 之后")]
+    pub append: Option<String>,
     #[serde(default, deserialize_with = "nullable")]
     #[schemars(
         with = "Option<String>",
@@ -91,6 +109,15 @@ pub struct EditArgs {
     #[serde(default, deserialize_with = "nullable")]
     #[schemars(description = "提前多少分钟提醒，0 表示截止时；null 清除")]
     pub remind: Option<Option<u32>>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Replace {
+    #[schemars(description = "描述里现有的一段原文")]
+    pub old: String,
+    #[schemars(description = "换成的内容，可以为空")]
+    pub new: String,
 }
 
 #[derive(Deserialize, JsonSchema)]

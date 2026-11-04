@@ -8,13 +8,30 @@ use nexttodo_core::ops::Op;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 
-use super::args::{GraphArgs, ListArgs, LogArgs, NoArgs, SearchArgs, ShowArgs};
-use super::text::{self, Names, ago, job_item, status_tag, task_line, task_view};
+use super::args::{GraphArgs, ListArgs, LogArgs, NextArgs, NoArgs, SearchArgs, ShowArgs};
+use super::text::{self, Names, ago, job_item, mention, status_tag, task_line, task_view};
 use super::{Cx, Output, find_folder, find_task};
 use crate::error::ApiError;
 use crate::store;
 
-const SEARCH_LIMIT: usize = 50;
+/// How many tasks a list shows, unless told otherwise.
+const LIMIT: u32 = 50;
+
+/// How many tasks a list shows: `limit`, or 50.
+fn limit(limit: Option<u32>) -> Result<usize, ApiError> {
+    match limit.unwrap_or(LIMIT) {
+        n @ 1..=500 => Ok(n as usize),
+        _ => Err(ApiError::invalid("limit 要在 1 到 500 之间", Some("limit".into()))),
+    }
+}
+
+/// Task lines, and the last one saying how many more there are when `total` is more than shown.
+fn listed(mut lines: Vec<String>, shown: usize, total: usize) -> Vec<String> {
+    if total > shown {
+        lines.push(format!("另有 {} 项未列出，可调大 limit", total - shown));
+    }
+    lines
+}
 
 /// `（待办 3，可做 1）` for the tasks directly in a folder, and the same as data.
 fn counts(b: &Board, f: Option<FolderId>) -> (String, usize, usize) {
@@ -43,32 +60,58 @@ pub fn list(c: &Connection, cx: &Cx, a: ListArgs) -> Result<Output, ApiError> {
     let snap = store::snapshot(c, cx.owner)?;
     let b = Board::new(&snap);
     let f = find_folder(&b, a.folder.as_deref().unwrap_or("/"))?;
+    let limit = limit(a.limit)?;
     let mut lines = vec![b.path(f)];
+    let mut data = json!({ "folder": b.path(f) });
+    // The AI jobs here: an agent reading the folder sees that more is on its way, or failed.
+    let mut jobs = serde_json::Map::new();
+    let mut said = Vec::new();
+    for (state, word) in [(JobState::Waiting, "等待"), (JobState::Running, "整理中"), (JobState::Failed, "失败")] {
+        match snap.ai_jobs.iter().filter(|j| j.folder_id == f && j.state == state).count() {
+            0 => {}
+            n => {
+                jobs.insert(state.as_str().into(), n.into());
+                said.push(format!("{word} {n}"));
+            }
+        }
+    }
+    if !jobs.is_empty() {
+        lines.push(format!("  AI 整理：{}（用 jobs 查看）", said.join("、")));
+        data["jobs"] = jobs.into();
+    }
     let mut folders = Vec::new();
     for sub in b.subfolders(f) {
         let (text, pending, ready) = counts(&b, Some(sub.id));
         lines.push(format!("  {}/{text}", sub.name.as_str()));
         folders.push(json!({ "path": b.path(Some(sub.id)), "name": sub.name, "pending": pending, "ready": ready }));
     }
-    let tasks: Vec<&Task> = b.tasks_in(f).into_iter().filter(|t| a.all || t.done_at.is_none()).collect();
+    let mut tasks: Vec<&Task> = b.tasks_in(f).into_iter().filter(|t| a.all || t.done_at.is_none()).collect();
+    let total = tasks.len();
+    tasks.truncate(limit);
     lines.extend(tasks.iter().map(|t| format!("  {}", task_line(&b, t, false, true))));
     if lines.len() == 1 {
         lines.push("  （空）".into());
     }
-    let tasks: Vec<Value> = tasks.iter().map(|t| task_view(&b, t)).collect();
-    Ok(Output { text: lines.join("\n"), data: json!({ "folder": b.path(f), "folders": folders, "tasks": tasks }) })
+    data["folders"] = folders.into();
+    data["tasks"] = tasks.iter().map(|t| task_view(&b, t)).collect();
+    data["total"] = total.into();
+    Ok(Output { text: listed(lines, tasks.len(), total).join("\n"), data })
 }
 
-pub fn next(c: &Connection, cx: &Cx, _: NoArgs) -> Result<Output, ApiError> {
+pub fn next(c: &Connection, cx: &Cx, a: NextArgs) -> Result<Output, ApiError> {
+    let limit = limit(a.limit)?;
     let snap = store::snapshot(c, cx.owner)?;
     let b = Board::new(&snap);
-    let tasks = b.next();
+    let mut tasks = b.next();
+    let total = tasks.len();
+    tasks.truncate(limit);
     let text = if tasks.is_empty() {
         "暂无可做的事项。".to_owned()
     } else {
-        tasks.iter().map(|t| task_line(&b, t, t.folder_id.is_some(), false)).collect::<Vec<_>>().join("\n")
+        listed(tasks.iter().map(|t| task_line(&b, t, t.folder_id.is_some(), false)).collect(), tasks.len(), total).join("\n")
     };
-    Ok(Output { text, data: tasks.iter().map(|t| task_view(&b, t)).collect() })
+    let tasks: Vec<Value> = tasks.iter().map(|t| task_view(&b, t)).collect();
+    Ok(Output { text, data: json!({ "tasks": tasks, "total": total }) })
 }
 
 pub fn show(c: &Connection, cx: &Cx, a: ShowArgs) -> Result<Output, ApiError> {
@@ -92,7 +135,7 @@ pub fn show(c: &Connection, cx: &Cx, a: ShowArgs) -> Result<Output, ApiError> {
     for (label, list) in [("前置", &before), ("后续", &after)] {
         if !list.is_empty() {
             lines.push(format!("{label}："));
-            lines.extend(list.iter().map(|l| format!("  {}", task_line(&b, l, l.folder_id != t.folder_id, true))));
+            lines.extend(list.iter().map(|l| format!("  {}", mention(&b, l, l.folder_id != t.folder_id))));
         }
     }
     let source = |via: &Option<String>| via.as_deref().unwrap_or("本人").to_owned();
@@ -105,17 +148,26 @@ pub fn show(c: &Connection, cx: &Cx, a: ShowArgs) -> Result<Output, ApiError> {
         lines.push(t.description.as_str().to_owned());
     }
     let mut data = task_view(&b, t);
-    data["description"] = json!(t.description);
-    data["created_at"] = json!(t.created_at);
-    data["updated_at"] = json!(t.updated_at);
-    data["created_via"] = json!(t.created_via);
-    data["updated_via"] = json!(t.updated_via);
-    data["before"] = before.iter().map(|t| task_view(&b, t)).collect();
-    data["after"] = after.iter().map(|t| task_view(&b, t)).collect();
+    data["created_at"] = t.created_at.into();
+    data["updated_at"] = t.updated_at.into();
+    if !t.description.as_str().is_empty() {
+        data["description"] = json!(t.description);
+    }
+    for (key, via) in [("created_via", &t.created_via), ("updated_via", &t.updated_via)] {
+        if let Some(via) = via {
+            data[key] = via.as_str().into();
+        }
+    }
+    for (key, list) in [("before", &before), ("after", &after)] {
+        if !list.is_empty() {
+            data[key] = list.iter().map(|t| task_view(&b, t)).collect();
+        }
+    }
     Ok(Output { text: lines.join("\n"), data })
 }
 
 pub fn search(c: &Connection, cx: &Cx, a: SearchArgs) -> Result<Output, ApiError> {
+    let limit = limit(a.limit)?;
     let query = a.query.trim().to_lowercase();
     if query.is_empty() {
         return Err(ApiError::invalid("关键词不能为空", Some("query".into())));
@@ -130,20 +182,17 @@ pub fn search(c: &Connection, cx: &Cx, a: SearchArgs) -> Result<Output, ApiError
     b.sort(&mut found);
     found.sort_by_key(|t| t.done_at.is_some());
     let total = found.len();
-    found.truncate(SEARCH_LIMIT);
+    found.truncate(limit);
     let text = match total {
         0 => format!("未找到包含“{}”的事项。", a.query.trim()),
         _ => {
-            let head = if total > SEARCH_LIMIT {
-                format!("找到 {total} 项，只列出前 {SEARCH_LIMIT} 项：")
-            } else {
-                format!("找到 {total} 项：")
-            };
-            std::iter::once(head).chain(found.iter().map(|t| task_line(&b, t, t.folder_id.is_some(), true))).collect::<Vec<_>>().join("\n")
+            let lines =
+                std::iter::once(format!("找到 {total} 项：")).chain(found.iter().map(|t| task_line(&b, t, t.folder_id.is_some(), true)));
+            listed(lines.collect(), found.len(), total).join("\n")
         }
     };
     let tasks: Vec<Value> = found.iter().map(|t| task_view(&b, t)).collect();
-    Ok(Output { text, data: json!({ "total": total, "tasks": tasks }) })
+    Ok(Output { text, data: json!({ "tasks": tasks, "total": total }) })
 }
 
 pub fn graph(c: &Connection, cx: &Cx, a: GraphArgs) -> Result<Output, ApiError> {
@@ -223,15 +272,17 @@ pub fn jobs(c: &Connection, cx: &Cx, _: NoArgs) -> Result<Output, ApiError> {
         };
         let folder = b.path(j.folder_id);
         lines.push(format!("{} · {folder} · {state} · {}", job_item(j), ago(cx.now, j.updated_at)));
-        data.push(
-            json!({ "id": j.id, "start": job_item(j), "folder": folder, "state": j.state, "error": j.error, "updated_at": j.updated_at }),
-        );
+        let mut job = json!({ "id": j.id, "start": job_item(j), "folder": folder, "state": j.state, "updated_at": j.updated_at });
+        if let Some(error) = &j.error {
+            job["error"] = error.as_str().into();
+        }
+        data.push(job);
     }
     Ok(Output { text: lines.join("\n"), data: data.into() })
 }
 
 pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
-    let limit = a.limit.unwrap_or(20);
+    let limit = a.limit.unwrap_or(10);
     if !(1..=100).contains(&limit) {
         return Err(ApiError::invalid("条数要在 1 到 100 之间", Some("limit".into())));
     }
@@ -270,7 +321,7 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
     let mut names = Names::new(&snap);
     let (mut lines, mut data) = (Vec::new(), Vec::new());
     for r in &rows {
-        let mut summary = text::changes(&r.effects, &mut names, 3).join("；");
+        let mut summary = text::changes(&r.effects, &mut names, 3).0.join("；");
         if summary.is_empty() {
             summary = "没有变化".into();
         }

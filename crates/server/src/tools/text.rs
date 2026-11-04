@@ -6,6 +6,9 @@ use nexttodo_core::board::{Board, Snapshot, Status};
 use nexttodo_core::model::{AiJob, Change, Due, Effect, FolderId, JobState, Link, Task, TaskId};
 use serde_json::{Value, json};
 
+/// How much of a title is shown where a task is only mentioned, not listed.
+const SHORT: usize = 30;
+
 pub fn status_tag(s: Status) -> String {
     match s {
         Status::Ready => "[可做]".into(),
@@ -41,17 +44,44 @@ pub fn task_line(b: &Board, t: &Task, folder: bool, status: bool) -> String {
     line
 }
 
-/// The data for a task in lists.
+/// `#12 [可做] 出设计稿 · /工作`: a task mentioned, by its title shortened.
+pub fn mention(b: &Board, t: &Task, folder: bool) -> String {
+    let mut line = format!("#{} {} {}", t.number, status_tag(b.status(t)), excerpt(t.title.as_str(), SHORT));
+    if folder {
+        line += &format!(" · {}", b.path(t.folder_id));
+    }
+    line
+}
+
+/// The data for a task in lists, without the fields that have nothing to say.
 pub fn task_view(b: &Board, t: &Task) -> Value {
-    let (status, waiting_on) = match b.status(t) {
-        Status::Ready => ("ready", 0),
-        Status::Waiting(n) => ("waiting", n),
-        Status::Done => ("done", 0),
-    };
-    json!({
-        "id": t.id, "number": t.number, "title": t.title, "status": status, "waiting_on": waiting_on,
-        "unlocks": b.unlocks(t).len(), "folder": b.path(t.folder_id), "due": t.due, "done_at": t.done_at,
-    })
+    let status = b.status(t);
+    let mut v = json!({
+        "id": t.id, "number": t.number, "title": t.title, "folder": b.path(t.folder_id),
+        "status": match status { Status::Ready => "ready", Status::Waiting(_) => "waiting", Status::Done => "done" },
+    });
+    if let Status::Waiting(n) = status {
+        v["waiting_on"] = n.into();
+    }
+    match b.unlocks(t).len() {
+        0 => {}
+        n => v["unlocks"] = n.into(),
+    }
+    if let Some(d) = &t.due {
+        v["due"] = json!(d);
+    }
+    if let Some(at) = t.done_at {
+        v["done_at"] = at.into();
+    }
+    v
+}
+
+/// The first line of `s`, cut to `max` characters, with `…` when anything was left out.
+pub fn excerpt(s: &str, max: usize) -> String {
+    let s = s.trim();
+    let first = s.lines().next().unwrap_or_default();
+    let short: String = first.chars().take(max).collect();
+    if short.len() < s.len() { format!("{short}…") } else { short }
 }
 
 /// How long ago, without needing the reader's time zone.
@@ -166,77 +196,138 @@ impl Kind {
             Kind::JobDeleted => ("移除 AI 整理请求", "移除 AI 整理请求", "条"),
         }
     }
+
+    /// Its name in data.
+    fn code(self) -> &'static str {
+        match self {
+            Kind::FolderCreated => "folder_created",
+            Kind::FolderRenamed => "folder_renamed",
+            Kind::FolderMoved => "folder_moved",
+            Kind::FolderSorted => "folder_sorted",
+            Kind::FolderDeleted => "folder_deleted",
+            Kind::TaskCreated => "task_created",
+            Kind::TaskDone => "task_done",
+            Kind::TaskReopened => "task_reopened",
+            Kind::TaskMoved => "task_moved",
+            Kind::TaskEdited => "task_edited",
+            Kind::TaskDeleted => "task_deleted",
+            Kind::DepAdded => "dep_added",
+            Kind::DepRemoved => "dep_removed",
+            Kind::JobCreated => "job_created",
+            Kind::JobStarted => "job_started",
+            Kind::JobFailed => "job_failed",
+            Kind::JobRetried => "job_retried",
+            Kind::JobDeleted => "job_deleted",
+        }
+    }
 }
 
-fn item(t: &Task) -> String {
-    format!("#{} {}", t.number, t.title.as_str())
+/// `#12 出设计稿`, the title shortened.
+pub fn item(t: &Task) -> String {
+    format!("#{} {}", t.number, excerpt(t.title.as_str(), SHORT))
 }
 
 /// An AI job by the start of its text.
 pub fn job_item(j: &AiJob) -> String {
-    let first = j.text.as_str().trim().lines().next().unwrap_or_default();
-    let short: String = first.chars().take(20).collect();
-    let more = if short.len() < j.text.as_str().trim().len() { "…" } else { "" };
-    format!("“{short}{more}”")
+    format!("“{}”", excerpt(j.text.as_str(), 20))
 }
 
-/// The kind of change, a task number to list it by, and how it reads, given the names right after
-/// it. A change touches one entity, so its old and new places both read in that tree.
-fn describe(e: &Effect, n: &Names) -> (Kind, Option<i64>, String) {
-    let (kind, item) = match e {
-        Effect::Folder(Change::Created(f)) => (Kind::FolderCreated, n.path_in(f.parent_id, f.name.as_str())),
+/// What changed in a task besides where it is and whether it is done.
+fn edited(before: &Task, after: &Task) -> Vec<&'static str> {
+    [
+        ("title", before.title != after.title),
+        ("description", before.description != after.description),
+        ("due", before.due != after.due),
+        ("order", before.sort_key != after.sort_key),
+    ]
+    .into_iter()
+    .filter_map(|(field, changed)| changed.then_some(field))
+    .collect()
+}
+
+/// The kind of change, a task number to list it by, how it reads and the same as data, given the
+/// names right after it. A change touches one entity, so its old and new places both read in that
+/// tree.
+fn describe(e: &Effect, n: &Names) -> (Kind, Option<i64>, String, Value) {
+    let (kind, item, mut data) = match e {
+        Effect::Folder(Change::Created(f)) => {
+            let path = n.path_in(f.parent_id, f.name.as_str());
+            (Kind::FolderCreated, path.clone(), json!({ "folder": path }))
+        }
         Effect::Folder(Change::Updated { before, after }) => {
             let old = n.path_in(before.parent_id, before.name.as_str());
             if before.name != after.name {
-                (Kind::FolderRenamed, format!("{old} → {}", after.name.as_str()))
+                (Kind::FolderRenamed, format!("{old} → {}", after.name.as_str()), json!({ "folder": old, "name": after.name }))
             } else if before.parent_id != after.parent_id {
-                (Kind::FolderMoved, format!("{old} → {}", n.path_in(after.parent_id, after.name.as_str())))
+                let to = n.path_in(after.parent_id, after.name.as_str());
+                (Kind::FolderMoved, format!("{old} → {to}"), json!({ "folder": old, "to": to }))
             } else {
-                (Kind::FolderSorted, old)
+                (Kind::FolderSorted, old.clone(), json!({ "folder": old }))
             }
         }
-        Effect::Folder(Change::Deleted(f)) => (Kind::FolderDeleted, n.path_in(f.parent_id, f.name.as_str())),
-        Effect::Task(Change::Created(t)) => (Kind::TaskCreated, item(t)),
-        Effect::Task(Change::Updated { before, after }) => match (before.done_at, after.done_at) {
-            (None, Some(_)) => (Kind::TaskDone, item(after)),
-            (Some(_), None) => (Kind::TaskReopened, item(after)),
-            _ if before.folder_id != after.folder_id => (Kind::TaskMoved, format!("{} → {}", item(after), n.path(after.folder_id))),
-            _ => (Kind::TaskEdited, item(after)),
+        Effect::Folder(Change::Deleted(f)) => {
+            let path = n.path_in(f.parent_id, f.name.as_str());
+            (Kind::FolderDeleted, path.clone(), json!({ "folder": path }))
+        }
+        Effect::Task(Change::Created(t)) => (Kind::TaskCreated, item(t), json!({ "task": t.number })),
+        Effect::Task(Change::Updated { before, after: t }) => match (before.done_at, t.done_at) {
+            (None, Some(_)) => (Kind::TaskDone, item(t), json!({ "task": t.number })),
+            (Some(_), None) => (Kind::TaskReopened, item(t), json!({ "task": t.number })),
+            _ if before.folder_id != t.folder_id => {
+                let to = n.path(t.folder_id);
+                (Kind::TaskMoved, format!("{} → {to}", item(t)), json!({ "task": t.number, "to": to }))
+            }
+            _ => (Kind::TaskEdited, item(t), json!({ "task": t.number, "fields": edited(before, t) })),
         },
-        Effect::Task(Change::Deleted(t)) => (Kind::TaskDeleted, item(t)),
-        Effect::Dependency(Link::Added(d)) => (Kind::DepAdded, format!("{} → {}", n.number(d.before), n.number(d.after))),
-        Effect::Dependency(Link::Removed(d)) => (Kind::DepRemoved, format!("{} → {}", n.number(d.before), n.number(d.after))),
-        Effect::AiJob(Change::Created(j)) => (Kind::JobCreated, job_item(j)),
+        Effect::Task(Change::Deleted(t)) => (Kind::TaskDeleted, item(t), json!({ "task": t.number })),
+        Effect::Dependency(Link::Added(d)) => (
+            Kind::DepAdded,
+            format!("{} → {}", n.number(d.before), n.number(d.after)),
+            json!({ "before": n.tasks.get(&d.before), "after": n.tasks.get(&d.after) }),
+        ),
+        Effect::Dependency(Link::Removed(d)) => (
+            Kind::DepRemoved,
+            format!("{} → {}", n.number(d.before), n.number(d.after)),
+            json!({ "before": n.tasks.get(&d.before), "after": n.tasks.get(&d.after) }),
+        ),
+        Effect::AiJob(Change::Created(j)) => (Kind::JobCreated, job_item(j), json!({ "job": j.id })),
         Effect::AiJob(Change::Updated { after: j, .. }) => match j.state {
-            JobState::Running => (Kind::JobStarted, job_item(j)),
-            JobState::Failed => (Kind::JobFailed, format!("{}（{}）", job_item(j), j.error.as_deref().unwrap_or_default())),
-            JobState::Waiting => (Kind::JobRetried, job_item(j)),
+            JobState::Running => (Kind::JobStarted, job_item(j), json!({ "job": j.id })),
+            JobState::Failed => {
+                let error = j.error.as_deref().unwrap_or_default();
+                (Kind::JobFailed, format!("{}（{error}）", job_item(j)), json!({ "job": j.id, "error": error }))
+            }
+            JobState::Waiting => (Kind::JobRetried, job_item(j), json!({ "job": j.id })),
         },
-        Effect::AiJob(Change::Deleted(j)) => (Kind::JobDeleted, job_item(j)),
+        Effect::AiJob(Change::Deleted(j)) => (Kind::JobDeleted, job_item(j), json!({ "job": j.id })),
     };
+    data["kind"] = kind.code().into();
     let number = match e {
         Effect::Folder(_) | Effect::AiJob(_) => None,
         Effect::Task(Change::Created(t) | Change::Updated { after: t, .. } | Change::Deleted(t)) => Some(t.number),
         Effect::Dependency(Link::Added(d) | Link::Removed(d)) => n.tasks.get(&d.before).copied(),
     };
-    (kind, number, item)
+    (kind, number, item, data)
 }
 
-/// What a batch changed, one line per kind of change, listing at most `limit` items per line.
-/// `names` are those from after the batch; this steps them back over it, one change at a time, so
-/// that every change reads with the folders as they were right after it, also in the middle of a
-/// batch and going through the log newest first.
-pub fn changes(effects: &[Effect], names: &mut Names, limit: usize) -> Vec<String> {
+/// What a batch changed: one line per kind of change, listing at most `limit` items per line, and
+/// each change as data, in order. `names` are those from after the batch; this steps them back over
+/// it, one change at a time, so that every change reads with the folders as they were right after
+/// it, also in the middle of a batch and going through the log newest first.
+pub fn changes(effects: &[Effect], names: &mut Names, limit: usize) -> (Vec<String>, Vec<Value>) {
     let mut described = Vec::with_capacity(effects.len());
     for e in effects.iter().rev() {
         described.push(describe(e, names));
         names.undo(e);
     }
+    described.reverse();
     let mut groups: BTreeMap<Kind, Vec<(Option<i64>, String)>> = BTreeMap::new();
-    for (kind, number, item) in described.into_iter().rev() {
+    let mut data = Vec::with_capacity(described.len());
+    for (kind, number, item, d) in described {
         groups.entry(kind).or_default().push((number, item));
+        data.push(d);
     }
-    groups
+    let lines = groups
         .into_iter()
         .map(|(kind, mut items)| {
             items.sort_by_key(|(number, _)| *number);
@@ -250,5 +341,6 @@ pub fn changes(effects: &[Effect], names: &mut Names, limit: usize) -> Vec<Strin
                 }
             }
         })
-        .collect()
+        .collect();
+    (lines, data)
 }

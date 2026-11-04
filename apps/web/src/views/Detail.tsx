@@ -2,13 +2,14 @@
 
 import { Bell, Calendar, Folder as FolderIcon, KeyRound, type LucideIcon, Plus, User, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
 import { formatDue, formatMoment, remindLabel } from "../domain/dates";
 import { checkDescription, checkTitle } from "../domain/text";
-import { useCommit, useView } from "../session";
+import { useCommit, useUndo, useView } from "../session";
 import { Check, Seg } from "../ui/controls";
 import { useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
@@ -27,6 +28,42 @@ type Panel = "folder" | "due" | "pred" | "succ" | null;
 const who = (via: string | null) => (via ? `${via} ` : "");
 
 type TaskFields = Omit<Extract<Op, { op: "task.update" }>, "op" | "id">;
+
+/** Saves a text field; what `useCommit` gives back. */
+type Save = (value: string) => { id: MutationId } | null;
+
+/** An edit in progress and the text it started from. */
+type Draft = { text: string; base: string };
+
+/** Saves `mine`, edited from `base`, into a field that is `now`. When the field has changed elsewhere
+ * meanwhile, asks whether to keep that or overwrite it; overwriting can be undone, while giving up
+ * the edit cannot, so closing the dialog overwrites. Gives what the field holds afterwards, and
+ * whether that is `mine`. */
+function useKeepEdit(what: string) {
+  const { confirm, snack } = useFeedback();
+  const undo = useUndo();
+  return async (t: Task, base: string, mine: string, now: string, save: Save): Promise<{ value: string; mine: boolean }> => {
+    // Nothing edited: what is there now stays, whoever wrote it.
+    if (mine === base) return { value: now, mine: false };
+    if (mine === now) return { value: now, mine: true };
+    if (now !== base) {
+      const theirs = await confirm({
+        title: `${what}在你编辑时${t.updated_via ? `被“${t.updated_via}”` : "在别处被"}改过`,
+        body: "对方现在的版本如下。保留对方的，你这次的修改就会丢掉。",
+        detail: now,
+        ok: "保留对方的",
+        cancel: "用我的覆盖",
+        danger: true,
+      });
+      if (theirs) return { value: now, mine: false };
+      const r = save(mine);
+      if (r) snack({ text: `已用你的版本覆盖${what}`, action: "撤销", onAction: () => undo(r.id) });
+      return { value: mine, mine: true };
+    }
+    save(mine);
+    return { value: mine, mine: true };
+  };
+}
 
 /** `closing`: the desktop pane is sliding away with this task still in it. Its panels close at once,
  * so their focus trap does not hold on to focus that has moved on, such as to a quick add. */
@@ -132,13 +169,14 @@ function Prop({ icon, label, value, cls = "", onClick }: { icon: LucideIcon; lab
 }
 
 /** The title, edited in place. */
-function Title({ task, onSave }: { task: Task; onSave(title: string): void }) {
-  const [draft, setDraft] = useState<string | null>(null);
+function Title({ task, onSave }: { task: Task; onSave: Save }) {
+  const [draft, setDraft] = useState<Draft | null>(null);
   const { snack } = useFeedback();
+  const keep = useKeepEdit("标题");
   if (draft === null) {
     return (
       <h2 className="d-title">
-        <button type="button" onClick={() => setDraft(task.title)}>
+        <button type="button" onClick={() => setDraft({ text: task.title, base: task.title })}>
           {task.title}
         </button>
       </h2>
@@ -146,18 +184,18 @@ function Title({ task, onSave }: { task: Task; onSave(title: string): void }) {
   }
   const save = () => {
     setDraft(null);
-    const c = checkTitle(draft);
+    const c = checkTitle(draft.text);
     if (!c.ok) snack(c.error);
-    else if (c.value !== task.title) onSave(c.value);
+    else void keep(task, draft.base, c.value, task.title, onSave);
   };
   return (
     <textarea
       className="title-edit"
       autoFocus
       rows={1}
-      value={draft}
+      value={draft.text}
       aria-label="标题"
-      onChange={(e) => setDraft(e.target.value.replace(/\n/g, ""))}
+      onChange={(e) => setDraft({ ...draft, text: e.target.value.replace(/\n/g, "") })}
       onBlur={save}
       onKeyDown={(e) => {
         if (e.key === "Enter" && !e.nativeEvent.isComposing) e.currentTarget.blur();
@@ -169,33 +207,40 @@ function Title({ task, onSave }: { task: Task; onSave(title: string): void }) {
 
 /** The description: shown as Markdown with tickable checklists, or edited as text. An edit is saved
  * when leaving the editor, also by switching to another task. */
-function DescriptionSection({ task, onSave }: { task: Task; onSave(description: string): void }) {
-  const [draft, setDraft] = useState<string | null>(null);
+function DescriptionSection({ task, onSave }: { task: Task; onSave: Save }) {
+  const [draft, setDraft] = useState<Draft | null>(null);
   const { snack } = useFeedback();
-  const pending = useRef<{ draft: string | null; task: Task; onSave(d: string): void }>({ draft, task, onSave });
+  const keep = useKeepEdit("描述");
+  const pending = useRef({ draft, task, onSave });
   useEffect(() => {
     pending.current = { draft, task, onSave };
   });
-  const save = (text: string | null, t: Task, done: (d: string) => void) => {
-    if (text === null || text === t.description) return;
-    const c = checkDescription(text);
-    if (c.ok) done(c.value);
-    else snack(c.error);
+  /** Saves the draft; gives what the description holds afterwards, or nothing when it was not saved. */
+  const save = (d: Draft | null, t: Task, done: Save) => {
+    if (d === null) return;
+    const c = checkDescription(d.text);
+    if (c.ok) return keep(t, d.base, c.value, t.description, done);
+    snack(c.error);
   };
   useEffect(
     () => () => {
       const { draft, task, onSave } = pending.current;
-      save(draft, task, onSave);
+      void save(draft, task, onSave);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- saves once, when leaving
     [],
   );
   const mode = (v: "view" | "edit") => {
-    if (v === "edit") setDraft(task.description);
+    if (v === "edit") setDraft({ text: task.description, base: task.description });
     else {
-      save(draft, task, onSave);
+      void save(draft, task, onSave);
       setDraft(null);
     }
+  };
+  /** Saves on leaving the box while still editing: what is saved, or kept instead, is the base from then on. */
+  const blur = async () => {
+    const kept = await save(draft, task, onSave);
+    if (kept) setDraft((d) => d && (kept.mine ? { ...d, base: kept.value } : { text: kept.value, base: kept.value }));
   };
   return (
     <>
@@ -219,10 +264,10 @@ function DescriptionSection({ task, onSave }: { task: Task; onSave(description: 
         ) : (
           <textarea
             className="md-edit"
-            value={draft}
+            value={draft.text}
             placeholder="支持 Markdown，以 - [ ] 开头为清单项"
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={() => save(draft, task, onSave)}
+            onChange={(e) => setDraft({ ...draft, text: e.target.value })}
+            onBlur={() => void blur()}
           />
         )}
       </div>

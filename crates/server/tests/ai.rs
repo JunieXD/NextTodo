@@ -391,6 +391,11 @@ async fn agents_see_the_jobs_and_how_they_stand() {
     assert_eq!(jobs["text"], "“读完第三章，然后写一篇读书笔记…” · /读书 · 等待整理 · 刚刚");
     assert_eq!(jobs["data"][0]["state"], "waiting");
     assert_eq!(jobs["data"][0]["id"], job.as_str());
+    assert_eq!(jobs["data"][0].get("error"), None);
+    let list = t.ok(&s, "list", json!({ "folder": "/读书" })).await;
+    assert_eq!(list["text"], "/读书\n  AI 整理：等待 1（用 jobs 查看）");
+    assert_eq!(list["data"]["jobs"], json!({ "waiting": 1 }));
+    assert_eq!(t.ok(&s, "list", json!({})).await["data"].get("jobs"), None, "only the folder's own");
     let log = t.ok(&s, "log", json!({})).await;
     assert!(log["text"].as_str().unwrap().contains("提交 AI 整理 “读完第三章，然后写一篇读书笔记…”"), "{}", log["text"]);
 }

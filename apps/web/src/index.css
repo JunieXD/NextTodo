@@ -323,6 +323,8 @@ svg { display: block; flex: none; }
 .dialog h3 { margin: 0 0 12px; font-size: 22px; font-weight: 500; }
 .dialog p { margin: 0 0 20px; font-size: 14px; line-height: 1.55; color: var(--on-surface-variant); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.dialog-detail { max-height: 240px; overflow: auto; margin: -8px 0 20px; padding: 10px 12px; border-radius: 12px; background: var(--surface-container);
+  font: inherit; font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--on-surface); }
 .text-btn { height: 40px; padding: 0 14px; border-radius: 20px; color: var(--primary); font-size: 14px; font-weight: 600; }
 .text-btn.danger-text { color: var(--error); }
 .text-btn:active { background: var(--press); }

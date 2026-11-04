@@ -21,7 +21,8 @@ use crate::tools::{self, Kind};
 
 const INSTRUCTIONS: &str = "NextTodo 是以先后关系为核心的待办：事项之间有依赖（前置完成后才能做后续），文件夹可以嵌套。\
 事项用编号引用，文件夹用路径（如 /工作/网站改版）。回答“现在该做什么”用 next；\
-一次建多个有先后关系的事项用 apply，先 dry_run 预览给用户看；改错了用 log 找到批次再 undo。";
+一次建多个有先后关系的事项用 apply，先 dry_run 预览给用户看；改描述用 edit 的 replace 或 append，只发改动的那一段；\
+用户提交的 AI 整理请求用 jobs 查看；改错了用 log 找到批次再 undo。";
 
 struct Mcp {
     state: AppState,

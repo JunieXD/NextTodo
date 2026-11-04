@@ -5,14 +5,15 @@ use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
 use nexttodo_core::board::{Board, Snapshot, Status};
-use nexttodo_core::model::{Change, Due, Effect, FolderId, MutationId, Name, Task, TaskId};
+use nexttodo_core::model::{Change, Description, Due, Effect, FolderId, MutationId, Name, Task, TaskId};
 use nexttodo_core::ops::Op;
 use rusqlite::{Connection, OptionalExtension, params};
-use serde_json::{Value, json};
+use serde_json::json;
 use uuid::Uuid;
 
 use super::args::{
-    AddArgs, ApplyArgs, DeleteArgs, DepArgs, EditArgs, MkdirArgs, MoveArgs, Plan, PlanRef, PlanTask, RenameArgs, TasksArgs, UndoArgs,
+    AddArgs, ApplyArgs, DeleteArgs, DepArgs, EditArgs, MkdirArgs, MoveArgs, Plan, PlanRef, PlanTask, RenameArgs, Replace, TasksArgs,
+    UndoArgs,
 };
 use super::text::{self, Names, task_view};
 use super::{Output, WriteFn, find_folder, find_task};
@@ -52,10 +53,9 @@ pub fn run(c: &mut Connection, auth: &Auth, id: Option<MutationId>, now: i64, bu
             Some(reply) => Ok(serde_json::from_str(&reply)?),
             // Past the retention period, or sent by an app rather than through a tool. Only the
             // receipt is given: the old effects cannot be read against today's folders.
-            None => Ok(Output {
-                text: format!("批次 {} 已保存，本次未重复生效", done.seq),
-                data: json!({ "batch": done.seq, "effects": done.effects, "unlocked": [] }),
-            }),
+            None => {
+                Ok(Output { text: format!("批次 {} 已保存，本次未重复生效", done.seq), data: json!({ "batch": done.seq }) })
+            }
         };
     }
     let snap = store::snapshot(&tx, &auth.user_id)?;
@@ -79,7 +79,8 @@ fn report(after: &Snapshot, batch: Option<i64>, effects: &[Effect]) -> Output {
     if batch.is_none() {
         lines.push("预览（未保存）：".to_owned());
     }
-    lines.extend(text::changes(effects, &mut Names::new(after), 20));
+    let (said, changes) = text::changes(effects, &mut Names::new(after), 20);
+    lines.extend(said);
     if effects.is_empty() {
         lines.push("没有变化".into());
     }
@@ -98,20 +99,19 @@ fn report(after: &Snapshot, batch: Option<i64>, effects: &[Effect]) -> Output {
         }
     }
     b.sort(&mut unlocked);
+    let mut data = json!({ "batch": batch, "changes": changes });
     match unlocked.as_slice() {
         [] => {}
-        [t] => lines.push(format!("解锁 #{} {}", t.number, t.title.as_str())),
-        list => lines.push(format!(
-            "解锁 {} 项：{}",
-            list.len(),
-            list.iter().map(|t| format!("#{} {}", t.number, t.title.as_str())).collect::<Vec<_>>().join("、")
-        )),
+        [t] => lines.push(format!("解锁 {}", text::item(t))),
+        list => lines.push(format!("解锁 {} 项：{}", list.len(), list.iter().map(|t| text::item(t)).collect::<Vec<_>>().join("、"))),
+    }
+    if !unlocked.is_empty() {
+        data["unlocked"] = unlocked.iter().map(|t| task_view(&b, t)).collect();
     }
     if let Some(batch) = batch {
         lines.push(format!("批次 {batch}，可撤销"));
     }
-    let unlocked: Vec<Value> = unlocked.iter().map(|t| task_view(&b, t)).collect();
-    Output { text: lines.join("\n"), data: json!({ "batch": batch, "effects": effects, "unlocked": unlocked }) }
+    Output { text: lines.join("\n"), data }
 }
 
 /// Finds folders by path, adding operations to create the ones that are missing.
@@ -239,10 +239,15 @@ pub fn apply(w: &WriteCx, a: ApplyArgs) -> Result<Write, ApiError> {
 
 pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
     let b = w.board;
-    if a.title.is_none() && a.description.is_none() && a.due.is_none() && a.remind.is_none() {
+    let revising = !a.replace.is_empty() || a.append.is_some();
+    if a.title.is_none() && a.description.is_none() && !revising && a.due.is_none() && a.remind.is_none() {
         return Err(ApiError::invalid("未指定要修改的内容", None));
     }
+    if a.description.is_some() && revising {
+        return Err(ApiError::invalid("description 是整段替换，不能和 replace、append 同时给", Some("description".into())));
+    }
     let t = find_task(b, a.task)?;
+    let description = if revising { Some(revise(t.description.as_str(), a.replace, a.append)?) } else { a.description };
     let current_remind = t.due.as_ref().and_then(|d| d.at.as_ref()).and_then(|at| at.remind_before);
     let new_due = match (a.due, a.remind) {
         (None, None) => None,
@@ -260,16 +265,40 @@ pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
             None => return Err(ApiError::invalid("该事项没有具体的截止时间，无法设置提醒", Some("remind".into()))),
         },
     };
-    Ok(vec![Op::TaskUpdate {
-        id: t.id,
-        folder_id: None,
-        title: a.title,
-        description: a.description,
-        due: new_due,
-        sort_key: None,
-        done: None,
-    }]
-    .into())
+    Ok(vec![Op::TaskUpdate { id: t.id, folder_id: None, title: a.title, description, due: new_due, sort_key: None, done: None }].into())
+}
+
+/// The description as it is now with each `old` replaced by its `new` in turn, then `append` on a
+/// line of its own at the end: only the part an agent changes, so that what someone else changed
+/// meanwhile elsewhere in it stays.
+fn revise(current: &str, replace: Vec<Replace>, append: Option<String>) -> Result<Description, ApiError> {
+    let mut revised = current.to_owned();
+    for Replace { old, new } in replace {
+        let Some(first) = old.chars().next() else {
+            return Err(ApiError::invalid("replace 的 old 不能为空", Some("replace".into())));
+        };
+        let Some(at) = revised.find(&old) else {
+            return Err(ApiError::conflict(format!("描述里没有“{}”，可能已被改过，请先 show 再改", text::excerpt(&old, 30))));
+        };
+        // Also where it overlaps itself, as "aa" twice in "aaa".
+        if revised[at + first.len_utf8()..].contains(&old) {
+            return Err(ApiError::invalid(
+                format!("描述里不止一处“{}”，请多带一些上下文，使它只出现一次", text::excerpt(&old, 30)),
+                Some("replace".into()),
+            ));
+        }
+        revised.replace_range(at..at + old.len(), &new);
+    }
+    if let Some(more) = append {
+        if more.trim().is_empty() {
+            return Err(ApiError::invalid("append 不能为空", Some("append".into())));
+        }
+        if !revised.is_empty() && !revised.ends_with('\n') {
+            revised.push('\n');
+        }
+        revised.push_str(&more);
+    }
+    Description::try_from(revised).map_err(|m| ApiError::invalid(m, Some("description".into())))
 }
 
 fn set_done(b: &Board, tasks: Vec<i64>, done: bool) -> Result<Write, ApiError> {

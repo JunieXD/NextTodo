@@ -20,7 +20,11 @@ interface Snack {
 interface Confirm {
   title: string;
   body: string;
+  /** Text to read in full, such as the other side's version, in a box that scrolls. */
+  detail?: string;
   ok: string;
+  /** The other answer, which closing the dialog gives too; "取消" unless said. */
+  cancel?: string;
   danger?: boolean;
 }
 
@@ -118,13 +122,14 @@ function DialogFrame({ title, close, children }: { title: string; close(): void;
   );
 }
 
-function ConfirmDialog({ title, body, ok, danger, close }: Confirm & { close(ok: boolean): void }) {
+function ConfirmDialog({ title, body, detail, ok, cancel = "取消", danger, close }: Confirm & { close(ok: boolean): void }) {
   return (
     <DialogFrame title={title} close={() => close(false)}>
       <p>{body}</p>
+      {detail !== undefined && <pre className="dialog-detail">{detail || "（空）"}</pre>}
       <div className="dialog-actions">
         <button className="text-btn" onClick={() => close(false)}>
-          取消
+          {cancel}
         </button>
         <button className={`text-btn${danger ? " danger-text" : ""}`} onClick={() => close(true)}>
           {ok}

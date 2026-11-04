@@ -72,12 +72,12 @@ async fn completing_a_task_reports_what_it_unlocks() {
         { "title": "投稿", "after": ["b"] },
     ] });
     t.ok(&s, "apply", json!({ "plan": plan })).await;
-    assert_eq!(numbers(&t.ok(&s, "next", json!({})).await["data"]), vec![3, 1], "tasks with a due date come first");
+    assert_eq!(numbers(&t.ok(&s, "next", json!({})).await["data"]["tasks"]), vec![3, 1], "tasks with a due date come first");
 
     let done = t.ok(&s, "done", json!({ "tasks": [1] })).await;
     assert_eq!(numbers(&done["data"]["unlocked"]), vec![2]);
     assert!(text(&done).contains("解锁 #2 改稿"), "{}", text(&done));
-    assert_eq!(numbers(&t.ok(&s, "next", json!({})).await["data"]), vec![3, 2]);
+    assert_eq!(numbers(&t.ok(&s, "next", json!({})).await["data"]["tasks"]), vec![3, 2]);
 
     t.ok(&s, "reopen", json!({ "tasks": [1] })).await;
     assert_eq!(t.ok(&s, "show", json!({ "task": 2 })).await["data"]["status"], "waiting");
@@ -341,4 +341,91 @@ async fn mcp_serves_the_same_tools() {
     let (_, failed) = rpc(Some(&s), "tools/call", json!({ "name": "show", "arguments": { "task": 9 } })).await;
     assert_eq!(failed["result"]["isError"], true);
     assert_eq!(failed["result"]["content"][0]["text"], "不存在事项 #9");
+}
+
+#[tokio::test]
+async fn editing_part_of_a_description_keeps_what_others_changed_meanwhile() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "写接口", "description": "- [ ] 登录\n- [ ] 列表" })).await;
+    let id = t.snapshot(&s).await["tasks"][0]["id"].as_str().unwrap().to_owned();
+    // The user adds a line in the app after the agent has read the description.
+    t.mutate(&s, json!([{ "op": "task.update", "id": id, "description": "- [ ] 登录\n- [ ] 列表\n- [ ] 退出" }])).await;
+    let edited = t
+        .ok(&s, "edit", json!({ "task": 1, "replace": [{ "old": "- [ ] 登录", "new": "- [x] 登录" }], "append": "进度：登录已完成" }))
+        .await;
+    assert_eq!(edited["data"]["changes"], json!([{ "kind": "task_edited", "task": 1, "fields": ["description"] }]));
+    let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
+    assert_eq!(shown["data"]["description"], "- [x] 登录\n- [ ] 列表\n- [ ] 退出\n进度：登录已完成");
+
+    let edit = |args: Value| t.tool(&s, "edit", args);
+    for (args, status, says) in [
+        (json!({ "task": 1, "replace": [{ "old": "- [ ] 注册", "new": "x" }] }), StatusCode::CONFLICT, "先 show"),
+        (json!({ "task": 1, "replace": [{ "old": "- [ ]", "new": "x" }] }), StatusCode::BAD_REQUEST, "不止一处"),
+        (json!({ "task": 1, "replace": [{ "old": "", "new": "x" }] }), StatusCode::BAD_REQUEST, "不能为空"),
+        (json!({ "task": 1, "description": "新的", "append": "x" }), StatusCode::BAD_REQUEST, "整段替换"),
+        (json!({ "task": 1, "append": " " }), StatusCode::BAD_REQUEST, "不能为空"),
+    ] {
+        let r = edit(args).await;
+        assert_eq!(r.status, status, "{}", r.body);
+        assert!(r.body["message"].as_str().unwrap().contains(says), "{}", r.body);
+    }
+    t.ok(&s, "edit", json!({ "task": 1, "description": "aaa" })).await;
+    let r = edit(json!({ "task": 1, "replace": [{ "old": "aa", "new": "b" }] })).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "it overlaps itself: {}", r.body);
+    let r = edit(json!({ "task": 1, "replace": [{ "old": "aaa", "new": "b" }, { "old": "aaa", "new": "c" }] })).await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "one after the other, and all or nothing: {}", r.body);
+    assert_eq!(t.ok(&s, "show", json!({ "task": 1 })).await["data"]["description"], "aaa");
+}
+
+#[tokio::test]
+async fn lists_stop_at_the_limit_and_say_how_many_more() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let plan = json!({ "folder": "/论文", "tasks": [{ "title": "查资料" }, { "title": "写初稿" }, { "title": "改稿" }] });
+    t.ok(&s, "apply", json!({ "plan": plan })).await;
+    let next = t.ok(&s, "next", json!({ "limit": 2 })).await;
+    assert_eq!((numbers(&next["data"]["tasks"]), next["data"]["total"].as_i64()), (vec![1, 2], Some(3)));
+    assert!(text(&next).ends_with("\n另有 1 项未列出，可调大 limit"), "{}", text(&next));
+    let list = t.ok(&s, "list", json!({ "folder": "/论文", "limit": 1 })).await;
+    assert_eq!(text(&list), "/论文\n  #1 [可做] 查资料\n另有 2 项未列出，可调大 limit");
+    assert_eq!(list["data"]["total"], 3);
+    let found = t.ok(&s, "search", json!({ "query": "稿", "limit": 1 })).await;
+    assert_eq!(text(&found), "找到 2 项：\n#2 [可做] 写初稿 · /论文\n另有 1 项未列出，可调大 limit");
+    assert!(!text(&t.ok(&s, "next", json!({})).await).contains("另有"));
+    for limit in [0, 501] {
+        assert_eq!(t.tool(&s, "next", json!({ "limit": limit })).await.status, StatusCode::BAD_REQUEST);
+    }
+}
+
+#[tokio::test]
+async fn outputs_leave_out_what_says_nothing() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let long = "把这一大段需求整理成待办事项，再按先后顺序排好，最后把每一项的完成标准都写清楚";
+    let added = t.ok(&s, "add", json!({ "title": long })).await;
+    assert!(text(&added).starts_with("添加 #1 把这一大段需求整理成待办事项，再按先后顺序排好，最后把每一项…\n"), "{}", text(&added));
+    assert_eq!(added["data"]["changes"], json!([{ "kind": "task_created", "task": 1 }]));
+    assert!(text(&t.ok(&s, "next", json!({})).await).contains(long), "a list shows the whole title");
+
+    t.ok(&s, "add", json!({ "title": "交初稿", "after": [1] })).await;
+    let shown = t.ok(&s, "show", json!({ "task": 2 })).await;
+    assert!(
+        text(&shown).contains("前置：\n  #1 [可做] 把这一大段需求整理成待办事项，再按先后顺序排好，最后把每一项…\n"),
+        "{}",
+        text(&shown)
+    );
+    let data = &shown["data"];
+    let keys: Vec<&str> = data.as_object().unwrap().keys().map(String::as_str).collect();
+    assert_eq!(keys, vec!["before", "created_at", "folder", "id", "number", "status", "title", "updated_at", "waiting_on"]);
+    assert_eq!(
+        data["before"][0].as_object().unwrap().keys().collect::<Vec<_>>(),
+        vec!["folder", "id", "number", "status", "title", "unlocks"]
+    );
+
+    let done = t.ok(&s, "done", json!({ "tasks": [1] })).await;
+    assert!(text(&done).contains("\n解锁 #2 交初稿\n"), "{}", text(&done));
+    assert_eq!(done["data"]["changes"], json!([{ "kind": "task_done", "task": 1 }]));
+    assert_eq!(numbers(&done["data"]["unlocked"]), vec![2]);
+    assert_eq!(t.ok(&s, "reopen", json!({ "tasks": [1] })).await["data"].get("unlocked"), None);
 }

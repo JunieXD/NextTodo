@@ -40,9 +40,14 @@ enum Command {
         folder: Option<String>,
         #[arg(long, help = "包括已完成的")]
         all: bool,
+        #[arg(long, help = "最多列出多少项，默认 50，最多 500")]
+        limit: Option<u32>,
     },
     #[command(about = "接下来：现在就能做的事项")]
-    Next,
+    Next {
+        #[arg(long, help = "最多列出多少项，默认 50，最多 500")]
+        limit: Option<u32>,
+    },
     #[command(about = "事项详情")]
     Show {
         #[arg(value_parser = number, help = "事项编号")]
@@ -52,6 +57,8 @@ enum Command {
     Search {
         #[arg(required = true, help = "关键词")]
         query: Vec<String>,
+        #[arg(long, help = "最多列出多少项，默认 50，最多 500")]
+        limit: Option<u32>,
     },
     #[command(about = "文件夹里的事项和依赖")]
     Graph {
@@ -64,7 +71,7 @@ enum Command {
     },
     #[command(about = "最近的改动批次")]
     Log {
-        #[arg(short = 'n', default_value_t = 20, help = "条数，最多 100")]
+        #[arg(short = 'n', default_value_t = 10, help = "条数，最多 100")]
         limit: u32,
     },
     #[command(about = "AI 整理的请求：等待、正在整理和失败的")]
@@ -74,7 +81,7 @@ enum Command {
         title: String,
         #[arg(long, help = "文件夹路径，不存在时一起新建")]
         folder: Option<String>,
-        #[arg(short, long, help = "描述，Markdown")]
+        #[arg(short, long, allow_hyphen_values = true, help = "描述，Markdown")]
         description: Option<String>,
         #[arg(long, help = "截止时间：2026-11-20 或 \"2026-11-20 18:00\"")]
         due: Option<String>,
@@ -91,8 +98,19 @@ enum Command {
         task: i64,
         #[arg(long)]
         title: Option<String>,
-        #[arg(short, long, help = "描述，整段替换")]
+        #[arg(short, long, allow_hyphen_values = true, help = "描述，整段替换")]
         description: Option<String>,
+        #[arg(
+            long,
+            num_args = 2,
+            allow_hyphen_values = true,
+            value_names = ["原文", "新文"],
+            conflicts_with = "description",
+            help = "把描述里恰好出现一次的原文换成新文，可以重复"
+        )]
+        replace: Vec<String>,
+        #[arg(long, allow_hyphen_values = true, conflicts_with = "description", help = "在描述末尾另起一行追加")]
+        append: Option<String>,
         #[arg(long, conflicts_with = "no_due", help = "截止时间：2026-11-20 或 \"2026-11-20 18:00\"")]
         due: Option<String>,
         #[arg(long, help = "清除截止时间")]
@@ -367,10 +385,10 @@ fn run(cli: Cli) -> anyhow::Result<()> {
     match cli.command {
         Command::Login { url, name, read_only } => login(url, name, read_only),
         Command::Tree => call("tree", json!({}), j),
-        Command::Ls { folder, all } => call("list", json!({ "folder": folder, "all": all }), j),
-        Command::Next => call("next", json!({}), j),
+        Command::Ls { folder, all, limit } => call("list", json!({ "folder": folder, "all": all, "limit": limit }), j),
+        Command::Next { limit } => call("next", json!({ "limit": limit }), j),
         Command::Show { task } => call("show", json!({ "task": task }), j),
-        Command::Search { query } => call("search", json!({ "query": query.join(" ") }), j),
+        Command::Search { query, limit } => call("search", json!({ "query": query.join(" "), "limit": limit }), j),
         Command::Graph { folder, all, mermaid } => call("graph", json!({ "folder": folder, "all": all, "mermaid": mermaid }), j),
         Command::Log { limit } => call("log", json!({ "limit": limit }), j),
         Command::Jobs => call("jobs", json!({}), j),
@@ -379,7 +397,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             json!({ "title": title, "folder": folder, "description": description, "due": due, "remind": remind, "after": after, "before": before }),
             j,
         ),
-        Command::Edit { task, title, description, due, no_due, remind, no_remind } => {
+        Command::Edit { task, title, description, replace, append, due, no_due, remind, no_remind } => {
             let mut args = Map::new();
             args.insert("task".into(), task.into());
             if let Some(title) = title {
@@ -387,6 +405,12 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             }
             if let Some(description) = description {
                 args.insert("description".into(), description.into());
+            }
+            if !replace.is_empty() {
+                args.insert("replace".into(), replace.chunks(2).map(|p| json!({ "old": p[0], "new": p[1] })).collect());
+            }
+            if let Some(append) = append {
+                args.insert("append".into(), append.into());
             }
             if no_due || due.is_some() {
                 args.insert("due".into(), due.into());

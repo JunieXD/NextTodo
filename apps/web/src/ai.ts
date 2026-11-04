@@ -14,7 +14,10 @@ const CHANGED = "nexttodo:ai-config";
 /** The settings kept on this device for the user. */
 export function localAiConfig(userId: string): AiConfig | null {
   const kept = localStorage.getItem(PREFIX + userId);
-  return kept && JSON.parse(kept);
+  if (!kept) return null;
+  const c: AiConfig = JSON.parse(kept);
+  // ECNU is no longer a preset; as on the server (migration 003), it goes on as a custom provider.
+  return c.provider === "ecnu" ? { ...c, provider: "custom" } : c;
 }
 
 export function keepAiConfig(userId: string, c: AiConfig | null) {

@@ -1,8 +1,8 @@
 // Account, devices and tokens, invites, appearance, versions.
 
 import { ChevronRight, Copy, KeyRound, Mail, Monitor, Plus, Sparkles } from "lucide-react";
-import { useEffect, useState } from "react";
-import { ApiError, api, app, serverUrl } from "../api/http";
+import { type ReactNode, useEffect, useState } from "react";
+import { ApiError, api, app, desktopOs, serverUrl } from "../api/http";
 import type { CreatedToken } from "../api/types/CreatedToken";
 import type { Invite } from "../api/types/Invite";
 import type { Scope } from "../api/types/Scope";
@@ -341,7 +341,7 @@ function TokenCreated({ name, secret, onDone, onClose }: { name: string; secret:
       <p className="empty">“{name}”的令牌只显示这一次。下面的写法已经填好服务器地址和令牌，复制即可。</p>
       <Copyable label="令牌" text={secret} />
       <Copyable label="Claude Code" text={`claude mcp add --transport http nexttodo ${url}/mcp --header "Authorization: Bearer ${secret}"`} />
-      <Copyable label="命令行和 Codex 用的环境变量" hint="写进 ~/.zshrc 等 shell 配置" text={`export NEXTTODO_URL=${url}\nexport NEXTTODO_TOKEN=${secret}`} />
+      <EnvVars url={url} secret={secret} />
       <Copyable label="Codex" hint="~/.codex/config.toml" text={`[mcp_servers.nexttodo]\nurl = "${url}/mcp"\nbearer_token_env_var = "NEXTTODO_TOKEN"`} />
       <Copyable label="把 skill 装给 agent" hint="命令行在 GitHub 的 Releases 下载" text="nexttodo skill install" />
       <div className="actions">
@@ -353,14 +353,42 @@ function TokenCreated({ name, secret, onDone, onClose }: { name: string; secret:
   );
 }
 
-/** Text to copy, such as a token or a command, with the button that copies it. */
-function Copyable({ label, hint, text }: { label: string; hint?: string; text: string }) {
+/** The environment variables the command line and Codex read: as a shell profile has them, or set
+ * for good on Windows. */
+function EnvVars({ url, secret }: { url: string; secret: string }) {
+  const [os, setOs] = useState<"unix" | "windows">(desktopOs === "Windows" ? "windows" : "unix");
+  const unix = os === "unix";
+  return (
+    <Copyable
+      label="命令行和 Codex 用的环境变量"
+      hint={unix ? "写进 ~/.zshrc 等 shell 配置" : "运行后重新打开终端"}
+      text={unix ? `export NEXTTODO_URL=${url}\nexport NEXTTODO_TOKEN=${secret}` : `setx NEXTTODO_URL "${url}"\nsetx NEXTTODO_TOKEN "${secret}"`}
+    >
+      <Seg<"unix" | "windows">
+        small
+        items={[
+          ["unix", "macOS、Linux"],
+          ["windows", "Windows"],
+        ]}
+        value={os}
+        onChange={setOs}
+      />
+    </Copyable>
+  );
+}
+
+/** Text to copy, such as a token or a command, with the button that copies it; `children` go next to
+ * the label. */
+function Copyable({ label, hint, text, children }: { label: string; hint?: string; text: string; children?: ReactNode }) {
   const { snack } = useFeedback();
   return (
     <div className="field">
-      <span>
-        {label} {hint && <span className="hint">{hint}</span>}
-      </span>
+      <div className="copy-head">
+        <span>
+          {label} {hint && <span className="hint">{hint}</span>}
+        </span>
+        {children}
+      </div>
       <div className="secret">
         <span>{text}</span>
         <button className="icon-btn sm" aria-label={`复制${label}`} onClick={() => copy(text).then(() => snack(`已复制${label}`))}>

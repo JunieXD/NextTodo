@@ -429,6 +429,8 @@ svg { display: block; flex: none; }
 .secret { margin: 0 16px 12px; padding: 6px 6px 6px 14px; border-radius: 12px; background: var(--surface-container); font: 13px/1.5 ui-monospace, Menlo, monospace; display: flex; align-items: center; gap: 8px; }
 .secret span { flex: 1; padding: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
 .field .secret { margin: 0; font-weight: 400; color: var(--on-surface); }
+.copy-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 8px; }
+.copy-head .seg button { white-space: nowrap; }
 .dialog .field { margin: 0 0 20px; }
 .status-note { margin: 4px 20px 0; font-size: 13px; color: var(--outline); }
 .menu { min-width: 200px; padding: 6px; border-radius: 14px; background: var(--surface-high); box-shadow: var(--shadow-3); z-index: 60; }

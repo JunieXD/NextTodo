@@ -8,12 +8,6 @@ import { beforeEach, expect, test, vi } from "vitest";
 import type { User } from "./api/types/User";
 import type { Session } from "./session";
 
-const storage = new Map<string, string>();
-vi.stubGlobal("localStorage", {
-  getItem: (k: string) => storage.get(k) ?? null,
-  setItem: (k: string, v: string) => storage.set(k, v),
-  removeItem: (k: string) => storage.delete(k),
-});
 vi.stubGlobal("location", { protocol: "http:", host: "localhost" });
 vi.stubGlobal("document", { visibilityState: "visible", addEventListener() {}, removeEventListener() {} });
 vi.stubGlobal("addEventListener", () => {});
@@ -113,11 +107,11 @@ async function saved(u: User) {
   return [await db.count("copies", mine), await db.count("outbox", mine)];
 }
 
-const login = () => JSON.parse(storage.get("nexttodo.login") ?? "null");
-const marked = () => storage.get("nexttodo.signedOut");
+const login = () => JSON.parse(localStorage.getItem("nexttodo.login") ?? "null");
+const marked = () => localStorage.getItem("nexttodo.signedOut") ?? undefined;
 
 beforeEach(() => {
-  storage.clear();
+  localStorage.clear();
   server.cookie = null;
   server.held = undefined;
 });
@@ -237,7 +231,7 @@ test("a sign-in or sign-out heard late leaves a later sign-in alone", async () =
 test("a tab left open while the site's storage is cleared leaves a later sign-in alone", async () => {
   const u = user(21);
   const a = await signIn(u);
-  storage.clear();
+  localStorage.clear();
   server.cookie = null;
   const db = await openDB("nexttodo", 1);
   await Promise.all([db.clear("copies"), db.clear("outbox")]);
@@ -325,7 +319,7 @@ test("a sign-out cut short is finished when the app opens next, with what it lef
   const a = await signIn(u);
   const heard = watch(a);
   // Signed out, and the tab closed before anything else.
-  storage.set("nexttodo.signedOut", JSON.stringify(login()));
+  localStorage.setItem("nexttodo.signedOut", JSON.stringify(login()));
   expect(await (await tab()).resume()).toBeNull();
   expect([server.cookie, login(), marked(), await saved(u)]).toEqual([null, null, undefined, [0, 0]]);
   await vi.waitFor(() => expect(heard.signedOut).toBe(true));
@@ -339,7 +333,7 @@ test("finishing a sign-out deletes the user's data also when the sign-in is gone
   // sign-in and kept the data.
   kick(sockets.at(-1)!);
   await vi.waitFor(() => expect(login()).toBeNull());
-  storage.set("nexttodo.signedOut", JSON.stringify(signedIn));
+  localStorage.setItem("nexttodo.signedOut", JSON.stringify(signedIn));
   expect(await (await tab()).resume()).toBeNull();
   expect([marked(), await saved(u)]).toEqual([undefined, [0, 0]]);
 });

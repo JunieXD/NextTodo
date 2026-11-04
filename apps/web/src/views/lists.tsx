@@ -14,6 +14,7 @@ import type { Board } from "../domain/board";
 import { type DueKind, dueKind, formatDay } from "../domain/dates";
 import { checkFolderName, checkTitle } from "../domain/text";
 import { useCommit, useSession, useView } from "../session";
+import { draft, keepDraft } from "../sync/drafts";
 import { useFeedback } from "../ui/feedback";
 import { Seg } from "../ui/controls";
 import { Chain, Icon } from "../ui/icons";
@@ -213,7 +214,13 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   const { board } = useView();
   const commit = useCommit();
   const { snack } = useFeedback();
-  const [title, setTitle] = useState("");
+  const { user } = useSession();
+  const place = folder === undefined ? "next" : (folder ?? "root");
+  const [title, setTitle] = useState(() => draft(user.id, place));
+  const edit = (text: string) => {
+    setTitle(text);
+    keepDraft(user.id, place, text);
+  };
   const [chain, setChain] = useState(false);
   const [target, setTarget] = useState<FolderId | null>(null);
   const [picking, setPicking] = useState(false);
@@ -242,7 +249,7 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
     if (after) ops.push({ op: "dep.add", before: after.id, after: id });
     if (!commit(ops)) return;
     last.current = chain ? id : null;
-    setTitle("");
+    edit("");
     snack(after ? `已添加，排在“${after.title}”之后` : `已添加“${c.value}”`);
   };
 
@@ -251,7 +258,7 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
       <span className="plus">
         <Icon of={Plus} size={22} width={2} />
       </span>
-      <input ref={input} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="添加事项" autoComplete="off" enterKeyHint="done" aria-label="新事项标题" />
+      <input ref={input} value={title} onChange={(e) => edit(e.target.value)} placeholder="添加事项" autoComplete="off" enterKeyHint="done" aria-label="新事项标题" />
       {folder === undefined ? (
         <button type="button" className="qa-btn" onClick={() => setPicking(true)}>
           <Icon of={FolderIcon} size={16} />

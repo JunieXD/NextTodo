@@ -7,9 +7,12 @@
 //   not confirmed yet, shared by all tabs. A change goes in when it is made, before it is sent, and
 //   out when a tab hears the server's verdict, in the same transaction as that tab's copy, which then
 //   includes it.
+//
+// The drafts of the add boxes are in localStorage (drafts.ts) and go along with the rest.
 
 import { type IDBPDatabase, openDB } from "idb";
 import type { MutationId } from "../api/types/MutationId";
+import { forgetDrafts, forgetOtherDrafts } from "./drafts";
 import type { Copy, Pending, Saved } from "./store";
 
 let opened: Promise<IDBPDatabase> | undefined;
@@ -134,6 +137,7 @@ export function saver(userId: string, copyId: string, failed: (e: unknown) => vo
 /** Deletes everything of the user's on this device. Close the saver first, or a write may land
  * afterwards. */
 export async function forget(userId: string) {
+  forgetDrafts(userId);
   const tx = (await db()).transaction(["copies", "outbox"], "readwrite");
   await Promise.all([tx.objectStore("copies").delete(all(userId)), tx.objectStore("outbox").delete(all(userId)), tx.done]);
 }
@@ -141,6 +145,7 @@ export async function forget(userId: string) {
 /** Deletes everyone's data on this device but the user's: arrays sort after strings, so their keys
  * lie below `[userId]` or above `[userId, []]`. */
 export async function forgetOthers(userId: string) {
+  forgetOtherDrafts(userId);
   const tx = (await db()).transaction(["copies", "outbox"], "readwrite");
   const [copies, outbox] = [tx.objectStore("copies"), tx.objectStore("outbox")];
   const others = [IDBKeyRange.upperBound([userId], true), IDBKeyRange.lowerBound([userId, []], true)];

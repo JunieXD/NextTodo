@@ -1,6 +1,7 @@
 import "fake-indexeddb/auto";
 import { openDB } from "idb";
 import { expect, test } from "vitest";
+import { draft, keepDraft } from "./drafts";
 import { forget, forgetCopy, forgetOthers, load, saver } from "./persist";
 import { type Copy, Store } from "./store";
 
@@ -74,8 +75,9 @@ test("a closed saver writes nothing more, and forgetting deletes what is left", 
   await forgetCopy(u, "here");
   expect(await load(u, "here")).toBeUndefined();
   expect(await outbox(u)).toEqual([1]);
+  keepDraft(u, "next", "写了一半");
   await forget(u);
-  expect(await outbox(u)).toEqual([]);
+  expect([await outbox(u), draft(u, "next")]).toEqual([[], ""]);
 });
 
 test("signing in as someone deletes everyone else's data", async () => {
@@ -84,8 +86,10 @@ test("signing in as someone deletes everyone else's data", async () => {
     await load(u, "here");
     const save = saver(u, "here", fail);
     await save.save(copy(1), [pending(1)], []);
+    keepDraft(u, "next", u);
   }
   await forgetOthers(b);
+  expect([a, b, c].map((u) => draft(u, "next"))).toEqual(["", b, ""]);
   expect([await load(a, "here"), await load(c, "here")]).toEqual([undefined, undefined]);
   expect([await outbox(a), await outbox(b), await outbox(c)]).toEqual([[], [1], []]);
   expect((await load(b, "here"))!.seq).toBe(1);

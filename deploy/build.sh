@@ -27,6 +27,9 @@ version=0.1.$(git rev-list --count HEAD)
 # put on the PATH.
 PATH="$(brew --prefix llvm)/bin:$PATH"
 tauri="{\"version\":\"$version\",\"build\":{\"beforeBuildCommand\":\"\"}}"
+# Panic messages carry the paths of the sources: the ones on the build machine, which name its user
+# and disks, become neutral ones. cargo-xwin and cargo-zigbuild add their own flags to these.
+export RUSTFLAGS="--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$(rustc --print sysroot)=/rustc --remap-path-prefix=$PWD=/nexttodo"
 
 pnpm install --frozen-lockfile
 (cd apps/web && pnpm exec tsc && pnpm exec vite build)

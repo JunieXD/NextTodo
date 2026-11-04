@@ -385,7 +385,6 @@ svg { display: block; flex: none; }
 .form-error { margin: -4px 16px 12px; font-size: 13px; color: var(--error); }
 .filled-btn { height: 48px; border-radius: 24px; padding: 0 24px; background: var(--primary); color: var(--on-primary); font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .filled-btn:disabled { opacity: .5; cursor: default; }
-.tonal-btn { height: 40px; border-radius: 20px; padding: 0 16px; background: var(--secondary-container); color: var(--on-secondary-container); font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
 .login { min-height: 100dvh; display: grid; place-items: center; padding: calc(24px + var(--safe-top)) 0 calc(24px + var(--safe-bottom)); overflow-y: auto; }
 .login-card { width: min(420px, 100%); }
 .login-brand { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 24px; text-align: center; }
@@ -394,7 +393,8 @@ svg { display: block; flex: none; }
 .login-brand p { margin: 0; color: var(--on-surface-variant); font-size: 15px; }
 .login .seg { margin: 0 16px 18px; }
 .login .filled-btn { display: flex; width: calc(100% - 32px); margin: 8px 16px 0; }
-.secret { margin: 0 16px 12px; padding: 12px 14px; border-radius: 12px; background: var(--surface-container); font: 13px/1.5 ui-monospace, Menlo, monospace; word-break: break-all; user-select: all; }
+.secret { margin: 0 16px 12px; padding: 6px 6px 6px 14px; border-radius: 12px; background: var(--surface-container); font: 13px/1.5 ui-monospace, Menlo, monospace; display: flex; align-items: center; gap: 8px; }
+.secret span { flex: 1; padding: 6px 0; word-break: break-all; user-select: all; }
 .dialog .field { margin: 0 0 20px; }
 .status-note { margin: 4px 20px 0; font-size: 13px; color: var(--outline); }
 .menu { min-width: 200px; padding: 6px; border-radius: 14px; background: var(--surface-high); box-shadow: var(--shadow-3); z-index: 60; }

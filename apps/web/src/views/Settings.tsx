@@ -82,12 +82,13 @@ export function Settings({ onClose, onSignOut }: { onClose(): void; onSignOut():
     return (
       <Modal title="令牌已生成" onClose={onClose} onBack={() => setPage("main")}>
         <p className="empty">以下是“{page.name}”的令牌，仅显示一次。可在命令行中用 nexttodo login 登录，或填入 agent 的 MCP 配置。</p>
-        <div className="secret">{page.secret}</div>
-        <div className="detail-actions flex justify-end gap-2">
-          <button className="tonal-btn" onClick={() => copy(page.secret).then(() => snack("已复制令牌"))}>
+        <div className="secret">
+          <span>{page.secret}</span>
+          <button className="icon-btn sm" aria-label="复制令牌" onClick={() => copy(page.secret).then(() => snack("已复制令牌"))}>
             <Icon of={Copy} size={18} />
-            复制
           </button>
+        </div>
+        <div className="detail-actions flex justify-end">
           <button className="filled-btn" onClick={() => setPage("main")}>
             完成
           </button>

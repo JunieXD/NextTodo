@@ -5,9 +5,12 @@
 # docs/deploy.md#用部署脚本.
 #
 #   NEXTTODO_HOST=myserver NEXTTODO_DIR=/srv/nexttodo NEXTTODO_PORT=8080 deploy/deploy.sh
+#
+# The port is always given, so that a deploy never moves a running server off the one its reverse
+# proxy expects.
 set -euo pipefail
 
-for key in NEXTTODO_HOST NEXTTODO_DIR; do
+for key in NEXTTODO_HOST NEXTTODO_DIR NEXTTODO_PORT; do
   if [[ -z ${!key:-} ]]; then
     echo "缺少环境变量 $key" >&2
     exit 1
@@ -15,7 +18,16 @@ for key in NEXTTODO_HOST NEXTTODO_DIR; do
 done
 HOST=$NEXTTODO_HOST
 DIR=$NEXTTODO_DIR
-PORT=${NEXTTODO_PORT:-8080}
+PORT=$NEXTTODO_PORT
+# Both go into commands run by the server's shell.
+if [[ ! $DIR =~ ^/[A-Za-z0-9/._-]+$ ]]; then
+  echo "NEXTTODO_DIR 要是绝对路径，只含字母、数字和 /._-" >&2
+  exit 1
+fi
+if [[ ! $PORT =~ ^[0-9]+$ ]]; then
+  echo "NEXTTODO_PORT 要是端口号" >&2
+  exit 1
+fi
 
 cd "$(dirname "$0")/.."
 deploy/build.sh

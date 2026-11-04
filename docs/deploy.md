@@ -79,6 +79,7 @@ NEXTTODO_HOST=myserver NEXTTODO_DIR=/srv/nexttodo NEXTTODO_PORT=8080 deploy/depl
 ```
 
 - 先运行 `deploy/build.sh`（见[构建发布](#构建发布)），再按服务器的架构打出镜像，用 `docker save | ssh <主机> docker load` 传过去。
+- 三个环境变量都要给出：ssh 主机名、服务器上的绝对路径（只含字母、数字和 `/._-`）、本机监听的端口。端口没有默认值，免得部署时把正在运行的服务换到反向代理不知道的端口。
 - 服务器上的 `NEXTTODO_DIR` 里放 `compose.yaml`、`.env` 和 `data/`。`deploy/switch.sh` 负责换版本：先检查新配置，留着旧的 `compose.yaml` 和 `.env`，新版本启动后 30 秒内首页没有响应就换回上一个。
 
 ## 构建发布

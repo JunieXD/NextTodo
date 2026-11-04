@@ -12,9 +12,10 @@ chown -R 65534:65534 data
 
 printf 'NEXTTODO_IMAGE=nexttodo:%s\nNEXTTODO_PORT=%s\n' "$2" "$3" > .env.new
 docker compose --env-file .env.new -f compose.yaml.new config -q
-if [[ -f .env ]]; then
+if [[ -f compose.yaml ]]; then
   cp compose.yaml compose.yaml.prev
-  cp .env .env.prev
+  # Without a .env the running compose.yaml uses its defaults, as it does with an empty one.
+  if [[ -f .env ]]; then cp .env .env.prev; else : > .env.prev; fi
 fi
 mv compose.yaml.new compose.yaml
 mv .env.new .env
@@ -24,6 +25,7 @@ up() {
   docker compose up -d || return 1
   local port deadline=$((SECONDS + 30))
   port=$(sed -n 's/^NEXTTODO_PORT=//p' .env)
+  port=${port:-8080} # compose.yaml's default
   while ((SECONDS < deadline)); do
     curl -fsS --max-time 3 -o /dev/null "http://127.0.0.1:$port/" && return 0
     sleep 1

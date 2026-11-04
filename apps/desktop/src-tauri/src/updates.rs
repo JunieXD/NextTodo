@@ -48,7 +48,8 @@ async fn manifest(url: &Url) -> Result<serde_json::Value, String> {
 /// installed it.
 #[tauri::command]
 pub fn restart(app: AppHandle, downloaded: State<'_, Downloaded>) -> Result<(), String> {
-    if let Some((update, bytes)) = downloaded.0.lock().expect("never poisoned").take() {
+    // Kept should installing fail, for another try.
+    if let Some((update, bytes)) = downloaded.0.lock().expect("never poisoned").as_ref() {
         update.install(bytes).map_err(|e| format!("安装更新失败：{e}"))?;
     }
     app.restart();

@@ -34,6 +34,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONObject
 
 /** A task as the widget shows it. Its number is the id of its reminder. */
 data class Item(val id: String, val number: Int, val title: String, val folder: String, val due: Due?)
@@ -52,6 +53,11 @@ object Widget {
      * replaces it. */
     private const val SEQ = "seq"
 
+    /** Tasks done here that the list kept still has, being from before, by the change that did each:
+     * hidden from it until a list as of that change comes. Kept apart from the list, which stays
+     * what it was as of its change. */
+    private const val DONE = "done"
+
     /** Changes go one at a time, each checking, the session too, on what the one before left. */
     private val writing = Mutex()
 
@@ -64,19 +70,28 @@ object Widget {
     private fun keep(prefs: SharedPreferences, tasks: String, seq: Long?): Boolean {
         if (seq != null && prefs.contains(SEQ) && seq < prefs.getLong(SEQ, 0)) return false
         val edit = prefs.edit().putString("tasks", tasks)
-        if (seq != null) edit.putLong(SEQ, seq) else edit.remove(SEQ)
+        if (seq == null) {
+            edit.remove(SEQ).remove(DONE)
+        } else {
+            val done = done(prefs)
+            done.keys().asSequence().toList().filter { done.getLong(it) <= seq }.forEach(done::remove)
+            edit.putLong(SEQ, seq).putString(DONE, done.toString())
+        }
         edit.apply()
         return true
     }
+
+    private fun done(prefs: SharedPreferences) = JSONObject(prefs.getString(DONE, "{}"))
 
     /** Shows `tasks`, the app's list, as JSON in the shape of the `next` tool's data, as of the
      * change `seq` its copy has. The app's lists come in the order of its sign-ins and sign-outs. */
     suspend fun show(context: Context, tasks: String, seq: Long?) = update(context) { keep(it, tasks, seq) }
 
     private fun items(context: Context): List<Item> {
-        val list = JSONArray(prefs(context).getString("tasks", "[]"))
-        return (0 until list.length()).map { i ->
-            val t = list.getJSONObject(i)
+        val prefs = prefs(context)
+        val list = JSONArray(prefs.getString("tasks", "[]"))
+        val done = done(prefs)
+        return (0 until list.length()).map(list::getJSONObject).filter { !done.has(it.getString("id")) }.map { t ->
             val due = t.optJSONObject("due")?.let { d -> Due(LocalDate.parse(d.getString("date")), d.optString("time").takeIf { it.isNotEmpty() }?.let(LocalTime::parse)) }
             // `/学习/毕业论文` reads `学习 / 毕业论文`; the root shows nothing.
             Item(t.getString("id"), t.getInt("number"), t.getString("title"), t.getString("folder").removePrefix("/").replace("/", " / "), due)
@@ -102,15 +117,11 @@ object Widget {
         return Shown(token != null, items, ticked.keys)
     }
 
-    /** Takes a task done on the server in session `token`, by the change `seq`, out of the list,
-     * unless signed in again since. Lists from before that change, which may still have the task,
-     * are not written any more. Until the list fetched next comes, this one may miss changes made
-     * elsewhere meanwhile, the task opened again too. */
+    /** Hides a task done on the server in session `token` by the change `seq` while the list kept
+     * is from before it, unless signed in again since. */
     private suspend fun drop(context: Context, task: String, token: String, seq: Long) = update(context) { prefs ->
-        if (Server.token(context) != token) return@update false
-        val list = JSONArray(prefs.getString("tasks", "[]"))
-        val kept = (0 until list.length()).map(list::getJSONObject).filter { it.getString("id") != task }
-        prefs.edit().putString("tasks", JSONArray(kept).toString()).putLong(SEQ, maxOf(seq, prefs.getLong(SEQ, seq))).apply()
+        if (Server.token(context) != token || (prefs.contains(SEQ) && prefs.getLong(SEQ, 0) >= seq)) return@update false
+        prefs.edit().putString(DONE, done(prefs).put(task, seq).toString()).apply()
         true
     }
 

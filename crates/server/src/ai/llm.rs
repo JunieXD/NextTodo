@@ -224,19 +224,40 @@ const MAX_STREAM: u64 = 64 << 20;
 /// How much of an error answer is read.
 const MAX_ERROR: u64 = 64 << 10;
 
-/// Whether `ip` is reachable from anywhere, not only from the server or its network.
+/// IPv4 blocks not reachable from anywhere, from IANA's special-purpose registry: address and
+/// prefix length. Multicast and the reserved 240.0.0.0/4, the broadcast address in it, close it.
+const V4_NOT_PUBLIC: [([u8; 4], u32); 15] = [
+    ([0, 0, 0, 0], 8),
+    ([10, 0, 0, 0], 8),
+    ([100, 64, 0, 0], 10),
+    ([127, 0, 0, 0], 8),
+    ([169, 254, 0, 0], 16),
+    ([172, 16, 0, 0], 12),
+    ([192, 0, 0, 0], 24),
+    ([192, 0, 2, 0], 24),
+    ([192, 88, 99, 0], 24),
+    ([192, 168, 0, 0], 16),
+    ([198, 18, 0, 0], 15),
+    ([198, 51, 100, 0], 24),
+    ([203, 0, 113, 0], 24),
+    ([224, 0, 0, 0], 4),
+    ([240, 0, 0, 0], 4),
+];
+
+/// Whether `ip` is reachable from anywhere, not only from the server or its network. IPv6 has to
+/// be global unicast (`2000::/3`), outside the blocks in it set aside for protocols (`2001::/23`),
+/// documentation (`2001:db8::/32`, `3fff::/20`) and 6to4 (`2002::/16`), which may lead to IPv4 ones.
 fn public(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
-            let [a, b, ..] = v4.octets();
-            // 0.0.0.0/8 is "this network", 100.64.0.0/10 a carrier's.
-            !(v4.is_private() || v4.is_loopback() || v4.is_link_local() || v4.is_broadcast() || v4.is_multicast() || v4.is_documentation())
-                && a != 0
-                && !(a == 100 && b & 0xc0 == 64)
+            let n = u32::from(v4);
+            !V4_NOT_PUBLIC.iter().any(|&(block, len)| n >> (32 - len) == u32::from_be_bytes(block) >> (32 - len))
         }
-        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
-            Some(v4) => public(v4.into()),
-            None => !(v6.is_loopback() || v6.is_unspecified() || v6.is_multicast() || v6.is_unique_local() || v6.is_unicast_link_local()),
+        IpAddr::V6(v6) => match (v6.to_ipv4_mapped(), v6.segments()) {
+            (Some(v4), _) => public(v4.into()),
+            (None, [a, b, ..]) => {
+                a & 0xe000 == 0x2000 && !(a == 0x2001 && (b < 0x200 || b == 0xdb8)) && a != 0x2002 && !(a == 0x3fff && b < 0x1000)
+            }
         },
     }
 }
@@ -435,20 +456,37 @@ mod tests {
 
     #[test]
     fn only_public_addresses_are_called() {
-        for ip in ["8.8.8.8", "2606:4700::1111", "::ffff:1.1.1.1"] {
+        let public_ones =
+            ["8.8.8.8", "1.1.1.1", "172.32.0.1", "100.128.0.1", "223.255.255.255", "2606:4700::1111", "2001:4860::8888", "::ffff:1.1.1.1"];
+        for ip in public_ones {
             assert!(public(ip.parse().unwrap()), "{ip}");
         }
         let private = [
             "127.0.0.1",
             "10.1.2.3",
             "172.17.0.1",
+            "172.31.255.255",
             "192.168.1.1",
             "169.254.169.254",
             "100.100.1.1",
             "0.0.0.0",
+            "198.18.0.1",
+            "198.19.255.255",
+            "192.0.2.1",
+            "240.0.0.1",
+            "255.255.255.255",
+            "224.0.0.1",
+            "::",
             "::1",
             "fd00::1",
             "fe80::1",
+            "fec0::1",
+            "ff02::1",
+            "2001:db8::1",
+            "2001::1",
+            "2002:a00:1::",
+            "3fff::1",
+            "64:ff9b::a00:1",
             "::ffff:10.0.0.1",
         ];
         for ip in private {

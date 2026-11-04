@@ -56,7 +56,10 @@ export function useLocalRunner(store: Store, userId: string) {
     let again = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let wait = RETRY_MS;
+    // Once the session or the user has changed, a request still under way schedules nothing more.
+    let stopped = false;
     const look = () => {
+      if (stopped) return;
       if (asking) {
         again = true;
         return;
@@ -72,7 +75,7 @@ export function useLocalRunner(store: Store, userId: string) {
           () => (wait = RETRY_MS),
           (e) => {
             if (!(e instanceof ApiError)) throw e;
-            if (e.status !== 409 && e.code !== OFFLINE) return;
+            if (stopped || (e.status !== 409 && e.code !== OFFLINE)) return;
             clearTimeout(retry);
             retry = setTimeout(look, wait);
             wait = Math.min(wait * 2, 120_000);
@@ -89,6 +92,7 @@ export function useLocalRunner(store: Store, userId: string) {
     addEventListener(CHANGED, look);
     addEventListener("storage", stored);
     return () => {
+      stopped = true;
       clearTimeout(retry);
       unsubscribe();
       removeEventListener(CHANGED, look);

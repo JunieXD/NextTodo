@@ -76,6 +76,6 @@
 
 Windows 版在 Windows 11 虚拟机（ARM 版，x64 模拟运行）里验证过：登录、同步、关窗口后隐藏、托盘图标和菜单、快捷键快速添加、提醒弹出和点击打开、开机自启开关、只运行一个实例、更新。调试时：
 
-- 启动前设环境变量 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`，就能在虚拟机里用 CDP（`http://127.0.0.1:9222/json`）操作页面。
-- 正式版没有控制台窗口，Rust 的 panic 看不到。要看的话，从命令行启动 `nexttodo-desktop.exe`，并把标准错误重定向到文件。
-- 测试更新时，更新地址要用 `https`。要用本机的 `http` 服务器测，另外构建一个设了 `plugins.updater.dangerousInsecureTransportProtocol` 的版本先装上，再从它更新。
+- 操作页面：启动前设环境变量 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`，在虚拟机里经 CDP（`http://127.0.0.1:9222/json`）连接。
+- 查看 panic：正式版没有控制台窗口，从命令行启动 `nexttodo-desktop.exe`，把标准错误重定向到文件。
+- 测试更新：正式版的更新地址必须是 `https`。用本机的 `http` 服务器测试时，先装一个设了 `plugins.updater.dangerousInsecureTransportProtocol` 的测试包，再从它更新。

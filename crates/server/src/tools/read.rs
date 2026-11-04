@@ -3,13 +3,13 @@
 use std::collections::HashSet;
 
 use nexttodo_core::board::{Board, Status};
-use nexttodo_core::model::{Effect, FolderId, Task};
+use nexttodo_core::model::{Effect, FolderId, JobState, Task};
 use nexttodo_core::ops::Op;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 
 use super::args::{GraphArgs, ListArgs, LogArgs, NoArgs, SearchArgs, ShowArgs};
-use super::text::{self, Names, ago, status_tag, task_line, task_view};
+use super::text::{self, Names, ago, job_item, status_tag, task_line, task_view};
 use super::{Cx, Output, find_folder, find_task};
 use crate::error::ApiError;
 use crate::store;
@@ -205,6 +205,29 @@ fn mermaid(b: &Board, nodes: &[&Task], edges: &[(&Task, &Task)], scope: Option<F
     lines.push("  classDef waiting fill:#FFFFFF,stroke:#707973,stroke-dasharray:4 3,color:#404944".into());
     lines.push("  classDef done fill:#DEE4DF,stroke:#BFC9C2,color:#707973".into());
     lines.join("\n")
+}
+
+/// The AI jobs not done yet, oldest first: done ones are tasks by now.
+pub fn jobs(c: &Connection, cx: &Cx, _: NoArgs) -> Result<Output, ApiError> {
+    let snap = store::snapshot(c, cx.owner)?;
+    if snap.ai_jobs.is_empty() {
+        return Ok(Output { text: "没有 AI 整理请求。".into(), data: json!([]) });
+    }
+    let b = Board::new(&snap);
+    let (mut lines, mut data) = (Vec::new(), Vec::new());
+    for j in &snap.ai_jobs {
+        let state = match j.state {
+            JobState::Waiting => "等待整理".to_owned(),
+            JobState::Running => "正在整理".to_owned(),
+            JobState::Failed => format!("整理失败：{}", j.error.as_deref().unwrap_or_default()),
+        };
+        let folder = b.path(j.folder_id);
+        lines.push(format!("{} · {folder} · {state} · {}", job_item(j), ago(cx.now, j.updated_at)));
+        data.push(
+            json!({ "id": j.id, "start": job_item(j), "folder": folder, "state": j.state, "error": j.error, "updated_at": j.updated_at }),
+        );
+    }
+    Ok(Output { text: lines.join("\n"), data: data.into() })
 }
 
 pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {

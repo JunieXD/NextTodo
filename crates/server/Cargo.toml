@@ -7,6 +7,8 @@ publish.workspace = true
 [dependencies]
 anyhow = "1.0.104"
 argon2 = "0.6.0"
+base64 = "0.22.1"
+chacha20poly1305 = "0.11.0"
 axum = { version = "0.8.9", features = ["ws", "macros"] }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 nexttodo-core = { path = "../core", features = ["sql"] }
@@ -25,6 +27,7 @@ tower-http = { version = "0.7.1", features = ["compression-br", "compression-zst
 tracing = "0.1.44"
 ts-rs = { version = "12.0.1", features = ["no-serde-warnings", "serde-json-impl"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+ureq = "3.5.0"
 uuid = { version = "1.29.0", features = ["v7", "serde"] }
 
 [lints]

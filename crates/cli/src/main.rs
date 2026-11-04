@@ -67,6 +67,8 @@ enum Command {
         #[arg(short = 'n', default_value_t = 20, help = "条数，最多 100")]
         limit: u32,
     },
+    #[command(about = "AI 整理的请求：等待、正在整理和失败的")]
+    Jobs,
     #[command(about = "添加一个事项")]
     Add {
         title: String,
@@ -371,6 +373,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Search { query } => call("search", json!({ "query": query.join(" ") }), j),
         Command::Graph { folder, all, mermaid } => call("graph", json!({ "folder": folder, "all": all, "mermaid": mermaid }), j),
         Command::Log { limit } => call("log", json!({ "limit": limit }), j),
+        Command::Jobs => call("jobs", json!({}), j),
         Command::Add { title, folder, description, due, remind, after, before } => call(
             "add",
             json!({ "title": title, "folder": folder, "description": description, "due": due, "remind": remind, "after": after, "before": before }),

@@ -8,10 +8,12 @@
 //   out when a tab hears the server's verdict, in the same transaction as that tab's copy, which then
 //   includes it.
 //
-// The drafts of the add boxes are in localStorage (drafts.ts) and go along with the rest.
+// The drafts of the add boxes, and the AI settings kept on the device (ai.ts), are in localStorage
+// and go along with the rest.
 
 import { type IDBPDatabase, openDB } from "idb";
 import type { MutationId } from "../api/types/MutationId";
+import { forgetAiConfig, forgetOtherAiConfigs } from "../ai";
 import { forgetDrafts, forgetOtherDrafts } from "./drafts";
 import type { Copy, Pending, Saved } from "./store";
 
@@ -138,6 +140,7 @@ export function saver(userId: string, copyId: string, failed: (e: unknown) => vo
  * afterwards. */
 export async function forget(userId: string) {
   forgetDrafts(userId);
+  forgetAiConfig(userId);
   const tx = (await db()).transaction(["copies", "outbox"], "readwrite");
   await Promise.all([tx.objectStore("copies").delete(all(userId)), tx.objectStore("outbox").delete(all(userId)), tx.done]);
 }
@@ -146,6 +149,7 @@ export async function forget(userId: string) {
  * lie below `[userId]` or above `[userId, []]`. */
 export async function forgetOthers(userId: string) {
   forgetOtherDrafts(userId);
+  forgetOtherAiConfigs(userId);
   const tx = (await db()).transaction(["copies", "outbox"], "readwrite");
   const [copies, outbox] = [tx.objectStore("copies"), tx.objectStore("outbox")];
   const others = [IDBKeyRange.upperBound([userId], true), IDBKeyRange.lowerBound([userId, []], true)];

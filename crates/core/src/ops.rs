@@ -3,7 +3,7 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use ts_rs::TS;
 
-use crate::model::{Description, Due, FolderId, MutationId, Name, SortKey, TaskId, Title};
+use crate::model::{AiJobId, Description, Due, FolderId, JobText, LocalTime, MutationId, Name, SortKey, TaskId, Title};
 
 pub const MAX_OPS: usize = 1000;
 
@@ -116,6 +116,29 @@ pub enum Op {
     DepAdd { before: TaskId, after: TaskId },
     #[serde(rename = "dep.remove")]
     DepRemove { before: TaskId, after: TaskId },
+    #[serde(rename = "ai_job.create")]
+    AiJobCreate {
+        id: AiJobId,
+        text: JobText,
+        local_time: LocalTime,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        folder_id: Option<FolderId>,
+    },
+    /// Puts a failed job back in the queue, with its text or folder changed if given.
+    #[serde(rename = "ai_job.retry")]
+    AiJobRetry {
+        id: AiJobId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        text: Option<JobText>,
+        /// `null` is the root.
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        folder_id: Option<Option<FolderId>>,
+    },
+    #[serde(rename = "ai_job.delete")]
+    AiJobDelete { id: AiJobId },
     #[serde(rename = "undo")]
     Undo { mutation: MutationId },
 }

@@ -76,7 +76,7 @@ fn snapshot(case: &Case, names: &mut Names) -> Snapshot {
         .collect();
     let dependencies: Vec<Value> =
         case.deps.iter().map(|(b, a)| json!({ "before": names.id(b), "after": names.id(a), "created_at": 0 })).collect();
-    serde_json::from_value(json!({ "folders": folders, "tasks": tasks, "dependencies": dependencies })).unwrap()
+    serde_json::from_value(json!({ "folders": folders, "tasks": tasks, "dependencies": dependencies, "ai_jobs": [] })).unwrap()
 }
 
 #[test]

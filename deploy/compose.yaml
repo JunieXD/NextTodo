@@ -11,6 +11,8 @@ services:
       - ./data:/data
     environment:
       RUST_LOG: info
+      # Encrypts the API keys of AI organizing kept on the server; without it they stay on devices.
+      NEXTTODO_SECRET_KEY: ${NEXTTODO_SECRET_KEY:-}
     stop_grace_period: 10s
     logging:
       driver: json-file

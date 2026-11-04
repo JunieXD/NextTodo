@@ -36,6 +36,7 @@ test("reminders come before the deadline by the time set, for pending synced tas
       task(0, { due: { date: "2026-11-05", time: "08:00", remind_before: 60 } }), // not synced yet
     ],
     dependencies: [],
+    ai_jobs: [],
   });
   expect(reminders(board, now).map((r) => [r.id, r.at.getHours(), r.at.getMinutes(), r.body])).toEqual([
     [2, 12, 0, "今天 12:00 截止"],

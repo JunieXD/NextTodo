@@ -1,6 +1,7 @@
 // The signed-in app: the layout for the screen size, settings, and what the session reports.
 
 import { useEffect, useState } from "react";
+import { useLocalRunner } from "../ai";
 import { useLocation, useSearchParams } from "wouter";
 import { app } from "../api/http";
 import type { LogEntry } from "../api/types/LogEntry";
@@ -13,18 +14,19 @@ import { EVERY_MS, check, install, restart, usePending } from "../updates";
 import { Desktop } from "./Desktop";
 import { MarksProvider } from "./marks";
 import { Phone } from "./Phone";
+import { OpenSettings, type SettingsPage } from "./nav";
 import { Settings } from "./Settings";
 
 export function Main({ session, onSignedOut }: { session: Session; onSignedOut(notice?: string): void }) {
   const wide = useWide();
-  const [settings, setSettings] = useState(false);
+  const [settings, setSettings] = useState<SettingsPage | null>(null);
   // Opened from outside the app: quick add from the widget, the menu bar or the shortcut (`/?add`), a
   // task from the widget or a reminder (`/?open=<task>`). Settings and dialogs make way.
   const [params] = useSearchParams();
   const [, navigate] = useLocation();
   const open = params.get("open");
   const outside = !!open || params.has("add");
-  if (outside && settings) setSettings(false);
+  if (outside && settings) setSettings(null);
   // On top of a page without details, which closing them goes back to: there may be no page before.
   useEffect(() => {
     if (!open) return;
@@ -40,19 +42,20 @@ export function Main({ session, onSignedOut }: { session: Session; onSignedOut(n
     <SessionContext value={session}>
       <MarksProvider>
         <Root className={className} outside={outside}>
-          <Events onSignedOut={onSignedOut} />
-          <Updates />
-          {wide ? (
-            <Desktop onSettings={() => setSettings(true)} />
-          ) : (
-            <Phone onSettings={() => setSettings(true)} />
-          )}
-          {settings && <Settings onClose={() => setSettings(false)} onSignOut={signOut} />}
+          <OpenSettings value={(page = "main") => setSettings(page)}>
+            <Events onSignedOut={onSignedOut} />
+            <Updates />
+            {wide ? <Desktop onSettings={() => setSettings("main")} /> : <Phone onSettings={() => setSettings("main")} />}
+            {settings && <Settings start={settings} onClose={() => setSettings(null)} onSignOut={signOut} />}
+          </OpenSettings>
         </Root>
       </MarksProvider>
     </SessionContext>
   );
 }
+
+/** Who the server's changes for AI jobs are by (`crates/server/src/ai/mod.rs`). */
+const AI_ACTOR = "AI 整理";
 
 /** How long ago an agent's change may be to still be announced when it arrives. */
 const RECENT_MS = 2 * 60_000;
@@ -63,6 +66,7 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
   const session = useSession();
   const { snack } = useFeedback();
   const undo = useUndo();
+  useLocalRunner(session.store, session.user.id);
   useEffect(() => {
     session.listen({
       signedOut: () => onSignedOut("登录已失效，请重新登录"),
@@ -70,7 +74,9 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
       unsaved: () => snack("无法保存到本机，关闭页面前请保持联网"),
       appFailed: (e) => snack(`${app === "android" ? "提醒和小组件" : "提醒"}更新失败：${e instanceof Error ? e.message : String(e)}`),
       arrived(entries) {
-        const last = entries.findLast((e) => e.actor !== null && e.effects.length > 0 && e.created_at > Date.now() - RECENT_MS);
+        // Not a job starting or failing: its row shows that.
+        const told = (e: LogEntry) => e.effects.some((x) => !(x.kind === "ai_job" && x.before && x.after));
+        const last = entries.findLast((e) => e.actor !== null && told(e) && e.created_at > Date.now() - RECENT_MS);
         if (last) snack({ text: describe(last, session.store.getView().board), action: "撤销", onAction: () => undo(last.id), ms: 8000 });
       },
     });
@@ -108,6 +114,7 @@ function Updates() {
 function describe(entry: LogEntry, board: Board): string {
   const tasks = entry.effects.filter((e) => e.kind === "task");
   const created = tasks.filter((e) => !e.before).map((e) => e.after!);
+  if (entry.actor === AI_ACTOR && created.length) return `AI 整理好了，添加了 ${created.length} 项`;
   if (created.length && created.length === tasks.length) {
     const folders = new Set(created.map((t) => t.folder_id));
     const [only] = folders;

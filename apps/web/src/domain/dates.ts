@@ -11,6 +11,9 @@ export const isoDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}
 /** `HH:MM` of a moment, in local time. */
 export const isoTime = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
+/** `2026-11-04 16:30 星期三`: the local time, as AI organizing reads "tomorrow" by. */
+export const localTime = (d: Date) => `${isoDate(d)} ${isoTime(d)} 星期${WEEK[d.getDay()]}`;
+
 function day(date: string): Date {
   const [y, m, d] = date.split("-").map(Number);
   return new Date(y, m - 1, d);

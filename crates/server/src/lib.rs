@@ -1,5 +1,6 @@
 //! NextTodo server: the HTTP API over SQLite. See `docs/api.md`.
 
+pub mod ai;
 pub mod auth;
 pub mod db;
 pub mod error;
@@ -54,11 +55,17 @@ pub struct AppState {
     pub db: Db,
     pub clock: Clock,
     pub hub: Hub,
+    pub ai: Arc<ai::Ai>,
 }
 
 impl AppState {
+    /// With API keys kept only on devices, and models called over HTTPS.
     pub fn new(db: Db, clock: Clock) -> Self {
-        AppState { db, clock, hub: Hub::default() }
+        AppState { db, clock, hub: Hub::default(), ai: Arc::new(ai::Ai::new(None, Arc::new(ai::llm::Https))) }
+    }
+
+    pub fn with_ai(self, ai: ai::Ai) -> Self {
+        AppState { ai: Arc::new(ai), ..self }
     }
 }
 
@@ -100,6 +107,11 @@ pub fn app(state: AppState) -> Router {
         .route("/sync", get(ws::sync))
         .route("/tools", get(tools::list_tools))
         .route("/tools/{name}", post(tools::call_tool))
+        .route("/ai/providers", get(ai::providers))
+        .route("/ai/settings", get(ai::get_settings).put(ai::put_settings).delete(ai::delete_settings))
+        .route("/ai/test", post(ai::test))
+        .route("/ai/models", post(ai::models))
+        .route("/ai/jobs/{id}/run", post(ai::run))
         .fallback(|| async { ApiError::not_found("接口不存在") });
     let mcp = Router::new()
         .route_service("/mcp", mcp::service(state.clone()))

@@ -1,6 +1,6 @@
 // Account, devices and tokens, invites, appearance, versions.
 
-import { ChevronRight, Copy, KeyRound, Mail, Monitor, Plus } from "lucide-react";
+import { ChevronRight, Copy, KeyRound, Mail, Monitor, Plus, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError, api, app, serverUrl } from "../api/http";
 import type { CreatedToken } from "../api/types/CreatedToken";
@@ -16,6 +16,8 @@ import { Seg } from "../ui/controls";
 import { Modal, useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { About } from "./About";
+import { AiPage, useAiSummary } from "./AiSettings";
+import type { SettingsPage } from "./nav";
 import { BackgroundSettings } from "./Background";
 import { StartAtLogin } from "./StartAtLogin";
 
@@ -23,12 +25,12 @@ import { StartAtLogin } from "./StartAtLogin";
  * where the page comes from. */
 const inviteLink = (code: string) => `${serverUrl() || location.origin}/?invite=${code}`;
 
-type Page = "main" | "password" | "token" | { secret: string; name: string };
+type Page = SettingsPage;
 
-export function Settings({ onClose, onSignOut }: { onClose(): void; onSignOut(): void }) {
+export function Settings({ start = "main", onClose, onSignOut }: { start?: Page; onClose(): void; onSignOut(): void }) {
   const session = useSession();
   const [user, setUser] = useState(session.user);
-  const [page, setPage] = useState<Page>("main");
+  const [page, setPage] = useState<Page>(start);
   const [tokens, setTokens] = useState<TokenInfo[] | null>(null);
   const [invites, setInvites] = useState<Invite[] | null>(null);
   const [error, setError] = useState("");
@@ -75,6 +77,7 @@ export function Settings({ onClose, onSignOut }: { onClose(): void; onSignOut():
   };
 
   if (page === "password") return <PasswordPage onDone={() => setPage("main")} onClose={onClose} />;
+  if (page === "ai") return <AiPage onBack={() => setPage("main")} onClose={onClose} />;
   if (page === "token") {
     return <TokenPage onCreated={(c) => (loadTokens(), setPage({ secret: c.secret, name: c.token.name }))} onBack={() => setPage("main")} onClose={onClose} />;
   }
@@ -127,6 +130,11 @@ export function Settings({ onClose, onSignOut }: { onClose(): void; onSignOut():
             </span>
           </div>
         </button>
+      </div>
+
+      <h2 className="group-title">AI 整理</h2>
+      <div className="group">
+        <AiRow onOpen={() => setPage("ai")} />
       </div>
 
       <h2 className="group-title">
@@ -209,6 +217,24 @@ export function Settings({ onClose, onSignOut }: { onClose(): void; onSignOut():
         </button>
       </div>
     </Modal>
+  );
+}
+
+function AiRow({ onOpen }: { onOpen(): void }) {
+  const summary = useAiSummary();
+  return (
+    <button className="row" onClick={onOpen}>
+      <div className="row-inner">
+        <span className="token-ic">
+          <Icon of={Sparkles} size={18} />
+        </span>
+        <span>模型</span>
+        <span className="row-value">{summary}</span>
+        <span className="chev">
+          <Icon of={ChevronRight} size={18} />
+        </span>
+      </div>
+    </button>
   );
 }
 

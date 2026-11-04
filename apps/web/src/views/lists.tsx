@@ -1,8 +1,8 @@
 // The bodies of the main pages: what is next, what is done, a folder (the root too), search results;
 // and the quick-add bar.
 
-import { ChevronRight, Folder as FolderIcon, FolderPlus, List, Plus, Workflow } from "lucide-react";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { ArrowUp, ChevronRight, Folder as FolderIcon, FolderPlus, List, Plus, Sparkles, Workflow } from "lucide-react";
+import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation, useSearchParams } from "wouter";
 import type { Folder } from "../api/types/Folder";
@@ -12,19 +12,22 @@ import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import { lastKey } from "../domain/apply";
 import type { Board } from "../domain/board";
-import { type DueKind, dueKind, formatDay } from "../domain/dates";
+import { aiReady } from "../ai";
+import { type DueKind, dueKind, formatDay, localTime } from "../domain/dates";
 import { rekey } from "../domain/reorder";
-import { checkTitle } from "../domain/text";
+import { checkJobText, checkTitle } from "../domain/text";
 import { useCommit, useSession, useView } from "../session";
 import { draft, keepDraft } from "../sync/drafts";
 import { useFeedback } from "../ui/feedback";
 import { Seg } from "../ui/controls";
+import { useWide } from "../ui/hooks";
 import { Chain, Icon } from "../ui/icons";
 import { useTaskActions } from "./actions";
 import { useRowDrag } from "./drag";
 import { useNewFolder } from "./FolderMenu";
 import { useMarks } from "./marks";
-import { folderUrl, useFolderView, useSelection } from "./nav";
+import { OpenSettings, folderUrl, useFolderView, useSelection } from "./nav";
+import { JobRows } from "./jobs";
 import { FolderPicker } from "./pickers";
 import { FolderRow, RailList, TaskRow } from "./rows";
 
@@ -49,17 +52,31 @@ export function NextBody({ now }: { now: Date }) {
     const g = t.due ? dueKind(t.due, now) : "none";
     groups.set(g, [...(groups.get(g) ?? []), t]);
   }
-  if (!groups.size) return <p className="empty">暂无可做的事项。可在文件夹中添加，或让 agent 拆分计划。</p>;
-  return GROUPS.filter(([g]) => groups.has(g)).map(([g, label, cls]) => (
-    <section key={g}>
-      <h2 className={`group-title ${cls}`}>{label}</h2>
-      <div className="group">
-        {groups.get(g)!.map((t) => (
-          <TaskRow key={t.id} task={t} board={board} now={now} path selected={selected === t.id} actions={actions} />
-        ))}
-      </div>
-    </section>
-  ));
+  // Every job not done yet, wherever it was submitted.
+  const jobs = board.snapshot.ai_jobs;
+  return (
+    <>
+      {jobs.length > 0 && (
+        <section>
+          <h2 className="group-title">AI 整理</h2>
+          <div className="group">
+            <JobRows jobs={jobs} board={board} path />
+          </div>
+        </section>
+      )}
+      {!groups.size && !jobs.length && <p className="empty">暂无可做的事项。可在文件夹中添加，或让 agent 拆分计划。</p>}
+      {GROUPS.filter(([g]) => groups.has(g)).map(([g, label, cls]) => (
+        <section key={g}>
+          <h2 className={`group-title ${cls}`}>{label}</h2>
+          <div className="group">
+            {groups.get(g)!.map((t) => (
+              <TaskRow key={t.id} task={t} board={board} now={now} path selected={selected === t.id} actions={actions} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </>
+  );
 }
 
 /** Pending tasks of a folder in dependency order, with those just completed kept in place for a moment. */
@@ -80,6 +97,7 @@ export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date
   const subs = board.subfolders(folder);
   const open = openTasks(board, folder, linger);
   const done = board.tasksIn(folder).filter((t) => t.done_at !== null && !linger.has(t.id));
+  const jobs = board.snapshot.ai_jobs.filter((j) => j.folder_id === folder);
   return (
     <>
       {(subs.length > 0 || folder === null) && (
@@ -88,13 +106,14 @@ export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date
           <FolderList folder={folder} folders={subs} />
         </>
       )}
-      {open.length + done.length > 0 ? (
+      {open.length + done.length + jobs.length > 0 ? (
         <>
           <h2 className="group-title">
             <span>事项</span>
             <span>{open.filter((t) => board.status(t) === "ready").length} 项可做</span>
           </h2>
           <div className="group">
+            {jobs.length > 0 && <JobRows jobs={jobs} board={board} />}
             {open.length > 0 && <RailList tasks={open} board={board} now={now} selected={selected} actions={actions} />}
             {done.length > 0 && (
               <button className={`row done-toggle${doneOpen ? " open" : ""}`} onClick={() => setDoneOpen(!doneOpen)}>
@@ -219,40 +238,76 @@ export function SearchResults({ query, now }: { query: string; now: Date }) {
   );
 }
 
-/** Adds tasks by typing. In a folder (`null` for the root) it can chain each new task after the
- * previous one; elsewhere it adds to a folder picked beside it, the root by default. */
+const AI_MODE = "nexttodo.aiMode";
+
+/** Adds tasks by typing, or, switched to AI organizing with ✦, has AI organize what is written into
+ * tasks. In a folder (`null` for the root) it can chain each new task after the previous one;
+ * elsewhere it adds to a folder picked beside it, the root by default. */
 export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   const { board } = useView();
   const commit = useCommit();
   const { snack } = useFeedback();
   const { user } = useSession();
+  const openSettings = useContext(OpenSettings);
+  const wide = useWide();
   const place = folder === undefined ? "next" : (folder ?? "root");
   const [title, setTitle] = useState(() => draft(user.id, place));
   const edit = (text: string) => {
     setTitle(text);
     keepDraft(user.id, place, text);
   };
+  // The device remembers the mode last used.
+  const [ai, setAi] = useState(() => localStorage.getItem(AI_MODE) === "on");
   const [chain, setChain] = useState(false);
   const [target, setTarget] = useState<FolderId | null>(null);
   const [picking, setPicking] = useState(false);
   const last = useRef<TaskId | null>(null);
   const into = folder !== undefined ? folder : target && board.folder(target) ? target : null;
-  // The app's widget opens `/?add` to type a new task straight away.
   const input = useRef<HTMLInputElement>(null);
+  const area = useRef<HTMLTextAreaElement>(null);
+  const focus = () => (input.current ?? area.current)?.focus();
+  // The app's widget opens `/?add` to type a new task straight away.
   const [params] = useSearchParams();
   const [location, navigate] = useLocation();
   const asked = params.has("add");
   useEffect(() => {
     if (!asked) return;
-    input.current!.focus();
+    focus();
     navigate(location, { replace: true });
   }, [asked, location, navigate]);
+  // As tall as the text, up to the height the style allows, and then it scrolls.
+  useLayoutEffect(() => {
+    const el = area.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [title, ai]);
+
+  const switchMode = async () => {
+    if (!ai && !(await aiReady(user.id))) {
+      snack("先选好 AI 整理用的模型");
+      return openSettings("ai");
+    }
+    localStorage.setItem(AI_MODE, ai ? "off" : "on");
+    setAi(!ai);
+    requestAnimationFrame(focus);
+  };
+
+  const organize = () => {
+    const c = checkJobText(title);
+    if (!c.ok) return snack(c.error);
+    const op: Op = { op: "ai_job.create", id: uuidv7(), text: c.value, local_time: localTime(new Date()), ...(into && { folder_id: into }) };
+    if (!commit([op])) return;
+    edit("");
+    snack("已交给 AI 整理");
+  };
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
+    if (ai) return organize();
     const c = checkTitle(title);
-    if (!c.ok) return snack(c.error);
+    if (!c.ok) return snack([...title.trim()].length > 200 ? `${c.error}；长段文字可以点 ✦ 交给 AI 整理` : c.error);
     const id = uuidv7();
     const ops: Op[] = [{ op: "task.create", id, title: c.value, sort_key: lastKey(board.contents(into).map((t) => t.sort_key)), ...(into && { folder_id: into }) }];
     const prev = chain && last.current ? board.task(last.current) : undefined;
@@ -265,20 +320,49 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   };
 
   return (
-    <form className="quick-add" onSubmit={submit}>
+    <form className={`quick-add${ai ? " ai" : ""}`} onSubmit={submit}>
       <span className="plus">
-        <Icon of={Plus} size={22} width={2} />
+        <Icon of={ai ? Sparkles : Plus} size={22} width={ai ? 1.8 : 2} />
       </span>
-      <input ref={input} value={title} onChange={(e) => edit(e.target.value)} placeholder="添加事项" autoComplete="off" enterKeyHint="done" aria-label="新事项标题" />
+      {ai ? (
+        <textarea
+          ref={area}
+          rows={1}
+          value={title}
+          onChange={(e) => edit(e.target.value)}
+          // On a computer Enter submits and Shift+Enter starts a line; on a phone the key starts a
+          // line and the button submits. Not while an input method is still composing.
+          onKeyDown={(e) => {
+            if (wide && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              e.currentTarget.form!.requestSubmit();
+            }
+          }}
+          placeholder="写下要做的事，AI 整理成事项"
+          aria-label="交给 AI 整理的内容"
+        />
+      ) : (
+        <input ref={input} value={title} onChange={(e) => edit(e.target.value)} placeholder="添加事项" autoComplete="off" enterKeyHint="done" aria-label="新事项标题" />
+      )}
+      <button type="button" className={`qa-btn icon${ai ? " on" : ""}`} aria-pressed={ai} aria-label="AI 整理" title="AI 整理" onClick={() => void switchMode()}>
+        <Icon of={Sparkles} size={16} />
+      </button>
       {folder === undefined ? (
         <button type="button" className="qa-btn" onClick={() => setPicking(true)}>
           <Icon of={FolderIcon} size={16} />
           {board.folderName(into)}
         </button>
       ) : (
-        <button type="button" className={`qa-btn${chain ? " on" : ""}`} aria-pressed={chain} onClick={() => ((last.current = null), setChain(!chain))}>
-          <Icon of={Chain} size={16} />
-          依次排队
+        !ai && (
+          <button type="button" className={`qa-btn${chain ? " on" : ""}`} aria-pressed={chain} onClick={() => ((last.current = null), setChain(!chain))}>
+            <Icon of={Chain} size={16} />
+            依次排队
+          </button>
+        )
+      )}
+      {ai && (
+        <button type="submit" className="qa-btn icon send" aria-label="交给 AI 整理" disabled={!title.trim()}>
+          <Icon of={ArrowUp} size={18} width={2.2} />
         </button>
       )}
       {picking && <FolderPicker title="添加到" current={into} onPick={setTarget} onClose={() => setPicking(false)} />}

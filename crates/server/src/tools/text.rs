@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use nexttodo_core::board::{Board, Snapshot, Status};
-use nexttodo_core::model::{Change, Due, Effect, FolderId, Link, Task, TaskId};
+use nexttodo_core::model::{AiJob, Change, Due, Effect, FolderId, JobState, Link, Task, TaskId};
 use serde_json::{Value, json};
 
 pub fn status_tag(s: Status) -> String {
@@ -92,7 +92,7 @@ impl Names {
             Effect::Task(Change::Created(t) | Change::Updated { after: t, .. } | Change::Deleted(t)) => {
                 self.tasks.insert(t.id, t.number);
             }
-            Effect::Dependency(_) => {}
+            Effect::Dependency(_) | Effect::AiJob(_) => {}
         }
     }
 
@@ -135,6 +135,11 @@ enum Kind {
     TaskDeleted,
     DepAdded,
     DepRemoved,
+    JobCreated,
+    JobStarted,
+    JobFailed,
+    JobRetried,
+    JobDeleted,
 }
 
 impl Kind {
@@ -154,12 +159,25 @@ impl Kind {
             Kind::TaskDeleted => ("删除", "删除", "项"),
             Kind::DepAdded => ("添加依赖", "添加", "条依赖"),
             Kind::DepRemoved => ("删除依赖", "删除", "条依赖"),
+            Kind::JobCreated => ("提交 AI 整理", "提交 AI 整理", "条"),
+            Kind::JobStarted => ("开始 AI 整理", "开始 AI 整理", "条"),
+            Kind::JobFailed => ("AI 整理失败", "AI 整理失败", "条"),
+            Kind::JobRetried => ("重试 AI 整理", "重试 AI 整理", "条"),
+            Kind::JobDeleted => ("移除 AI 整理请求", "移除 AI 整理请求", "条"),
         }
     }
 }
 
 fn item(t: &Task) -> String {
     format!("#{} {}", t.number, t.title.as_str())
+}
+
+/// An AI job by the start of its text.
+pub fn job_item(j: &AiJob) -> String {
+    let first = j.text.as_str().trim().lines().next().unwrap_or_default();
+    let short: String = first.chars().take(20).collect();
+    let more = if short.len() < j.text.as_str().trim().len() { "…" } else { "" };
+    format!("“{short}{more}”")
 }
 
 /// The kind of change, a task number to list it by, and how it reads, given the names right after
@@ -188,9 +206,16 @@ fn describe(e: &Effect, n: &Names) -> (Kind, Option<i64>, String) {
         Effect::Task(Change::Deleted(t)) => (Kind::TaskDeleted, item(t)),
         Effect::Dependency(Link::Added(d)) => (Kind::DepAdded, format!("{} → {}", n.number(d.before), n.number(d.after))),
         Effect::Dependency(Link::Removed(d)) => (Kind::DepRemoved, format!("{} → {}", n.number(d.before), n.number(d.after))),
+        Effect::AiJob(Change::Created(j)) => (Kind::JobCreated, job_item(j)),
+        Effect::AiJob(Change::Updated { after: j, .. }) => match j.state {
+            JobState::Running => (Kind::JobStarted, job_item(j)),
+            JobState::Failed => (Kind::JobFailed, format!("{}（{}）", job_item(j), j.error.as_deref().unwrap_or_default())),
+            JobState::Waiting => (Kind::JobRetried, job_item(j)),
+        },
+        Effect::AiJob(Change::Deleted(j)) => (Kind::JobDeleted, job_item(j)),
     };
     let number = match e {
-        Effect::Folder(_) => None,
+        Effect::Folder(_) | Effect::AiJob(_) => None,
         Effect::Task(Change::Created(t) | Change::Updated { after: t, .. } | Change::Deleted(t)) => Some(t.number),
         Effect::Dependency(Link::Added(d) | Link::Removed(d)) => n.tasks.get(&d.before).copied(),
     };

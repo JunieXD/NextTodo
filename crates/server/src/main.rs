@@ -4,6 +4,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
+use std::sync::Arc;
+
+use nexttodo_server::ai::{Ai, llm::Https, run_queue, secret::SecretKey};
 use nexttodo_server::{AppState, Clock, Db, MUTATION_RETENTION_MS, app, auth, db, with_web};
 use tokio::signal::unix::{SignalKind, signal};
 use tracing_subscriber::EnvFilter;
@@ -45,7 +48,10 @@ async fn main() -> anyhow::Result<()> {
         .init();
     let cli = Cli::parse();
     std::fs::create_dir_all(&cli.data)?;
-    let state = AppState::new(Db::open(&cli.data.join(DB_FILE))?, Clock::system());
+    // From the environment alone, not an argument, which anyone on the machine could read.
+    // Compose passes an empty one when `.env` has none.
+    let secret = std::env::var("NEXTTODO_SECRET_KEY").ok().filter(|s| !s.is_empty()).map(|s| SecretKey::from_base64(&s)).transpose()?;
+    let state = AppState::new(Db::open(&cli.data.join(DB_FILE))?, Clock::system()).with_ai(Ai::new(secret, Arc::new(Https)));
     match cli.command {
         Command::Serve { listen, web } => serve(state, listen, web, cli.data).await,
         Command::CreateAdmin { username, display_name } => {
@@ -74,6 +80,7 @@ fn read_password() -> anyhow::Result<String> {
 
 async fn serve(state: AppState, listen: SocketAddr, web: Option<PathBuf>, data: PathBuf) -> anyhow::Result<()> {
     tokio::spawn(daily(state.clone(), data));
+    tokio::spawn(run_queue(state.clone()));
     let router = match &web {
         Some(dir) => with_web(app(state), dir),
         None => app(state),

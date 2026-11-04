@@ -317,10 +317,10 @@ async function claim(user: User, copy: string): Promise<Session | Login> {
 /** A session in `login` with a fresh copy from the server, unless the device has signed out, or in
  * as someone else, while it downloaded. */
 async function fresh({ id, user }: Login, copy: string): Promise<Session> {
-  const { seq, folders, tasks, dependencies } = await download(user.id);
+  const { seq, folders, tasks, dependencies, ai_jobs } = await download(user.id);
   return turn(async () => {
     if (pendingSignOut() || cachedLogin()?.user.id !== user.id) throw new ApiError(401, "unauthenticated", "本机的登录状态已变更，请重新登录");
-    return new Session(user, id, copy, { ...Store.empty(), seq, base: { folders, tasks, dependencies } });
+    return new Session(user, id, copy, { ...Store.empty(), seq, base: { folders, tasks, dependencies, ai_jobs } });
   });
 }
 

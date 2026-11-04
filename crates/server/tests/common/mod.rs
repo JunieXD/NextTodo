@@ -10,6 +10,7 @@ use axum::Router;
 use axum::body::Body;
 use axum::http::{HeaderMap, Request, StatusCode, header};
 use http_body_util::BodyExt;
+use nexttodo_server::ai::Ai;
 use nexttodo_server::{AppState, Clock, Db, app, auth};
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -33,9 +34,17 @@ pub fn id() -> String {
 
 impl TestApp {
     pub fn new() -> Self {
+        Self::build(|s| s)
+    }
+
+    pub fn with_ai(ai: Ai) -> Self {
+        Self::build(|s| s.with_ai(ai))
+    }
+
+    fn build(f: impl FnOnce(AppState) -> AppState) -> Self {
         let time = Arc::new(AtomicI64::new(1_762_000_000_000));
         let t = time.clone();
-        let state = AppState::new(Db::open_in_memory().unwrap(), Clock(Arc::new(move || t.load(Ordering::SeqCst))));
+        let state = f(AppState::new(Db::open_in_memory().unwrap(), Clock(Arc::new(move || t.load(Ordering::SeqCst)))));
         TestApp { app: app(state.clone()), state, time }
     }
 

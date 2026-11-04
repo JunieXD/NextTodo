@@ -77,7 +77,7 @@
 | remind_before | INTEGER，可空 | 提前多少分钟提醒，0 表示截止时；只能在有 `due_time` 时设置 |
 | sort_key | TEXT | 文件夹内的手动顺序 |
 | created_at / updated_at | INTEGER | |
-| created_via / updated_via | TEXT，可空 | 用 API 令牌改动时记令牌名；本人在设备上改动时为空 |
+| created_via / updated_via | TEXT，可空 | 用 API 令牌改动时记令牌名，AI 整理添加的记“AI 整理”；本人在设备上改动时为空 |
 
 `(owner_id, number)` 唯一。截止和提醒的约束同时用 `CHECK` 写在表上。
 
@@ -92,6 +92,35 @@
 
 主键 `(before_id, after_id)`，`CHECK (before_id <> after_id)`；任一端的事项被删除时级联删除。
 
+### ai_jobs
+
+[AI 整理](ai.md)的请求。整理成功时请求删除，整理出的事项随之添加。
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | TEXT PK | 客户端生成 |
+| owner_id | TEXT → users | |
+| folder_id | TEXT → folders，可空 | 整理出的事项放进这里；空表示根目录；删除文件夹时级联删除 |
+| text | TEXT | 原文，1–10000 字；除换行和制表符外不含控制字符 |
+| local_time | TEXT | 提交时的本地时间，如 `2026-11-04 16:30 星期三`，单行，最长 40 字 |
+| state | TEXT | `waiting`（等待）、`running`（整理中）或 `failed`（失败） |
+| error | TEXT，可空 | 失败的原因，只在 `failed` 时有 |
+| created_at / updated_at | INTEGER | |
+
+### ai_settings
+
+同步到服务器的 AI 整理配置，每个用户最多一份。
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| user_id | TEXT PK → users | |
+| provider | TEXT | 预设服务商（`ecnu`、`deepseek`、`qwen`、`openai`）或 `custom` |
+| base_url | TEXT | 接口地址，`https://` 开头 |
+| model | TEXT | |
+| thinking | TEXT | `off`、`low` 或 `high` |
+| api_key | BLOB | 加密的 API 密钥：24 字节随机 nonce 加 XChaCha20-Poly1305 密文，附加数据是用户 ID，所以换到别人名下解不开 |
+| updated_at | INTEGER | |
+
 ### mutations
 
 改动日志，用于幂等、增量同步和撤销。
@@ -101,8 +130,8 @@
 | seq | INTEGER PK AUTOINCREMENT | 全局递增序号 |
 | id | TEXT UNIQUE | 客户端生成的改动 ID |
 | owner_id | TEXT → users | |
-| token_id | TEXT | 提交改动的令牌 |
-| actor | TEXT | 来源显示名的快照：会话为空，API 令牌为令牌名 |
+| token_id | TEXT | 提交改动的令牌；服务端自己做的改动（AI 整理）为空字符串 |
+| actor | TEXT | 来源显示名的快照：会话为空，API 令牌为令牌名，AI 整理为“AI 整理” |
 | ops | TEXT（JSON），可空 | 提交的操作 |
 | effects | TEXT（JSON），可空 | 实际产生的实体变化，见 [API](api.md#变化) |
 | reply | TEXT（JSON），可空 | 通过工具做的改动：工具的回复，同一个幂等键重发时原样返回 |
@@ -118,5 +147,5 @@
 - 文件夹不能移到自己或自己的子孙下面；同一层不能重名。
 - 依赖不能指向自己、不能重复、不能成环；成环时返回环上的事项。
 - 截止时间和提醒满足上面的约束；标题、名称、描述满足长度限制。
-- 删除文件夹时，子文件夹、事项和相关依赖一起删除，全部记进同一个改动的变化里，撤销时一起恢复。
+- 删除文件夹时，子文件夹、事项、相关依赖和其中的 AI 整理请求一起删除，全部记进同一个改动的变化里，撤销时一起恢复。
 - 新事项的编号取 `next_task_number` 并加一；撤销删除时恢复原编号。

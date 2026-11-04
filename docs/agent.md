@@ -32,6 +32,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `search` | `search <关键词>` | `query` | 标题和描述里包含关键词的事项（不区分大小写），最多 50 项 |
 | `graph` | `graph [文件夹] [--all] [--mermaid]` | `folder?`、`all?`、`mermaid?` | 文件夹（含子文件夹）里的事项和依赖，按先后顺序；连到外面的事项也列出并注明文件夹 |
 | `log` | `log [-n 条数]` | `limit?` | 最近的改动批次，默认 20，最多 100 |
+| `jobs` | `jobs` | | [AI 整理](ai.md)的请求：等待、整理中和失败的，失败的带原因；整理完的请求已经变成事项，不在这里 |
 | `add` | `add <标题> [--folder] [-d 描述] [--due] [--remind] [--after 编号…] [--before 编号…]` | `title`、`folder?`、`description?`、`due?`、`remind?`、`after?`、`before?` | 添加一个事项；文件夹不存在时一起新建 |
 | `edit` | `edit <事项> [--title] [-d 描述] [--due \| --no-due] [--remind \| --no-remind]` | `task`、`title?`、`description?`、`due?`、`remind?` | 修改事项；`due`、`remind` 给 `null` 表示清除 |
 | `done` | `done <事项…>` | `tasks` | 标为完成，输出因此变成可做的事项 |
@@ -48,7 +49,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 - 命令行里 `mv`、`rm` 的参数像编号的是事项，其余是文件夹。
 - `edit` 只改 `due` 不给 `remind` 时：新截止带具体时间就保留原来的提醒，否则去掉。
 - 每个写操作是一个批次，全部生效或全部不生效。
-- 只读令牌只能用前 7 个查询工具。
+- 只读令牌只能用前 8 个查询工具。
 
 ## 计划
 

@@ -50,7 +50,7 @@ macro_rules! id_type {
     )*};
 }
 
-id_type!(FolderId, TaskId, MutationId);
+id_type!(FolderId, TaskId, MutationId, AiJobId);
 
 /// Validated text stored as is. Values read back from the database were validated when written.
 macro_rules! text_type {
@@ -139,6 +139,25 @@ text_type!(
     } else {
         Ok(s)
     }
+);
+text_type!(
+    /// What was written for AI to organize into tasks.
+    JobText,
+    |s| if s.trim().is_empty() {
+        Err("内容不能为空".into())
+    } else if s.chars().count() > 10_000 {
+        Err("内容不能超过 10000 个字".into())
+    } else if s.chars().any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t')) {
+        Err("内容不能包含控制字符".into())
+    } else {
+        Ok(s)
+    }
+);
+text_type!(
+    /// The user's local time as written by their device, such as `2026-11-04 16:30 星期三`: what
+    /// "tomorrow" means in a text submitted for AI to organize.
+    LocalTime,
+    |s| line(s, "本地时间", 40)
 );
 text_type!(
     /// A calendar date `YYYY-MM-DD` in the user's local time.
@@ -277,6 +296,59 @@ pub struct Dependency {
     pub created_at: i64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum JobState {
+    Waiting,
+    Running,
+    Failed,
+}
+
+impl JobState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            JobState::Waiting => "waiting",
+            JobState::Running => "running",
+            JobState::Failed => "failed",
+        }
+    }
+}
+
+#[cfg(feature = "sql")]
+impl rusqlite::ToSql for JobState {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        Ok(self.as_str().into())
+    }
+}
+
+#[cfg(feature = "sql")]
+impl rusqlite::types::FromSql for JobState {
+    fn column_result(v: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        match v.as_str()? {
+            "waiting" => Ok(JobState::Waiting),
+            "running" => Ok(JobState::Running),
+            "failed" => Ok(JobState::Failed),
+            _ => Err(rusqlite::types::FromSqlError::InvalidType),
+        }
+    }
+}
+
+/// Text submitted for AI to organize into tasks in a folder. It goes once done, as the tasks come.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AiJob {
+    pub id: AiJobId,
+    pub folder_id: Option<FolderId>,
+    pub text: JobText,
+    pub local_time: LocalTime,
+    pub state: JobState,
+    /// Why it failed; only when it has.
+    pub error: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
 /// One entity change made by a mutation. In JSON it is `{kind, before, after}`, where `before` is
 /// `null` for a creation and `after` is `null` for a deletion.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
@@ -286,6 +358,7 @@ pub enum Effect {
     Folder(Change<Folder>),
     Task(Change<Box<Task>>),
     Dependency(Link<Dependency>),
+    AiJob(Change<Box<AiJob>>),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]

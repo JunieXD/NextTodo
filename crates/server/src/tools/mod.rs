@@ -1,10 +1,12 @@
 //! Tools for agents and scripts: one implementation behind the command line, MCP and
 //! `/api/v1/tools`. See `docs/agent.md`.
 
-mod args;
+pub(crate) mod args;
 mod read;
 mod text;
 mod write;
+
+pub(crate) use write::{number, plan_into};
 
 use std::sync::Arc;
 
@@ -101,6 +103,7 @@ tools! {
     Read "search"(SearchArgs) => read::search, "按关键词搜索事项的标题和描述，不区分大小写，最多 50 项。";
     Read "graph"(GraphArgs) => read::graph, "文件夹（含子文件夹）里的事项和依赖，按先后顺序列出，每项后面是它的前置；连到文件夹外的事项也列出。";
     Read "log"(LogArgs) => read::log, "最近的改动批次，新的在前。撤销时要用批次号。";
+    Read "jobs"(NoArgs) => read::jobs, "用户提交的 AI 整理请求：等待、正在整理和失败的，失败的带原因。整理好的已经变成事项，不在这里。";
     Write "add"(AddArgs) => write::add, "添加一个事项；文件夹不存在时一起新建。一次加多个、带依赖的事项时用 apply。";
     Write "edit"(EditArgs) => write::edit, "修改事项的标题、描述、截止时间或提醒；只改给出的字段，due、remind 给 null 表示清除。";
     Write "done"(TasksArgs) => write::done, "把事项标为完成，结果里会列出因此变成可做的事项。";

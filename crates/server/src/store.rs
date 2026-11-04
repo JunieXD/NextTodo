@@ -1,10 +1,11 @@
 //! Reading and writing entities. Every lookup is scoped to the owner.
 
 use nexttodo_core::board::Snapshot;
-use nexttodo_core::model::{Date, Dependency, Due, DueAt, Folder, FolderId, SortKey, Task, TaskId, Time};
+use nexttodo_core::model::{AiJob, AiJobId, Date, Dependency, Due, DueAt, Folder, FolderId, SortKey, Task, TaskId, Time};
 use rusqlite::{Connection, OptionalExtension, Params, Row, params};
 
 const FOLDER_COLUMNS: &str = "id, parent_id, name, sort_key, created_at, updated_at";
+const JOB_COLUMNS: &str = "id, folder_id, text, local_time, state, error, created_at, updated_at";
 const TASK_COLUMNS: &str = "id, number, folder_id, title, description, done_at, due_date, due_time, remind_before, sort_key, created_at, updated_at, created_via, updated_via";
 
 /// Folder ids in the subtree rooted at `?1`, including the root.
@@ -32,6 +33,19 @@ fn task_row(r: &Row) -> rusqlite::Result<Task> {
         updated_at: r.get(11)?,
         created_via: r.get(12)?,
         updated_via: r.get(13)?,
+    })
+}
+
+fn job_row(r: &Row) -> rusqlite::Result<AiJob> {
+    Ok(AiJob {
+        id: r.get(0)?,
+        folder_id: r.get(1)?,
+        text: r.get(2)?,
+        local_time: r.get(3)?,
+        state: r.get(4)?,
+        error: r.get(5)?,
+        created_at: r.get(6)?,
+        updated_at: r.get(7)?,
     })
 }
 
@@ -218,6 +232,39 @@ pub fn delete_dependency(c: &Connection, d: &Dependency) -> rusqlite::Result<()>
     Ok(())
 }
 
+pub fn load_job(c: &Connection, owner: &str, id: AiJobId) -> rusqlite::Result<Option<AiJob>> {
+    c.query_row(&format!("SELECT {JOB_COLUMNS} FROM ai_jobs WHERE id = ?1 AND owner_id = ?2"), params![id, owner], job_row).optional()
+}
+
+pub fn job_id_taken(c: &Connection, id: AiJobId) -> rusqlite::Result<bool> {
+    c.query_row("SELECT EXISTS (SELECT 1 FROM ai_jobs WHERE id = ?1)", [id], |r| r.get(0))
+}
+
+pub fn insert_job(c: &Connection, owner: &str, j: &AiJob) -> rusqlite::Result<()> {
+    c.execute(
+        &format!("INSERT INTO ai_jobs (owner_id, {JOB_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"),
+        params![owner, j.id, j.folder_id, j.text, j.local_time, j.state, j.error, j.created_at, j.updated_at],
+    )?;
+    Ok(())
+}
+
+pub fn update_job(c: &Connection, j: &AiJob) -> rusqlite::Result<()> {
+    c.execute(
+        "UPDATE ai_jobs SET folder_id = ?2, text = ?3, state = ?4, error = ?5, updated_at = ?6 WHERE id = ?1",
+        params![j.id, j.folder_id, j.text, j.state, j.error, j.updated_at],
+    )?;
+    Ok(())
+}
+
+pub fn delete_job(c: &Connection, id: AiJobId) -> rusqlite::Result<()> {
+    c.execute("DELETE FROM ai_jobs WHERE id = ?1", [id])?;
+    Ok(())
+}
+
+pub fn subtree_jobs(c: &Connection, id: FolderId) -> rusqlite::Result<Vec<AiJob>> {
+    all(c, &format!("{SUBTREE} SELECT {JOB_COLUMNS} FROM ai_jobs WHERE folder_id IN (SELECT id FROM sub)"), [id], job_row)
+}
+
 /// All of a user's data, in id order.
 pub fn snapshot(c: &Connection, owner: &str) -> rusqlite::Result<Snapshot> {
     Ok(Snapshot {
@@ -229,6 +276,7 @@ pub fn snapshot(c: &Connection, owner: &str) -> rusqlite::Result<Snapshot> {
             [owner],
             dep_row,
         )?,
+        ai_jobs: all(c, &format!("SELECT {JOB_COLUMNS} FROM ai_jobs WHERE owner_id = ?1 ORDER BY id"), [owner], job_row)?,
     })
 }
 

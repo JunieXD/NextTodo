@@ -155,8 +155,13 @@ fn due(due: Option<super::args::DueText>, remind: Option<u32>) -> Result<Option<
 }
 
 /// A task number written as text in a plan: `"42"` or `"#42"`.
-fn number(s: &str) -> Option<i64> {
+pub(crate) fn number(s: &str) -> Option<i64> {
     s.strip_prefix('#').unwrap_or(s).parse().ok()
+}
+
+/// The operations adding `tasks` to `folder` as those of a plan for it: what AI organizing adds.
+pub(crate) fn plan_into(b: &Board, folder: Option<FolderId>, tasks: Vec<PlanTask>) -> Result<Vec<Op>, ApiError> {
+    plan_ops(b, Plan { folder: Some(b.path(folder)), tasks })
 }
 
 fn plan_ops(b: &Board, plan: Plan) -> Result<Vec<Op>, ApiError> {

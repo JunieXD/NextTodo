@@ -7,7 +7,7 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::model::{Dependency, Folder, FolderId, SortKey, Task, TaskId};
+use crate::model::{AiJob, Dependency, Folder, FolderId, SortKey, Task, TaskId};
 
 /// All of a user's data.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, TS)]
@@ -16,6 +16,7 @@ pub struct Snapshot {
     pub folders: Vec<Folder>,
     pub tasks: Vec<Task>,
     pub dependencies: Vec<Dependency>,
+    pub ai_jobs: Vec<AiJob>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

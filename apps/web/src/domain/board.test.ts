@@ -53,6 +53,7 @@ function snapshot(c: Case, id: (name: string) => string): Snapshot {
       updated_via: null,
     })),
     dependencies: c.deps.map(([b, a]) => ({ before: id(b), after: id(a), created_at: 0 })),
+    ai_jobs: [],
   };
 }
 

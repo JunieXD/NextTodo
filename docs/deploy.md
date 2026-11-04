@@ -17,6 +17,7 @@ docker compose exec nexttodo /nexttodo-server create-admin <用户名>
 - 服务端以 65534 用户运行，`data/` 要归它所有，里面是 SQLite 数据库和每日快照。
 - 默认只监听本机的 `127.0.0.1:8080`，交给同一台机器上的反向代理。换端口在同目录的 `.env` 里写 `NEXTTODO_PORT=8790`。
 - 默认跟随最新版本（`latest`）。要固定版本，在 `.env` 里写 `NEXTTODO_IMAGE=ghcr.io/juniexd/nexttodo:<版本号>`，版本号见 [Releases](https://github.com/JunieXD/NextTodo/releases)。
+- [AI 整理](ai.md)的配置要同步到服务器（提交后设备可以离线），在 `.env` 里写 `NEXTTODO_SECRET_KEY=<32 字节的 base64>`，可以用 `openssl rand -base64 32` 生成。服务端用它加密用户的 API 密钥，它不在 `data/` 里，数据库和快照单独泄露时密钥仍然安全。不设置时，配置只能保存在各自的设备上。换掉或丢了它，已保存的 API 密钥就解不开，要在设置里重新填写。
 - `create-admin` 会让你输两次密码。其他人用邀请码注册：管理员在设置的“邀请注册”里生成邀请码或复制邀请链接。
 
 ## 反向代理

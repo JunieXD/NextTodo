@@ -68,6 +68,11 @@ impl ApiError {
         Self::new(StatusCode::CONFLICT, "folder_cycle", "文件夹不能移入自身或其子文件夹")
     }
 
+    /// A model's API failed to answer as asked.
+    pub fn upstream(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::BAD_GATEWAY, "upstream", message)
+    }
+
     pub fn resync() -> Self {
         Self::new(StatusCode::GONE, "resync", "本地数据已过期，需要重新下载")
     }

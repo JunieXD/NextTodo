@@ -80,7 +80,7 @@ export class Store {
   }
 
   static empty(): Saved {
-    return { seq: 0, base: { folders: [], tasks: [], dependencies: [] }, outbox: [], log: [] };
+    return { seq: 0, base: { folders: [], tasks: [], dependencies: [], ai_jobs: [] }, outbox: [], log: [] };
   }
 
   subscribe = (listener: () => void) => {
@@ -166,6 +166,7 @@ export class Store {
     this.base.folders = fresh.folders;
     this.base.tasks = fresh.tasks;
     this.base.deps = fresh.deps;
+    this.base.jobs = fresh.jobs;
     this.seq = snapshot.seq;
     this.log.clear();
     this.changed();

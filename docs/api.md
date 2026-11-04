@@ -28,12 +28,13 @@
 | DELETE | `/tokens/{id}` | 注销会话或删除令牌 |
 | GET | `/invites` | 管理员：自己生成的邀请码 |
 | POST | `/invites` | 管理员：生成一个邀请码 |
-| GET | `/snapshot` | 完整数据：`{user, seq, folders, tasks, dependencies}`，`user` 是数据所属用户的 ID |
+| GET | `/snapshot` | 完整数据：`{user, seq, folders, tasks, dependencies, ai_jobs}`，`user` 是数据所属用户的 ID |
 | GET | `/changes?since=<seq>` | 增量：`{seq, changes}`；`since` 早于保留期时返回 410 |
 | POST | `/mutations` | 提交一个改动，见下文 |
 | GET | `/sync` | WebSocket，见[同步协议](#同步协议) |
 | GET | `/tools` | 工具列表，见 [agent 接入](agent.md#工具接口) |
 | POST | `/tools/{name}` | 调用一个工具 |
+| | `/ai/…` | AI 整理的服务商、配置和测试，见 [AI 整理](ai.md#接口) |
 
 MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp)。
 
@@ -50,6 +51,9 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
   "sort_key": "a1", "created_at": …, "updated_at": …, "created_via": "Claude Code", "updated_via": null }
 // 依赖
 { "before": "<前置 id>", "after": "<后续 id>", "created_at": … }
+// AI 整理请求
+{ "id": "…", "folder_id": "…", "text": "…", "local_time": "2026-11-04 16:30 星期三", "state": "failed", "error": "接口返回 401：…",
+  "created_at": …, "updated_at": … }
 // 用户
 { "id": "…", "username": "alice", "display_name": "Alice", "is_admin": true }
 // 邀请码
@@ -79,6 +83,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | `task.delete` | `id` | 连同相关依赖 |
 | `dep.add` | `before`、`after` | |
 | `dep.remove` | `before`、`after` | |
+| `ai_job.create`、`ai_job.retry`、`ai_job.delete` | | 提交、重试、删除 AI 整理请求，见 [AI 整理](ai.md#接口) |
 | `undo` | `mutation` | 撤销一个改动：按相反顺序把它的变化恢复回去，恢复时同样要通过所有规则。要改回去的东西已经不存在的跳过；要恢复的事项或文件夹原来所在的文件夹、要恢复的依赖连着的事项已经被删除时，整个撤销不生效 |
 
 成功返回 `{seq, effects}`。同一个 `id` 再次提交时直接返回第一次的结果，不会重复生效；超过保留期的只返回 `seq`，`effects` 为空。
@@ -92,7 +97,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
   { "kind": "dependency", "before": null, "after": { "before": "…", "after": "…", "created_at": … } } ]
 ```
 
-`before` 为空表示新建，`after` 为空表示删除，都不为空表示修改。客户端按顺序应用 `after` 就能得到最新状态。`/changes` 和同步推送里的每条记录是 `{seq, id, actor, effects, created_at}`，`id` 是改动 ID，`actor` 是 API 令牌名（会话为空）。
+`kind` 是 `folder`、`task`、`dependency` 或 `ai_job`。`before` 为空表示新建，`after` 为空表示删除，都不为空表示修改。客户端按顺序应用 `after` 就能得到最新状态。`/changes` 和同步推送里的每条记录是 `{seq, id, actor, effects, created_at}`，`id` 是改动 ID，`actor` 是 API 令牌名（会话为空，AI 整理是“AI 整理”）。
 
 ## 错误
 

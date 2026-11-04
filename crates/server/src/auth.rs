@@ -139,6 +139,11 @@ impl Auth {
         if self.scope == Scope::Write { Ok(()) } else { Err(ApiError::forbidden("此令牌为只读")) }
     }
 
+    /// For what only the user's own devices do, such as handling the keys of their AI models.
+    pub fn require_device(&self) -> Result<(), ApiError> {
+        if self.kind == TokenKind::Session { Ok(()) } else { Err(ApiError::forbidden("只能在已登录的设备上使用")) }
+    }
+
     fn require_session(&self) -> Result<(), ApiError> {
         if self.kind == TokenKind::Session {
             Ok(())

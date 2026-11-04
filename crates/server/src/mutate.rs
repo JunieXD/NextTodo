@@ -2,11 +2,14 @@
 //! entity changes in the mutation log. Resubmitting a mutation id returns the first result.
 
 use nexttodo_core::dag::find_path;
-use nexttodo_core::model::{Change, Dependency, Effect, Folder, FolderId, Link, MutationId, SortKey, Task, TaskId};
+use nexttodo_core::model::{
+    AiJob, AiJobId, Change, Dependency, Effect, Folder, FolderId, JobState, Link, MutationId, SortKey, Task, TaskId,
+};
 use nexttodo_core::ops::{Mutation, Op};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 use ts_rs::TS;
+use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::store;
@@ -67,6 +70,31 @@ pub fn record(c: &Connection, actor: &Actor, id: MutationId, ops: &[Op], effects
         params![id, actor.owner, actor.token_id, actor.via, serde_json::to_string(ops)?, serde_json::to_string(effects)?, now],
     )?;
     Ok(c.last_insert_rowid())
+}
+
+/// Moves a job from state `from` to `to`, as the server does when it starts organizing one and when
+/// that fails: a change of its own, with no operations, as nobody asked for it. Returns the job as it
+/// is now and the change's sequence number; nothing when the job is gone or no longer `from`.
+pub fn set_job_state(
+    c: &mut Connection,
+    actor: &Actor,
+    id: AiJobId,
+    from: JobState,
+    to: JobState,
+    error: Option<String>,
+    now: i64,
+) -> Result<Option<(AiJob, i64)>, ApiError> {
+    let tx = c.transaction()?;
+    let Some(before) = store::load_job(&tx, actor.owner, id)? else { return Ok(None) };
+    if before.state != from {
+        return Ok(None);
+    }
+    let mut cx = Cx { c: &tx, owner: actor.owner, via: actor.via.map(str::to_owned), now, effects: Vec::new() };
+    let after = AiJob { state: to, error, ..before.clone() };
+    cx.update_job(before, after.clone())?;
+    let seq = record(&tx, actor, MutationId(Uuid::now_v7()), &[], &cx.effects, now)?;
+    tx.commit()?;
+    Ok(Some((after, seq)))
 }
 
 /// `cur` with the fields that changed from `before` to `after` set back to `before`, so that undoing
@@ -201,6 +229,47 @@ impl Cx<'_> {
                 let d = store::load_dependency(self.c, self.owner, *before, *after)?.ok_or_else(|| ApiError::not_found("该依赖不存在"))?;
                 self.delete_dependency(d)
             }
+            Op::AiJobCreate { id, text, local_time, folder_id } => {
+                if store::job_id_taken(self.c, *id)? {
+                    return Err(ApiError::conflict("请求 ID 已存在"));
+                }
+                if let Some(f) = folder_id {
+                    self.folder(*f)?;
+                }
+                self.create_job(AiJob {
+                    id: *id,
+                    folder_id: *folder_id,
+                    text: text.clone(),
+                    local_time: local_time.clone(),
+                    state: JobState::Waiting,
+                    error: None,
+                    created_at: self.now,
+                    updated_at: self.now,
+                })
+            }
+            Op::AiJobRetry { id, text, folder_id } => {
+                let before = self.job(*id)?;
+                match before.state {
+                    JobState::Failed => {}
+                    JobState::Running => return Err(ApiError::conflict("正在整理，稍后再改")),
+                    JobState::Waiting => return Err(ApiError::conflict("这条请求已在等待整理")),
+                }
+                let mut j = AiJob { state: JobState::Waiting, error: None, ..before.clone() };
+                if let Some(text) = text {
+                    j.text = text.clone();
+                }
+                if let Some(folder_id) = folder_id {
+                    if let Some(f) = folder_id {
+                        self.folder(*f)?;
+                    }
+                    j.folder_id = *folder_id;
+                }
+                self.update_job(before, j)
+            }
+            Op::AiJobDelete { id } => {
+                let j = self.job(*id)?;
+                self.delete_job(j)
+            }
             Op::Undo { mutation } => self.undo(*mutation),
         }
     }
@@ -211,6 +280,10 @@ impl Cx<'_> {
 
     fn task(&self, id: TaskId) -> Result<Task, ApiError> {
         store::load_task(self.c, self.owner, id)?.ok_or_else(|| ApiError::not_found("事项不存在"))
+    }
+
+    fn job(&self, id: AiJobId) -> Result<AiJob, ApiError> {
+        store::load_job(self.c, self.owner, id)?.ok_or_else(|| ApiError::not_found("AI 整理请求不存在"))
     }
 
     fn check_name(&self, f: &Folder) -> Result<(), ApiError> {
@@ -258,6 +331,9 @@ impl Cx<'_> {
         for t in store::subtree_tasks(self.c, id)? {
             self.effects.push(Effect::Task(Change::Deleted(Box::new(t))));
         }
+        for j in store::subtree_jobs(self.c, id)? {
+            self.effects.push(Effect::AiJob(Change::Deleted(Box::new(j))));
+        }
         for f in store::subtree_folders(self.c, id)? {
             store::delete_folder(self.c, f.id)?;
             self.effects.push(Effect::Folder(Change::Deleted(f)));
@@ -294,6 +370,28 @@ impl Cx<'_> {
         let t = self.task(id)?;
         store::delete_task(self.c, id)?;
         self.effects.push(Effect::Task(Change::Deleted(Box::new(t))));
+        Ok(())
+    }
+
+    fn create_job(&mut self, j: AiJob) -> Result<(), ApiError> {
+        store::insert_job(self.c, self.owner, &j)?;
+        self.effects.push(Effect::AiJob(Change::Created(Box::new(j))));
+        Ok(())
+    }
+
+    fn update_job(&mut self, before: AiJob, mut after: AiJob) -> Result<(), ApiError> {
+        if after == before {
+            return Ok(());
+        }
+        after.updated_at = self.now;
+        store::update_job(self.c, &after)?;
+        self.effects.push(Effect::AiJob(Change::Updated { before: Box::new(before), after: Box::new(after) }));
+        Ok(())
+    }
+
+    fn delete_job(&mut self, j: AiJob) -> Result<(), ApiError> {
+        store::delete_job(self.c, j.id)?;
+        self.effects.push(Effect::AiJob(Change::Deleted(Box::new(j))));
         Ok(())
     }
 
@@ -385,6 +483,29 @@ impl Cx<'_> {
                         self.create_dependency(d)?;
                     }
                 }
+                Effect::AiJob(Change::Created(j)) => {
+                    if let Some(cur) = store::load_job(self.c, self.owner, j.id)? {
+                        self.delete_job(cur)?;
+                    }
+                }
+                Effect::AiJob(Change::Deleted(j)) => {
+                    if store::load_job(self.c, self.owner, j.id)?.is_none() {
+                        if let Some(f) = j.folder_id
+                            && store::load_folder(self.c, self.owner, f)?.is_none()
+                        {
+                            return Err(ApiError::not_found("AI 整理请求原所在的文件夹已删除"));
+                        }
+                        // What it was being organized into was thrown away, or is undone now.
+                        let j = if j.state == JobState::Running {
+                            AiJob { state: JobState::Failed, error: Some("已撤销".into()), ..*j }
+                        } else {
+                            *j
+                        };
+                        self.create_job(AiJob { updated_at: self.now, ..j })?;
+                    }
+                }
+                // Starting, failing and retrying are the job's own course, not undone.
+                Effect::AiJob(Change::Updated { .. }) => {}
             }
         }
         Ok(())

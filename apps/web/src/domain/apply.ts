@@ -3,6 +3,8 @@
 // What only the server knows stays unknown: a new task's number is 0 until the server's copy arrives.
 
 import { generateKeyBetween } from "fractional-indexing";
+import type { AiJob } from "../api/types/AiJob";
+import type { AiJobId } from "../api/types/AiJobId";
 import type { Dependency } from "../api/types/Dependency";
 import type { Effect } from "../api/types/Effect";
 import type { Folder } from "../api/types/Folder";
@@ -19,6 +21,7 @@ export interface Data {
   folders: Map<FolderId, Folder>;
   tasks: Map<TaskId, Task>;
   deps: Map<string, Dependency>;
+  jobs: Map<AiJobId, AiJob>;
 }
 
 export const depKey = (before: TaskId, after: TaskId) => `${before}>${after}`;
@@ -28,15 +31,17 @@ export function fromSnapshot(s: Snapshot): Data {
     folders: new Map(s.folders.map((f) => [f.id, f])),
     tasks: new Map(s.tasks.map((t) => [t.id, t])),
     deps: new Map(s.dependencies.map((d) => [depKey(d.before, d.after), d])),
+    // Copies saved before there were AI jobs have none.
+    jobs: new Map((s.ai_jobs ?? []).map((j) => [j.id, j])),
   };
 }
 
 export function toSnapshot(d: Data): Snapshot {
-  return { folders: [...d.folders.values()], tasks: [...d.tasks.values()], dependencies: [...d.deps.values()] };
+  return { folders: [...d.folders.values()], tasks: [...d.tasks.values()], dependencies: [...d.deps.values()], ai_jobs: [...d.jobs.values()] };
 }
 
 export function copy(d: Data): Data {
-  return { folders: new Map(d.folders), tasks: new Map(d.tasks), deps: new Map(d.deps) };
+  return { folders: new Map(d.folders), tasks: new Map(d.tasks), deps: new Map(d.deps), jobs: new Map(d.jobs) };
 }
 
 /** Sets each changed entity to how the effect left it. */
@@ -68,6 +73,12 @@ function set(d: Data, e: Effect, side: "before" | "after") {
       const [key, v] = [depKey(dep.before, dep.after), e[side]];
       if (v) d.deps.set(key, v);
       else d.deps.delete(key);
+      return;
+    }
+    case "ai_job": {
+      const [id, v] = [(e.before ?? e.after)!.id, e[side]];
+      if (v) d.jobs.set(id, v);
+      else d.jobs.delete(id);
     }
   }
 }
@@ -183,6 +194,29 @@ class Applier {
         this.deleteDependency(dep);
         return;
       }
+      case "ai_job.create": {
+        if (this.d.jobs.has(op.id)) throw new Rejected("conflict", "请求 ID 已存在");
+        const folder = op.folder_id ?? null;
+        if (folder) this.folder(folder);
+        this.createJob({ id: op.id, folder_id: folder, text: op.text, local_time: op.local_time, state: "waiting", error: null, created_at: now, updated_at: now });
+        return;
+      }
+      case "ai_job.retry": {
+        const before = this.job(op.id);
+        if (before.state === "running") throw new Rejected("conflict", "正在整理，稍后再改");
+        if (before.state === "waiting") throw new Rejected("conflict", "这条请求已在等待整理");
+        const j: AiJob = { ...before, state: "waiting", error: null };
+        if (op.text !== undefined) j.text = op.text;
+        if (op.folder_id !== undefined) {
+          if (op.folder_id) this.folder(op.folder_id);
+          j.folder_id = op.folder_id;
+        }
+        this.updateJob(before, j);
+        return;
+      }
+      case "ai_job.delete":
+        this.push({ kind: "ai_job", before: this.job(op.id), after: null });
+        return;
       case "undo":
         this.undo(op.mutation);
         return;
@@ -199,6 +233,21 @@ class Applier {
     const t = this.d.tasks.get(id);
     if (!t) throw new Rejected("not_found", "事项不存在");
     return t;
+  }
+
+  private job(id: AiJobId): AiJob {
+    const j = this.d.jobs.get(id);
+    if (!j) throw new Rejected("not_found", "AI 整理请求不存在");
+    return j;
+  }
+
+  private createJob(j: AiJob) {
+    this.push({ kind: "ai_job", before: null, after: j });
+  }
+
+  private updateJob(before: AiJob, after: AiJob) {
+    if (same(before, after)) return;
+    this.push({ kind: "ai_job", before, after: { ...after, updated_at: this.cx.now } });
   }
 
   private push(e: Effect) {
@@ -250,6 +299,9 @@ class Applier {
       this.push({ kind: "dependency", before: dep, after: null });
     }
     for (const t of tasks) this.push({ kind: "task", before: t, after: null });
+    for (const j of [...this.d.jobs.values()].filter((j) => j.folder_id !== null && depth.has(j.folder_id))) {
+      this.push({ kind: "ai_job", before: j, after: null });
+    }
     const folders = [...depth].sort((a, b) => b[1] - a[1]).map(([f]) => this.d.folders.get(f)!);
     for (const f of folders) this.push({ kind: "folder", before: f, after: null });
   }
@@ -343,6 +395,18 @@ class Applier {
           const fields = ["folder_id", "title", "description", "done_at", "due", "sort_key"] as const;
           if (cur) this.updateTask(cur, restore(cur, e.before, e.after, fields));
         }
+      } else if (e.kind === "ai_job") {
+        if (!e.before) {
+          if (this.d.jobs.has(e.after!.id)) this.push({ kind: "ai_job", before: this.job(e.after!.id), after: null });
+        } else if (!e.after) {
+          const j = e.before;
+          if (this.d.jobs.has(j.id)) continue;
+          if (j.folder_id !== null && !this.d.folders.has(j.folder_id)) throw new Rejected("not_found", "AI 整理请求原所在的文件夹已删除");
+          // What it was being organized into was thrown away, or is undone now.
+          const back: AiJob = j.state === "running" ? { ...j, state: "failed", error: "已撤销" } : j;
+          this.createJob({ ...back, updated_at: now });
+        }
+        // Starting, failing and retrying are the job's own course, not undone.
       } else if (!e.before) {
         const dep = this.d.deps.get(depKey(e.after!.before, e.after!.after));
         if (dep) this.deleteDependency(dep);

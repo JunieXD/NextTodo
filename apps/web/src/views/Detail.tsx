@@ -39,10 +39,9 @@ type Draft = { text: string; base: string };
 type Kept = { value: string; mine: boolean };
 
 /** Saves `mine`, edited from `base`, into a field of a task. When the field has changed elsewhere
- * meanwhile, asks whether to keep that or overwrite it, showing it as it is when asking, and asking
- * again when it changes once more before the answer. Overwriting can be undone, while giving up the
- * edit cannot, so closing the dialog overwrites. Gives what the field holds afterwards; nothing when
- * the task is gone. */
+ * meanwhile, asks whether to keep that or overwrite it. Overwriting can be undone, while giving up the
+ * edit cannot, so closing the dialog overwrites; it overwrites whatever is there by the answer, which
+ * undoing brings back. Gives what the field holds afterwards; nothing when the task is gone. */
 function useKeepEdit(field: "title" | "description", what: string) {
   const { store } = useSession();
   const { confirm, snack } = useFeedback();
@@ -53,12 +52,11 @@ function useKeepEdit(field: "title" | "description", what: string) {
     if (!t) return null;
     // Nothing edited: what is there stays, whoever wrote it.
     if (mine === base) return { value: t[field], mine: false };
-    while (t[field] !== base && t[field] !== mine) {
-      const shown = t[field];
+    if (t[field] !== base && t[field] !== mine) {
       const theirs = await confirm({
         title: `${what}在你编辑时${t.updated_via ? `被“${t.updated_via}”` : "在别处被"}改过`,
         body: "对方现在的版本如下。保留对方的，你这次的修改就会丢掉。",
-        detail: shown,
+        detail: t[field],
         ok: "保留对方的",
         cancel: "用我的覆盖",
         danger: true,
@@ -66,11 +64,11 @@ function useKeepEdit(field: "title" | "description", what: string) {
       t = current();
       if (!t) return null;
       if (theirs) return { value: t[field], mine: false };
-      if (t[field] === shown) {
+      if (t[field] !== mine) {
         const r = save(mine);
         if (r) snack({ text: `已用你的版本覆盖${what}`, action: "撤销", onAction: () => undo(r.id) });
-        return { value: mine, mine: true };
       }
+      return { value: mine, mine: true };
     }
     if (t[field] !== mine) save(mine);
     return { value: mine, mine: true };

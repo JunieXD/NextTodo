@@ -452,4 +452,10 @@ async fn a_change_that_does_several_things_reports_each() {
         undone["data"]["changes"],
         json!([{ "kind": "folder_renamed", "folder": "/B/Z", "name": "A" }, { "kind": "folder_moved", "folder": "/B/Z", "to": "/A" }])
     );
+    t.mutate(&s, json!([{ "op": "folder.update", "id": a, "name": "X", "sort_key": "a5" }])).await;
+    let undone = t.ok(&s, "undo", json!({ "batch": 7 })).await;
+    assert_eq!(
+        undone["data"]["changes"],
+        json!([{ "kind": "folder_renamed", "folder": "/X", "name": "A" }, { "kind": "folder_sorted", "folder": "/X" }])
+    );
 }

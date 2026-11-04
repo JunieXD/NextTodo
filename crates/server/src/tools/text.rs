@@ -265,7 +265,8 @@ fn describe(e: &Effect, n: &Names) -> Vec<(Kind, String, Value)> {
                 let to = n.path_in(after.parent_id, after.name.as_str());
                 found.push((Kind::FolderMoved, format!("{old} → {to}"), json!({ "folder": old, "to": to })));
             }
-            if found.is_empty() {
+            // Its place among the same folders; a move puts it somewhere in the new one anyway.
+            if before.parent_id == after.parent_id && before.sort_key != after.sort_key {
                 found.push((Kind::FolderSorted, old.clone(), json!({ "folder": old })));
             }
             found

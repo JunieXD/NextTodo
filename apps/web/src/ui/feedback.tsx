@@ -56,6 +56,8 @@ export function FeedbackProvider({ outside, children }: { outside: boolean; chil
   const [open, setOpen] = useState<Open | null>(null);
   /** Answers the dialog open as cancelled. */
   const cancel = useRef<() => void>(undefined);
+  /** `outside` as last seen: a dialog asked for meanwhile is answered as cancelled at once. */
+  const away = useRef(outside);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const feedback = useMemo<Feedback>(
     () => ({
@@ -69,12 +71,14 @@ export function FeedbackProvider({ outside, children }: { outside: boolean; chil
       confirm: (c) =>
         new Promise((resolve) => {
           cancel.current?.();
+          if (away.current) return resolve(false);
           cancel.current = () => resolve(false);
           setOpen({ ...c, kind: "confirm", resolve });
         }),
       prompt: (p) =>
         new Promise((resolve) => {
           cancel.current?.();
+          if (away.current) return resolve(null);
           cancel.current = () => resolve(null);
           setOpen({ ...p, kind: "prompt", resolve });
         }),
@@ -85,6 +89,7 @@ export function FeedbackProvider({ outside, children }: { outside: boolean; chil
   // its focus trap does not keep the focus from where it has gone, such as to quick add.
   if (outside && open) setOpen(null);
   useEffect(() => {
+    away.current = outside;
     if (outside) cancel.current?.();
   }, [outside]);
   const act = () => {

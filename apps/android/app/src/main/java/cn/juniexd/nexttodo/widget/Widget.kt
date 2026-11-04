@@ -121,7 +121,9 @@ object Widget {
      * is from before it, unless signed in again since. */
     private suspend fun drop(context: Context, task: String, token: String, seq: Long) = update(context) { prefs ->
         if (Server.token(context) != token || (prefs.contains(SEQ) && prefs.getLong(SEQ, 0) >= seq)) return@update false
-        prefs.edit().putString(DONE, done(prefs).put(task, seq).toString()).apply()
+        // The latest of its completions, should it be completed twice, from two widgets say.
+        val done = done(prefs)
+        prefs.edit().putString(DONE, done.put(task, maxOf(seq, done.optLong(task, seq))).toString()).apply()
         true
     }
 

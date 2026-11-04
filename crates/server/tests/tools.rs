@@ -331,6 +331,7 @@ async fn mcp_serves_the_same_tools() {
     let (status, reply) = rpc(Some(&s), "initialize", init).await;
     assert_eq!(status, StatusCode::OK, "{reply}");
     assert_eq!(reply["result"]["serverInfo"]["name"], "nexttodo");
+    assert!(reply["result"]["instructions"].as_str().unwrap().contains("replace"), "{reply}");
 
     let (_, list) = rpc(Some(&s), "tools/list", json!({})).await;
     let next = list["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == "next").unwrap().clone();

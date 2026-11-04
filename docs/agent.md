@@ -166,10 +166,27 @@ $ nexttodo graph 工作
 
 ## 命令行
 
+从 [Releases](https://github.com/JunieXD/NextTodo/releases/latest) 下载对应平台的文件，改名为 `nexttodo`（Windows 是 `nexttodo.exe`），放进 `PATH` 里的目录：
+
+| 平台 | 文件 |
+|---|---|
+| macOS（Apple 芯片） | `nexttodo-macos-arm64` |
+| Linux x64 | `nexttodo-linux-x64` |
+| Linux arm64 | `nexttodo-linux-arm64` |
+| Windows x64 | `nexttodo-windows-x64.exe` |
+
 ```sh
-cargo install --path crates/cli          # 安装 nexttodo
+mkdir -p ~/.local/bin                    # 这个目录要在 PATH 里
+curl -fL -o ~/.local/bin/nexttodo https://github.com/JunieXD/NextTodo/releases/latest/download/nexttodo-macos-arm64
+chmod +x ~/.local/bin/nexttodo
 nexttodo login --url https://todo.example.com --name "Claude Code"
+nexttodo skill install                   # 见 Skill
 ```
+
+- macOS 会拦下用浏览器下载的文件，用上面的 `curl` 下载就不会；已经用浏览器下了的，运行 `xattr -d com.apple.quarantine <文件>`。
+- 装了 Rust 也可以从源码装：`cargo install --git https://github.com/JunieXD/NextTodo nexttodo-cli`。
+- 命令行和服务端用同一个版本，服务端升级后命令行也跟着换；`nexttodo --version` 显示版本。
+- 也可以不登录，用 App 里生成的令牌设置下面的环境变量，令牌页面会给出填好的写法。
 
 - `login` 用用户名和密码登录，生成一个以 `--name` 命名（默认“命令行”）的读写令牌，加 `--read-only` 生成只读令牌。令牌存在 `~/.config/nexttodo/config.json`（权限 600），登录用的会话随即注销。
 - 环境变量 `NEXTTODO_URL`、`NEXTTODO_TOKEN` 优先于配置文件，可以给不同的 agent 用不同的令牌，改动记录里就能分清是谁做的。
@@ -178,6 +195,7 @@ nexttodo login --url https://todo.example.com --name "Claude Code"
 ## MCP
 
 - 地址 `https://todo.example.com/mcp`，请求头 `Authorization: Bearer <令牌>`。
+- 连接时服务端给出一段使用说明（MCP 的 `instructions`），是 [Skill](#skill) 的要点：只接 MCP、不装 skill，agent 也知道该怎么用。
 - 工具的结果是上面的文本；出错时返回 `isError` 和错误说明。
 - 查询工具标注为只读，`delete` 标注为破坏性，客户端可以据此决定是否需要确认。
 
@@ -203,4 +221,12 @@ bearer_token_env_var = "NEXTTODO_TOKEN"
 
 ## Skill
 
-`skills/nexttodo/SKILL.md` 教 agent 什么时候用、怎么用 NextTodo。把这个目录链接到 agent 的 skill 目录即可，如 `ln -s $PWD/skills/nexttodo ~/.claude/skills/nexttodo`。
+`skills/nexttodo/SKILL.md` 教 agent 什么时候用、怎么用 NextTodo。命令行带着同一版本的一份，用它安装：
+
+```sh
+nexttodo skill install                   # 装到本机已有的 Claude Code、Codex：~/.claude/skills、~/.codex/skills
+nexttodo skill install --dir <目录>       # 装到其他 agent 的 skill 目录，可以给多个
+```
+
+- 写到 `<目录>/nexttodo/SKILL.md`，覆盖已有的；升级命令行后再运行一次。
+- `<目录>/nexttodo` 是链接时跳过，比如开发时把它链接到了仓库里的 `skills/nexttodo`。

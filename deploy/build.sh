@@ -3,8 +3,8 @@
 #
 #   target/deploy           what the server image holds: static Linux server binaries for amd64 and
 #                           arm64, the web app, and under its `/app/` the apps' updates
-#   target/release-assets   the installers to download: the Android APK, the macOS dmg and the
-#                           Windows setup
+#   target/release-assets   what is downloaded: the Android APK, the macOS dmg, the Windows setup and
+#                           the command line for macOS, Linux and Windows
 #
 # The apps are signed with keys given in the environment, never in the repository:
 # NEXTTODO_KEYSTORE and NEXTTODO_KEYSTORE_PASSWORD (docs/android.md#构建和签名),
@@ -43,6 +43,13 @@ pnpm install --frozen-lockfile
 for arch in x86_64 aarch64; do
   cargo zigbuild --release --locked -p nexttodo-server --target "$arch-unknown-linux-musl"
 done
+# The command line, which says this version (`nexttodo --version`).
+export NEXTTODO_VERSION=$version
+cargo build --release --locked -p nexttodo-cli
+for arch in x86_64 aarch64; do
+  cargo zigbuild --release --locked -p nexttodo-cli --target "$arch-unknown-linux-musl"
+done
+cargo xwin build --release --locked -p nexttodo-cli --target x86_64-pc-windows-msvc
 
 stage=target/deploy
 assets=target/release-assets
@@ -76,5 +83,10 @@ jq -n --arg version "$version" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg
 cp "$apk" "$assets/NextTodo-$version-android.apk"
 cp "$bundle/dmg/NextTodo_${version}_aarch64.dmg" "$assets/NextTodo-$version-macos-arm64.dmg"
 cp "$windows" "$assets/NextTodo-$version-windows-x64-setup.exe"
-(cd "$assets" && shasum -a 256 NextTodo-* > SHA256SUMS)
+# Without the version in their names, so that `releases/latest/download/<name>` always finds them.
+cp target/release/nexttodo "$assets/nexttodo-macos-arm64"
+cp target/x86_64-unknown-linux-musl/release/nexttodo "$assets/nexttodo-linux-x64"
+cp target/aarch64-unknown-linux-musl/release/nexttodo "$assets/nexttodo-linux-arm64"
+cp target/x86_64-pc-windows-msvc/release/nexttodo.exe "$assets/nexttodo-windows-x64.exe"
+(cd "$assets" && shasum -a 256 NextTodo-* nexttodo-* > SHA256SUMS)
 echo "已构建 NextTodo $version：$stage、$assets"

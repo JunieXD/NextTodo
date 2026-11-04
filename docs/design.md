@@ -109,7 +109,7 @@ Material 3 的配色和组件，加上 iOS 的结构和手势，支持深色模�
 
 ### 令牌
 
-在设置里生成，自己起名（如“Claude Code”），分只读和读写两种。令牌只在生成时显示一次。改动记录里用令牌名标明来源。
+在设置里生成，自己起名（如“Claude Code”），分只读和读写两种。令牌只在生成时显示一次，同时给出填好服务器地址和令牌的接入写法，点一下就复制：Claude Code 和 Codex 的 MCP 配置、命令行的环境变量，以及安装 skill 的命令。改动记录里用令牌名标明来源。
 
 ### 命令行、MCP 和工具接口
 
@@ -133,7 +133,7 @@ tasks:
 
 ### Skill
 
-仓库里的 `skills/nexttodo/` 告诉 agent：
+仓库里的 `skills/nexttodo/` 告诉 agent 下面这些。命令行带着同一版本的一份，`nexttodo skill install` 装到 Claude Code、Codex 等 agent 的 skill 目录；只接 MCP 的 agent 在连接时收到它的要点。
 
 - 什么时候用 NextTodo、用命令行还是 MCP；
 - 怎么把一个目标拆成有依赖的事项：标题写成动作，描述写清完成标准，只连真正的先后关系；

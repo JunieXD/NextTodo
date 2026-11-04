@@ -125,9 +125,9 @@ export function DueEditor({ due, onSave, onClose }: { due: Due | null; onSave(d:
             ))}
           </select>
         </label>
-        <div className="dialog-actions" style={{ padding: "4px 16px 0" }}>
+        <div className="actions">
           {due && (
-            <button type="button" className="text-btn danger-text" style={{ marginRight: "auto" }} onClick={() => (onSave(null), onClose())}>
+            <button type="button" className="text-btn danger-text" onClick={() => (onSave(null), onClose())}>
               清除截止时间
             </button>
           )}

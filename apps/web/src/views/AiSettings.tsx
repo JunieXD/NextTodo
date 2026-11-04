@@ -206,13 +206,13 @@ export function AiPage({ onBack, onClose }: { onBack(): void; onClose(): void })
       </div>
       {result && <p className={result.ok ? "form-ok" : "form-error"}>{result.message}</p>}
       {error && <p className="form-error">{error}</p>}
-      <div className="detail-actions flex justify-end gap-2">
+      <div className="actions">
         {(kept || localAiConfig(user.id)) && (
           <button className="text-btn danger-text" onClick={clear} disabled={busy}>
             清除
           </button>
         )}
-        <button className="text-btn" onClick={test} disabled={busy}>
+        <button className="tonal-btn" onClick={test} disabled={busy}>
           测试
         </button>
         <button className="filled-btn" onClick={save} disabled={busy}>

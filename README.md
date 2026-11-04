@@ -76,15 +76,16 @@ docker compose exec nexttodo /nexttodo-server create-admin <用户名>
 
 ### 3. 接入 agent
 
-在设置里创建令牌，或者用命令行登录：
+- **MCP**：在 App 的设置里生成令牌，页面上会给出填好地址和令牌的 Claude Code、Codex 配置，复制即可。
+- **命令行**：从 [Releases](https://github.com/JunieXD/NextTodo/releases/latest) 下载 `nexttodo`（macOS、Linux、Windows），登录后把 skill 装给 agent：
 
-```sh
-cargo install --git https://github.com/JunieXD/NextTodo nexttodo-cli
-nexttodo login --url https://todo.example.com --name "Claude Code"
-nexttodo next
-```
+  ```sh
+  nexttodo login --url https://todo.example.com --name "Claude Code"
+  nexttodo skill install
+  nexttodo next
+  ```
 
-支持 MCP 的客户端连接 `https://todo.example.com/mcp`，请求头带 `Authorization: Bearer <令牌>`。工具列表、计划格式和各客户端的配置见 [agent 接入](docs/agent.md)。
+下载和安装的细节、工具列表、计划格式见 [agent 接入](docs/agent.md)。
 
 ## 开发
 

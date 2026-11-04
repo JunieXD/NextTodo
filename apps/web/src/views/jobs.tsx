@@ -137,13 +137,13 @@ function JobDetails({ job: j, board, onClose }: { job: AiJob; board: Board; onCl
         <textarea className="job-text" value={text} readOnly={!failed} onChange={(e) => setText(e.target.value)} rows={8} />
       </label>
       {!failed && <p className="empty">{j.state === "running" ? "正在整理，整理完再改。" : "等待整理；整理失败后可以修改原文再试。"}</p>}
-      <div className="detail-actions flex justify-end gap-2">
+      <div className="actions">
         <button className="text-btn danger-text" onClick={() => (actions.remove(j), onClose())}>
           删除
         </button>
         {failed && (
           <>
-            <button className="text-btn" onClick={withText((text) => actions.addAsIs({ ...j, text }, board))}>
+            <button className="tonal-btn" onClick={withText((text) => actions.addAsIs({ ...j, text }, board))}>
               按原文添加
             </button>
             <button className="filled-btn" onClick={withText((text) => actions.retry(j, text))}>

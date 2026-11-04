@@ -81,24 +81,7 @@ export function Settings({ start = "main", onClose, onSignOut }: { start?: Page;
   if (page === "token") {
     return <TokenPage onCreated={(c) => (loadTokens(), setPage({ secret: c.secret, name: c.token.name }))} onBack={() => setPage("main")} onClose={onClose} />;
   }
-  if (typeof page === "object") {
-    return (
-      <Modal title="令牌已生成" onClose={onClose} onBack={() => setPage("main")}>
-        <p className="empty">以下是“{page.name}”的令牌，仅显示一次。可在命令行中用 nexttodo login 登录，或填入 agent 的 MCP 配置。</p>
-        <div className="secret">
-          <span>{page.secret}</span>
-          <button className="icon-btn sm" aria-label="复制令牌" onClick={() => copy(page.secret).then(() => snack("已复制令牌"))}>
-            <Icon of={Copy} size={18} />
-          </button>
-        </div>
-        <div className="detail-actions flex justify-end">
-          <button className="filled-btn" onClick={() => setPage("main")}>
-            完成
-          </button>
-        </div>
-      </Modal>
-    );
-  }
+  if (typeof page === "object") return <TokenCreated {...page} onDone={() => setPage("main")} onClose={onClose} />;
 
   const sessions = tokens?.filter((t) => t.kind === "session") ?? [];
   const apiTokens = tokens?.filter((t) => t.kind === "api") ?? [];
@@ -289,7 +272,7 @@ function PasswordPage({ onDone, onClose }: { onDone(): void; onClose(): void }) 
           <input type="password" autoComplete="new-password" value={fresh} onChange={(e) => setFresh(e.target.value)} required minLength={8} />
         </label>
         {error && <p className="form-error">{error}</p>}
-        <div className="detail-actions flex justify-end gap-2">
+        <div className="actions">
           <button type="button" className="text-btn" onClick={onDone}>
             取消
           </button>
@@ -335,7 +318,7 @@ function TokenPage({ onCreated, onBack, onClose }: { onCreated(c: CreatedToken):
           />
         </div>
         {error && <p className="form-error">{error}</p>}
-        <div className="detail-actions flex justify-end gap-2">
+        <div className="actions">
           <button type="button" className="text-btn" onClick={onBack}>
             取消
           </button>
@@ -348,4 +331,42 @@ function TokenPage({ onCreated, onBack, onClose }: { onCreated(c: CreatedToken):
 
 async function copy(text: string) {
   await navigator.clipboard.writeText(text);
+}
+
+/** A new token, shown this once, and the ways to connect an agent with it, filled in. */
+function TokenCreated({ name, secret, onDone, onClose }: { name: string; secret: string; onDone(): void; onClose(): void }) {
+  const url = serverUrl() || location.origin;
+  return (
+    <Modal title="令牌已生成" onClose={onClose} onBack={onDone}>
+      <p className="empty">“{name}”的令牌只显示这一次。下面的写法已经填好服务器地址和令牌，复制即可。</p>
+      <Copyable label="令牌" text={secret} />
+      <Copyable label="Claude Code" text={`claude mcp add --transport http nexttodo ${url}/mcp --header "Authorization: Bearer ${secret}"`} />
+      <Copyable label="命令行和 Codex 用的环境变量" hint="写进 ~/.zshrc 等 shell 配置" text={`export NEXTTODO_URL=${url}\nexport NEXTTODO_TOKEN=${secret}`} />
+      <Copyable label="Codex" hint="~/.codex/config.toml" text={`[mcp_servers.nexttodo]\nurl = "${url}/mcp"\nbearer_token_env_var = "NEXTTODO_TOKEN"`} />
+      <Copyable label="把 skill 装给 agent" hint="命令行在 GitHub 的 Releases 下载" text="nexttodo skill install" />
+      <div className="actions">
+        <button className="filled-btn" onClick={onDone}>
+          完成
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Text to copy, such as a token or a command, with the button that copies it. */
+function Copyable({ label, hint, text }: { label: string; hint?: string; text: string }) {
+  const { snack } = useFeedback();
+  return (
+    <div className="field">
+      <span>
+        {label} {hint && <span className="hint">{hint}</span>}
+      </span>
+      <div className="secret">
+        <span>{text}</span>
+        <button className="icon-btn sm" aria-label={`复制${label}`} onClick={() => copy(text).then(() => snack(`已复制${label}`))}>
+          <Icon of={Copy} size={18} />
+        </button>
+      </div>
+    </div>
+  );
 }

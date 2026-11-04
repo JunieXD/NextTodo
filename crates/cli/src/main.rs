@@ -1,8 +1,9 @@
 //! `nexttodo`: the command line for NextTodo. Each command calls one tool on the server, which does
 //! all the work; this only sends the arguments and prints the result. See `docs/agent.md`.
 
+use std::fs::File;
 use std::io::{IsTerminal, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -12,8 +13,17 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use ureq::http::StatusCode;
 
+/// The release this was built for, which `deploy/build.sh` gives; the crate's own version otherwise.
+const VERSION: &str = match option_env!("NEXTTODO_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
+/// The skill of this version, which `skill install` puts where agents find it.
+const SKILL: &str = include_str!("../../../skills/nexttodo/SKILL.md");
+
 #[derive(Parser)]
-#[command(name = "nexttodo", version, about = "NextTodo 命令行：查看和管理待办")]
+#[command(name = "nexttodo", version = VERSION, about = "NextTodo 命令行：查看和管理待办")]
 struct Cli {
     #[arg(long, global = true, help = "输出 JSON 数据")]
     json: bool,
@@ -158,6 +168,20 @@ enum Command {
     },
     #[command(about = "撤销一个批次")]
     Undo { batch: i64 },
+    #[command(about = "教 agent 使用 NextTodo 的 skill")]
+    Skill {
+        #[command(subcommand)]
+        command: Skill,
+    },
+}
+
+#[derive(Subcommand)]
+enum Skill {
+    #[command(about = "装到 agent 的 skill 目录：默认是本机已有的 ~/.claude/skills、~/.codex/skills")]
+    Install {
+        #[arg(long, help = "skill 目录，可以给多个")]
+        dir: Vec<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -219,14 +243,27 @@ fn read_config() -> anyhow::Result<Option<Config>> {
 }
 
 fn write_config(config: &Config) -> anyhow::Result<PathBuf> {
-    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
     let path = config_path()?;
+    create_private(&path)?.write_all(serde_json::to_string_pretty(config)?.as_bytes())?;
+    Ok(path)
+}
+
+/// A file only the user can read, in a directory only they can enter.
+#[cfg(unix)]
+fn create_private(path: &Path) -> std::io::Result<File> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
     std::fs::DirBuilder::new().recursive(true).mode(0o700).create(path.parent().expect("has a parent"))?;
-    let mut file = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(&path)?;
+    let file = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path)?;
     // Set on the open file before the token goes in, also when the file was already there.
     file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    file.write_all(serde_json::to_string_pretty(config)?.as_bytes())?;
-    Ok(path)
+    Ok(file)
+}
+
+/// On Windows the user's profile, where the file is, is only theirs already.
+#[cfg(windows)]
+fn create_private(path: &Path) -> std::io::Result<File> {
+    std::fs::create_dir_all(path.parent().expect("has a parent"))?;
+    File::create(path)
 }
 
 /// The server and token: environment variables first, then the configuration file.
@@ -367,6 +404,36 @@ fn login(url: Option<String>, name: String, read_only: bool) -> anyhow::Result<(
     let token = made?["secret"].as_str().ok_or_else(|| anyhow!("服务器回复中没有令牌"))?.to_owned();
     let path = write_config(&Config { url: server.url.clone(), token })?;
     println!("{}", printable(&format!("已登录，令牌“{name}”保存在 {}", path.display())));
+    println!("让 agent 学会使用 NextTodo：nexttodo skill install");
+    Ok(())
+}
+
+/// Writes the skill into `<dir>/nexttodo/SKILL.md` for each skill directory: those given, or those
+/// of the agents found here.
+fn install_skill(dirs: Vec<PathBuf>) -> anyhow::Result<()> {
+    let dirs = if dirs.is_empty() {
+        let home = std::env::home_dir().context("无法找到用户主目录")?;
+        let found: Vec<PathBuf> =
+            [".claude", ".codex"].iter().map(|agent| home.join(agent)).filter(|a| a.is_dir()).map(|a| a.join("skills")).collect();
+        if found.is_empty() {
+            bail!("没有找到 ~/.claude 或 ~/.codex，请用 --dir 指定 agent 的 skill 目录");
+        }
+        found
+    } else {
+        dirs
+    };
+    for dir in dirs {
+        let target = dir.join("nexttodo");
+        // Linked to a copy kept up to date some other way, such as the repository's.
+        if target.is_symlink() {
+            println!("{}", printable(&format!("跳过 {}：它是链接", target.display())));
+            continue;
+        }
+        std::fs::create_dir_all(&target).with_context(|| format!("无法创建 {}", target.display()))?;
+        let file = target.join("SKILL.md");
+        std::fs::write(&file, SKILL).with_context(|| format!("无法写入 {}", file.display()))?;
+        println!("{}", printable(&format!("已装到 {}", file.display())));
+    }
     Ok(())
 }
 
@@ -437,6 +504,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Dep { command: Dep::Rm { before, after } } => call("dep_remove", json!({ "before": before, "after": after }), j),
         Command::Apply { file, dry_run } => call("apply", json!({ "plan": plan(&file)?, "dry_run": dry_run }), j),
         Command::Undo { batch } => call("undo", json!({ "batch": batch }), j),
+        Command::Skill { command: Skill::Install { dir } } => install_skill(dir),
     }
 }
 

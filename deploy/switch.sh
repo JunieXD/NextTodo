@@ -10,12 +10,20 @@ cd "$1"
 mkdir -p data
 chown -R 65534:65534 data
 
-printf 'NEXTTODO_IMAGE=nexttodo:%s\nNEXTTODO_PORT=%s\n' "$2" "$3" > .env.new
+# The version and the port are the deploy's; whatever else is kept there, such as
+# NEXTTODO_SECRET_KEY, stays. Only root reads it, for the secrets in it.
+(
+  umask 077
+  {
+    if [[ -f .env ]]; then grep -v -e '^NEXTTODO_IMAGE=' -e '^NEXTTODO_PORT=' .env || true; fi
+    printf 'NEXTTODO_IMAGE=nexttodo:%s\nNEXTTODO_PORT=%s\n' "$2" "$3"
+  } > .env.new
+)
 docker compose --env-file .env.new -f compose.yaml.new config -q
 if [[ -f compose.yaml ]]; then
-  cp compose.yaml compose.yaml.prev
+  cp -p compose.yaml compose.yaml.prev
   # Without a .env the running compose.yaml uses its defaults, as it does with an empty one.
-  if [[ -f .env ]]; then cp .env .env.prev; else : > .env.prev; fi
+  if [[ -f .env ]]; then cp -p .env .env.prev; else : > .env.prev; fi
 fi
 mv compose.yaml.new compose.yaml
 mv .env.new .env

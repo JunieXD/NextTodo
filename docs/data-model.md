@@ -114,7 +114,7 @@
 | 列 | 类型 | 说明 |
 |---|---|---|
 | user_id | TEXT PK → users | |
-| provider | TEXT | 预设服务商（`ecnu`、`deepseek`、`qwen`、`openai`）或 `custom` |
+| provider | TEXT | 预设服务商（`deepseek`、`qwen`、`openai`）或 `custom` |
 | base_url | TEXT | 接口地址，`https://` 开头 |
 | model | TEXT | |
 | thinking | TEXT | `off`、`low` 或 `high` |

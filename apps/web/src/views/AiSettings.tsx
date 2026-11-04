@@ -54,7 +54,8 @@ export function AiPage({ onBack, onClose }: { onBack(): void; onClose(): void })
         setProviders(p);
         setKept(s);
         const local = localAiConfig(user.id);
-        if (local) setForm(local);
+        // A preset no longer offered goes on as a custom one, with the address and model it had.
+        if (local) setForm(p.providers.some((x) => x.id === local.provider) ? local : { ...local, provider: "custom" });
         else if (s) {
           setForm({ provider: s.provider, base_url: s.base_url, model: s.model, thinking: s.thinking });
           setPlace("server");

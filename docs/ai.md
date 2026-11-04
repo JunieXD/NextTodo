@@ -44,7 +44,6 @@
 
 | 服务商 | 接口地址 | 默认模型 | 思考参数 | JSON 模式 |
 |---|---|---|---|---|
-| ECNU | `https://chat.ecnu.edu.cn/open/api/v1` | `ecnu-max` | `thinking` + `reasoning_effort` | 支持 |
 | DeepSeek | `https://api.deepseek.com` | `deepseek-flash` | `thinking` + `reasoning_effort` | 支持 |
 | 通义千问 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` | `enable_thinking` | 不开思考时支持 |
 | OpenAI | `https://api.openai.com/v1` | `gpt-5-mini` | `reasoning_effort` | 支持 |
@@ -93,7 +92,7 @@
 
 ## 服务端
 
-- 后台一个整理队列：每个用户同时只整理一个请求（ECNU 等接口限制并发），全部用户最多同时 4 个；单个请求超时 5 分钟。
+- 后台一个整理队列：每个用户同时只整理一个请求（有的接口限制并发），全部用户最多同时 4 个；单个请求超时 5 分钟。
 - 状态变化都是服务端发起的改动（作者“AI 整理”），走同一套同步：各端实时看到“整理中”“失败”。
 - 日志只记请求 ID、状态、耗时和接口的 HTTP 状态，不记原文、结果和密钥。
 - 新依赖只有 `chacha20poly1305`。调用接口用命令行已经在用的 `ureq`（rustls，根证书用 webpki-roots，镜像里没有系统证书也能用），在阻塞线程上跑。

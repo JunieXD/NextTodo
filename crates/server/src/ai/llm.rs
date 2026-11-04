@@ -74,14 +74,6 @@ pub struct Provider {
 
 pub const PROVIDERS: &[Provider] = &[
     Provider {
-        id: "ecnu",
-        name: "ECNU",
-        base_url: "https://chat.ecnu.edu.cn/open/api/v1",
-        model: "ecnu-max",
-        thinking: ThinkingParam::Toggle,
-        json: JsonMode::Always,
-    },
-    Provider {
         id: "deepseek",
         name: "DeepSeek",
         base_url: "https://api.deepseek.com",
@@ -304,7 +296,7 @@ fn transport(e: ureq::Error) -> Failure {
 }
 
 /// The message in an API's error answer: OpenAI's `error.message`, or what others write, such as
-/// ECNU's `detail`.
+/// FastAPI's `detail`.
 fn api_message(v: &Value) -> &str {
     [&v["error"]["message"], &v["error"], &v["message"], &v["detail"], &v["detail"][0]["msg"]]
         .into_iter()
@@ -434,7 +426,7 @@ mod tests {
         let fmt = json!({ "type": "json_object" });
         assert_eq!(sent("deepseek", Thinking::Off), json!({ "thinking": { "type": "disabled" }, "response_format": fmt }));
         assert_eq!(
-            sent("ecnu", Thinking::High),
+            sent("deepseek", Thinking::High),
             json!({ "thinking": { "type": "enabled" }, "reasoning_effort": "high", "response_format": fmt })
         );
         assert_eq!(sent("qwen", Thinking::Off), json!({ "enable_thinking": false, "response_format": fmt }));
@@ -445,13 +437,13 @@ mod tests {
 
     #[test]
     fn checks_the_config() {
-        assert!(config("ecnu", Thinking::Off).check().is_ok());
+        assert!(config("deepseek", Thinking::Off).check().is_ok());
         assert!(config("anthropic", Thinking::Off).check().is_err());
         for url in ["http://x.test/v1", "https://x.test/ v1", "ftp://x"] {
             assert!(Config { base_url: url.into(), ..config("custom", Thinking::Off) }.check().is_err(), "{url}");
         }
-        assert!(Config { api_key: "a b".into(), ..config("ecnu", Thinking::Off) }.check().is_err());
-        assert!(Config { model: String::new(), ..config("ecnu", Thinking::Off) }.check().is_err());
+        assert!(Config { api_key: "a b".into(), ..config("deepseek", Thinking::Off) }.check().is_err());
+        assert!(Config { model: String::new(), ..config("deepseek", Thinking::Off) }.check().is_err());
     }
 
     #[test]

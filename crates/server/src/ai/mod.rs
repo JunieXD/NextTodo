@@ -48,8 +48,8 @@ pub struct Ai {
     /// Opens the API keys kept on the server; without it they can only be kept on devices.
     secret: Option<SecretKey>,
     api: Arc<dyn Api>,
-    /// Users with a job being organized: one at a time each, as providers such as ECNU take one
-    /// request at a time.
+    /// Users with a job being organized: one at a time each, as some providers take one request at
+    /// a time.
     busy: Mutex<HashSet<String>>,
     slots: Semaphore,
     /// A job has ended, and its user may have another waiting.

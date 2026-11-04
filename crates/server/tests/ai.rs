@@ -58,12 +58,12 @@ impl Api for Fake {
     }
 
     fn models(&self, _: &Config) -> Result<Vec<String>, Failure> {
-        Ok(vec!["ecnu-max".into(), "ecnu-plus".into()])
+        Ok(vec!["model-a".into(), "model-b".into()])
     }
 }
 
 fn config() -> Value {
-    json!({ "provider": "ecnu", "base_url": "https://chat.ecnu.edu.cn/open/api/v1", "model": "ecnu-plus", "thinking": "off", "api_key": "sk-test-1234" })
+    json!({ "provider": "deepseek", "base_url": "https://api.deepseek.com", "model": "model-a", "thinking": "off", "api_key": "sk-test-1234" })
 }
 
 /// A server keeping keys with its own, and organizing jobs.
@@ -327,26 +327,25 @@ async fn settings_are_each_users_own_and_the_key_stays_sealed() {
     let bob = t.user(&alice, "bob").await;
     let providers = t.call("GET", "/ai/providers", Some(&alice), None).await.body;
     assert_eq!(providers["sync"], true);
-    assert_eq!(providers["providers"][0]["id"], "ecnu");
+    assert_eq!(providers["providers"][0]["id"], "deepseek");
     t.call("PUT", "/ai/settings", Some(&alice), Some(config())).await;
     assert_eq!(t.call("GET", "/ai/settings", Some(&bob), None).await.body, Value::Null);
-    let without_key =
-        json!({ "provider": "ecnu", "base_url": "https://chat.ecnu.edu.cn/open/api/v1", "model": "ecnu-max", "thinking": "high" });
+    let without_key = json!({ "provider": "deepseek", "base_url": "https://api.deepseek.com", "model": "model-b", "thinking": "high" });
     assert_eq!(t.call("PUT", "/ai/settings", Some(&bob), Some(without_key.clone())).await.status, StatusCode::BAD_REQUEST);
     let kept = t.call("PUT", "/ai/settings", Some(&alice), Some(without_key)).await.body;
     assert_eq!(
         kept,
-        json!({ "provider": "ecnu", "base_url": "https://chat.ecnu.edu.cn/open/api/v1", "model": "ecnu-max", "thinking": "high", "key_end": "1234" })
+        json!({ "provider": "deepseek", "base_url": "https://api.deepseek.com", "model": "model-b", "thinking": "high", "key_end": "1234" })
     );
     let models = t
         .call(
             "POST",
             "/ai/models",
             Some(&alice),
-            Some(json!({ "provider": "ecnu", "base_url": "https://chat.ecnu.edu.cn/open/api/v1", "model": "x", "thinking": "off" })),
+            Some(json!({ "provider": "deepseek", "base_url": "https://api.deepseek.com", "model": "x", "thinking": "off" })),
         )
         .await;
-    assert_eq!(models.body["models"], json!(["ecnu-max", "ecnu-plus"]));
+    assert_eq!(models.body["models"], json!(["model-a", "model-b"]));
 
     let sealed: Vec<u8> = t.state.db.call(|c| Ok(c.query_row("SELECT api_key FROM ai_settings", [], |r| r.get(0))?)).await.unwrap();
     assert!(!sealed.windows(4).any(|w| w == b"1234"));

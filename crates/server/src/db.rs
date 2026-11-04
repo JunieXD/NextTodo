@@ -9,7 +9,11 @@ use rusqlite::Connection;
 
 use crate::error::ApiError;
 
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/001_init.sql"), include_str!("../migrations/002_ai.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("../migrations/001_init.sql"),
+    include_str!("../migrations/002_ai.sql"),
+    include_str!("../migrations/003_custom_ecnu.sql"),
+];
 
 #[derive(Clone)]
 pub struct Db(Arc<Mutex<Connection>>);

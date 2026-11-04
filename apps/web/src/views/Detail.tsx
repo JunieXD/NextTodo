@@ -9,7 +9,7 @@ import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
 import { formatDue, formatMoment, remindLabel } from "../domain/dates";
 import { checkDescription, checkTitle } from "../domain/text";
-import { useCommit, useUndo, useView } from "../session";
+import { useCommit, useSession, useUndo, useView } from "../session";
 import { Check, Seg } from "../ui/controls";
 import { useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
@@ -35,32 +35,44 @@ type Save = (value: string) => { id: MutationId } | null;
 /** An edit in progress and the text it started from. */
 type Draft = { text: string; base: string };
 
-/** Saves `mine`, edited from `base`, into a field that is `now`. When the field has changed elsewhere
- * meanwhile, asks whether to keep that or overwrite it; overwriting can be undone, while giving up
- * the edit cannot, so closing the dialog overwrites. Gives what the field holds afterwards, and
- * whether that is `mine`. */
-function useKeepEdit(what: string) {
+/** What an edit left in its field, and whether that is the edit. */
+type Kept = { value: string; mine: boolean };
+
+/** Saves `mine`, edited from `base`, into a field of a task. When the field has changed elsewhere
+ * meanwhile, asks whether to keep that or overwrite it, showing it as it is when asking, and asking
+ * again when it changes once more before the answer. Overwriting can be undone, while giving up the
+ * edit cannot, so closing the dialog overwrites. Gives what the field holds afterwards; nothing when
+ * the task is gone. */
+function useKeepEdit(field: "title" | "description", what: string) {
+  const { store } = useSession();
   const { confirm, snack } = useFeedback();
   const undo = useUndo();
-  return async (t: Task, base: string, mine: string, now: string, save: Save): Promise<{ value: string; mine: boolean }> => {
-    // Nothing edited: what is there now stays, whoever wrote it.
-    if (mine === base) return { value: now, mine: false };
-    if (mine === now) return { value: now, mine: true };
-    if (now !== base) {
+  return async (id: TaskId, base: string, mine: string, save: Save): Promise<Kept | null> => {
+    const current = () => store.getView().board.task(id);
+    let t = current();
+    if (!t) return null;
+    // Nothing edited: what is there stays, whoever wrote it.
+    if (mine === base) return { value: t[field], mine: false };
+    while (t[field] !== base && t[field] !== mine) {
+      const shown = t[field];
       const theirs = await confirm({
         title: `${what}在你编辑时${t.updated_via ? `被“${t.updated_via}”` : "在别处被"}改过`,
         body: "对方现在的版本如下。保留对方的，你这次的修改就会丢掉。",
-        detail: now,
+        detail: shown,
         ok: "保留对方的",
         cancel: "用我的覆盖",
         danger: true,
       });
-      if (theirs) return { value: now, mine: false };
-      const r = save(mine);
-      if (r) snack({ text: `已用你的版本覆盖${what}`, action: "撤销", onAction: () => undo(r.id) });
-      return { value: mine, mine: true };
+      t = current();
+      if (!t) return null;
+      if (theirs) return { value: t[field], mine: false };
+      if (t[field] === shown) {
+        const r = save(mine);
+        if (r) snack({ text: `已用你的版本覆盖${what}`, action: "撤销", onAction: () => undo(r.id) });
+        return { value: mine, mine: true };
+      }
     }
-    save(mine);
+    if (t[field] !== mine) save(mine);
     return { value: mine, mine: true };
   };
 }
@@ -172,7 +184,7 @@ function Prop({ icon, label, value, cls = "", onClick }: { icon: LucideIcon; lab
 function Title({ task, onSave }: { task: Task; onSave: Save }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const { snack } = useFeedback();
-  const keep = useKeepEdit("标题");
+  const keep = useKeepEdit("title", "标题");
   if (draft === null) {
     return (
       <h2 className="d-title">
@@ -186,7 +198,7 @@ function Title({ task, onSave }: { task: Task; onSave: Save }) {
     setDraft(null);
     const c = checkTitle(draft.text);
     if (!c.ok) snack(c.error);
-    else void keep(task, draft.base, c.value, task.title, onSave);
+    else void keep(task.id, draft.base, c.value, onSave);
   };
   return (
     <textarea
@@ -210,17 +222,20 @@ function Title({ task, onSave }: { task: Task; onSave: Save }) {
 function DescriptionSection({ task, onSave }: { task: Task; onSave: Save }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const { snack } = useFeedback();
-  const keep = useKeepEdit("描述");
+  const keep = useKeepEdit("description", "描述");
   const pending = useRef({ draft, task, onSave });
   useEffect(() => {
     pending.current = { draft, task, onSave };
   });
+  /** The save waiting for an answer, if any: leaving meanwhile does not save, or ask, a second time. */
+  const saving = useRef<Promise<Kept | null>>(undefined);
   /** Saves the draft; gives what the description holds afterwards, or nothing when it was not saved. */
   const save = (d: Draft | null, t: Task, done: Save) => {
-    if (d === null) return;
+    if (d === null || saving.current) return saving.current;
     const c = checkDescription(d.text);
-    if (c.ok) return keep(t, d.base, c.value, t.description, done);
-    snack(c.error);
+    if (!c.ok) return void snack(c.error);
+    saving.current = keep(t.id, d.base, c.value, done).finally(() => (saving.current = undefined));
+    return saving.current;
   };
   useEffect(
     () => () => {

@@ -429,3 +429,27 @@ async fn outputs_leave_out_what_says_nothing() {
     assert_eq!(numbers(&done["data"]["unlocked"]), vec![2]);
     assert_eq!(t.ok(&s, "reopen", json!({ "tasks": [1] })).await["data"].get("unlocked"), None);
 }
+
+#[tokio::test]
+async fn a_change_that_does_several_things_reports_each() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "交初稿" })).await;
+    let task = t.snapshot(&s).await["tasks"][0]["id"].as_str().unwrap().to_owned();
+    let (a, b) = (common::id(), common::id());
+    t.mutate(&s, json!([{ "op": "folder.create", "id": a, "name": "A" }, { "op": "folder.create", "id": b, "name": "B" }])).await;
+    // The app can change several things in one operation; undoing it changes them all back.
+    t.mutate(&s, json!([{ "op": "task.update", "id": task, "title": "交终稿", "done": true }])).await;
+    let undone = t.ok(&s, "undo", json!({ "batch": 3 })).await;
+    assert_eq!(
+        undone["data"]["changes"],
+        json!([{ "kind": "task_reopened", "task": 1 }, { "kind": "task_edited", "task": 1, "fields": ["title"] }])
+    );
+    assert!(text(&undone).starts_with("重新打开 #1 交初稿\n修改 #1 交初稿\n"), "{}", text(&undone));
+    t.mutate(&s, json!([{ "op": "folder.update", "id": a, "name": "Z", "parent_id": b }])).await;
+    let undone = t.ok(&s, "undo", json!({ "batch": 5 })).await;
+    assert_eq!(
+        undone["data"]["changes"],
+        json!([{ "kind": "folder_renamed", "folder": "/B/Z", "name": "A" }, { "kind": "folder_moved", "folder": "/B/Z", "to": "/A" }])
+    );
+}

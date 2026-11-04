@@ -232,82 +232,92 @@ pub fn job_item(j: &AiJob) -> String {
     format!("“{}”", excerpt(j.text.as_str(), 20))
 }
 
-/// What changed in a task besides where it is and whether it is done.
+/// What changed in a task besides whether it is done and which folder it is in; its place in a
+/// folder only within the same folder, as a move puts it somewhere in the new one anyway.
 fn edited(before: &Task, after: &Task) -> Vec<&'static str> {
     [
         ("title", before.title != after.title),
         ("description", before.description != after.description),
         ("due", before.due != after.due),
-        ("order", before.sort_key != after.sort_key),
+        ("order", before.sort_key != after.sort_key && before.folder_id == after.folder_id),
     ]
     .into_iter()
     .filter_map(|(field, changed)| changed.then_some(field))
     .collect()
 }
 
-/// The kind of change, a task number to list it by, how it reads and the same as data, given the
-/// names right after it. A change touches one entity, so its old and new places both read in that
-/// tree.
-fn describe(e: &Effect, n: &Names) -> (Kind, Option<i64>, String, Value) {
-    let (kind, item, mut data) = match e {
+/// Each kind of change one change amounts to, as it reads and as data, given the names right after
+/// it: renaming and moving a folder at once is two, and so is completing a task while retitling it.
+/// A change touches one entity, so its old and new places both read in that tree.
+fn describe(e: &Effect, n: &Names) -> Vec<(Kind, String, Value)> {
+    match e {
         Effect::Folder(Change::Created(f)) => {
             let path = n.path_in(f.parent_id, f.name.as_str());
-            (Kind::FolderCreated, path.clone(), json!({ "folder": path }))
+            vec![(Kind::FolderCreated, path.clone(), json!({ "folder": path }))]
         }
         Effect::Folder(Change::Updated { before, after }) => {
             let old = n.path_in(before.parent_id, before.name.as_str());
+            let mut found = Vec::new();
             if before.name != after.name {
-                (Kind::FolderRenamed, format!("{old} → {}", after.name.as_str()), json!({ "folder": old, "name": after.name }))
-            } else if before.parent_id != after.parent_id {
-                let to = n.path_in(after.parent_id, after.name.as_str());
-                (Kind::FolderMoved, format!("{old} → {to}"), json!({ "folder": old, "to": to }))
-            } else {
-                (Kind::FolderSorted, old.clone(), json!({ "folder": old }))
+                found.push((Kind::FolderRenamed, format!("{old} → {}", after.name.as_str()), json!({ "folder": old, "name": after.name })));
             }
+            if before.parent_id != after.parent_id {
+                let to = n.path_in(after.parent_id, after.name.as_str());
+                found.push((Kind::FolderMoved, format!("{old} → {to}"), json!({ "folder": old, "to": to })));
+            }
+            if found.is_empty() {
+                found.push((Kind::FolderSorted, old.clone(), json!({ "folder": old })));
+            }
+            found
         }
         Effect::Folder(Change::Deleted(f)) => {
             let path = n.path_in(f.parent_id, f.name.as_str());
-            (Kind::FolderDeleted, path.clone(), json!({ "folder": path }))
+            vec![(Kind::FolderDeleted, path.clone(), json!({ "folder": path }))]
         }
-        Effect::Task(Change::Created(t)) => (Kind::TaskCreated, item(t), json!({ "task": t.number })),
-        Effect::Task(Change::Updated { before, after: t }) => match (before.done_at, t.done_at) {
-            (None, Some(_)) => (Kind::TaskDone, item(t), json!({ "task": t.number })),
-            (Some(_), None) => (Kind::TaskReopened, item(t), json!({ "task": t.number })),
-            _ if before.folder_id != t.folder_id => {
-                let to = n.path(t.folder_id);
-                (Kind::TaskMoved, format!("{} → {to}", item(t)), json!({ "task": t.number, "to": to }))
+        Effect::Task(Change::Created(t)) => vec![(Kind::TaskCreated, item(t), json!({ "task": t.number }))],
+        Effect::Task(Change::Updated { before, after: t }) => {
+            let mut found = Vec::new();
+            match (before.done_at, t.done_at) {
+                (None, Some(_)) => found.push((Kind::TaskDone, item(t), json!({ "task": t.number }))),
+                (Some(_), None) => found.push((Kind::TaskReopened, item(t), json!({ "task": t.number }))),
+                _ => {}
             }
-            _ => (Kind::TaskEdited, item(t), json!({ "task": t.number, "fields": edited(before, t) })),
-        },
-        Effect::Task(Change::Deleted(t)) => (Kind::TaskDeleted, item(t), json!({ "task": t.number })),
-        Effect::Dependency(Link::Added(d)) => (
-            Kind::DepAdded,
-            format!("{} → {}", n.number(d.before), n.number(d.after)),
-            json!({ "before": n.tasks.get(&d.before), "after": n.tasks.get(&d.after) }),
-        ),
-        Effect::Dependency(Link::Removed(d)) => (
-            Kind::DepRemoved,
-            format!("{} → {}", n.number(d.before), n.number(d.after)),
-            json!({ "before": n.tasks.get(&d.before), "after": n.tasks.get(&d.after) }),
-        ),
-        Effect::AiJob(Change::Created(j)) => (Kind::JobCreated, job_item(j), json!({ "job": j.id })),
-        Effect::AiJob(Change::Updated { after: j, .. }) => match j.state {
+            if before.folder_id != t.folder_id {
+                let to = n.path(t.folder_id);
+                found.push((Kind::TaskMoved, format!("{} → {to}", item(t)), json!({ "task": t.number, "to": to })));
+            }
+            let fields = edited(before, t);
+            if !fields.is_empty() {
+                found.push((Kind::TaskEdited, item(t), json!({ "task": t.number, "fields": fields })));
+            }
+            found
+        }
+        Effect::Task(Change::Deleted(t)) => vec![(Kind::TaskDeleted, item(t), json!({ "task": t.number }))],
+        Effect::Dependency(link @ (Link::Added(d) | Link::Removed(d))) => {
+            let kind = if matches!(link, Link::Added(_)) { Kind::DepAdded } else { Kind::DepRemoved };
+            let text = format!("{} → {}", n.number(d.before), n.number(d.after));
+            vec![(kind, text, json!({ "before": n.tasks.get(&d.before), "after": n.tasks.get(&d.after) }))]
+        }
+        Effect::AiJob(Change::Created(j)) => vec![(Kind::JobCreated, job_item(j), json!({ "job": j.id }))],
+        Effect::AiJob(Change::Updated { after: j, .. }) => vec![match j.state {
             JobState::Running => (Kind::JobStarted, job_item(j), json!({ "job": j.id })),
             JobState::Failed => {
                 let error = j.error.as_deref().unwrap_or_default();
                 (Kind::JobFailed, format!("{}（{error}）", job_item(j)), json!({ "job": j.id, "error": error }))
             }
             JobState::Waiting => (Kind::JobRetried, job_item(j), json!({ "job": j.id })),
-        },
-        Effect::AiJob(Change::Deleted(j)) => (Kind::JobDeleted, job_item(j), json!({ "job": j.id })),
-    };
-    data["kind"] = kind.code().into();
-    let number = match e {
+        }],
+        Effect::AiJob(Change::Deleted(j)) => vec![(Kind::JobDeleted, job_item(j), json!({ "job": j.id }))],
+    }
+}
+
+/// The task to list a change by.
+fn number(e: &Effect, n: &Names) -> Option<i64> {
+    match e {
         Effect::Folder(_) | Effect::AiJob(_) => None,
         Effect::Task(Change::Created(t) | Change::Updated { after: t, .. } | Change::Deleted(t)) => Some(t.number),
         Effect::Dependency(Link::Added(d) | Link::Removed(d)) => n.tasks.get(&d.before).copied(),
-    };
-    (kind, number, item, data)
+    }
 }
 
 /// What a batch changed: one line per kind of change, listing at most `limit` items per line, and
@@ -317,15 +327,18 @@ fn describe(e: &Effect, n: &Names) -> (Kind, Option<i64>, String, Value) {
 pub fn changes(effects: &[Effect], names: &mut Names, limit: usize) -> (Vec<String>, Vec<Value>) {
     let mut described = Vec::with_capacity(effects.len());
     for e in effects.iter().rev() {
-        described.push(describe(e, names));
+        described.push((number(e, names), describe(e, names)));
         names.undo(e);
     }
     described.reverse();
     let mut groups: BTreeMap<Kind, Vec<(Option<i64>, String)>> = BTreeMap::new();
     let mut data = Vec::with_capacity(described.len());
-    for (kind, number, item, d) in described {
-        groups.entry(kind).or_default().push((number, item));
-        data.push(d);
+    for (number, found) in described {
+        for (kind, item, mut d) in found {
+            groups.entry(kind).or_default().push((number, item));
+            d["kind"] = kind.code().into();
+            data.push(d);
+        }
     }
     let lines = groups
         .into_iter()

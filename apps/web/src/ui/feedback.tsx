@@ -65,13 +65,16 @@ export function FeedbackProvider({ outside, children }: { outside: boolean; chil
         setSnack({ ...shown, key: Date.now() });
         timer.current = setTimeout(() => setSnack(null), shown.ms ?? 5000);
       },
+      // A dialog asked for while another is open takes its place, which is answered as cancelled.
       confirm: (c) =>
         new Promise((resolve) => {
+          cancel.current?.();
           cancel.current = () => resolve(false);
           setOpen({ ...c, kind: "confirm", resolve });
         }),
       prompt: (p) =>
         new Promise((resolve) => {
+          cancel.current?.();
           cancel.current = () => resolve(null);
           setOpen({ ...p, kind: "prompt", resolve });
         }),

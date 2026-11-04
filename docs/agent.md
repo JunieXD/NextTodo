@@ -148,7 +148,7 @@ $ nexttodo graph 工作
 | `jobs` | `[{id, start, folder, state, updated_at}]`，`start` 是原文开头，`state` 是 `waiting`、`running`、`failed`，失败的另有 `error` |
 | 写操作 | `{batch, changes: [变化]}`，预览时 `batch` 为 `null`；完成事项后有事项因此可做时另有 `unlocked: [事项]` |
 
-写操作的变化只说做了什么，不带事项的内容：
+写操作的变化只说做了什么，不带事项的内容。一处改动同时做了几件事（比如撤销时一项既重新打开又改回了标题，一个文件夹既改名又移动），每件各列一条：
 
 | `kind` | 其他字段 |
 |---|---|
@@ -157,7 +157,7 @@ $ nexttodo graph 工作
 | `folder_moved` | `folder`：原路径；`to`：新路径 |
 | `task_created`、`task_done`、`task_reopened`、`task_deleted` | `task`：编号 |
 | `task_moved` | `task`；`to`：文件夹路径 |
-| `task_edited` | `task`；`fields`：改了的字段，`title`、`description`、`due`、`order`（顺序） |
+| `task_edited` | `task`；`fields`：改了的字段，`title`、`description`、`due`、`order`（在同一文件夹里的顺序） |
 | `dep_added`、`dep_removed` | `before`、`after`：编号 |
 | `job_created`、`job_started`、`job_retried`、`job_deleted` | `job`：请求 ID |
 | `job_failed` | `job`；`error`：原因 |

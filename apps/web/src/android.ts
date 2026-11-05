@@ -12,7 +12,7 @@ import { back } from "./ui/back";
 
 /** The app's own plugin, in `apps/android`. */
 interface NextTodoPlugin {
-  /** Hands the widget its list, as JSON in the shape of the `next` tool's data, as of the change
+  /** Hands the widget its list, as JSON in the shape of the `next` tool's `tasks`, as of the change
    * `seq`; without one, as when signing out, it replaces whatever the widget has. */
   updateWidget(o: { tasks: string; seq?: number }): Promise<void>;
   /** The system settings page of this app, where autostart and battery use are allowed. */

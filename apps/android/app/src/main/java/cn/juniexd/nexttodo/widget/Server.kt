@@ -30,11 +30,15 @@ object Server {
         return true
     }
 
-    /** The ready tasks, as JSON in the shape of the `next` tool's data, and the change they are as of. */
+    /** The ready tasks, as a JSON array in the shape of the `next` tool's `tasks`, and the change they
+     * are as of. */
     suspend fun next(context: Context, token: String): Pair<String, Long> {
-        val reply = JSONObject(post(context, token, "/tools/next", JSONObject()))
-        return reply.getJSONArray("data").toString() to reply.getLong("seq")
+        val reply = JSONObject(post(context, token, "/tools/next", JSONObject().put("limit", LIMIT)))
+        return reply.getJSONObject("data").getJSONArray("tasks").toString() to reply.getLong("seq")
     }
+
+    /** The most `next` gives, as the app's list has them all. */
+    private const val LIMIT = 500
 
     /** Marks a task done; one done already stays so. Returns the change that did it. */
     suspend fun complete(context: Context, token: String, task: String): Long {

@@ -83,7 +83,7 @@ object Widget {
 
     private fun done(prefs: SharedPreferences) = JSONObject(prefs.getString(DONE, "{}"))
 
-    /** Shows `tasks`, the app's list, as JSON in the shape of the `next` tool's data, as of the
+    /** Shows `tasks`, the app's list, as JSON in the shape of the `next` tool's `tasks`, as of the
      * change `seq` its copy has. The app's lists come in the order of its sign-ins and sign-outs. */
     suspend fun show(context: Context, tasks: String, seq: Long?) = update(context) { keep(it, tasks, seq) }
 

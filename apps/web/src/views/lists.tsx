@@ -1,7 +1,8 @@
 // The bodies of the main pages: what is next, what is done, a folder (the root too), search results;
 // and the quick-add bar.
 
-import { ArrowUp, ChevronRight, Folder as FolderIcon, FolderPlus, List, Plus, Sparkles, Workflow } from "lucide-react";
+import { ArrowUp, ChevronDown, ChevronRight, ChevronUp, Folder as FolderIcon, FolderPlus, List, Sparkles, Workflow } from "lucide-react";
+import { Dialog } from "radix-ui";
 import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation, useSearchParams } from "wouter";
@@ -18,10 +19,11 @@ import { rekey } from "../domain/reorder";
 import { checkJobText, checkTitle } from "../domain/text";
 import { useCommit, useSession, useView } from "../session";
 import { draft, keepDraft } from "../sync/drafts";
-import { useFeedback } from "../ui/feedback";
+import { useBack } from "../ui/back";
+import { RootContext, useFeedback } from "../ui/feedback";
 import { Seg } from "../ui/controls";
 import { useWide } from "../ui/hooks";
-import { Chain, Icon } from "../ui/icons";
+import { Icon } from "../ui/icons";
 import { useTaskActions } from "./actions";
 import { useRowDrag } from "./drag";
 import { useNewFolder } from "./FolderMenu";
@@ -241,8 +243,8 @@ export function SearchResults({ query, now }: { query: string; now: Date }) {
 const AI_MODE = "nexttodo.aiMode";
 
 /** Adds tasks by typing, or, switched to AI organizing with ✦, has AI organize what is written into
- * tasks. In a folder (`null` for the root) it can chain each new task after the previous one;
- * elsewhere it adds to a folder picked beside it, the root by default. */
+ * tasks; that text can be expanded to write at length. In a folder (`null` for the root) it adds
+ * there; elsewhere to a folder picked beside it, the root by default. */
 export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   const { board } = useView();
   const commit = useCommit();
@@ -258,10 +260,10 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   };
   // The device remembers the mode last used.
   const [ai, setAi] = useState(() => localStorage.getItem(AI_MODE) === "on");
-  const [chain, setChain] = useState(false);
   const [target, setTarget] = useState<FolderId | null>(null);
   const [picking, setPicking] = useState(false);
-  const last = useRef<TaskId | null>(null);
+  const [tall, setTall] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const into = folder !== undefined ? folder : target && board.folder(target) ? target : null;
   const input = useRef<HTMLInputElement>(null);
   const area = useRef<HTMLTextAreaElement>(null);
@@ -275,12 +277,15 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
     focus();
     navigate(location, { replace: true });
   }, [asked, location, navigate]);
-  // As tall as the text, up to the height the style allows, and then it scrolls.
+  // As tall as the text, up to the height the style allows, and then it scrolls; past three lines
+  // it can be expanded.
   useLayoutEffect(() => {
     const el = area.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
+    const style = getComputedStyle(el);
+    setTall((el.scrollHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)) / parseFloat(style.lineHeight) > 3);
   }, [title, ai]);
 
   const switchMode = async () => {
@@ -293,79 +298,137 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
     requestAnimationFrame(focus);
   };
 
+  /** Hands the text to AI organizing; whether it went. */
   const organize = () => {
     const c = checkJobText(title);
-    if (!c.ok) return snack(c.error);
+    if (!c.ok) {
+      snack(c.error);
+      return false;
+    }
     const op: Op = { op: "ai_job.create", id: uuidv7(), text: c.value, local_time: localTime(new Date()), ...(into && { folder_id: into }) };
-    if (!commit([op])) return;
+    if (!commit([op])) return false;
     edit("");
     snack("已交给 AI 整理");
+    return true;
   };
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
-    if (ai) return organize();
+    if (ai) return void organize();
     const c = checkTitle(title);
     if (!c.ok) return snack([...title.trim()].length > 200 ? `${c.error}；长段文字可以点 ✦ 交给 AI 整理` : c.error);
-    const id = uuidv7();
-    const ops: Op[] = [{ op: "task.create", id, title: c.value, sort_key: lastKey(board.contents(into).map((t) => t.sort_key)), ...(into && { folder_id: into }) }];
-    const prev = chain && last.current ? board.task(last.current) : undefined;
-    const after = prev && prev.folder_id === into && prev.done_at === null ? prev : undefined;
-    if (after) ops.push({ op: "dep.add", before: after.id, after: id });
-    if (!commit(ops)) return;
-    last.current = chain ? id : null;
+    const op: Op = { op: "task.create", id: uuidv7(), title: c.value, sort_key: lastKey(board.contents(into).map((t) => t.sort_key)), ...(into && { folder_id: into }) };
+    if (!commit([op])) return;
     edit("");
-    snack(after ? `已添加，排在“${after.title}”之后` : `已添加“${c.value}”`);
+    snack(`已添加“${c.value}”`);
   };
 
+  // On a computer Enter submits and Shift+Enter starts a line; on a phone the key starts a line and
+  // the button submits. Not while an input method is still composing.
+  const enter = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (wide && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      e.currentTarget.form!.requestSubmit();
+    }
+  };
+  const pick = folder === undefined && (
+    <button type="button" className="qa-btn folder" onClick={() => setPicking(true)}>
+      <Icon of={FolderIcon} size={16} />
+      <span>{board.folderName(into)}</span>
+    </button>
+  );
+  const send = (
+    <button type="submit" className="qa-btn icon send" aria-label={ai ? "交给 AI 整理" : "添加"} disabled={!title.trim()}>
+      <Icon of={ArrowUp} size={18} width={2.2} />
+    </button>
+  );
+
   return (
-    <form className={`quick-add${ai ? " ai" : ""}`} onSubmit={submit}>
-      <span className="plus">
-        <Icon of={ai ? Sparkles : Plus} size={22} width={ai ? 1.8 : 2} />
-      </span>
-      {ai ? (
-        <textarea
-          ref={area}
-          rows={1}
-          value={title}
-          onChange={(e) => edit(e.target.value)}
-          // On a computer Enter submits and Shift+Enter starts a line; on a phone the key starts a
-          // line and the button submits. Not while an input method is still composing.
-          onKeyDown={(e) => {
-            if (wide && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              e.currentTarget.form!.requestSubmit();
-            }
-          }}
-          placeholder="写下要做的事，AI 整理成事项"
-          aria-label="交给 AI 整理的内容"
-        />
-      ) : (
-        <input ref={input} value={title} onChange={(e) => edit(e.target.value)} placeholder="添加事项" autoComplete="off" enterKeyHint="done" aria-label="新事项标题" />
-      )}
-      <button type="button" className={`qa-btn icon${ai ? " on" : ""}`} aria-pressed={ai} aria-label="AI 整理" title="AI 整理" onClick={() => void switchMode()}>
-        <Icon of={Sparkles} size={16} />
-      </button>
-      {folder === undefined ? (
-        <button type="button" className="qa-btn" onClick={() => setPicking(true)}>
-          <Icon of={FolderIcon} size={16} />
-          {board.folderName(into)}
-        </button>
-      ) : (
-        !ai && (
-          <button type="button" className={`qa-btn${chain ? " on" : ""}`} aria-pressed={chain} onClick={() => ((last.current = null), setChain(!chain))}>
-            <Icon of={Chain} size={16} />
-            依次排队
-          </button>
-        )
-      )}
-      {ai && (
-        <button type="submit" className="qa-btn icon send" aria-label="交给 AI 整理" disabled={!title.trim()}>
-          <Icon of={ArrowUp} size={18} width={2.2} />
-        </button>
+    <>
+      <form className="quick-add" onSubmit={submit}>
+        <div className="qa-field">
+          {ai ? (
+            <textarea ref={area} rows={1} value={title} onChange={(e) => edit(e.target.value)} onKeyDown={enter} placeholder="交给 AI 整理" aria-label="交给 AI 整理的内容" />
+          ) : (
+            <input ref={input} value={title} onChange={(e) => edit(e.target.value)} placeholder="添加事项" autoComplete="off" enterKeyHint="done" aria-label="新事项标题" />
+          )}
+        </div>
+        <div className="qa-side">
+          {ai && tall && (
+            <button type="button" className="qa-btn icon expand" aria-label="展开编辑" title="展开编辑" onClick={() => setExpanded(true)}>
+              <Icon of={ChevronUp} size={18} />
+            </button>
+          )}
+          <div className="qa-btns">
+            <button type="button" className={`qa-btn icon${ai ? " on" : ""}`} aria-pressed={ai} aria-label="AI 整理" title="AI 整理" onClick={() => void switchMode()}>
+              <Icon of={Sparkles} size={16} />
+            </button>
+            {pick}
+            {send}
+          </div>
+        </div>
+      </form>
+      {expanded && (
+        <Editor text={title} onEdit={edit} onEnter={enter} onSubmit={() => organize() && setExpanded(false)} onClose={() => setExpanded(false)}>
+          {pick}
+          {send}
+        </Editor>
       )}
       {picking && <FolderPicker title="添加到" current={into} onPick={setTarget} onClose={() => setPicking(false)} />}
-    </form>
+    </>
+  );
+}
+
+/** AI organizing's text on a page of its own, to write at length: full screen on a phone, a large
+ * window on a computer. Kept outside the bar's form, which would otherwise get its submits too. */
+function Editor(props: {
+  text: string;
+  onEdit(text: string): void;
+  onEnter(e: React.KeyboardEvent<HTMLTextAreaElement>): void;
+  onSubmit(): void;
+  onClose(): void;
+  children: React.ReactNode;
+}) {
+  const root = useContext(RootContext);
+  const area = useRef<HTMLTextAreaElement>(null);
+  useBack("dialog", props.onClose);
+  return (
+    <Dialog.Root open onOpenChange={(o) => !o && props.onClose()}>
+      <Dialog.Portal container={root}>
+        <Dialog.Overlay className="modal-scrim enter" />
+        <Dialog.Content
+          className="editor enter"
+          aria-describedby={undefined}
+          // Goes on writing where the text ends. Without scrolling: the page is still sliding in, and
+          // the app would scroll to where it is now.
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            const el = area.current!;
+            el.focus({ preventScroll: true });
+            el.setSelectionRange(el.value.length, el.value.length);
+          }}
+          asChild
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (props.text.trim()) props.onSubmit();
+            }}
+          >
+            <div className="modal-head">
+              <Dialog.Title asChild>
+                <h3>AI 整理</h3>
+              </Dialog.Title>
+              <Dialog.Close className="icon-btn" aria-label="收起" title="收起">
+                <Icon of={ChevronDown} />
+              </Dialog.Close>
+            </div>
+            <textarea ref={area} value={props.text} onChange={(e) => props.onEdit(e.target.value)} onKeyDown={props.onEnter} placeholder="交给 AI 整理" aria-label="交给 AI 整理的内容" />
+            <div className="editor-foot">{props.children}</div>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }

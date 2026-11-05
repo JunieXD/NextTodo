@@ -17,10 +17,3 @@ export const Outbound = createLucideIcon("outbound", [
   ["path", { d: "M5 5v6a4 4 0 0 0 4 4h10", key: "line" }],
   ["path", { d: "M15.5 11.5L19 15l-3.5 3.5", key: "head" }],
 ]);
-
-/** One after another. */
-export const Chain = createLucideIcon("chain", [
-  ["circle", { cx: "6", cy: "6", r: "2.5", key: "top" }],
-  ["circle", { cx: "18", cy: "18", r: "2.5", key: "bottom" }],
-  ["path", { d: "M6 8.5v3.5a3 3 0 0 0 3 3h6a3 3 0 0 1 3 3v-2.5", key: "link" }],
-]);

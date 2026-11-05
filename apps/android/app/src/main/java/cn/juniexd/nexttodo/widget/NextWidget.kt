@@ -98,12 +98,7 @@ private fun Content(context: Context, shown: Shown, now: LocalDateTime) {
             !shown.signedIn -> Note("打开 NextTodo 登录", GlanceModifier.clickable(open(context, "nexttodo://home")))
             shown.items.isEmpty() -> Note("暂无可做的事项")
             else -> LazyColumn {
-                itemsIndexed(shown.items) { i, item ->
-                    Column {
-                        if (i > 0) Divider()
-                        TaskRow(context, item, item.id in shown.ticked, now)
-                    }
-                }
+                itemsIndexed(shown.items) { i, item -> TaskItem(context, item, i == 0, item.id in shown.ticked, now) }
             }
         }
     }
@@ -112,49 +107,54 @@ private fun Content(context: Context, shown: Shown, now: LocalDateTime) {
 /** A line between tasks, from where the titles start, as in the app's lists. */
 @Composable
 private fun Divider() {
-    Box(GlanceModifier.fillMaxWidth().padding(start = 36.dp)) {
+    Box(GlanceModifier.fillMaxWidth().padding(start = CIRCLE)) {
         Spacer(GlanceModifier.fillMaxWidth().height(1.dp).background(Colors.divider))
     }
 }
 
-/** A task; one `ticked` off is shown done, while it is being completed. The circle completes it,
- * the rest of the row opens it. The row is the first of the two to have an action: a launcher that
- * takes a tap anywhere on a row of a list as a tap on the row runs the first action it finds in it,
- * which is so the harmless one. */
+/** A task; one `ticked` off is shown done, while it is being completed. The circle completes it; the
+ * rest of the item, the line above it too, opens it. The two are side by side in the tree, the circle
+ * drawn over the start of the other, which comes first and leaves no gap: HyperOS's launcher takes a
+ * tap on a clickable with another inside as a tap on the inner one, and a tap on none as a tap on
+ * the first in the item. */
 @Composable
-private fun TaskRow(context: Context, item: Item, ticked: Boolean, now: LocalDateTime) {
-    Row(
-        GlanceModifier.fillMaxWidth().padding(vertical = 8.dp).clickable(open(context, "nexttodo://task/${item.id}")),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boolean, now: LocalDateTime) {
+    Box(GlanceModifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+        Column(GlanceModifier.fillMaxWidth().clickable(open(context, "nexttodo://task/${item.id}"))) {
+            if (!first) Divider()
+            Column(GlanceModifier.fillMaxWidth().padding(start = CIRCLE, top = 8.dp, bottom = 8.dp)) {
+                val title = if (ticked) TextStyle(color = Colors.done, fontSize = 15.sp, textDecoration = TextDecoration.LineThrough) else TextStyle(color = Colors.text, fontSize = 15.sp)
+                Text(item.title, style = title, maxLines = 1)
+                val meta = listOfNotNull(item.folder.takeIf { it.isNotEmpty() }, item.due?.label(now)).joinToString(" · ")
+                if (meta.isNotEmpty()) {
+                    val color = when {
+                        item.due?.overdue(now) == true -> Colors.overdue
+                        item.due?.today(now) == true -> Colors.today
+                        else -> Colors.secondary
+                    }
+                    Text(meta, style = TextStyle(color = color, fontSize = 12.sp), maxLines = 1)
+                }
+            }
+        }
         if (ticked) {
             Box(GlanceModifier.size(26.dp).padding(2.dp), contentAlignment = Alignment.Center) {
                 Image(ImageProvider(R.drawable.ic_widget_dot), "已完成", GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(Colors.primary))
                 Image(ImageProvider(R.drawable.ic_widget_tick), null, GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(Colors.onPrimary))
             }
         } else {
-            Image(
-                ImageProvider(R.drawable.ic_widget_check),
-                "标为完成",
-                GlanceModifier.size(26.dp).padding(2.dp).clickable(actionRunCallback<CompleteAction>(actionParametersOf(TaskKey to item.id, NumberKey to item.number))),
-                colorFilter = ColorFilter.tint(Colors.primary),
-            )
-        }
-        Column(GlanceModifier.defaultWeight().padding(start = 10.dp)) {
-            val title = if (ticked) TextStyle(color = Colors.done, fontSize = 15.sp, textDecoration = TextDecoration.LineThrough) else TextStyle(color = Colors.text, fontSize = 15.sp)
-            Text(item.title, style = title, maxLines = 1)
-            val meta = listOfNotNull(item.folder.takeIf { it.isNotEmpty() }, item.due?.label(now)).joinToString(" · ")
-            if (meta.isNotEmpty()) {
-                val color = when {
-                    item.due?.overdue(now) == true -> Colors.overdue
-                    item.due?.today(now) == true -> Colors.today
-                    else -> Colors.secondary
-                }
-                Text(meta, style = TextStyle(color = color, fontSize = 12.sp), maxLines = 1)
+            // Larger than the circle, up to where the title starts, to be easy to hit; round, for its ripple.
+            Box(
+                GlanceModifier.size(CIRCLE).cornerRadius(CIRCLE / 2).clickable(actionRunCallback<CompleteAction>(actionParametersOf(TaskKey to item.id, NumberKey to item.number))),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Image(ImageProvider(R.drawable.ic_widget_check), "标为完成", GlanceModifier.size(26.dp).padding(2.dp), colorFilter = ColorFilter.tint(Colors.primary))
             }
         }
     }
 }
+
+/** Where the title starts: the circle, and the space after it. */
+private val CIRCLE = 36.dp
 
 @Composable
 private fun Icon(drawable: Int, label: String, onClick: androidx.glance.action.Action) {

@@ -278,14 +278,26 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
     navigate(location, { replace: true });
   }, [asked, location, navigate]);
   // As tall as the text, up to the height the style allows, and then it scrolls; past three lines
-  // it can be expanded.
+  // it can be expanded. Again when its width changes, as on turning the phone, which moves where the
+  // lines break.
   useLayoutEffect(() => {
     const el = area.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-    const style = getComputedStyle(el);
-    setTall((el.scrollHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)) / parseFloat(style.lineHeight) > 3);
+    const fit = () => {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+      const style = getComputedStyle(el);
+      setTall((el.scrollHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)) / parseFloat(style.lineHeight) > 3);
+    };
+    fit();
+    let width = el.clientWidth;
+    const resized = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      fit();
+    });
+    resized.observe(el);
+    return () => resized.disconnect();
   }, [title, ai]);
 
   const switchMode = async () => {

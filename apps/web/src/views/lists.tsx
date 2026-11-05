@@ -22,7 +22,6 @@ import { draft, keepDraft } from "../sync/drafts";
 import { useBack } from "../ui/back";
 import { RootContext, useFeedback } from "../ui/feedback";
 import { Seg } from "../ui/controls";
-import { useWide } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { useTaskActions } from "./actions";
 import { useRowDrag } from "./drag";
@@ -251,7 +250,6 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   const { snack } = useFeedback();
   const { user } = useSession();
   const openSettings = useContext(OpenSettings);
-  const wide = useWide();
   const place = folder === undefined ? "next" : (folder ?? "root");
   const [title, setTitle] = useState(() => draft(user.id, place));
   const edit = (text: string) => {
@@ -265,9 +263,8 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   const [tall, setTall] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const into = folder !== undefined ? folder : target && board.folder(target) ? target : null;
-  const input = useRef<HTMLInputElement>(null);
   const area = useRef<HTMLTextAreaElement>(null);
-  const focus = () => (input.current ?? area.current)?.focus();
+  const focus = () => area.current?.focus();
   // The app's widget opens `/?add` to type a new task straight away.
   const [params] = useSearchParams();
   const [location, navigate] = useLocation();
@@ -278,11 +275,10 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
     navigate(location, { replace: true });
   }, [asked, location, navigate]);
   // As tall as the text, up to the height the style allows, and then it scrolls; past three lines
-  // it can be expanded. Again when its width changes, as on turning the phone, which moves where the
-  // lines break.
+  // AI organizing's can be expanded. Again when its width changes, as on turning the phone, which
+  // moves where the lines break.
   useLayoutEffect(() => {
-    const el = area.current;
-    if (!el) return;
+    const el = area.current!;
     const fit = () => {
       el.style.height = "auto";
       el.style.height = `${el.scrollHeight}px`;
@@ -298,7 +294,7 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
     });
     resized.observe(el);
     return () => resized.disconnect();
-  }, [title, ai]);
+  }, [title]);
 
   const switchMode = async () => {
     if (!ai && !(await aiReady(user.id))) {
@@ -336,10 +332,10 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
     snack(`已添加“${c.value}”`);
   };
 
-  // On a computer Enter submits and Shift+Enter starts a line; on a phone the key starts a line and
-  // the button submits. Not while an input method is still composing.
+  // A title is one line, so Enter adds it; AI organizing's text has many, so Enter starts one and
+  // Ctrl or ⌘ + Enter submits. Not while an input method is still composing.
   const enter = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (wide && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.key === "Enter" && (!ai || e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
       e.preventDefault();
       e.currentTarget.form!.requestSubmit();
     }
@@ -360,11 +356,18 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
     <>
       <form className="quick-add" onSubmit={submit}>
         <div className="qa-field">
-          {ai ? (
-            <textarea ref={area} rows={1} value={title} onChange={(e) => edit(e.target.value)} onKeyDown={enter} placeholder="交给 AI 整理" aria-label="交给 AI 整理的内容" />
-          ) : (
-            <input ref={input} value={title} onChange={(e) => edit(e.target.value)} placeholder="添加事项" autoComplete="off" enterKeyHint="done" aria-label="新事项标题" />
-          )}
+          {/* A title pasted on many lines is joined into one. */}
+          <textarea
+            ref={area}
+            rows={1}
+            value={title}
+            onChange={(e) => edit(ai ? e.target.value : e.target.value.replace(/[\r\n]/g, ""))}
+            onKeyDown={enter}
+            placeholder={ai ? "交给 AI 整理" : "添加事项"}
+            autoComplete="off"
+            enterKeyHint={ai ? undefined : "done"}
+            aria-label={ai ? "交给 AI 整理的内容" : "新事项标题"}
+          />
         </div>
         <div className="qa-side">
           {ai && tall && (

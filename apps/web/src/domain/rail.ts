@@ -83,14 +83,15 @@ function place(list: Task[], index: Map<TaskId, number>, edges: Edge[], lineOf: 
     const c = ends.length ? Math.min(...ends) : free();
     col.set(t.id, c);
     for (const i of ends) taken[i] = null;
-    // The one ending soonest goes on straight down.
-    starting[r]
-      .sort((x, y) => Number(merges(x)) - Number(merges(y)) || lines.get(x)!.end - lines.get(y)!.end)
-      .forEach((k, n) => {
-        const i = n === 0 && !merges(k) && !taken[c] ? c : free(c);
-        taken[i] = k;
-        lane.set(k, i);
-      });
+    // The one ending soonest goes on straight down. Past the last lane allowed, the rest are not worth
+    // placing: a task can have thousands after it.
+    const ordered = starting[r].sort((x, y) => Number(merges(x)) - Number(merges(y)) || lines.get(x)!.end - lines.get(y)!.end);
+    for (const [n, k] of ordered.entries()) {
+      const i = n === 0 && !merges(k) && !taken[c] ? c : free(c);
+      if (i >= max) return null;
+      taken[i] = k;
+      lane.set(k, i);
+    }
     lanes = Math.max(lanes, taken.length, c + 1);
     if (lanes > max) return null;
   }
@@ -109,20 +110,38 @@ function crossings({ col, lane }: Placed, edges: Edge[], index: Map<TaskId, numb
     if (!runs.has(l)) runs.set(l, []);
     runs.get(l)!.push([top, bottom]);
   }
+  // Joined where they meet, in order down the lane.
+  const spans = new Map([...runs].map(([l, r]) => [l, join(r)]));
   const bends = new Set<string>();
   for (const e of edges) {
     const l = lane(e);
     if (col.get(e[0]) !== l) bends.add(`${index.get(e[0])! * ROW + 44} ${col.get(e[0])} ${l}`);
     if (col.get(e[1]) !== l) bends.add(`${index.get(e[1])! * ROW} ${col.get(e[1])} ${l}`);
   }
+  // Going down, with each lane's first span not yet passed.
+  const next = new Map<number, number>();
   let n = 0;
-  for (const bend of bends) {
-    const [top, a, b] = bend.split(" ").map(Number);
+  for (const [top, a, b] of [...bends].map((k) => k.split(" ").map(Number)).sort((x, y) => x[0] - y[0])) {
     for (let c = Math.min(a, b) + 1; c < Math.max(a, b); c++) {
-      if ((runs.get(c) ?? []).some(([t, u]) => t < top + 20 && u > top)) n++;
+      const s = spans.get(c) ?? [];
+      let i = next.get(c) ?? 0;
+      while (i < s.length && s[i][1] <= top) i++;
+      next.set(c, i);
+      if (i < s.length && s[i][0] < top + 20) n++;
     }
   }
   return n;
+}
+
+/** The heights `runs` cover, as spans in order and apart. */
+function join(runs: [top: number, bottom: number][]) {
+  const spans: [number, number][] = [];
+  for (const [t, u] of runs.sort((x, y) => x[0] - y[0])) {
+    const last = spans.at(-1);
+    if (last && t <= last[1]) last[1] = Math.max(last[1], u);
+    else spans.push([t, u]);
+  }
+  return spans;
 }
 
 /** The rail with no lines and the tasks in one lane, for a list whose rail would take too many. */

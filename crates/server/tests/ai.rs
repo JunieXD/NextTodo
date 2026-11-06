@@ -193,6 +193,7 @@ async fn a_tidying_suggests_and_what_is_taken_goes_with_it_in_one_change() {
     assert_eq!(j["suggestions"][0]["task"], site);
     assert_eq!(j["suggestions"][0]["title"], "建好官网");
     assert_eq!(j["suggestions"][1]["after"], json!([site]));
+    assert_eq!(j["suggestions"][0]["was"], json!({ "title": "官网", "description": "就是说要做一个官网", "due": null }));
     let shown: Value = serde_json::from_str(&fake.asked().pop().unwrap().1).unwrap();
     assert_eq!(shown["request"], "整理一下");
     assert_eq!(shown["open_tasks"][0]["description"], "就是说要做一个官网");

@@ -12,17 +12,29 @@ import { formatDue } from "../domain/dates";
 import { useCommit, useUndo } from "../session";
 import { Modal, useFeedback } from "../ui/feedback";
 
-/** One change a suggestion makes: to the task's fields, or a task to put before it. */
-type Part = { key: string; label: string; text: string } & ({ fields: { title?: string; description?: string; due?: Due } } | { before: TaskId });
+/** One change a suggestion makes: to the task's fields, or a task to put before it. `now` is the
+ * field as it is, when it has changed since the model saw it. */
+type Part = { key: string; label: string; text: string; now?: string } & ({ fields: { title?: string; description?: string; due?: Due } } | { before: TaskId });
+
+const sameDue = (a: Due | null, b: Due | null) => a?.date === b?.date && a?.time === b?.time && a?.remind_before === b?.remind_before;
 
 /** The changes `s` would still make: to a task not done or gone, and links not there already. */
 function parts(s: Suggestion, board: Board): Part[] {
   const t = board.task(s.task);
   if (!t || t.done_at !== null) return [];
+  const now = new Date();
   const out: Part[] = [];
-  if (s.title !== undefined) out.push({ key: "title", label: "标题", text: s.title, fields: { title: s.title } });
-  if (s.description !== undefined) out.push({ key: "description", label: "描述", text: s.description, fields: { description: s.description } });
-  if (s.due) out.push({ key: "due", label: "截止", text: formatDue(s.due, new Date()), fields: { due: s.due } });
+  if (s.title !== undefined) {
+    out.push({ key: "title", label: "标题", text: s.title, fields: { title: s.title }, ...(t.title !== s.was.title && { now: t.title }) });
+  }
+  if (s.description !== undefined) {
+    const changed = t.description !== s.was.description;
+    out.push({ key: "description", label: "描述", text: s.description, fields: { description: s.description }, ...(changed && { now: t.description || "（空）" }) });
+  }
+  if (s.due) {
+    const changed = !sameDue(t.due, s.was.due);
+    out.push({ key: "due", label: "截止", text: formatDue(s.due, now), fields: { due: s.due }, ...(changed && { now: t.due ? formatDue(t.due, now) : "无" }) });
+  }
   for (const id of s.after) {
     const b = board.task(id);
     if (!b || board.before(t).some((x) => x.id === id)) continue;
@@ -38,15 +50,14 @@ export function Suggestions({ job: j, board, onRetry, onClose }: { job: AiJob; b
   const undo = useUndo();
   const { snack } = useFeedback();
   const shown = (j.suggestions ?? []).map((s) => ({ s, parts: parts(s, board) })).filter((x) => x.parts.length);
-  // All taken at first.
-  const [left, setLeft] = useState(() => new Set<string>());
-  const taken = shown.flatMap(({ s, parts }) => parts.filter((p) => !left.has(key(s.task, p.key))).map((p) => ({ s, p })));
-  const toggle = (k: string) =>
-    setLeft((l) => {
-      const next = new Set(l);
-      if (!next.delete(k)) next.add(k);
-      return next;
-    });
+  // What the user picked, by part and by whether its field had changed since: taken unless told
+  // otherwise, but for a field changed since, the user's newer word, which a change meanwhile
+  // also asks about again.
+  const [picked, setPicked] = useState(() => new Map<string, boolean>());
+  const choice = (task: TaskId, p: Part) => `${key(task, p.key)} ${p.now !== undefined}`;
+  const isTaken = (task: TaskId, p: Part) => picked.get(choice(task, p)) ?? p.now === undefined;
+  const taken = shown.flatMap(({ s, parts }) => parts.filter((p) => isTaken(s.task, p)).map((p) => ({ s, p })));
+  const toggle = (task: TaskId, p: Part) => setPicked((m) => new Map(m).set(choice(task, p), !isTaken(task, p)));
 
   const apply = () => {
     const ops: Op[] = [];
@@ -87,10 +98,11 @@ export function Suggestions({ job: j, board, onRetry, onClose }: { job: AiJob; b
                 return (
                   <label key={k} className="row suggestion-part">
                     <div className="row-inner">
-                      <input type="checkbox" checked={!left.has(k)} onChange={() => toggle(k)} />
+                      <input type="checkbox" checked={isTaken(s.task, p)} onChange={() => toggle(s.task, p)} />
                       <span className="suggestion-text">
                         <b>{p.label}</b>
                         {p.text || "（清空）"}
+                        {p.now !== undefined && <span className="suggestion-now">整理后已改为：{p.now}</span>}
                       </span>
                     </div>
                   </label>

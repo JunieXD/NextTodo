@@ -394,6 +394,17 @@ pub struct Suggestion {
     pub after: Vec<TaskId>,
     /// What changes and why, in a sentence.
     pub reason: String,
+    /// The task as the model saw it: a field changed since is the user's newer word, not to be
+    /// overwritten unasked.
+    pub was: Was,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Was {
+    pub title: Title,
+    pub description: Description,
+    pub due: Option<Due>,
 }
 
 /// Text submitted for AI to organize into tasks in a folder, which goes once done, as the tasks come;

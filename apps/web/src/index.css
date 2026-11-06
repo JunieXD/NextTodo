@@ -216,6 +216,7 @@ svg { display: block; flex: none; }
 .suggestion-part input { flex: none; width: 20px; height: 20px; margin: 1px 0 0; accent-color: var(--primary); }
 .suggestion-text { flex: 1; min-width: 0; max-height: 12em; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.5; }
 .suggestion-text b { display: block; font-size: 12px; font-weight: 600; color: var(--on-surface-variant); }
+.suggestion-now { display: block; margin-top: 4px; font-size: 13px; color: var(--warn); }
 .job-status { overflow: hidden; text-overflow: ellipsis; min-width: 0; display: inline-block !important; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .job-detail-status { margin: 0 16px 12px; font-size: 14px; color: var(--on-surface-variant); }

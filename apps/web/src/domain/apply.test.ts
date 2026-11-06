@@ -130,7 +130,7 @@ test("AI jobs: a tidying with suggestions is tidied again from scratch, and come
   ]);
   expect(d.jobs.get(id(2))).toMatchObject({ kind: "tidy", state: "waiting", suggestions: null });
   // As the server has it by now: ready, with what AI suggests.
-  const ready = { ...d.jobs.get(id(2))!, state: "ready" as const, suggestions: [{ task: id(1), title: "建好官网", after: [], reason: "以动作开头" }] };
+  const ready = { ...d.jobs.get(id(2))!, state: "ready" as const, suggestions: [{ task: id(1), title: "建好官网", after: [], reason: "以动作开头", was: { title: "官网", description: "", due: null } }] };
   d.jobs.set(id(2), ready);
   run(d, 121, [
     { op: "task.update", id: id(1), title: "建好官网" },

@@ -3,6 +3,7 @@ import type { Description } from "./Description";
 import type { Due } from "./Due";
 import type { TaskId } from "./TaskId";
 import type { Title } from "./Title";
+import type { Was } from "./Was";
 
 /**
  * A change AI suggests to one of the folder's open tasks, for the user to take or leave.
@@ -15,4 +16,9 @@ after: Array<TaskId>,
 /**
  * What changes and why, in a sentence.
  */
-reason: string, };
+reason: string, 
+/**
+ * The task as the model saw it: a field changed since is the user's newer word, not to be
+ * overwritten unasked.
+ */
+was: Was, };

@@ -5,7 +5,8 @@ use std::collections::{HashMap, HashSet};
 
 use nexttodo_core::board::{Board, Snapshot};
 use nexttodo_core::dag::find_path;
-use nexttodo_core::model::{AiJob, Description, Due, Suggestion, Task, TaskId, Title};
+use nexttodo_core::model::{AiJob, Description, Due, Suggestion, Task, TaskId, Title, Was};
+use nexttodo_core::ops::MAX_OPS;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -18,6 +19,9 @@ use crate::tools::args::DueText;
 const SHOWN: usize = 50;
 /// How much of their descriptions, in characters: tasks past it go without theirs.
 const DESCRIBED: usize = 30_000;
+/// How many links may be suggested: all taken, they go in one change with an update of each task
+/// and the job's deletion.
+const LINKS: usize = MAX_OPS - SHOWN - 1;
 
 const SYSTEM: &str = r#"你负责整理一个文件夹里未完成的待办事项：提出修改建议，由用户逐条确认后再改。输入是一个 JSON 对象：
 - local_time：用户提交时的本地时间；
@@ -44,7 +48,7 @@ const SYSTEM: &str = r#"你负责整理一个文件夹里未完成的待办事�
 4. 写给 AI 或 agent 的提示词、代码、命令、链接、引文和数据，原样保留，一个字都不改。
 5. 一个事项要用到另一个事项的成果，或要等它做完才能开始，就用 after 把那个事项设为前置，例如“写官网文档”要等“建好官网”。只是主题相近、没有先后的，不连；不要连成环。
 6. 只有标题或描述里明确写了时间、事项又还没有截止时间时，才写 due，“周五前”这类按 local_time 换算成具体日期。
-7. description_omitted 为 true 的事项不要写 description。
+7. description_omitted 为 true 的事项只能改 due 和 after，不要写 title 和 description：没看到描述，改标题可能丢掉信息。
 8. 已经清楚的事项不要列出，不要为改而改。
 9. 用原文的语言写。"#;
 
@@ -56,7 +60,7 @@ pub struct Shown {
 
 struct Sent {
     task: Task,
-    /// Whether its description was sent, the only one the model may rewrite.
+    /// Whether its description was sent: only then may the model retitle it or rewrite that.
     described: bool,
 }
 
@@ -156,14 +160,18 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             edges.push((b, t.id));
             after.push(b);
         }
+        if edges.len() - shown.edges.len() > LINKS {
+            return Err(format!("建议加的前置太多，超过 {LINKS} 条，请缩小范围再试"));
+        }
         let suggestion = Suggestion {
             task: t.id,
-            title: s.title.filter(|x| *x != t.title),
-            // A description it wasn't sent is not its to rewrite.
+            // Not having seen the description, it would lose what the title held that this lacks.
+            title: s.title.filter(|x| sent.described && *x != t.title),
             description: s.description.filter(|x| sent.described && *x != t.description),
             due: due.filter(|d| t.due.as_ref() != Some(d)),
             after,
             reason: s.reason,
+            was: Was { title: t.title.clone(), description: t.description.clone(), due: t.due.clone() },
         };
         if suggestion.title.is_some() || suggestion.description.is_some() || suggestion.due.is_some() || !suggestion.after.is_empty() {
             out.push(suggestion);
@@ -219,13 +227,14 @@ mod tests {
         let ok = r#"{"suggestions": [
             {"number": 1, "title": "建好官网", "description": "做一个官网。", "due": "2026-11-20", "reason": "标题以动作开头"},
             {"number": 2, "title": "写官网文档", "after": [1], "reason": "已有的不变"},
-            {"number": 4, "description": "短了", "after": [2], "reason": "描述没发来"}
+            {"number": 4, "title": "短", "description": "短了", "after": [2], "reason": "描述没发来"}
         ]}"#;
         let s = parse(ok, &shown).unwrap();
         assert_eq!(s.len(), 2);
         assert_eq!(s[0].title.as_ref().unwrap().as_str(), "建好官网");
         assert_eq!(s[0].due.as_ref().unwrap().date.as_str(), "2026-11-20");
-        assert!(s[1].description.is_none() && s[1].after.len() == 1);
+        assert!(s[1].title.is_none() && s[1].description.is_none() && s[1].after.len() == 1);
+        assert_eq!(s[0].was.title.as_str(), "官网");
         assert_eq!(parse(r#"{"suggestions": []}"#, &shown).unwrap().len(), 0);
         assert_eq!(
             parse(r#"{"suggestions": [{"number": 9, "title": "x", "reason": ""}]}"#, &shown).err().unwrap(),
@@ -236,5 +245,24 @@ mod tests {
         let cycle = r#"{"suggestions": [{"number": 1, "after": [2], "reason": ""}]}"#;
         assert_eq!(parse(cycle, &shown).err().unwrap(), "建议把 #2 设为 #1 的前置，但这样依赖会成环");
         assert!(parse(r#"{"suggestions": [{"number": 1, "title": "a"}]}"#, &shown).is_err());
+    }
+
+    #[test]
+    fn suggests_no_more_links_than_one_change_takes() {
+        let tasks: Vec<Task> = (1..=50)
+            .map(|n| {
+                serde_json::from_value(json!({
+                    "id": format!("00000000-0000-7000-8000-{n:012}"), "number": n, "folder_id": null, "title": format!("t{n}"),
+                    "description": "", "done_at": null, "due": null, "sort_key": format!("a{n:02}1"),
+                    "created_at": 0, "updated_at": 0, "created_via": null, "updated_via": null,
+                }))
+                .unwrap()
+            })
+            .collect();
+        let (_, shown) = prompt(&job(), &Snapshot { tasks, ..Default::default() });
+        // Each task after every one before it: 1225 links, a DAG still.
+        let all: Vec<Value> = (2..=50).map(|n| json!({ "number": n, "after": (1..n).collect::<Vec<_>>(), "reason": "" })).collect();
+        let err = parse(&json!({ "suggestions": all }).to_string(), &shown).err().unwrap();
+        assert_eq!(err, format!("建议加的前置太多，超过 {LINKS} 条，请缩小范围再试"));
     }
 }

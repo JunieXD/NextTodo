@@ -205,10 +205,9 @@ export function FolderRow({ folder, board, onOpen }: { folder: Folder; board: Bo
 const MAX_LANES = { narrow: 3, wide: 5 };
 
 export function RailList({ tasks, board, now, selected, actions }: { tasks: Task[]; board: Board; now: Date; selected: TaskId | null; actions: RowActions }) {
-  const layout = railLayout(tasks, board);
-  // Too many and the titles get squeezed: the graph view shows them better.
-  const drawn = layout.lanes <= MAX_LANES[useWide() ? "wide" : "narrow"];
-  const rail = drawn ? layout : { ...plainRail, x: () => plainRail.x };
+  // With more lanes the titles get squeezed: the graph view shows them better.
+  const layout = railLayout(tasks, board, MAX_LANES[useWide() ? "wide" : "narrow"]);
+  const rail = layout ?? { ...plainRail, x: () => plainRail.x };
   const [, setView] = useFolderView();
   const commit = useCommit();
   const { snack } = useFeedback();
@@ -229,7 +228,7 @@ export function RailList({ tasks, board, now, selected, actions }: { tasks: Task
   });
   return (
     <>
-      {!drawn && (
+      {!layout && (
         <button className="row rail-note" onClick={() => setView("graph")}>
           <div className="row-inner">
             依赖较多，列表里不画连线
@@ -238,7 +237,7 @@ export function RailList({ tasks, board, now, selected, actions }: { tasks: Task
         </button>
       )}
       <div className="rail-list reorderable" ref={list} style={{ "--gutter": `${rail.gutter}px`, "--sep-left": `${rail.gutter}px` } as React.CSSProperties}>
-        {drawn && (
+        {layout && (
           <svg className="rail" width={layout.gutter} height={layout.height}>
             {layout.paths.map((p) => (
               <path key={p.key} d={p.d} className={p.live ? "live" : undefined} />

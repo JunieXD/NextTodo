@@ -32,7 +32,7 @@ function board(n: number, deps: [number, number][]) {
 
 const layout = (n: number, deps: [number, number][]) => {
   const { board: b, list } = board(n, deps);
-  return railLayout(list, b);
+  return railLayout(list, b, Infinity)!;
 };
 const lanes = (n: number, deps: [number, number][]) => layout(n, deps).lanes;
 
@@ -61,6 +61,18 @@ describe("rail", () => {
     expect(layout(6, [[0, 1], [0, 2], [0, 3], [0, 4], [1, 5], [2, 5], [3, 5], [4, 5]]).crossings).toBe(0);
   });
 
+  test("a folder whose rail would take too many lanes has none, worked out quickly", () => {
+    // 125 tasks each before each of 125 more: 15625 dependencies, none implied by others.
+    const deps: [number, number][] = [];
+    for (let a = 0; a < 125; a++) for (let b = 125; b < 250; b++) deps.push([a, b]);
+    const { board: b, list } = board(250, deps);
+    const started = performance.now();
+    expect(railLayout(list, b, 5)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(1000);
+    const chain = board(3, [[0, 1], [1, 2]]);
+    expect(railLayout(chain.list, chain.board, 1)).not.toBeNull();
+  });
+
   test("no line runs through a task it does not link", () => {
     // Random graphs, each dependency forward in the list.
     let seed = 7;
@@ -70,7 +82,7 @@ describe("rail", () => {
       const deps: [number, number][] = [];
       for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) if (random() < 0.3) deps.push([i, j]);
       const { board: b, list } = board(n, deps);
-      const rail = railLayout(list, b);
+      const rail = railLayout(list, b, Infinity)!;
       const row = new Map(list.map((t, i) => [t.id, i]));
       for (const p of rail.paths) {
         const [from, to] = p.key.split(">");

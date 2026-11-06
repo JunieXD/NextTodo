@@ -10,23 +10,28 @@ const LANE = 24;
 const laneX = (c: number) => 28 + c * LANE;
 
 /** Lanes like a subway map, each dependency running down one from its first task's row to the
- * second's. Dependencies may share a lane: those of a task with several after it, branching off to
- * each, and those into a task from tasks with one after them, merging. Of sharing both ways, one, or
- * neither, the layout with the fewest crossings is taken, then the one with the fewest lanes. */
-export function railLayout(list: Task[], board: Board) {
+ * second's, in at most `max` lanes; none when it can't be done. Dependencies may share a lane: those
+ * of a task with several after it, branching off to each, and those into a task from tasks with one
+ * after them, merging. Of sharing both ways, one, or neither, the layout with the fewest crossings
+ * is taken, then the one with the fewest lanes. */
+export function railLayout(list: Task[], board: Board, max: number) {
   const index = new Map(list.map((t, i) => [t.id, i]));
   const edges = edgesAmong(board, list);
   const outs = new Map<TaskId, number>();
   for (const [a] of edges) outs.set(a, (outs.get(a) ?? 0) + 1);
   const fanOut = ([a]: Edge) => outs.get(a)! > 1;
-  const best = [
+  // Crossings are counted only for layouts that fit: few lanes keep that cheap.
+  const fits = [
     (e: Edge) => (fanOut(e) ? `from ${e[0]}` : `to ${e[1]}`),
     (e: Edge) => (fanOut(e) ? `from ${e[0]}` : e.join(">")),
     (e: Edge) => (fanOut(e) ? e.join(">") : `to ${e[1]}`),
     (e: Edge) => e.join(">"),
   ]
-    .map((lineOf) => place(list, index, edges, lineOf))
-    .reduce((x, y) => (y.crossings < x.crossings || (y.crossings === x.crossings && y.lanes < x.lanes) ? y : x));
+    .map((lineOf) => place(list, index, edges, lineOf, max))
+    .filter((p) => p !== null)
+    .map((p) => ({ ...p, crossings: crossings(p, edges, index) }));
+  if (!fits.length) return null;
+  const best = fits.reduce((x, y) => (y.crossings < x.crossings || (y.crossings === x.crossings && y.lanes < x.lanes) ? y : x));
 
   const paths = edges
     .map(([a, b]) => {
@@ -41,20 +46,28 @@ export function railLayout(list: Task[], board: Board) {
     })
     // Over the others where they share a lane.
     .sort((p, q) => Number(p.live) - Number(q.live));
-  const { lanes, crossings, col } = best;
-  return { lanes, crossings, gutter: 16 + lanes * LANE + 12, height: list.length * ROW, paths, x: (t: Task) => laneX(col.get(t.id)!) };
+  const { lanes, crossings: crossed, col } = best;
+  return { lanes, crossings: crossed, gutter: 16 + lanes * LANE + 12, height: list.length * ROW, paths, x: (t: Task) => laneX(col.get(t.id)!) };
 }
 
+type Placed = NonNullable<ReturnType<typeof place>>;
+
 /** Puts each line (the dependencies `lineOf` gives one name) in a lane, row by row, and each task in
- * a lane that ends at it, or in a free one. A line from a task goes on straight down from it; one
- * that several tasks merge into runs beside them. */
-function place(list: Task[], index: Map<TaskId, number>, edges: Edge[], lineOf: (e: Edge) => string) {
+ * a lane that ends at it, or in a free one; none when that takes more than `max` lanes. A line from
+ * a task goes on straight down from it; one that several tasks merge into runs beside them. */
+function place(list: Task[], index: Map<TaskId, number>, edges: Edge[], lineOf: (e: Edge) => string, max: number) {
   const lines = new Map<string, { start: number; end: number; from: Set<TaskId> }>();
   for (const e of edges) {
     const l = lines.get(lineOf(e)) ?? { start: Infinity, end: -Infinity, from: new Set() };
     lines.set(lineOf(e), { start: Math.min(l.start, index.get(e[0])!), end: Math.max(l.end, index.get(e[1])!), from: l.from.add(e[0]) });
   }
   const merges = (k: string) => lines.get(k)!.from.size > 1;
+  const at = (row: (l: { start: number; end: number }) => number) => {
+    const by = list.map((): string[] => []);
+    for (const [k, l] of lines) by[row(l)].push(k);
+    return by;
+  };
+  const [starting, ending] = [at((l) => l.start), at((l) => l.end)];
 
   const lane = new Map<string, number>();
   const col = new Map<TaskId, number>();
@@ -65,41 +78,51 @@ function place(list: Task[], index: Map<TaskId, number>, edges: Edge[], lineOf: 
     return i;
   };
   let lanes = 1;
-  list.forEach((t, r) => {
-    const ending = [...lines].filter(([, l]) => l.end === r).map(([k]) => lane.get(k)!);
-    const c = ending.length ? Math.min(...ending) : free();
+  for (const [r, t] of list.entries()) {
+    const ends = ending[r].map((k) => lane.get(k)!);
+    const c = ends.length ? Math.min(...ends) : free();
     col.set(t.id, c);
-    for (const i of ending) taken[i] = null;
+    for (const i of ends) taken[i] = null;
     // The one ending soonest goes on straight down.
-    const starting = [...lines.keys()]
-      .filter((k) => lines.get(k)!.start === r)
-      .sort((x, y) => Number(merges(x)) - Number(merges(y)) || lines.get(x)!.end - lines.get(y)!.end);
-    starting.forEach((k, n) => {
-      const i = n === 0 && !merges(k) && !taken[c] ? c : free(c);
-      taken[i] = k;
-      lane.set(k, i);
-    });
+    starting[r]
+      .sort((x, y) => Number(merges(x)) - Number(merges(y)) || lines.get(x)!.end - lines.get(y)!.end)
+      .forEach((k, n) => {
+        const i = n === 0 && !merges(k) && !taken[c] ? c : free(c);
+        taken[i] = k;
+        lane.set(k, i);
+      });
     lanes = Math.max(lanes, taken.length, c + 1);
-  });
+    if (lanes > max) return null;
+  }
+  return { lanes, col, lane: (e: Edge) => lane.get(lineOf(e))! };
+}
 
-  // A bend between a task and a lane crossing another lane that runs there.
-  const runs = edges.map((e) => {
-    const [ra, rb, l] = [index.get(e[0])!, index.get(e[1])!, lane.get(lineOf(e))!];
-    return { l, top: ra * ROW + (col.get(e[0]) === l ? 32 : 64), bottom: rb * ROW + (col.get(e[1]) === l ? 32 : 0) };
-  });
-  const crossed = new Set<string>();
+/** How many times a bend between a task and its lane crosses another lane where that runs: below
+ * the task for a line leaving it, above for one coming in. */
+function crossings({ col, lane }: Placed, edges: Edge[], index: Map<TaskId, number>) {
+  // Where each lane runs, as heights.
+  const runs = new Map<number, [top: number, bottom: number][]>();
   for (const e of edges) {
-    const l = lane.get(lineOf(e))!;
-    for (const [c, top] of [
-      [col.get(e[0])!, index.get(e[0])! * ROW + 44],
-      [col.get(e[1])!, index.get(e[1])! * ROW],
-    ]) {
-      for (const run of runs) {
-        if (run.l > Math.min(c, l) && run.l < Math.max(c, l) && run.top < top + 20 && run.bottom > top) crossed.add(`${top} ${c} ${l} ${run.l}`);
-      }
+    const l = lane(e);
+    const top = index.get(e[0])! * ROW + (col.get(e[0]) === l ? 32 : 64);
+    const bottom = index.get(e[1])! * ROW + (col.get(e[1]) === l ? 32 : 0);
+    if (!runs.has(l)) runs.set(l, []);
+    runs.get(l)!.push([top, bottom]);
+  }
+  const bends = new Set<string>();
+  for (const e of edges) {
+    const l = lane(e);
+    if (col.get(e[0]) !== l) bends.add(`${index.get(e[0])! * ROW + 44} ${col.get(e[0])} ${l}`);
+    if (col.get(e[1]) !== l) bends.add(`${index.get(e[1])! * ROW} ${col.get(e[1])} ${l}`);
+  }
+  let n = 0;
+  for (const bend of bends) {
+    const [top, a, b] = bend.split(" ").map(Number);
+    for (let c = Math.min(a, b) + 1; c < Math.max(a, b); c++) {
+      if ((runs.get(c) ?? []).some(([t, u]) => t < top + 20 && u > top)) n++;
     }
   }
-  return { lanes, crossings: crossed.size, col, lane: (e: Edge) => lane.get(lineOf(e))! };
+  return n;
 }
 
 /** The rail with no lines and the tasks in one lane, for a list whose rail would take too many. */

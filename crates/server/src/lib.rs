@@ -1,5 +1,7 @@
 //! NextTodo server: the HTTP API over SQLite. See `docs/api.md`.
 
+#[cfg(feature = "agent-port")]
+mod agent_port;
 pub mod ai;
 pub mod auth;
 pub mod db;

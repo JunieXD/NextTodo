@@ -379,16 +379,30 @@ async function copy(text: string) {
   await navigator.clipboard.writeText(text);
 }
 
-/** A new token, shown this once, and the ways to connect an agent with it, filled in. */
+/** A new token, shown this once, and the ways to connect an agent with it, filled in. In local mode
+ * the app's address changes each time it starts: agents go through the command line, which finds
+ * it (docs/local.md#agent-接入). */
 function TokenCreated({ name, secret, onDone, onClose }: { name: string; secret: string; onDone(): void; onClose(): void }) {
-  const url = serverUrl() || location.origin;
+  const inLocal = local.inLocalMode();
+  const url = inLocal ? "local" : serverUrl() || location.origin;
+  const viaCli = (agent: string) => `${agent} mcp add nexttodo --env NEXTTODO_URL=local --env NEXTTODO_TOKEN=${secret} -- nexttodo mcp`;
   return (
     <Modal title="令牌已生成" onClose={onClose} onBack={onDone}>
-      <p className="empty">“{name}”的令牌只显示这一次。下面的写法已经填好服务器地址和令牌，复制即可。</p>
+      <p className="empty">
+        “{name}”的令牌只显示这一次。下面的写法已经填好{inLocal ? "令牌，都要先装命令行（在 GitHub 的 Releases 下载）" : "服务器地址和令牌"}，复制即可。
+      </p>
       <Copyable label="令牌" text={secret} />
-      <Copyable label="Claude Code" text={`claude mcp add --transport http nexttodo ${url}/mcp --header "Authorization: Bearer ${secret}"`} />
+      {inLocal ? (
+        <Copyable label="Claude Code" text={viaCli("claude")} />
+      ) : (
+        <Copyable label="Claude Code" text={`claude mcp add --transport http nexttodo ${url}/mcp --header "Authorization: Bearer ${secret}"`} />
+      )}
       <EnvVars url={url} secret={secret} />
-      <Copyable label="Codex" hint="~/.codex/config.toml" text={`[mcp_servers.nexttodo]\nurl = "${url}/mcp"\nbearer_token_env_var = "NEXTTODO_TOKEN"`} />
+      {inLocal ? (
+        <Copyable label="Codex" text={viaCli("codex")} />
+      ) : (
+        <Copyable label="Codex" hint="~/.codex/config.toml" text={`[mcp_servers.nexttodo]\nurl = "${url}/mcp"\nbearer_token_env_var = "NEXTTODO_TOKEN"`} />
+      )}
       <Copyable label="把 skill 装给 agent" hint="命令行在 GitHub 的 Releases 下载" text="nexttodo skill install" />
       <div className="actions">
         <button className="filled-btn" onClick={onDone}>

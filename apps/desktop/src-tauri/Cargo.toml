@@ -16,7 +16,7 @@ tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
 # Local mode: the server, inside the app (src/local.rs).
-nexttodo-server = { path = "../../../crates/server" }
+nexttodo-server = { path = "../../../crates/server", features = ["agent-port"] }
 # Links from the page, in the default browser or mail app.
 open = "5.4.5"
 # The TLS crypto the updater's downloads need: its client brings none (src/updates.rs).

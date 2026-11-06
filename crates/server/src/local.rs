@@ -66,7 +66,7 @@ impl Local {
     /// Starts the server on the data directory `dir`, listening on 127.0.0.1 at a port the system
     /// picks.
     pub async fn start(dir: &Path) -> Result<Local, StartError> {
-        std::fs::create_dir_all(dir.join("db"))?;
+        private_dir(&dir.join("db"))?;
         let lock = lock(&dir.join("lock"), LOCK_WAIT).await?;
         let now = crate::Clock::system().now();
         let (started, (user, epoch)) = start::start(
@@ -78,8 +78,12 @@ impl Local {
         )
         .await?;
         let url = format!("http://{}", started.listener.local_addr()?);
-        let state = started.state.clone();
-        let serving = started.serve(app(state.clone()));
+        #[cfg(feature = "agent-port")]
+        let agent_port = crate::agent_port::listen(dir).await?;
+        let (state, router) = (started.state.clone(), app(started.state.clone()));
+        #[cfg(feature = "agent-port")]
+        agent_port.serve(router.clone());
+        let serving = started.serve(router);
         tokio::spawn(async move {
             if let Err(e) = serving.await {
                 tracing::error!("local server stopped: {e}");
@@ -104,6 +108,16 @@ impl Local {
             })
             .await
     }
+}
+
+/// Makes `dir` and the directories above it that are missing, writable by the user alone: the
+/// address file in it says where agents send their token.
+fn private_dir(dir: &Path) -> std::io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder.create(dir)
 }
 
 /// Takes the lock on the data directory, waiting up to `wait` for another process to let go of it.

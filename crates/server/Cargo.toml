@@ -4,6 +4,10 @@ edition.workspace = true
 version.workspace = true
 publish.workspace = true
 
+[features]
+# Local mode's HTTPS port for agents, on the desktop (src/agent_port.rs).
+agent-port = ["dep:hyper-util", "dep:rcgen", "dep:tokio-rustls"]
+
 [dependencies]
 anyhow = "1.0.104"
 argon2 = "0.6.0"
@@ -11,8 +15,10 @@ base64 = "0.22.1"
 chacha20poly1305 = "0.11.0"
 axum = { version = "0.8.9", features = ["ws", "macros"] }
 clap = { version = "4.6.7", features = ["derive", "env"] }
+hyper-util = { version = "0.1.21", features = ["server-auto", "tokio", "service"], optional = true }
 nexttodo-core = { path = "../core", features = ["sql"] }
 rand = "0.10.3"
+rcgen = { version = "0.14.10", optional = true }
 rmcp = { version = "3.8.0", default-features = false, features = ["server", "transport-streamable-http-server"] }
 rpassword = "7.5.4"
 rusqlite = { version = "0.41.1", features = ["bundled"] }
@@ -22,6 +28,8 @@ serde_json = "1.0.154"
 serde_path_to_error = "0.1.20"
 sha2 = "0.11.1"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
+# With ring, as the rest of the desktop app: with two crypto providers, rustls can't pick a default.
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring"], optional = true }
 tower = { version = "0.5.3", features = ["util"] }
 tower-http = { version = "0.7.1", features = ["compression-br", "compression-zstd", "compression-gzip", "fs", "trace"] }
 tracing = "0.1.44"

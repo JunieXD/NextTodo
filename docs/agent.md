@@ -196,7 +196,7 @@ nexttodo skill install                   # 见 Skill
 ## MCP
 
 - 地址 `https://todo.example.com/mcp`，请求头 `Authorization: Bearer <令牌>`。
-- [本机模式](local.md#agent-接入)下地址每次启动都变，改用命令行的 `nexttodo mcp` 转接（stdio）。
+- [本机模式](local.md#agent-接入)下地址每次启动都变，改用命令行的 `nexttodo mcp` 转接（stdio）：它把每条消息转给 `NEXTTODO_URL` 指向的服务端。
 - 连接时服务端给出一段使用说明（MCP 的 `instructions`），是 [Skill](#skill) 的要点：只接 MCP、不装 skill，agent 也知道该怎么用。
 - 工具的结果是上面的文本；出错时返回 `isError` 和错误说明。
 - 查询工具标注为只读，`delete` 标注为破坏性，客户端可以据此决定是否需要确认。

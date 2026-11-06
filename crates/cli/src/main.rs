@@ -168,6 +168,8 @@ enum Command {
     },
     #[command(about = "撤销一个批次")]
     Undo { batch: i64 },
+    #[command(about = "MCP 服务器（stdio），转接到 NEXTTODO_URL 的服务器；本机模式的 App 用它接入 agent")]
+    Mcp,
     #[command(about = "教 agent 使用 NextTodo 的 skill")]
     Skill {
         #[command(subcommand)]
@@ -266,27 +268,102 @@ fn create_private(path: &Path) -> std::io::Result<File> {
     File::create(path)
 }
 
-/// The server and token: environment variables first, then the configuration file.
-fn credentials() -> anyhow::Result<(String, String)> {
+/// What `NEXTTODO_URL` is set to for the app on this computer in local mode.
+const LOCAL: &str = "local";
+
+const UNREACHABLE: &str = "连不上本机模式的 NextTodo：App 没有在运行，或者正在启动";
+
+/// The server and token: environment variables first, then the configuration file. In local mode
+/// the token comes from the environment only: the file's is a server's.
+fn connect() -> anyhow::Result<(Server, String)> {
     let (url, token) = (std::env::var("NEXTTODO_URL").ok(), std::env::var("NEXTTODO_TOKEN").ok());
+    if url.as_deref() == Some(LOCAL) {
+        let token = token.context("本机模式要设置 NEXTTODO_TOKEN：在 App 的设置里生成令牌")?;
+        return Ok((Server::local()?, token));
+    }
     let config = if url.is_some() && token.is_some() { None } else { read_config()? };
     let url = url.or_else(|| config.as_ref().map(|c| c.url.clone()));
     let token = token.or_else(|| config.map(|c| c.token));
     match (url, token) {
-        (Some(url), Some(token)) => Ok((url, token)),
+        (Some(url), Some(token)) => Ok((Server::new(&url), token)),
         _ => bail!("尚未登录：请先运行 nexttodo login --url <服务器地址>，或设置 NEXTTODO_URL 和 NEXTTODO_TOKEN"),
     }
+}
+
+/// Local mode's directory in the desktop app's data, where the app writes the address file.
+fn local_dir() -> anyhow::Result<PathBuf> {
+    const APP: &str = "cn.juniexd.nexttodo";
+    if cfg!(target_os = "macos") {
+        Ok(std::env::home_dir().context("无法找到用户主目录")?.join("Library/Application Support").join(APP).join("local"))
+    } else if cfg!(windows) {
+        Ok(PathBuf::from(std::env::var_os("APPDATA").context("没有 APPDATA 环境变量")?).join(APP).join("local"))
+    } else {
+        bail!("本机模式只有 macOS 和 Windows 的 App 有")
+    }
+}
+
+/// Where the app listens for agents, and the CA of its certificate: a new pair each time it starts.
+#[derive(Deserialize)]
+struct Address {
+    url: String,
+    ca: String,
 }
 
 struct Server {
     agent: ureq::Agent,
     url: String,
+    /// The app on this computer in local mode.
+    local: bool,
 }
 
 impl Server {
     fn new(url: &str) -> Self {
         let config = ureq::Agent::config_builder().http_status_as_error(false).timeout_global(Some(Duration::from_secs(30))).build();
-        Server { agent: config.into(), url: url.trim_end_matches('/').to_owned() }
+        Server { agent: config.into(), url: url.trim_end_matches('/').to_owned(), local: false }
+    }
+
+    /// The app on this computer in local mode, as its address file has it now (docs/local.md#agent-接入).
+    /// Only the app's certificate of this run is trusted, which another program on a port the app had
+    /// can't show: nothing is sent to it. No proxy, which would get the token, and no redirects.
+    fn local() -> anyhow::Result<Self> {
+        let path = local_dir()?.join("address");
+        let text = match std::fs::read_to_string(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => bail!("{UNREACHABLE}"),
+            read => read.with_context(|| format!("无法读取本机模式的地址文件 {}", path.display()))?,
+        };
+        let bad = || format!("本机模式的地址文件 {} 格式不对", path.display());
+        let address: Address = serde_json::from_str(&text).with_context(bad)?;
+        // Nothing but the port may vary: no user, path or query.
+        let port = address.url.strip_prefix("https://127.0.0.1:").and_then(|p| p.parse::<u16>().ok()).filter(|&p| p != 0);
+        if port.is_none() {
+            bail!("{}", bad());
+        }
+        let ca = ureq::tls::Certificate::from_pem(address.ca.as_bytes()).with_context(bad)?;
+        let tls = ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::new_with_certs(&[ca])).build();
+        let config = ureq::Agent::config_builder()
+            .tls_config(tls)
+            .proxy(None)
+            .max_redirects(0)
+            .http_status_as_error(false)
+            .timeout_global(Some(Duration::from_secs(30)))
+            .build();
+        Ok(Server { agent: config.into(), url: address.url, local: true })
+    }
+
+    /// In local mode, whether the other end could not show this run's certificate: it is another
+    /// program, or a later run of the app. Trying again is no use. ureq reports a failed handshake
+    /// as invalid data.
+    fn mismatch(&self, e: &ureq::Error) -> bool {
+        self.local && matches!(e, ureq::Error::Io(e) if e.kind() == std::io::ErrorKind::InvalidData)
+    }
+
+    /// What to say when a request could not be sent, or its reply not read.
+    fn unreachable(&self, e: ureq::Error) -> anyhow::Error {
+        if self.mismatch(&e) {
+            anyhow!("本机 NextTodo 的证书对不上，App 可能刚重启过")
+        } else {
+            anyhow::Error::new(e).context(if self.local { UNREACHABLE } else { "无法连接服务器" })
+        }
     }
 
     /// Sends once and reads the whole reply.
@@ -304,25 +381,26 @@ impl Server {
 
     /// Posts JSON once and returns the reply, or the server's error message.
     fn post(&self, path: &str, token: Option<&str>, body: &Value) -> anyhow::Result<Value> {
-        let (status, text) = self.send(path, token, None, body).context("无法连接服务器")?;
+        let (status, text) = self.send(path, token, None, body).map_err(|e| self.unreachable(e))?;
         reply(status, &text)
     }
 
     /// Calls a tool and returns `(text, data)`. Network failures, including a reply cut off on the
     /// way back, are retried with the same idempotency key, so a change that reached the server
-    /// applies once.
+    /// applies once. In local mode that is the same run of the app: one restarted since has another
+    /// certificate, and the change never goes to a database restored meanwhile.
     fn tool(&self, name: &str, token: &str, args: &Value) -> anyhow::Result<(String, Value)> {
         let (path, key) = (format!("/api/v1/tools/{name}"), uuid::Uuid::now_v7().to_string());
         let mut attempt = 0;
         let (status, text) = loop {
             match self.send(&path, Some(token), Some(&key), args) {
                 Ok(res) => break res,
-                Err(e) if attempt < 2 => {
+                Err(e) if attempt < 2 && !self.mismatch(&e) => {
                     attempt += 1;
                     std::thread::sleep(Duration::from_millis(500 * attempt));
                     eprintln!("{}", printable(&format!("连接服务器失败（{e}），第 {attempt} 次重试")));
                 }
-                Err(e) => return Err(e).context("无法连接服务器"),
+                Err(e) => return Err(self.unreachable(e)),
             }
         };
         match reply(status, &text)? {
@@ -367,8 +445,8 @@ fn printable(s: &str) -> String {
 }
 
 fn call(name: &str, args: Value, json_out: bool) -> anyhow::Result<()> {
-    let (url, token) = credentials()?;
-    let (text, data) = Server::new(&url).tool(name, &token, &args)?;
+    let (server, token) = connect()?;
+    let (text, data) = server.tool(name, &token, &args)?;
     if json_out {
         println!("{}", serde_json::to_string_pretty(&data)?);
     } else {
@@ -379,6 +457,9 @@ fn call(name: &str, args: Value, json_out: bool) -> anyhow::Result<()> {
 
 fn login(url: Option<String>, name: String, read_only: bool) -> anyhow::Result<()> {
     let url = url.or_else(|| read_config().ok().flatten().map(|c| c.url)).context("请用 --url 指定服务器地址")?;
+    if url == LOCAL {
+        bail!("本机模式不用登录：在 App 的设置里生成令牌，设置 NEXTTODO_URL=local 和 NEXTTODO_TOKEN");
+    }
     let server = Server::new(&url);
     print!("用户名：");
     std::io::stdout().flush()?;
@@ -434,6 +515,75 @@ fn install_skill(dirs: Vec<PathBuf>) -> anyhow::Result<()> {
         std::fs::write(&file, SKILL).with_context(|| format!("无法写入 {}", file.display()))?;
         println!("{}", printable(&format!("已装到 {}", file.display())));
     }
+    Ok(())
+}
+
+/// An MCP server on stdin and stdout that hands each message to the server's `/mcp` and its reply
+/// back: for local mode, whose address changes each time the app starts. The address is read again
+/// for each message, so a restart of the app is no break. Nothing is retried: a write made twice
+/// would be made twice, MCP having no idempotency key. Only messages go to stdout; what went wrong
+/// goes to stderr, and as an error reply to a request.
+fn mcp() -> anyhow::Result<()> {
+    // Agreed on in `initialize`, and sent with every message after it.
+    let mut version: Option<String> = None;
+    for line in std::io::stdin().lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let message: Value = match serde_json::from_str(&line) {
+            Ok(m) => m,
+            Err(e) => {
+                answer(&json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32700, "message": format!("不是 JSON：{e}") } }))?;
+                continue;
+            }
+        };
+        match forward(&line, version.as_deref()) {
+            Ok(Some(reply)) => {
+                if message["method"] == "initialize" {
+                    version = reply["result"]["protocolVersion"].as_str().map(str::to_owned);
+                }
+                answer(&reply)?;
+            }
+            // A notification, or a reply to the server.
+            Ok(None) => {}
+            Err(e) => {
+                let e = printable(&format!("{e:#}"));
+                eprintln!("错误：{e}");
+                if let Some(id) = message.get("id").filter(|_| message.get("method").is_some()) {
+                    answer(&json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32000, "message": e } }))?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Posts one message to the server's `/mcp`: its reply, or none when it accepted a notification.
+fn forward(message: &str, version: Option<&str>) -> anyhow::Result<Option<Value>> {
+    let (server, token) = connect()?;
+    let mut req = server
+        .agent
+        .post(format!("{}/mcp", server.url))
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Accept", "application/json, text/event-stream")
+        .header("Content-Type", "application/json");
+    if let Some(version) = version {
+        req = req.header("MCP-Protocol-Version", version);
+    }
+    let mut res = req.send(message).map_err(|e| server.unreachable(e))?;
+    if res.status() == StatusCode::ACCEPTED {
+        return Ok(None);
+    }
+    let text = res.body_mut().read_to_string().map_err(|e| server.unreachable(e))?;
+    reply(res.status(), &text).map(Some)
+}
+
+/// Writes a message to stdout, one line each.
+fn answer(message: &Value) -> anyhow::Result<()> {
+    let mut out = std::io::stdout().lock();
+    writeln!(out, "{message}")?;
+    out.flush()?;
     Ok(())
 }
 
@@ -504,6 +654,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Dep { command: Dep::Rm { before, after } } => call("dep_remove", json!({ "before": before, "after": after }), j),
         Command::Apply { file, dry_run } => call("apply", json!({ "plan": plan(&file)?, "dry_run": dry_run }), j),
         Command::Undo { batch } => call("undo", json!({ "batch": batch }), j),
+        Command::Mcp => mcp(),
         Command::Skill { command: Skill::Install { dir } } => install_skill(dir),
     }
 }

@@ -41,6 +41,8 @@ export function MarksProvider({ children }: { children: ReactNode }) {
         }
         return { ...m, [key]: set };
       });
+    /** The lingering tasks' timers. */
+    const timers = new Map<TaskId, ReturnType<typeof setTimeout>[]>();
     const pop = (id: TaskId) => {
       setMarks((m) => ({ ...m, pop: id }));
       setTimeout(() => setMarks((m) => (m.pop === id ? { ...m, pop: null } : m)), POP_MS);
@@ -49,9 +51,14 @@ export function MarksProvider({ children }: { children: ReactNode }) {
       pop,
       completed(id, unlocked) {
         pop(id);
+        // Completed again after an undo, it starts over.
+        for (const t of timers.get(id) ?? []) clearTimeout(t);
+        change("leaving", [id], false);
         change("linger", [id], true);
-        setTimeout(() => change("leaving", [id], true), LINGER_MS);
-        setTimeout(() => (change("linger", [id], false), change("leaving", [id], false)), LINGER_MS + LEAVE_MS);
+        timers.set(id, [
+          setTimeout(() => change("leaving", [id], true), LINGER_MS),
+          setTimeout(() => (timers.delete(id), change("linger", [id], false), change("leaving", [id], false)), LINGER_MS + LEAVE_MS),
+        ]);
         if (!unlocked.length) return;
         change("flash", unlocked, true);
         setTimeout(() => change("flash", unlocked, false), FLASH_MS);

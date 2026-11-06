@@ -66,7 +66,9 @@ pub fn list(c: &Connection, cx: &Cx, a: ListArgs) -> Result<Output, ApiError> {
     // The AI jobs here: an agent reading the folder sees that more is on its way, or failed.
     let mut jobs = serde_json::Map::new();
     let mut said = Vec::new();
-    for (state, word) in [(JobState::Waiting, "等待"), (JobState::Running, "整理中"), (JobState::Failed, "失败")] {
+    for (state, word) in
+        [(JobState::Waiting, "等待"), (JobState::Running, "整理中"), (JobState::Failed, "失败"), (JobState::Ready, "建议待确认")]
+    {
         match snap.ai_jobs.iter().filter(|j| j.folder_id == f && j.state == state).count() {
             0 => {}
             n => {
@@ -256,7 +258,8 @@ fn mermaid(b: &Board, nodes: &[&Task], edges: &[(&Task, &Task)], scope: Option<F
     lines.join("\n")
 }
 
-/// The AI jobs not done yet, oldest first: done ones are tasks by now.
+/// The AI jobs not done yet, oldest first: done ones are tasks by now, but for tidyings with
+/// suggestions to take.
 pub fn jobs(c: &Connection, cx: &Cx, _: NoArgs) -> Result<Output, ApiError> {
     let snap = store::snapshot(c, cx.owner)?;
     if snap.ai_jobs.is_empty() {
@@ -269,10 +272,12 @@ pub fn jobs(c: &Connection, cx: &Cx, _: NoArgs) -> Result<Output, ApiError> {
             JobState::Waiting => "等待整理".to_owned(),
             JobState::Running => "正在整理".to_owned(),
             JobState::Failed => format!("整理失败：{}", j.error.as_deref().unwrap_or_default()),
+            JobState::Ready => format!("{} 条建议待用户确认", j.suggestions.as_ref().map_or(0, Vec::len)),
         };
         let folder = b.path(j.folder_id);
         lines.push(format!("{} · {folder} · {state} · {}", job_item(j), ago(cx.now, j.updated_at)));
-        let mut job = json!({ "id": j.id, "start": job_item(j), "folder": folder, "state": j.state, "updated_at": j.updated_at });
+        let mut job =
+            json!({ "id": j.id, "kind": j.kind, "start": job_item(j), "folder": folder, "state": j.state, "updated_at": j.updated_at });
         if let Some(error) = &j.error {
             job["error"] = error.as_str().into();
         }

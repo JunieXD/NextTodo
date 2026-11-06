@@ -43,7 +43,7 @@ const SYSTEM: &str = r#"你负责把用户随手写下的一段话整理成待�
 6. 只有原文明确说了时间才写 due，“明天下午三点”“周五前”这类按 local_time 换算成具体日期；原文没说要提醒就不写 remind。
 7. 用原文的语言写。"#;
 
-fn due_text(d: &Due) -> String {
+pub(super) fn due_text(d: &Due) -> String {
     match &d.at {
         Some(at) => format!("{} {}", d.date.as_str(), at.time.as_str()),
         None => d.date.as_str().to_owned(),

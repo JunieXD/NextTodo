@@ -32,7 +32,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `search` | `search <关键词> [--limit 条数]` | `query`、`limit?` | 标题和描述里包含关键词的事项（不区分大小写） |
 | `graph` | `graph [文件夹] [--all] [--mermaid]` | `folder?`、`all?`、`mermaid?` | 文件夹（含子文件夹）里的事项和依赖，按先后顺序；连到外面的事项也列出并注明文件夹 |
 | `log` | `log [-n 条数]` | `limit?` | 最近的改动批次，默认 10，最多 100 |
-| `jobs` | `jobs` | | [AI 整理](ai.md)的请求：等待、整理中和失败的，失败的带原因；整理完的请求已经变成事项，不在这里 |
+| `jobs` | `jobs` | | [AI 整理](ai.md)的请求：等待、整理中和失败的，失败的带原因，以及建议待用户确认的整理文件夹；整理完的请求已经变成事项，不在这里 |
 | `add` | `add <标题> [--folder] [-d 描述] [--due] [--remind] [--after 编号…] [--before 编号…]` | `title`、`folder?`、`description?`、`due?`、`remind?`、`after?`、`before?` | 添加一个事项；文件夹不存在时一起新建 |
 | `edit` | `edit <事项> [--title] [-d 描述 \| --replace 原文 新文… \| --append 文本] [--due \| --no-due] [--remind \| --no-remind]` | `task`、`title?`、`description?`、`replace?`、`append?`、`due?`、`remind?` | 修改事项；`due`、`remind` 给 `null` 表示清除；描述的改法见[同时修改](#同时修改) |
 | `done` | `done <事项…>` | `tasks` | 标为完成，输出因此变成可做的事项 |
@@ -139,13 +139,13 @@ $ nexttodo graph 工作
 |---|---|
 | 事项 | `{id, number, title, status, folder}`；`status` 是 `ready`、`waiting`、`done`，`folder` 是路径；`waiting_on`（还在等的前置数）、`unlocks`（解锁数）不为 0 时才有，`due`、`done_at` 有值时才有 |
 | `tree` | `[{path, name, depth, pending, ready}]`，先序排列，第一项是根目录 |
-| `list` | `{folder, folders: [{path, name, pending, ready}], tasks: [事项], total}`，`total` 是没截断时的事项数；有 AI 整理请求时另有 `jobs: {waiting, running, failed}`，只含不为 0 的 |
+| `list` | `{folder, folders: [{path, name, pending, ready}], tasks: [事项], total}`，`total` 是没截断时的事项数；有 AI 整理请求时另有 `jobs: {waiting, running, failed, ready}`，只含不为 0 的 |
 | `next` | `{tasks: [事项], total}` |
 | `show` | 事项加上 `created_at, updated_at`；`description`、`created_via`、`updated_via`（令牌名，本人时没有）、`before: [事项]`、`after: [事项]` 有内容时才有 |
 | `search` | `{tasks: [事项], total}` |
 | `graph` | `{tasks: [事项], edges: [{before, after}]}`，边用编号 |
 | `log` | `[{batch, actor, created_at, summary}]`，`actor` 是令牌名，本人为 `null` |
-| `jobs` | `[{id, start, folder, state, updated_at}]`，`start` 是原文开头，`state` 是 `waiting`、`running`、`failed`，失败的另有 `error` |
+| `jobs` | `[{id, kind, start, folder, state, updated_at}]`，`kind` 是 `organize` 或 `tidy`，`start` 是原文开头，`state` 是 `waiting`、`running`、`failed`、`ready`，失败的另有 `error` |
 | 写操作 | `{batch, changes: [变化]}`，预览时 `batch` 为 `null`；完成事项后有事项因此可做时另有 `unlocked: [事项]` |
 
 写操作的变化只说做了什么，不带事项的内容。一处改动同时做了几件事（比如撤销时一项既重新打开又改回了标题，一个文件夹既改名又移动），每件各列一条，文件夹都用这处改动之前的路径：
@@ -159,7 +159,7 @@ $ nexttodo graph 工作
 | `task_moved` | `task`；`to`：文件夹路径 |
 | `task_edited` | `task`；`fields`：改了的字段，`title`、`description`、`due`、`order`（在同一文件夹里的顺序） |
 | `dep_added`、`dep_removed` | `before`、`after`：编号 |
-| `job_created`、`job_started`、`job_retried`、`job_deleted` | `job`：请求 ID |
+| `job_created`、`job_started`、`job_retried`、`job_ready`、`job_deleted` | `job`：请求 ID |
 | `job_failed` | `job`；`error`：原因 |
 
 需要改动前后完整内容的程序用 [`/changes`](api.md#端点)。

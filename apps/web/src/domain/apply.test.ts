@@ -121,3 +121,25 @@ test("AI jobs: only a failed one is retried, they go with their folder, and one 
   run(d, 114, [{ op: "undo", mutation: id(113) }]);
   expect(d.jobs.get(id(2))).toMatchObject({ state: "failed", error: "已撤销", folder_id: id(1) });
 });
+
+test("AI jobs: a tidying with suggestions is tidied again from scratch, and comes back as it was once taken and undone", () => {
+  const d = empty();
+  run(d, 120, [
+    { op: "task.create", id: id(1), title: "官网" },
+    { op: "ai_job.create", id: id(2), kind: "tidy", text: "整理一下", local_time: "2026-11-07 10:00 星期六" },
+  ]);
+  expect(d.jobs.get(id(2))).toMatchObject({ kind: "tidy", state: "waiting", suggestions: null });
+  // As the server has it by now: ready, with what AI suggests.
+  const ready = { ...d.jobs.get(id(2))!, state: "ready" as const, suggestions: [{ task: id(1), title: "建好官网", after: [], reason: "以动作开头" }] };
+  d.jobs.set(id(2), ready);
+  run(d, 121, [
+    { op: "task.update", id: id(1), title: "建好官网" },
+    { op: "ai_job.delete", id: id(2) },
+  ]);
+  expect(d.jobs.size).toBe(0);
+  run(d, 122, [{ op: "undo", mutation: id(121) }]);
+  expect(d.tasks.get(id(1))!.title).toBe("官网");
+  expect(d.jobs.get(id(2))).toMatchObject({ state: "ready", suggestions: ready.suggestions });
+  run(d, 123, [{ op: "ai_job.retry", id: id(2) }]);
+  expect(d.jobs.get(id(2))).toMatchObject({ state: "waiting", suggestions: null });
+});

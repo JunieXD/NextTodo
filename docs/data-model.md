@@ -94,17 +94,19 @@
 
 ### ai_jobs
 
-[AI 整理](ai.md)的请求。整理成功时请求删除，整理出的事项随之添加。
+[AI 整理](ai.md)的请求。整理成功时请求删除，整理出的事项随之添加；[整理文件夹](ai.md#整理文件夹)完成时请求留下，带着建议，等用户应用或放弃。
 
 | 列 | 类型 | 说明 |
 |---|---|---|
 | id | TEXT PK | 客户端生成 |
 | owner_id | TEXT → users | |
-| folder_id | TEXT → folders，可空 | 整理出的事项放进这里；空表示根目录；删除文件夹时级联删除 |
-| text | TEXT | 原文，1–10000 字；除换行和制表符外不含控制字符 |
+| folder_id | TEXT → folders，可空 | 整理出的事项放进这里，或要整理的就是这里的事项；空表示根目录；删除文件夹时级联删除 |
+| kind | TEXT | `organize`（整理请求）或 `tidy`（整理文件夹） |
+| text | TEXT | 原文，或整理文件夹的要求；1–10000 字；除换行和制表符外不含控制字符 |
 | local_time | TEXT | 提交时的本地时间，如 `2026-11-04 16:30 星期三`，单行，最长 40 字 |
-| state | TEXT | `waiting`（等待）、`running`（整理中）或 `failed`（失败） |
+| state | TEXT | `waiting`（等待）、`running`（整理中）、`failed`（失败）或 `ready`（整理文件夹的建议待确认） |
 | error | TEXT，可空 | 失败的原因，只在 `failed` 时有 |
+| suggestions | TEXT，可空 | 建议，JSON：`[{task, title?, description?, due?, after, reason}]`，只在 `ready` 时有 |
 | created_at / updated_at | INTEGER | |
 
 ### ai_settings

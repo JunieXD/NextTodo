@@ -210,6 +210,12 @@ svg { display: block; flex: none; }
 .job.waiting .job-ic { color: var(--outline); }
 .job.running .job-ic svg { animation: spin 1s linear infinite; }
 .job.failed .job-ic, .job.failed .job-status { color: var(--error); }
+.job.ready .job-status { color: var(--primary); }
+.suggestion-reason { margin: -2px 32px 8px; font-size: 13px; line-height: 1.5; color: var(--on-surface-variant); }
+.suggestion-part .row-inner { align-items: flex-start; cursor: pointer; }
+.suggestion-part input { flex: none; width: 20px; height: 20px; margin: 1px 0 0; accent-color: var(--primary); }
+.suggestion-text { flex: 1; min-width: 0; max-height: 12em; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.5; }
+.suggestion-text b { display: block; font-size: 12px; font-weight: 600; color: var(--on-surface-variant); }
 .job-status { overflow: hidden; text-overflow: ellipsis; min-width: 0; display: inline-block !important; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .job-detail-status { margin: 0 16px 12px; font-size: 14px; color: var(--on-surface-variant); }

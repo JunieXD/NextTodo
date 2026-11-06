@@ -168,6 +168,7 @@ enum Kind {
     JobCreated,
     JobStarted,
     JobFailed,
+    JobReady,
     JobRetried,
     JobDeleted,
 }
@@ -192,6 +193,7 @@ impl Kind {
             Kind::JobCreated => ("提交 AI 整理", "提交 AI 整理", "条"),
             Kind::JobStarted => ("开始 AI 整理", "开始 AI 整理", "条"),
             Kind::JobFailed => ("AI 整理失败", "AI 整理失败", "条"),
+            Kind::JobReady => ("AI 整理建议就绪", "AI 整理建议就绪", "条"),
             Kind::JobRetried => ("重试 AI 整理", "重试 AI 整理", "条"),
             Kind::JobDeleted => ("移除 AI 整理请求", "移除 AI 整理请求", "条"),
         }
@@ -216,6 +218,7 @@ impl Kind {
             Kind::JobCreated => "job_created",
             Kind::JobStarted => "job_started",
             Kind::JobFailed => "job_failed",
+            Kind::JobReady => "job_ready",
             Kind::JobRetried => "job_retried",
             Kind::JobDeleted => "job_deleted",
         }
@@ -307,6 +310,7 @@ fn describe(e: &Effect, n: &Names) -> Vec<(Kind, String, Value)> {
                 (Kind::JobFailed, format!("{}（{error}）", job_item(j)), json!({ "job": j.id, "error": error }))
             }
             JobState::Waiting => (Kind::JobRetried, job_item(j), json!({ "job": j.id })),
+            JobState::Ready => (Kind::JobReady, job_item(j), json!({ "job": j.id })),
         }],
         Effect::AiJob(Change::Deleted(j)) => vec![(Kind::JobDeleted, job_item(j), json!({ "job": j.id }))],
     }

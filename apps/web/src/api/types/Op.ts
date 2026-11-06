@@ -3,6 +3,7 @@ import type { AiJobId } from "./AiJobId";
 import type { Description } from "./Description";
 import type { Due } from "./Due";
 import type { FolderId } from "./FolderId";
+import type { JobKind } from "./JobKind";
 import type { JobText } from "./JobText";
 import type { LocalTime } from "./LocalTime";
 import type { MutationId } from "./MutationId";
@@ -23,7 +24,11 @@ folder_id?: FolderId | null, title?: Title, description?: Description,
 /**
  * `null` clears the due date.
  */
-due?: Due | null, sort_key?: SortKey, done?: boolean, } | { "op": "task.delete", id: TaskId, } | { "op": "dep.add", before: TaskId, after: TaskId, } | { "op": "dep.remove", before: TaskId, after: TaskId, } | { "op": "ai_job.create", id: AiJobId, text: JobText, local_time: LocalTime, folder_id?: FolderId, } | { "op": "ai_job.retry", id: AiJobId, text?: JobText, 
+due?: Due | null, sort_key?: SortKey, done?: boolean, } | { "op": "task.delete", id: TaskId, } | { "op": "dep.add", before: TaskId, after: TaskId, } | { "op": "dep.remove", before: TaskId, after: TaskId, } | { "op": "ai_job.create", id: AiJobId, 
+/**
+ * Organizing when not given.
+ */
+kind?: JobKind, text: JobText, local_time: LocalTime, folder_id?: FolderId, } | { "op": "ai_job.retry", id: AiJobId, text?: JobText, 
 /**
  * `null` is the root.
  */

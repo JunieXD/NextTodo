@@ -3,7 +3,7 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use ts_rs::TS;
 
-use crate::model::{AiJobId, Description, Due, FolderId, JobText, LocalTime, MutationId, Name, SortKey, TaskId, Title};
+use crate::model::{AiJobId, Description, Due, FolderId, JobKind, JobText, LocalTime, MutationId, Name, SortKey, TaskId, Title};
 
 pub const MAX_OPS: usize = 1000;
 
@@ -119,13 +119,18 @@ pub enum Op {
     #[serde(rename = "ai_job.create")]
     AiJobCreate {
         id: AiJobId,
+        /// Organizing when not given.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        kind: Option<JobKind>,
         text: JobText,
         local_time: LocalTime,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         folder_id: Option<FolderId>,
     },
-    /// Puts a failed job back in the queue, with its text or folder changed if given.
+    /// Puts a failed job, or a tidying with suggestions, back in the queue, with its text or folder
+    /// changed if given.
     #[serde(rename = "ai_job.retry")]
     AiJobRetry {
         id: AiJobId,

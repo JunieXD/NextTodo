@@ -1,7 +1,8 @@
-// AI organizing on screen: the jobs waiting, being organized or failed, at the top of their folder and
-// of what is next; and what can be done with each. See docs/ai.md#整理请求.
+// AI organizing on screen: the jobs waiting, being organized or failed, and tidyings with suggestions,
+// at the top of their folder and of what is next; and what can be done with each. See
+// docs/ai.md#整理请求.
 
-import { CircleAlert, FilePlus, LoaderCircle, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { CircleAlert, FilePlus, ListChecks, LoaderCircle, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import type { AiJob } from "../api/types/AiJob";
@@ -13,16 +14,21 @@ import { useCommit, useUndo } from "../session";
 import { Modal, useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { ContextMenu, type MenuItem } from "../ui/menu";
+import { Suggestions } from "./suggestions";
 
 const firstLine = (j: AiJob) => j.text.trim().split("\n")[0];
+
+/** A job's row's title: its text's first line, or for a tidying, what it is. */
+const heading = (j: AiJob) => (j.kind === "tidy" ? "整理已有事项" : firstLine(j));
 
 function status(j: AiJob): string {
   if (j.state === "waiting") return "等待整理";
   if (j.state === "running") return "正在整理";
+  if (j.state === "ready") return j.suggestions!.length ? `${j.suggestions!.length} 条建议，待确认` : "无需修改";
   return `整理失败：${j.error}`;
 }
 
-const STATE_ICONS = { waiting: Sparkles, running: LoaderCircle, failed: CircleAlert };
+const STATE_ICONS = { waiting: Sparkles, running: LoaderCircle, failed: CircleAlert, ready: ListChecks };
 
 /** What can be done with a job, here and in its details. */
 function useJobActions() {
@@ -60,15 +66,22 @@ function useJobActions() {
 
 /** Rows for `jobs`, inside a group; `path` shows each one's folder. */
 export function JobRows({ jobs, board, path }: { jobs: AiJob[]; board: Board; path?: boolean }) {
+  const actions = useJobActions();
   const [open, setOpen] = useState<AiJob | null>(null);
   // The job as it is now, or gone.
   const shown = open && board.snapshot.ai_jobs.find((j) => j.id === open.id);
+  const close = () => setOpen(null);
   return (
     <>
       {jobs.map((j) => (
         <JobRow key={j.id} job={j} board={board} path={path} onOpen={() => setOpen(j)} />
       ))}
-      {shown && <JobDetails job={shown} board={board} onClose={() => setOpen(null)} />}
+      {shown &&
+        (shown.state === "ready" ? (
+          <Suggestions job={shown} board={board} onRetry={() => actions.retry(shown)} onClose={close} />
+        ) : (
+          <JobDetails job={shown} board={board} onClose={close} />
+        ))}
     </>
   );
 }
@@ -76,10 +89,12 @@ export function JobRows({ jobs, board, path }: { jobs: AiJob[]; board: Board; pa
 function JobRow({ job: j, board, path, onOpen }: { job: AiJob; board: Board; path?: boolean; onOpen(): void }) {
   const actions = useJobActions();
   const menu: MenuItem[] = [
-    ...(j.state === "failed"
+    ...(j.state === "failed" ? [{ icon: RotateCcw, label: "重试", onSelect: () => actions.retry(j) }] : []),
+    ...(j.state === "failed" && j.kind === "organize" ? [{ icon: FilePlus, label: "按原文添加", onSelect: () => actions.addAsIs(j, board) }] : []),
+    ...(j.state === "ready"
       ? [
-          { icon: RotateCcw, label: "重试", onSelect: () => actions.retry(j) },
-          { icon: FilePlus, label: "按原文添加", onSelect: () => actions.addAsIs(j, board) },
+          { icon: ListChecks, label: "查看建议", onSelect: onOpen },
+          { icon: RotateCcw, label: "重新整理", onSelect: () => actions.retry(j) },
         ]
       : []),
     { icon: Trash2, label: "删除", danger: true, onSelect: () => actions.remove(j) },
@@ -92,7 +107,7 @@ function JobRow({ job: j, board, path, onOpen }: { job: AiJob; board: Board; pat
             <Icon of={STATE_ICONS[j.state]} size={20} />
           </span>
           <button type="button" className="task-main">
-            <span className="task-title">{firstLine(j)}</span>
+            <span className="task-title">{heading(j)}</span>
             <span className="task-meta">
               {path && j.folder_id && <span className="m-path">{board.place(j.folder_id)}</span>}
               <span className="job-status">{status(j)}</span>
@@ -110,18 +125,25 @@ function JobRow({ job: j, board, path, onOpen }: { job: AiJob; board: Board; pat
               重试
             </button>
           )}
+          {j.state === "ready" && (
+            <button type="button" className="text-btn">
+              查看
+            </button>
+          )}
         </div>
       </div>
     </ContextMenu>
   );
 }
 
-/** The whole text and how the job stands; a failed one's text can be changed before retrying. */
+/** The whole text, or what a tidying asks for, and how the job stands; a failed one's text can be
+ * changed before retrying. */
 function JobDetails({ job: j, board, onClose }: { job: AiJob; board: Board; onClose(): void }) {
   const actions = useJobActions();
   const { snack } = useFeedback();
   const [text, setText] = useState(j.text);
   const failed = j.state === "failed";
+  const tidy = j.kind === "tidy";
   /** Does `act` with the text as it stands in the box. */
   const withText = (act: (text: string) => void) => () => {
     const c = checkJobText(text);
@@ -133,19 +155,21 @@ function JobDetails({ job: j, board, onClose }: { job: AiJob; board: Board; onCl
     <Modal title="AI 整理" onClose={onClose}>
       <p className={`job-detail-status ${j.state}`}>{status(j)}</p>
       <label className="field">
-        原文
+        {tidy ? "要求" : "原文"}
         <textarea className="job-text" value={text} readOnly={!failed} onChange={(e) => setText(e.target.value)} rows={8} />
       </label>
-      {!failed && <p className="empty">{j.state === "running" ? "正在整理，整理完再改。" : "等待整理；整理失败后可以修改原文再试。"}</p>}
+      {!failed && <p className="empty">{j.state === "running" ? "正在整理，整理完再改。" : `等待整理；整理失败后可以修改${tidy ? "要求" : "原文"}再试。`}</p>}
       <div className="actions">
         <button className="text-btn danger-text" onClick={() => (actions.remove(j), onClose())}>
           删除
         </button>
         {failed && (
           <>
-            <button className="tonal-btn" onClick={withText((text) => actions.addAsIs({ ...j, text }, board))}>
-              按原文添加
-            </button>
+            {!tidy && (
+              <button className="tonal-btn" onClick={withText((text) => actions.addAsIs({ ...j, text }, board))}>
+                按原文添加
+              </button>
+            )}
             <button className="filled-btn" onClick={withText((text) => actions.retry(j, text))}>
               重试
             </button>

@@ -5,7 +5,7 @@ use nexttodo_core::model::{AiJob, AiJobId, Date, Dependency, Due, DueAt, Folder,
 use rusqlite::{Connection, OptionalExtension, Params, Row, params};
 
 const FOLDER_COLUMNS: &str = "id, parent_id, name, sort_key, created_at, updated_at";
-const JOB_COLUMNS: &str = "id, folder_id, text, local_time, state, error, created_at, updated_at";
+const JOB_COLUMNS: &str = "id, folder_id, kind, text, local_time, state, error, suggestions, created_at, updated_at";
 const TASK_COLUMNS: &str = "id, number, folder_id, title, description, done_at, due_date, due_time, remind_before, sort_key, created_at, updated_at, created_via, updated_via";
 
 /// Folder ids in the subtree rooted at `?1`, including the root.
@@ -37,16 +37,26 @@ fn task_row(r: &Row) -> rusqlite::Result<Task> {
 }
 
 fn job_row(r: &Row) -> rusqlite::Result<AiJob> {
+    let suggestions: Option<String> = r.get(7)?;
     Ok(AiJob {
         id: r.get(0)?,
         folder_id: r.get(1)?,
-        text: r.get(2)?,
-        local_time: r.get(3)?,
-        state: r.get(4)?,
-        error: r.get(5)?,
-        created_at: r.get(6)?,
-        updated_at: r.get(7)?,
+        kind: r.get(2)?,
+        text: r.get(3)?,
+        local_time: r.get(4)?,
+        state: r.get(5)?,
+        error: r.get(6)?,
+        suggestions: suggestions
+            .map(|s| serde_json::from_str(&s))
+            .transpose()
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, Box::new(e)))?,
+        created_at: r.get(8)?,
+        updated_at: r.get(9)?,
     })
+}
+
+fn suggestions(j: &AiJob) -> Option<String> {
+    j.suggestions.as_ref().map(|s| serde_json::to_string(s).expect("suggestions serialize"))
 }
 
 fn dep_row(r: &Row) -> rusqlite::Result<Dependency> {
@@ -242,16 +252,16 @@ pub fn job_id_taken(c: &Connection, id: AiJobId) -> rusqlite::Result<bool> {
 
 pub fn insert_job(c: &Connection, owner: &str, j: &AiJob) -> rusqlite::Result<()> {
     c.execute(
-        &format!("INSERT INTO ai_jobs (owner_id, {JOB_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"),
-        params![owner, j.id, j.folder_id, j.text, j.local_time, j.state, j.error, j.created_at, j.updated_at],
+        &format!("INSERT INTO ai_jobs (owner_id, {JOB_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"),
+        params![owner, j.id, j.folder_id, j.kind, j.text, j.local_time, j.state, j.error, suggestions(j), j.created_at, j.updated_at],
     )?;
     Ok(())
 }
 
 pub fn update_job(c: &Connection, j: &AiJob) -> rusqlite::Result<()> {
     c.execute(
-        "UPDATE ai_jobs SET folder_id = ?2, text = ?3, state = ?4, error = ?5, updated_at = ?6 WHERE id = ?1",
-        params![j.id, j.folder_id, j.text, j.state, j.error, j.updated_at],
+        "UPDATE ai_jobs SET folder_id = ?2, text = ?3, state = ?4, error = ?5, suggestions = ?6, updated_at = ?7 WHERE id = ?1",
+        params![j.id, j.folder_id, j.text, j.state, j.error, suggestions(j), j.updated_at],
     )?;
     Ok(())
 }

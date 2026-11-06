@@ -3,7 +3,7 @@
 
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
-    AiJob, AiJobId, Change, Dependency, Effect, Folder, FolderId, JobState, Link, MutationId, SortKey, Task, TaskId,
+    AiJob, AiJobId, Change, Dependency, Effect, Folder, FolderId, JobState, Link, MutationId, SortKey, Suggestion, Task, TaskId,
 };
 use nexttodo_core::ops::{MAX_OPS, Mutation, Op};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -88,13 +88,35 @@ pub fn set_job_state(
     error: Option<String>,
     now: i64,
 ) -> Result<Option<(AiJob, i64)>, ApiError> {
+    change_job(c, actor, id, from, |j| AiJob { state: to, error, ..j }, now)
+}
+
+/// Makes a tidying being done ready, with what AI suggests; as `set_job_state` does.
+pub fn suggest(
+    c: &mut Connection,
+    actor: &Actor,
+    id: AiJobId,
+    suggestions: Vec<Suggestion>,
+    now: i64,
+) -> Result<Option<(AiJob, i64)>, ApiError> {
+    change_job(c, actor, id, JobState::Running, |j| AiJob { state: JobState::Ready, suggestions: Some(suggestions), ..j }, now)
+}
+
+fn change_job(
+    c: &mut Connection,
+    actor: &Actor,
+    id: AiJobId,
+    from: JobState,
+    change: impl FnOnce(AiJob) -> AiJob,
+    now: i64,
+) -> Result<Option<(AiJob, i64)>, ApiError> {
     let tx = c.transaction()?;
     let Some(before) = store::load_job(&tx, actor.owner, id)? else { return Ok(None) };
     if before.state != from {
         return Ok(None);
     }
     let mut cx = Cx { c: &tx, owner: actor.owner, via: actor.via.map(str::to_owned), now, effects: Vec::new() };
-    let after = AiJob { state: to, error, ..before.clone() };
+    let after = change(before.clone());
     cx.update_job(before, after.clone())?;
     let seq = record(&tx, actor, MutationId(Uuid::now_v7()), &[], &cx.effects, now)?;
     tx.commit()?;
@@ -233,7 +255,7 @@ impl Cx<'_> {
                 let d = store::load_dependency(self.c, self.owner, *before, *after)?.ok_or_else(|| ApiError::not_found("该依赖不存在"))?;
                 self.delete_dependency(d)
             }
-            Op::AiJobCreate { id, text, local_time, folder_id } => {
+            Op::AiJobCreate { id, kind, text, local_time, folder_id } => {
                 if store::job_id_taken(self.c, *id)? {
                     return Err(ApiError::conflict("请求 ID 已存在"));
                 }
@@ -243,10 +265,12 @@ impl Cx<'_> {
                 self.create_job(AiJob {
                     id: *id,
                     folder_id: *folder_id,
+                    kind: kind.unwrap_or_default(),
                     text: text.clone(),
                     local_time: local_time.clone(),
                     state: JobState::Waiting,
                     error: None,
+                    suggestions: None,
                     created_at: self.now,
                     updated_at: self.now,
                 })
@@ -254,11 +278,11 @@ impl Cx<'_> {
             Op::AiJobRetry { id, text, folder_id } => {
                 let before = self.job(*id)?;
                 match before.state {
-                    JobState::Failed => {}
+                    JobState::Failed | JobState::Ready => {}
                     JobState::Running => return Err(ApiError::conflict("正在整理，稍后再改")),
                     JobState::Waiting => return Err(ApiError::conflict("这条请求已在等待整理")),
                 }
-                let mut j = AiJob { state: JobState::Waiting, error: None, ..before.clone() };
+                let mut j = AiJob { state: JobState::Waiting, error: None, suggestions: None, ..before.clone() };
                 if let Some(text) = text {
                     j.text = text.clone();
                 }

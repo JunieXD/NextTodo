@@ -147,8 +147,8 @@ async fn jobs_cut_short_have_failed_by_the_first_request() {
     drop(existing(&dir, &["alice"]).await);
     let c = Connection::open(db_file(&dir)).unwrap();
     c.execute(
-        "INSERT INTO ai_jobs (id, owner_id, text, local_time, state, created_at, updated_at)
-         SELECT '01900000-0000-7000-8000-000000000000', id, '整理', '2026-11-06 10:00 星期五', 'running', 0, 0 FROM users",
+        "INSERT INTO ai_jobs (id, owner_id, kind, text, local_time, state, created_at, updated_at)
+         SELECT '01900000-0000-7000-8000-000000000000', id, 'organize', '整理', '2026-11-06 10:00 星期五', 'running', 0, 0 FROM users",
         [],
     )
     .unwrap();

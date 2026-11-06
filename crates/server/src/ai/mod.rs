@@ -1,9 +1,10 @@
-//! AI organizing: jobs turned into tasks in the background, with each user's own model. See
-//! `docs/ai.md`.
+//! AI organizing: jobs turned into tasks in the background, or into suggestions for a folder's
+//! tasks, with each user's own model. See `docs/ai.md`.
 
 pub mod llm;
 mod organize;
 pub mod secret;
+mod tidy;
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -12,7 +13,7 @@ use std::time::{Duration, Instant};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use nexttodo_core::board::Board;
-use nexttodo_core::model::{AiJobId, JobState, MutationId};
+use nexttodo_core::model::{AiJobId, JobKind, JobState, MutationId, Suggestion};
 use nexttodo_core::ops::Op;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
 use rusqlite::{Connection, OptionalExtension, ToSql, params};
@@ -241,7 +242,19 @@ enum Ended {
     Dropped,
 }
 
-/// Asks the model and adds what it answers, or fails the job.
+/// What a job's model was shown, to read its answer by.
+enum Shown {
+    Organize(HashSet<i64>),
+    Tidy(tidy::Shown),
+}
+
+/// What a job's model answered.
+enum Answer {
+    Tasks(Vec<PlanTask>),
+    Suggestions(Vec<Suggestion>),
+}
+
+/// Asks the model and adds what it answers, or keeps its suggestions, or fails the job.
 async fn organize(st: AppState, turn: Turn, job: AiJobId, config: Config) {
     let _slot = st.ai.slots.acquire().await.expect("the semaphore stays open");
     let began = Instant::now();
@@ -251,7 +264,16 @@ async fn organize(st: AppState, turn: Turn, job: AiJobId, config: Config) {
         .call(move |c| {
             let Some(j) = store::load_job(c, &owner, job)?.filter(|j| j.state == JobState::Running) else { return Ok(None) };
             let snap = store::snapshot(c, &owner)?;
-            Ok(Some(organize::prompt(&j, &Board::new(&snap))))
+            Ok(Some(match j.kind {
+                JobKind::Organize => {
+                    let (prompt, shown) = organize::prompt(&j, &Board::new(&snap));
+                    (prompt, Shown::Organize(shown))
+                }
+                JobKind::Tidy => {
+                    let (prompt, shown) = tidy::prompt(&j, &snap);
+                    (prompt, Shown::Tidy(shown))
+                }
+            }))
         })
         .await;
     let (mut status, outcome) = match read {
@@ -260,7 +282,13 @@ async fn organize(st: AppState, turn: Turn, job: AiJobId, config: Config) {
             let api = st.ai.api.clone();
             let answer = tokio::task::spawn_blocking(move || api.chat(&config, &prompt, true, TIMEOUT)).await.expect("chat task panicked");
             match answer {
-                Ok(text) => (None, organize::parse(&text, &shown)),
+                Ok(text) => (
+                    None,
+                    match shown {
+                        Shown::Organize(shown) => organize::parse(&text, &shown).map(Answer::Tasks),
+                        Shown::Tidy(shown) => tidy::parse(&text, &shown).map(Answer::Suggestions),
+                    },
+                ),
                 Err(f) => (f.status, Err(f.message)),
             }
         }
@@ -281,12 +309,17 @@ async fn organize(st: AppState, turn: Turn, job: AiJobId, config: Config) {
     tracing::info!(job = %job, ended = ?ended.ok(), status, ms = began.elapsed().as_millis(), "ai job");
 }
 
-/// Ends a job being organized: its tasks added and the job deleted, in one change; or the job failed.
-fn finish(c: &mut Connection, owner: &str, id: AiJobId, outcome: Result<Vec<PlanTask>, String>, now: i64) -> Result<Ended, ApiError> {
+/// Ends a job being organized: its tasks added and the job deleted, in one change; a tidying ready,
+/// with its suggestions; or the job failed.
+fn finish(c: &mut Connection, owner: &str, id: AiJobId, outcome: Result<Answer, String>, now: i64) -> Result<Ended, ApiError> {
     let actor = actor(owner);
     let failure = match outcome {
         Err(message) => message,
-        Ok(tasks) => {
+        Ok(Answer::Suggestions(suggestions)) => {
+            let ready = mutate::suggest(c, &actor, id, suggestions, now)?;
+            return Ok(if ready.is_some() { Ended::Done } else { Ended::Dropped });
+        }
+        Ok(Answer::Tasks(tasks)) => {
             let tx = c.transaction()?;
             let Some(job) = store::load_job(&tx, owner, id)?.filter(|j| j.state == JobState::Running) else { return Ok(Ended::Dropped) };
             let snap = store::snapshot(&tx, owner)?;

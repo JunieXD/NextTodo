@@ -166,6 +166,63 @@ async fn a_job_becomes_tasks_and_undoing_that_gives_it_back() {
 }
 
 #[tokio::test]
+async fn a_tidying_suggests_and_what_is_taken_goes_with_it_in_one_change() {
+    let (t, fake) = server();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "官网", "folder": "/站", "description": "就是说要做一个官网" })).await;
+    t.ok(&s, "add", json!({ "title": "写官网文档", "folder": "/站" })).await;
+    let snap = t.snapshot(&s).await;
+    let folder = snap["folders"][0]["id"].as_str().unwrap().to_owned();
+    let task = |title: &str| snap["tasks"].as_array().unwrap().iter().find(|t| t["title"] == title).unwrap()["id"].clone();
+    let (site, doc) = (task("官网"), task("写官网文档"));
+    t.call("PUT", "/ai/settings", Some(&s), Some(config())).await;
+
+    fake.answer(Ok(r#"{"suggestions": [
+        {"number": 1, "title": "建好官网", "description": "做一个官网。", "reason": "标题以动作开头，描述改成书面语"},
+        {"number": 2, "after": [1], "reason": "文档要等官网建好"}
+    ]}"#));
+    let job = id();
+    let mut op = create(&job, "整理一下", Some(&folder));
+    op["kind"] = "tidy".into();
+    assert_eq!(t.mutate(&s, json!([op])).await.status, StatusCode::OK);
+    let snap = until(&t, &s, |s| job_state(s, &job).is_some_and(|(state, _)| state == "ready")).await;
+    // Nothing changed yet: the suggestions wait on the job.
+    assert_eq!(titles(&snap), ["写官网文档", "官网"]);
+    let j = snap["ai_jobs"][0].clone();
+    assert_eq!(j["kind"], "tidy");
+    assert_eq!(j["suggestions"][0]["task"], site);
+    assert_eq!(j["suggestions"][0]["title"], "建好官网");
+    assert_eq!(j["suggestions"][1]["after"], json!([site]));
+    let shown: Value = serde_json::from_str(&fake.asked().pop().unwrap().1).unwrap();
+    assert_eq!(shown["request"], "整理一下");
+    assert_eq!(shown["open_tasks"][0]["description"], "就是说要做一个官网");
+
+    // Taking the new title and the link, the job going with them; undone, all three come back.
+    let take = id();
+    let ops = json!([
+        { "op": "task.update", "id": site, "title": "建好官网" },
+        { "op": "dep.add", "before": site, "after": doc },
+        { "op": "ai_job.delete", "id": job },
+    ]);
+    let r = t.call("POST", "/mutations", Some(&s), Some(json!({ "id": take, "ops": ops }))).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    let snap = t.snapshot(&s).await;
+    assert_eq!(titles(&snap), ["写官网文档", "建好官网"]);
+    assert!(snap["ai_jobs"].as_array().unwrap().is_empty());
+    t.mutate(&s, json!([{ "op": "undo", "mutation": take }])).await;
+    let snap = t.snapshot(&s).await;
+    assert_eq!(titles(&snap), ["写官网文档", "官网"]);
+    assert!(snap["dependencies"].as_array().unwrap().is_empty());
+    assert_eq!(snap["ai_jobs"][0]["suggestions"], j["suggestions"]);
+
+    // Tidied again, its suggestions go until the new ones come.
+    fake.answer(Ok(r#"{"suggestions": []}"#));
+    assert_eq!(t.mutate(&s, json!([{ "op": "ai_job.retry", "id": job }])).await.status, StatusCode::OK);
+    let snap = until(&t, &s, |s| s["ai_jobs"][0]["suggestions"] == json!([])).await;
+    assert_eq!(job_state(&snap, &job).unwrap().0, "ready");
+}
+
+#[tokio::test]
 async fn a_failed_job_says_why_and_can_be_retried() {
     let (t, fake) = server();
     let s = t.admin().await;

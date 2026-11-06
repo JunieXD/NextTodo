@@ -198,14 +198,25 @@ class Applier {
         if (this.d.jobs.has(op.id)) throw new Rejected("conflict", "请求 ID 已存在");
         const folder = op.folder_id ?? null;
         if (folder) this.folder(folder);
-        this.createJob({ id: op.id, folder_id: folder, text: op.text, local_time: op.local_time, state: "waiting", error: null, created_at: now, updated_at: now });
+        this.createJob({
+          id: op.id,
+          folder_id: folder,
+          kind: op.kind ?? "organize",
+          text: op.text,
+          local_time: op.local_time,
+          state: "waiting",
+          error: null,
+          suggestions: null,
+          created_at: now,
+          updated_at: now,
+        });
         return;
       }
       case "ai_job.retry": {
         const before = this.job(op.id);
         if (before.state === "running") throw new Rejected("conflict", "正在整理，稍后再改");
         if (before.state === "waiting") throw new Rejected("conflict", "这条请求已在等待整理");
-        const j: AiJob = { ...before, state: "waiting", error: null };
+        const j: AiJob = { ...before, state: "waiting", error: null, suggestions: null };
         if (op.text !== undefined) j.text = op.text;
         if (op.folder_id !== undefined) {
           if (op.folder_id) this.folder(op.folder_id);

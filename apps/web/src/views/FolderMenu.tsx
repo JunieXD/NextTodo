@@ -2,19 +2,21 @@
 // right-clicking it on a computer.
 
 import { DropdownMenu } from "radix-ui";
-import { Ellipsis, FolderInput, FolderPlus, Pencil, Trash2 } from "lucide-react";
+import { Ellipsis, FolderInput, FolderPlus, Pencil, Sparkles, Trash2 } from "lucide-react";
 import { type ReactElement, type ReactNode, useContext, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
+import { aiReady } from "../ai";
 import { lastKey } from "../domain/apply";
-import { checkFolderName } from "../domain/text";
+import { localTime } from "../domain/dates";
+import { checkFolderName, checkJobText } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
 import { useBack } from "../ui/back";
 import { RootContext, useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { ContextMenu, type MenuItem, itemClass } from "../ui/menu";
-import { folderUrl } from "./nav";
+import { OpenSettings, folderUrl } from "./nav";
 import { FolderPicker } from "./pickers";
 
 /** Asks for a name and makes a folder inside `parent`. */
@@ -30,18 +32,47 @@ export function useNewFolder() {
   };
 }
 
-/** The actions on `folder`, and the picker that moving it opens; in the root, only making a folder;
- * none for a folder deleted meanwhile, say on another device. */
+/** What a tidying asks for unless told otherwise. */
+const TIDY = "把标题改清楚，描述改成简洁的书面语，补上漏掉的先后关系。";
+
+/** Asks what to look for and hands the open tasks directly in `folder` to AI to tidy (docs/ai.md#整理文件夹). */
+function useTidy() {
+  const { prompt, snack } = useFeedback();
+  const commit = useCommit();
+  const { user, store } = useSession();
+  const openSettings = useContext(OpenSettings);
+  return async (folder: FolderId | null) => {
+    if (!store.getView().board.contents(folder).some((t) => t.done_at === null)) return snack("这里没有未完成的事项");
+    if (!(await aiReady(user.id))) {
+      snack("先选好 AI 整理用的模型");
+      return openSettings("ai");
+    }
+    const text = await prompt({ title: "AI 整理事项", label: "要求", value: TIDY, ok: "开始整理", check: checkJobText });
+    if (text === null) return;
+    const op = { op: "ai_job.create", id: uuidv7(), kind: "tidy", text, local_time: localTime(new Date()), ...(folder && { folder_id: folder }) } as const;
+    if (commit([op])) snack("已提交整理，完成后在列表顶部确认建议");
+  };
+}
+
+/** The actions on `folder`, and the picker that moving it opens; in the root, only making a folder
+ * and tidying; none for a folder deleted meanwhile, say on another device. */
 function useFolderActions(folder: FolderId | null): { items: MenuItem[]; picker: ReactNode } {
   const { store } = useSession();
   const commit = useCommit();
   const undo = useUndo();
   const { prompt, confirm, snack } = useFeedback();
   const newFolder = useNewFolder();
+  const tidy = useTidy();
   const [location, navigate] = useLocation();
   const [moving, setMoving] = useState(false);
   const { board } = useView();
-  if (folder === null) return { items: [{ icon: FolderPlus, label: "新建文件夹", onSelect: () => newFolder(null) }], picker: null };
+  if (folder === null) {
+    const items = [
+      { icon: FolderPlus, label: "新建文件夹", onSelect: () => newFolder(null) },
+      { icon: Sparkles, label: "AI 整理事项", onSelect: () => tidy(null) },
+    ];
+    return { items, picker: null };
+  }
   const f = board.folder(folder);
   if (!f) return { items: [], picker: null };
 
@@ -70,6 +101,7 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; picker:
   return {
     items: [
       { icon: FolderPlus, label: "新建子文件夹", onSelect: () => newFolder(f.id) },
+      { icon: Sparkles, label: "AI 整理事项", onSelect: () => tidy(f.id) },
       { icon: Pencil, label: "重命名", onSelect: rename },
       { icon: FolderInput, label: "移动到…", onSelect: () => setMoving(true) },
       { icon: Trash2, label: "删除文件夹", danger: true, onSelect: remove },

@@ -303,6 +303,8 @@ pub enum JobState {
     Waiting,
     Running,
     Failed,
+    /// A tidying's suggestions are there to be taken.
+    Ready,
 }
 
 impl JobState {
@@ -311,6 +313,7 @@ impl JobState {
             JobState::Waiting => "waiting",
             JobState::Running => "running",
             JobState::Failed => "failed",
+            JobState::Ready => "ready",
         }
     }
 }
@@ -329,22 +332,88 @@ impl rusqlite::types::FromSql for JobState {
             "waiting" => Ok(JobState::Waiting),
             "running" => Ok(JobState::Running),
             "failed" => Ok(JobState::Failed),
+            "ready" => Ok(JobState::Ready),
             _ => Err(rusqlite::types::FromSqlError::InvalidType),
         }
     }
 }
 
-/// Text submitted for AI to organize into tasks in a folder. It goes once done, as the tasks come.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum JobKind {
+    /// Organizing the text into tasks.
+    #[default]
+    Organize,
+    /// Suggesting changes to the folder's open tasks, the text saying what to look for.
+    Tidy,
+}
+
+impl JobKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            JobKind::Organize => "organize",
+            JobKind::Tidy => "tidy",
+        }
+    }
+}
+
+#[cfg(feature = "sql")]
+impl rusqlite::ToSql for JobKind {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        Ok(self.as_str().into())
+    }
+}
+
+#[cfg(feature = "sql")]
+impl rusqlite::types::FromSql for JobKind {
+    fn column_result(v: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        match v.as_str()? {
+            "organize" => Ok(JobKind::Organize),
+            "tidy" => Ok(JobKind::Tidy),
+            _ => Err(rusqlite::types::FromSqlError::InvalidType),
+        }
+    }
+}
+
+/// A change AI suggests to one of the folder's open tasks, for the user to take or leave.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Suggestion {
+    pub task: TaskId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub title: Option<Title>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub description: Option<Description>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub due: Option<Due>,
+    /// Tasks to put before it.
+    pub after: Vec<TaskId>,
+    /// What changes and why, in a sentence.
+    pub reason: String,
+}
+
+/// Text submitted for AI to organize into tasks in a folder, which goes once done, as the tasks come;
+/// or to tidy the folder's open tasks, which stays with its suggestions until they are taken.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct AiJob {
     pub id: AiJobId,
     pub folder_id: Option<FolderId>,
+    /// Organizing for jobs recorded before there were kinds.
+    #[serde(default)]
+    pub kind: JobKind,
     pub text: JobText,
     pub local_time: LocalTime,
     pub state: JobState,
     /// Why it failed; only when it has.
     pub error: Option<String>,
+    /// Only when ready.
+    #[serde(default)]
+    pub suggestions: Option<Vec<Suggestion>>,
     pub created_at: i64,
     pub updated_at: i64,
 }

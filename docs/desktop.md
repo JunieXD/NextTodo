@@ -13,6 +13,8 @@
 
 ## 连接服务器
 
+也可以不连服务器，在本机使用，见[本机模式](local.md)。
+
 和 Android 相同：登录页多“服务器地址”栏，HTTP 加 `Authorization: Bearer <令牌>`，WebSocket 在 `hello` 里带令牌，设备名是“NextTodo App · macOS”或“NextTodo App · Windows”。
 
 - 页面来自 Tauri 的本地地址，和服务器不同源。HTTP 经 `@tauri-apps/plugin-http` 由 Rust 发出，不受跨域限制，服务端不需要 CORS。

@@ -13,6 +13,8 @@ Android App（包括小米澎湃 OS）：Capacitor 外壳加载打包在安装�
 
 ## 连接服务器
 
+也可以不连服务器，在本机使用，见[本机模式](local.md)。
+
 App 的页面来自 `https://localhost`，和服务器不同源，所以不用 Cookie：
 
 - 登录页多一个“服务器地址”栏，第一次登录时填写，不写协议时按 `https://`。

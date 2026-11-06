@@ -190,11 +190,13 @@ nexttodo skill install                   # 见 Skill
 
 - `login` 用用户名和密码登录，生成一个以 `--name` 命名（默认“命令行”）的读写令牌，加 `--read-only` 生成只读令牌。令牌存在 `~/.config/nexttodo/config.json`（权限 600），登录用的会话随即注销。
 - 环境变量 `NEXTTODO_URL`、`NEXTTODO_TOKEN` 优先于配置文件，可以给不同的 agent 用不同的令牌，改动记录里就能分清是谁做的。
+- `NEXTTODO_URL` 写 `local` 时，连这台电脑上[本机模式](local.md#agent-接入)的 App。
 - 网络出错时，写操作用同一个幂等键自动重试两次，不会重复生效。
 
 ## MCP
 
 - 地址 `https://todo.example.com/mcp`，请求头 `Authorization: Bearer <令牌>`。
+- [本机模式](local.md#agent-接入)下地址每次启动都变，改用命令行的 `nexttodo mcp` 转接（stdio）。
 - 连接时服务端给出一段使用说明（MCP 的 `instructions`），是 [Skill](#skill) 的要点：只接 MCP、不装 skill，agent 也知道该怎么用。
 - 工具的结果是上面的文本；出错时返回 `isError` 和错误说明。
 - 查询工具标注为只读，`delete` 标注为破坏性，客户端可以据此决定是否需要确认。

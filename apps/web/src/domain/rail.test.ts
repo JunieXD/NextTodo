@@ -30,10 +30,11 @@ function board(n: number, deps: [number, number][]) {
   return { board: b, list: b.tasksIn(null) };
 }
 
-const lanes = (n: number, deps: [number, number][]) => {
+const layout = (n: number, deps: [number, number][]) => {
   const { board: b, list } = board(n, deps);
-  return railLayout(list, b).lanes;
+  return railLayout(list, b);
 };
+const lanes = (n: number, deps: [number, number][]) => layout(n, deps).lanes;
 
 describe("rail", () => {
   test("a chain takes one lane", () => {
@@ -51,6 +52,13 @@ describe("rail", () => {
   test("both at once", () => {
     // 0 opens four; they all lead to 5.
     expect(lanes(6, [[0, 1], [0, 2], [0, 3], [0, 4], [1, 5], [2, 5], [3, 5], [4, 5]])).toBe(3);
+  });
+
+  test("a branch does not cross another line when sharing lanes would make it", () => {
+    // Sharing 0's lane, 0 → 2 would bend across 1 → 3.
+    const rail = layout(4, [[0, 2], [0, 3], [1, 3]]);
+    expect([rail.crossings, rail.lanes]).toEqual([0, 3]);
+    expect(layout(6, [[0, 1], [0, 2], [0, 3], [0, 4], [1, 5], [2, 5], [3, 5], [4, 5]]).crossings).toBe(0);
   });
 
   test("no line runs through a task it does not link", () => {

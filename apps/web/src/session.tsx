@@ -247,11 +247,11 @@ export class Session {
     else this.setUser(me);
   }
 
-  /** Ends the session here, and forgets the user's data on this device. When the device has signed in
-   * as the same user again since, here or in another tab, the data is that sign-in's now: only this
-   * session's copy goes. */
-  close(): Promise<void> {
-    return this.end(false);
+  /** Ends the session here, and forgets the user's data on this device unless `keep`. When the device
+   * has signed in as the same user again since, here or in another tab, the data is that sign-in's
+   * now: only this session's copy goes. */
+  close(keep = false): Promise<void> {
+    return this.end(keep);
   }
 
   /** Ends the session here; `keep` keeps the user's data on this device. Ending it again without

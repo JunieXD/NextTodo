@@ -1,6 +1,6 @@
 // Account, devices and tokens, invites, appearance, versions.
 
-import { ChevronRight, Copy, KeyRound, Mail, Monitor, Plus, Sparkles } from "lucide-react";
+import { ChevronRight, Copy, HardDrive, KeyRound, Mail, Monitor, Plus, Sparkles } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, app, desktopOs, serverUrl } from "../api/http";
 import type { CreatedToken } from "../api/types/CreatedToken";
@@ -10,6 +10,7 @@ import type { TokenInfo } from "../api/types/TokenInfo";
 import type { User } from "../api/types/User";
 import { ago } from "../domain/dates";
 import { checkDisplayName, checkTokenName } from "../domain/text";
+import * as local from "../local";
 import { useSession } from "../session";
 import { type Theme, setTheme, useTheme } from "../theme";
 import { Seg } from "../ui/controls";
@@ -36,6 +37,7 @@ export function Settings({ start = "main", onClose, onSignOut }: { start?: Page;
   const [error, setError] = useState("");
   const { prompt, confirm, snack } = useFeedback();
   const theme = useTheme();
+  const inLocal = local.inLocalMode();
 
   const failed = (e: unknown) => {
     if (!(e instanceof ApiError)) throw e;
@@ -90,30 +92,34 @@ export function Settings({ start = "main", onClose, onSignOut }: { start?: Page;
   return (
     <Modal title="设置" onClose={onClose}>
       {error && <p className="form-error">{error}</p>}
-      <div className="group">
-        <button className="row" onClick={rename}>
-          <div className="row-inner">
-            <span className="avatar" style={{ margin: 0 }}>
-              {[...user.display_name][0]}
-            </span>
-            <span className="folder-main">
-              <span>{user.display_name}</span>
-              <span className="folder-sub">用户名 {user.username}</span>
-            </span>
-            <span className="chev">
-              <Icon of={ChevronRight} size={18} />
-            </span>
-          </div>
-        </button>
-        <button className="row" onClick={() => setPage("password")}>
-          <div className="row-inner">
-            <span>修改密码</span>
-            <span className="chev" style={{ marginLeft: "auto" }}>
-              <Icon of={ChevronRight} size={18} />
-            </span>
-          </div>
-        </button>
-      </div>
+      {inLocal ? (
+        <LocalMode />
+      ) : (
+        <div className="group">
+          <button className="row" onClick={rename}>
+            <div className="row-inner">
+              <span className="avatar" style={{ margin: 0 }}>
+                {[...user.display_name][0]}
+              </span>
+              <span className="folder-main">
+                <span>{user.display_name}</span>
+                <span className="folder-sub">用户名 {user.username}</span>
+              </span>
+              <span className="chev">
+                <Icon of={ChevronRight} size={18} />
+              </span>
+            </div>
+          </button>
+          <button className="row" onClick={() => setPage("password")}>
+            <div className="row-inner">
+              <span>修改密码</span>
+              <span className="chev" style={{ marginLeft: "auto" }}>
+                <Icon of={ChevronRight} size={18} />
+              </span>
+            </div>
+          </button>
+        </div>
+      )}
 
       <h2 className="group-title">AI 整理</h2>
       <div className="group">
@@ -136,12 +142,16 @@ export function Settings({ start = "main", onClose, onSignOut }: { start?: Page;
         </button>
       </div>
 
-      <h2 className="group-title">已登录的设备</h2>
-      <div className="group">
-        {sessions.map((t) => (
-          <TokenRow key={t.id} icon={Monitor} title={t.name} sub={t.current ? "本机" : used(t)} action={t.current ? undefined : ["退出", () => revoke(t)]} />
-        ))}
-      </div>
+      {!inLocal && (
+        <>
+          <h2 className="group-title">已登录的设备</h2>
+          <div className="group">
+            {sessions.map((t) => (
+              <TokenRow key={t.id} icon={Monitor} title={t.name} sub={t.current ? "本机" : used(t)} action={t.current ? undefined : ["退出", () => revoke(t)]} />
+            ))}
+          </div>
+        </>
+      )}
 
       {invites && (
         <>
@@ -194,12 +204,48 @@ export function Settings({ start = "main", onClose, onSignOut }: { start?: Page;
         />
       </div>
       <About />
-      <div className="group danger" style={{ marginTop: 24 }}>
-        <button className="row" onClick={onSignOut}>
-          <div className="row-inner">退出登录</div>
-        </button>
-      </div>
+      {!inLocal && (
+        <div className="group danger" style={{ marginTop: 24 }}>
+          <button className="row" onClick={onSignOut}>
+            <div className="row-inner">退出登录</div>
+          </button>
+        </div>
+      )}
     </Modal>
+  );
+}
+
+/** In place of the account: the data is on this device only, and how to move to a server. */
+function LocalMode() {
+  const session = useSession();
+  const { confirm, snack } = useFeedback();
+  const leave = async () => {
+    const body = "本机的数据会留在这台设备上，以后再选“在本机使用”就能接着用。NextTodo 会重新启动。";
+    if (!(await confirm({ title: "改用服务器？", body, ok: "改用服务器" }))) return;
+    await local.leave(session).catch((e) => snack(`重新启动失败：${e}`));
+  };
+  return (
+    <div className="group">
+      <div className="row">
+        <div className="row-inner">
+          <span className="token-ic">
+            <Icon of={HardDrive} size={18} />
+          </span>
+          <span className="folder-main">
+            <span>本机模式</span>
+            <span className="folder-sub">数据只存在这台设备上，不同步</span>
+          </span>
+        </div>
+      </div>
+      <button className="row" onClick={leave}>
+        <div className="row-inner">
+          <span>改用服务器</span>
+          <span className="chev" style={{ marginLeft: "auto" }}>
+            <Icon of={ChevronRight} size={18} />
+          </span>
+        </div>
+      </button>
+    </div>
   );
 }
 

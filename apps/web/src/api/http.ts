@@ -17,8 +17,9 @@ export const native = app !== null;
 /** The system the desktop app runs on. */
 export const desktopOs = /Windows/.test(navigator.userAgent) ? "Windows" : "macOS";
 
-/** In the app, where the server is and the session's token; empty in the browser. */
-const server = { url: "", token: undefined as string | undefined };
+/** In the app, where the server is and the session's token; empty in the browser. `local`: the
+ * app's own server on this device (docs/local.md), which nothing about is kept. */
+const server = { url: "", token: undefined as string | undefined, local: false };
 
 /** Reads where the app connects to. Call before anything talks to the server. */
 export async function loadServer() {
@@ -35,6 +36,12 @@ export function setServer(typed: string) {
   server.url = /^https?:\/\//.test(url) ? url : `https://${url}`;
   // A token left from an earlier sign-in is the old server's, and never goes to another.
   server.token = undefined;
+  server.local = false;
+}
+
+/** Points the app at its own server on this device, for as long as the page is loaded. */
+export function connectLocal(url: string, token: string) {
+  Object.assign(server, { url, token, local: true });
 }
 
 /** Remembers the server and the session after signing in in the app. */
@@ -70,6 +77,12 @@ export class ApiError extends Error {
 
 export const OFFLINE = "offline";
 
+/** For the app's own server: straight to it. The HTTP plugin goes through the system's proxy, or
+ * the one the environment gives, even to 127.0.0.1, and the proxy would get the token and the data.
+ * A proxy given here replaces both, and `noProxy` sends 127.0.0.1 past it; `*` would match domain
+ * names only. */
+const DIRECT = { proxy: { all: { url: "http://127.0.0.1:9", noProxy: "127.0.0.1" } }, maxRedirections: 0 };
+
 /** How long a request may take, its answer included: some are made while the other tabs wait to
  * sign in or out. Those that wait for a model give their own. */
 const TIMEOUT_MS = 20_000;
@@ -87,6 +100,7 @@ export async function api<T>(method: string, path: string, body?: unknown, timeo
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
+      ...(server.local && DIRECT),
     });
     text = await res.text();
   } catch {

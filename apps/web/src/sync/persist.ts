@@ -36,6 +36,10 @@ const db = () =>
 /** All of a user's records in either store: arrays sort after strings. */
 const all = (userId: string) => IDBKeyRange.bound([userId], [userId, []]);
 
+/** Everyone's records but the user's: arrays sort after strings, so their keys lie below `[userId]`
+ * or above `[userId, []]`. */
+const others = (userId: string) => [IDBKeyRange.upperBound([userId], true), IDBKeyRange.lowerBound([userId, []], true)];
+
 /** The user's data saved on this device: the newest copy, and the outbox in the order the changes
  * were made (mutation ids are UUIDv7). The newest copy becomes `copyId`, in place of the others; a
  * session still open in another tab saves its own again with its next change. */
@@ -141,19 +145,30 @@ export function saver(userId: string, copyId: string, failed: (e: unknown) => vo
 export async function forget(userId: string) {
   forgetDrafts(userId);
   forgetAiConfig(userId);
+  await forgetSynced(userId);
+}
+
+/** Deletes the user's copies and outbox, which belong to the server's history of their data; the
+ * drafts and the AI settings stay. */
+export async function forgetSynced(userId: string) {
   const tx = (await db()).transaction(["copies", "outbox"], "readwrite");
   await Promise.all([tx.objectStore("copies").delete(all(userId)), tx.objectStore("outbox").delete(all(userId)), tx.done]);
 }
 
-/** Deletes everyone's data on this device but the user's: arrays sort after strings, so their keys
- * lie below `[userId]` or above `[userId, []]`. */
+/** How many changes of everyone but the user wait on this device to be sent. */
+export async function unsentOfOthers(userId: string) {
+  const outbox = (await db()).transaction("outbox").store;
+  const [below, above] = await Promise.all(others(userId).map((r) => outbox.count(r)));
+  return below + above;
+}
+
+/** Deletes everyone's data on this device but the user's. */
 export async function forgetOthers(userId: string) {
   forgetOtherDrafts(userId);
   forgetOtherAiConfigs(userId);
   const tx = (await db()).transaction(["copies", "outbox"], "readwrite");
   const [copies, outbox] = [tx.objectStore("copies"), tx.objectStore("outbox")];
-  const others = [IDBKeyRange.upperBound([userId], true), IDBKeyRange.lowerBound([userId, []], true)];
-  await Promise.all([...others.flatMap((r) => [copies.delete(r), outbox.delete(r)]), tx.done]);
+  await Promise.all([...others(userId).flatMap((r) => [copies.delete(r), outbox.delete(r)]), tx.done]);
 }
 
 /** Deletes one session's copy of the user's data. */

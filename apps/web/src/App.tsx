@@ -1,11 +1,25 @@
 import { useEffect, useState } from "react";
+import * as local from "./local";
 import { Session } from "./session";
 import { Root } from "./ui/Root";
 import { started } from "./updates";
-import { Login } from "./views/Login";
+import { Login, StartFailedPage } from "./views/Login";
 import { Main } from "./views/Main";
 
-type State = { kind: "loading" } | { kind: "out"; notice?: string } | { kind: "in"; session: Session };
+type State =
+  | { kind: "loading" }
+  | { kind: "out"; notice?: string }
+  | { kind: "failed"; error: local.StartFailed }
+  | { kind: "in"; session: Session };
+
+const resume = () => (local.inLocalMode() ? local.resume() : Session.resume());
+
+/** Where opening a session leads. */
+const outcome = (opening: Promise<Session | null>): Promise<State> =>
+  opening.then(
+    (session) => (session ? { kind: "in", session } : { kind: "out" }),
+    (e: Error) => (e instanceof local.StartFailed ? { kind: "failed", error: e } : { kind: "out", notice: e.message }),
+  );
 
 // Started once, outside React, so that development's double effects do not open two sessions.
 let resuming: Promise<Session | null> | undefined;
@@ -19,17 +33,29 @@ export function App() {
     if (shown) started();
   }, [shown]);
   useEffect(() => {
-    (resuming ??= Session.resume()).then(
-      (session) => setState(session ? { kind: "in", session } : { kind: "out" }),
-      (e: Error) => setState({ kind: "out", notice: e.message }),
-    );
+    void outcome((resuming ??= resume())).then(setState);
   }, []);
 
   if (state.kind === "loading") return null;
+  if (state.kind === "failed") {
+    return (
+      <Root className="app">
+        <StartFailedPage
+          error={state.error}
+          onRetry={() => outcome((resuming = local.resume())).then(setState)}
+          onServer={() => local.forgetMode().then(() => setState({ kind: "out" }))}
+        />
+      </Root>
+    );
+  }
   if (state.kind === "out") {
     return (
       <Root className="app">
-        <Login notice={state.notice} onSignIn={async (request) => setState({ kind: "in", session: await Session.open(request) })} />
+        <Login
+          notice={state.notice}
+          onSignIn={async (request) => setState({ kind: "in", session: await Session.open(request) })}
+          onLocal={(session) => setState({ kind: "in", session })}
+        />
       </Root>
     );
   }

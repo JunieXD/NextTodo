@@ -1,7 +1,8 @@
 //! The desktop app, for macOS and Windows: the web app in a window that closing only hides, a menu
-//! bar or tray icon and a global shortcut for quick add, deadline reminders while it runs, and
-//! updates. See docs/desktop.md.
+//! bar or tray icon and a global shortcut for quick add, deadline reminders while it runs, updates,
+//! and the server inside it for local mode. See docs/desktop.md.
 
+mod local;
 mod reminders;
 mod updates;
 
@@ -100,7 +101,16 @@ pub fn run() {
         )
         .manage(reminders::Reminders::default())
         .manage(updates::Downloaded::default())
-        .invoke_handler(tauri::generate_handler![reminders::set_reminders, reminders::clear_reminders, updates::update, updates::restart])
+        .manage(local::Server::default())
+        .invoke_handler(tauri::generate_handler![
+            reminders::set_reminders,
+            reminders::clear_reminders,
+            updates::update,
+            updates::restart,
+            local::local_mode,
+            local::set_local_mode,
+            local::start_local
+        ])
         .setup(move |app| {
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
             window(app.handle())?;

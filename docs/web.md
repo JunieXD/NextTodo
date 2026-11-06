@@ -10,6 +10,7 @@
 | `src/domain/` | 派生状态和排序（`board.ts`，与 `crates/core/src/board.rs` 一致）、本地应用操作（`apply.ts`）、关系图和轨道画哪些事项和依赖（`graph.ts`）、日期显示（`dates.ts`）、文本校验（`text.ts`，与服务端规则一致） |
 | `src/sync/` | 本地副本和待发队列（`store.ts`）、WebSocket 连接（`socket.ts`）、IndexedDB 持久化（`persist.ts`）、快速添加的草稿（`drafts.ts`） |
 | `src/session.tsx` | 登录状态：启动时先用本机数据，再向服务端确认；本地副本和连接的创建 |
+| `src/local.ts` | 桌面 App 的[本机模式](local.md)：启动 App 里的服务端并登录，进入和离开 |
 | `src/ui/` | 通用组件：图标、勾选圈、分段控件、底部面板、弹窗和对话框、提示条、Markdown 描述 |
 | `src/views/` | 页面：登录、手机和电脑两种布局、接下来、文件夹、关系图（`Graph.tsx`，布局在 `graph-layout.ts`）、搜索、详情、设置、各种选择面板 |
 | `src/index.css` | 样式：原型的样式原样放在 `components` 层，Tailwind 提供基础样式和颜色工具类 |

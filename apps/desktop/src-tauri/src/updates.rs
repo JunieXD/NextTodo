@@ -47,13 +47,15 @@ async fn manifest(url: &Url) -> Result<serde_json::Value, String> {
     serde_json::from_slice(&res.bytes().await.map_err(|e| e.to_string())?).map_err(|e| e.to_string())
 }
 
-/// Starts the app again, to run the version downloaded: on Windows its installer does, once it has
-/// installed it.
+/// Starts the app again, running the version downloaded if there is one: on Windows its installer
+/// does, once it has installed it. The app exits first as when quit, letting go of what it holds,
+/// such as the single instance's socket and local mode's data directory.
 #[tauri::command]
 pub fn restart(app: AppHandle, downloaded: State<'_, Downloaded>) -> Result<(), String> {
     // Kept should installing fail, for another try.
     if let Some((update, bytes)) = downloaded.0.lock().expect("never poisoned").as_ref() {
         update.install(bytes).map_err(|e| format!("安装更新失败：{e}"))?;
     }
-    app.restart();
+    app.request_restart();
+    Ok(())
 }

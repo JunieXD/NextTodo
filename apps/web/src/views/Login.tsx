@@ -1,16 +1,29 @@
 import { useState } from "react";
-import { ApiError, api, deviceName, keepSession, native, serverUrl, setServer } from "../api/http";
-import type { Session } from "../api/types/Session";
+import { ApiError, api, app, deviceName, keepSession, native, serverUrl, setServer } from "../api/http";
+import type { Session as SignedIn } from "../api/types/Session";
 import type { User } from "../api/types/User";
+import * as local from "../local";
+import type { Session } from "../session";
 import { Seg } from "../ui/controls";
+import { useFeedback } from "../ui/feedback";
 
-/** `onSignIn` signs in with `request`, which asks the server and says who signed in. */
-export function Login({ onSignIn, notice }: { onSignIn(request: () => Promise<User>): Promise<void>; notice?: string }) {
+/** `onSignIn` signs in with `request`, which asks the server and says who signed in; `onLocal` hears
+ * of the session opened in local mode. */
+export function Login({
+  onSignIn,
+  onLocal,
+  notice,
+}: {
+  onSignIn(request: () => Promise<User>): Promise<void>;
+  onLocal(session: Session): void;
+  notice?: string;
+}) {
   const invite = new URLSearchParams(location.search).get("invite") ?? "";
   const [mode, setMode] = useState<"login" | "register">(invite ? "register" : "login");
   const [form, setForm] = useState({ server: serverUrl(), invite, username: "", display_name: "", password: "" });
   const [error, setError] = useState<{ message: string; field?: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const { confirm } = useFeedback();
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [key]: e.target.value });
     setError(null);
@@ -27,8 +40,9 @@ export function Login({ onSignIn, notice }: { onSignIn(request: () => Promise<Us
           ? { username: fields.username.trim(), password: fields.password, device: deviceName() }
           : { ...fields, invite: fields.invite.trim(), username: fields.username.trim(), display_name: fields.display_name.trim(), device: deviceName() };
       await onSignIn(async () => {
-        const session = await api<Session>("POST", mode === "login" ? "/auth/login" : "/auth/register", body);
+        const session = await api<SignedIn>("POST", mode === "login" ? "/auth/login" : "/auth/register", body);
         await keepSession(session.secret);
+        await local.forgetMode();
         if (invite) history.replaceState(null, "", "/");
         return session.user;
       });
@@ -37,6 +51,20 @@ export function Login({ onSignIn, notice }: { onSignIn(request: () => Promise<Us
       setError(e instanceof ApiError ? { message: e.message, field: e.field } : { message: `登录失败：${e}` });
       setBusy(false);
     }
+  };
+
+  const enterLocal = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const session = await local.enter((unsent) =>
+        confirm({ title: "在本机使用？", body: `这台设备上有 ${unsent} 项改动还没发到服务器，在本机使用后会丢失。`, ok: "仍然使用", danger: true }),
+      );
+      if (session) return onLocal(session);
+    } catch (e) {
+      setError({ message: e instanceof Error ? e.message : String(e) });
+    }
+    setBusy(false);
   };
 
   const field = (key: keyof typeof form, label: string, props: React.InputHTMLAttributes<HTMLInputElement>, hint?: string) => (
@@ -50,11 +78,7 @@ export function Login({ onSignIn, notice }: { onSignIn(request: () => Promise<Us
   return (
     <div className="login" data-tauri-drag-region="deep">
       <form className="login-card" onSubmit={submit}>
-        <div className="login-brand">
-          <img className="brand-mark" src="/icon.svg" alt="" />
-          <h1>NextTodo</h1>
-          <p>理清先后，专注当下</p>
-        </div>
+        <Brand />
         <Seg
           items={[
             ["login", "登录"],
@@ -73,7 +97,52 @@ export function Login({ onSignIn, notice }: { onSignIn(request: () => Promise<Us
         <button className="filled-btn" disabled={busy}>
           {mode === "login" ? "登录" : "注册"}
         </button>
+        {app === "desktop" && (
+          <div className="login-local">
+            <button type="button" className="text-btn" disabled={busy} onClick={enterLocal}>
+              在本机使用
+            </button>
+            <p>数据只存在这台设备上，不同步</p>
+          </div>
+        )}
       </form>
+    </div>
+  );
+}
+
+function Brand() {
+  return (
+    <div className="login-brand">
+      <img className="brand-mark" src="/icon.svg" alt="" />
+      <h1>NextTodo</h1>
+      <p>理清先后，专注当下</p>
+    </div>
+  );
+}
+
+/** Local mode did not start: why, and what can be done. */
+export function StartFailedPage({ error, onRetry, onServer }: { error: local.StartFailed; onRetry(): Promise<void>; onServer(): Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const act = (f: () => Promise<void>) => () => {
+    setBusy(true);
+    void f().finally(() => setBusy(false));
+  };
+  return (
+    <div className="login" data-tauri-drag-region="deep">
+      <div className="login-card">
+        <Brand />
+        <p className="form-error">本机模式无法启动：{error.message}</p>
+        {error.locked && (
+          <button className="filled-btn" disabled={busy} onClick={act(onRetry)}>
+            重试
+          </button>
+        )}
+        <div className="login-local">
+          <button className="text-btn" disabled={busy} onClick={act(onServer)}>
+            改用服务器
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

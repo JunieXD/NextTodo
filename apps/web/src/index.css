@@ -434,6 +434,8 @@ svg { display: block; flex: none; }
 .login-brand p { margin: 0; color: var(--on-surface-variant); font-size: 15px; }
 .login .seg { margin: 0 16px 18px; }
 .login .filled-btn { display: flex; width: calc(100% - 32px); height: 48px; border-radius: 24px; margin: 8px 16px 0; font-size: 15px; }
+.login-local { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 16px 16px 0; text-align: center; }
+.login-local p { margin: 0; font-size: 13px; color: var(--outline); }
 .secret { margin: 0 16px 12px; padding: 6px 6px 6px 14px; border-radius: 12px; background: var(--surface-container); font: 13px/1.5 ui-monospace, Menlo, monospace; display: flex; align-items: center; gap: 8px; }
 .secret span { flex: 1; padding: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
 .field .secret { margin: 0; font-weight: 400; color: var(--on-surface); }

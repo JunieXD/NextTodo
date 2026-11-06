@@ -94,21 +94,28 @@ export function FolderMenu({ folder }: { folder: FolderId }) {
           className="icon-btn"
           aria-label="文件夹操作"
           // Radix opens the menu as the button goes down. A finger's opens it once the tap is done, as the
-          // system's menus do: the press shows, and a scroll or a long press begun on it opens nothing.
-          // A tap while the menu is open comes down outside it, closing it, and is not one.
+          // system's menus do: the press shows, and a scroll or a long press begun on it opens nothing. A
+          // click with no pointer behind it, from a screen reader say, opens it too.
           onPointerDown={(e) => {
             tap.current = e.pointerType !== "mouse";
             if (tap.current) e.preventDefault();
           }}
-          onClick={() => {
-            if (tap.current) setMenu(true);
+          onClick={(e) => {
+            if (tap.current || !(e.nativeEvent as PointerEvent).pointerType) setMenu(true);
             tap.current = false;
           }}
         >
           <Icon of={Ellipsis} />
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal container={root}>
-          <DropdownMenu.Content className="menu" align="end" sideOffset={4}>
+          <DropdownMenu.Content
+            className="menu"
+            align="end"
+            sideOffset={4}
+            // A tap on the button while the menu is open comes down outside it: it closes the menu, and
+            // its click opens nothing.
+            onPointerDownOutside={() => (tap.current = false)}
+          >
             {items.map((item) => (
               <DropdownMenu.Item key={item.label} className={itemClass(item)} onSelect={item.onSelect}>
                 <Icon of={item.icon} />

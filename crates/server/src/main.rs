@@ -1,12 +1,14 @@
+use std::fs::File;
 use std::io::IsTerminal;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 
 use nexttodo_server::ai::{Ai, llm::Https, secret::SecretKey};
-use nexttodo_server::{AppState, Clock, Db, app, auth, start, with_web};
+use nexttodo_server::{AppState, Clock, Db, app, auth, db, local, start, with_web};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -29,6 +31,8 @@ enum Command {
         #[arg(long, env = "NEXTTODO_WEB")]
         web: Option<PathBuf>,
     },
+    /// Replace the database with a snapshot, the server stopped; the data replaced is kept beside it
+    Restore { snapshot: PathBuf },
     /// Create an administrator account; asks for the password, or reads it from stdin
     CreateAdmin {
         username: String,
@@ -52,6 +56,7 @@ async fn main() -> anyhow::Result<()> {
     let db = cli.data.join("nexttodo.db");
     match cli.command {
         Command::Serve { listen, web } => {
+            let _lock = lock(&cli.data).await?;
             let ai = Ai::new(secret, Arc::new(Https));
             let (started, ()) = start::start(&db, cli.data.join("snapshots"), listen, ai, |_| Ok(())).await?;
             let router = match &web {
@@ -60,6 +65,14 @@ async fn main() -> anyhow::Result<()> {
             };
             tracing::info!(%listen, "listening");
             started.serve(router).with_graceful_shutdown(shutdown()).await?;
+            Ok(())
+        }
+        Command::Restore { snapshot } => {
+            let _lock = lock(&cli.data).await?;
+            match db::restore(&db, &snapshot, Clock::system().now())? {
+                Some(kept) => println!("已恢复，被替换的数据在 {}", kept.display()),
+                None => println!("已恢复"),
+            }
             Ok(())
         }
         Command::CreateAdmin { username, display_name } => {
@@ -71,6 +84,12 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
     }
+}
+
+/// The data directory's lock, held until the process ends: a restore never replaces the database
+/// under a server running on it.
+async fn lock(data: &Path) -> anyhow::Result<File> {
+    local::lock(&data.join("lock"), Duration::ZERO).await.map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 /// Asks twice on a terminal; reads one line when the password is piped in (scripts, `docker exec` without `-t`).

@@ -112,7 +112,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | 409 | `cycle` | 依赖会成环，`details.path` 是环上的事项 ID，首尾相同 |
 | 409 | `folder_cycle` | 文件夹移到了自己的子孙下面 |
 | 409 | `conflict` | 用户名已被占用、邀请码已用过、依赖已存在、同一层已有同名文件夹 |
-| 410 | `resync` | `since` 早于保留期，需要重新下载 `/snapshot` |
+| 410 | `resync` | `since` 早于保留期，或者服务端恢复过快照，需要重新下载 `/snapshot` |
 
 ## 同步协议
 
@@ -122,7 +122,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 |---|---|---|
 | 客户端 → 服务端 | `{type: "hello", token?, since, user}` | 连接后 10 秒内必须发的第一条。网页靠 Cookie 认证可以不带 `token`；App 的 WebView 不能给 WebSocket 加请求头，所以带在这里。`user` 是本地副本所属的用户 ID：登录的已经是别人（比如在另一个标签页换了账号）时，连接以 `unauthenticated` 失败，这份副本不会收到别人的数据，也不会把改动提交到别人名下 |
 | 服务端 → 客户端 | `{type: "changes", seq, changes}` | 收到 `hello` 后先补发 `since` 之后的变化（没有也发一条空的，表示已经同步到最新），之后每有新改动就推送，包括本连接自己提交的。`seq` 是这批之后的最新序号，每条变化的格式同 `/changes` |
-| 服务端 → 客户端 | `{type: "resync"}` | `since` 超出保留期，客户端重新下载 `/snapshot` |
+| 服务端 → 客户端 | `{type: "resync"}` | `since` 超出保留期或服务端恢复过快照，客户端重新下载 `/snapshot` |
 | 客户端 → 服务端 | `{type: "mutate", mutation}` | 提交改动，格式同 `POST /mutations` |
 | 服务端 → 客户端 | `{type: "ack", id, seq}` | 改动已生效，`seq` 是它的序号（重复提交时是第一次生效时的序号） |
 | 服务端 → 客户端 | `{type: "reject", id, code, message, details?}` | 改动本身不成立（格式不对、冲突、事项不存在、只读令牌等），客户端撤回它的本地效果，不再重发 |

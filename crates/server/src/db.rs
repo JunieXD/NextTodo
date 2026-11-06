@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use anyhow::{anyhow, bail};
+use anyhow::{Context, anyhow, bail};
 use rusqlite::{Connection, OpenFlags};
 
 use crate::error::ApiError;
@@ -143,4 +143,59 @@ pub fn snapshot(db: &Path, dir: &Path, now_ms: i64, keep: usize) -> anyhow::Resu
         std::fs::remove_file(p)?;
     }
     Ok(path)
+}
+
+/// Replaces the database at `db`, with the server stopped, by a copy of NextTodo's database at
+/// `from`, a snapshot say. Returns where the data replaced was kept, when there was some. The copy's
+/// log goes on after the replaced one's, with every user's cut (see `prune`) just past it: devices,
+/// which have seen no change after that, download everything again, and lists kept with a sequence
+/// number, as the widget's, take the next ones.
+pub fn restore(db: &Path, from: &Path, now_ms: i64) -> anyhow::Result<Option<PathBuf>> {
+    // Read-only: a mistyped path is not made into an empty database.
+    let source =
+        Connection::open_with_flags(from, OpenFlags::SQLITE_OPEN_READ_ONLY).with_context(|| format!("无法打开 {}", from.display()))?;
+    let version: i64 = source.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    if version == 0 {
+        bail!("这不是 NextTodo 的数据库");
+    }
+    pending(version)?;
+    let path = |p: &Path| p.to_str().expect("data directory path is UTF-8").to_owned();
+    let mut last = 0;
+    let kept = if db.try_exists()? {
+        let kept = db.with_file_name(format!("before-restore-{:010}.db", now_ms / 1000));
+        let c = Connection::open(db)?;
+        last = c.query_row("SELECT coalesce(max(seq), 0) FROM sqlite_sequence WHERE name = 'mutations'", [], |r| r.get(0))?;
+        c.execute("VACUUM INTO ?1", [path(&kept)])?;
+        Some(kept)
+    } else {
+        None
+    };
+    let part = db.with_extension("db.restore");
+    // Left by a restore cut short: VACUUM INTO won't write over it.
+    if part.try_exists()? {
+        std::fs::remove_file(&part)?;
+    }
+    source.execute("VACUUM INTO ?1", [path(&part)])?;
+    let mut c = Connection::open(&part)?;
+    migrate(&mut c)?;
+    let tx = c.transaction()?;
+    let next: i64 =
+        tx.query_row("SELECT max(?1, coalesce(max(seq), 0)) + 1 FROM sqlite_sequence WHERE name = 'mutations'", [last], |r| r.get(0))?;
+    tx.execute("DELETE FROM sqlite_sequence WHERE name = 'mutations'", [])?;
+    tx.execute("INSERT INTO sqlite_sequence (name, seq) VALUES ('mutations', ?1)", [next])?;
+    // Cleared up to the cut, as `prune` leaves it.
+    tx.execute("UPDATE users SET pruned_seq = ?1", [next])?;
+    tx.execute("UPDATE mutations SET ops = NULL, effects = NULL, reply = NULL WHERE effects IS NOT NULL", [])?;
+    tx.execute("UPDATE epoch SET value = lower(hex(randomblob(16)))", [])?;
+    tx.commit()?;
+    drop(c);
+    // What they held of the data replaced is in `kept`; beside the copy, SQLite would apply it.
+    for suffix in ["db-wal", "db-shm"] {
+        let file = db.with_extension(suffix);
+        if file.try_exists()? {
+            std::fs::remove_file(file)?;
+        }
+    }
+    std::fs::rename(&part, db)?;
+    Ok(kept)
 }

@@ -34,17 +34,22 @@ pub fn id() -> String {
 
 impl TestApp {
     pub fn new() -> Self {
-        Self::build(|s| s)
+        Self::on(Db::open_in_memory().unwrap())
+    }
+
+    /// Over `db`, a file say.
+    pub fn on(db: Db) -> Self {
+        Self::build(db, |s| s)
     }
 
     pub fn with_ai(ai: Ai) -> Self {
-        Self::build(|s| s.with_ai(ai))
+        Self::build(Db::open_in_memory().unwrap(), |s| s.with_ai(ai))
     }
 
-    fn build(f: impl FnOnce(AppState) -> AppState) -> Self {
+    fn build(db: Db, f: impl FnOnce(AppState) -> AppState) -> Self {
         let time = Arc::new(AtomicI64::new(1_762_000_000_000));
         let t = time.clone();
-        let state = f(AppState::new(Db::open_in_memory().unwrap(), Clock(Arc::new(move || t.load(Ordering::SeqCst)))));
+        let state = f(AppState::new(db, Clock(Arc::new(move || t.load(Ordering::SeqCst)))));
         TestApp { app: app(state.clone()), state, time }
     }
 

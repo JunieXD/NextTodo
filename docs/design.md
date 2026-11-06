@@ -233,7 +233,7 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 - 自己部署：用 GHCR 上的镜像 `ghcr.io/juniexd/nexttodo`（amd64 和 arm64），`docker compose` 启动，数据在挂载的 `data/` 里；前面放一个提供 HTTPS 的反向代理。步骤见[部署](deploy.md)。
 - 镜像基于 `scratch`，里面只有静态链接的 Linux 服务端和网页文件（含 [App 更新](#app-更新)），容器以 65534 用户运行，只监听容器里的 8080。镜像在 Mac 上用 `cargo-zigbuild` 交叉编译后打包，服务器上不编译。
 - 反向代理要开启 WebSocket，并把原来的 `Host` 传过去（或设 `X-Forwarded-Host`），网页的同步连接靠它确认是同源页面。
-- 服务端启动时和之后每天用 `VACUUM INTO` 做一次数据库快照，放在 `data/snapshots/snapshot-<Unix 秒>.db`，保留最近 7 份。恢复时停掉服务，用快照替换 `data/nexttodo.db`（并删掉旁边的 `-wal`、`-shm` 文件）再启动。
+- 服务端启动时和之后每天用 `VACUUM INTO` 做一次数据库快照，放在 `data/snapshots/snapshot-<Unix 秒>.db`，保留最近 7 份。恢复时停掉服务，用服务端的 `restore` 命令换上快照再启动，设备随后重新下载全部数据，见[部署](deploy.md#备份和恢复)。
 - 发布：`deploy/build.sh` 构建镜像内容和各端安装包，`deploy/release.sh` 把镜像推到 GHCR、安装包传到 GitHub Releases；`deploy/deploy.sh` 经 ssh 部署到自己的服务器，换版本失败时自动换回上一个。签名密钥从环境变量读取，不进仓库。见[部署](deploy.md#构建发布)。
 
 ## App 更新

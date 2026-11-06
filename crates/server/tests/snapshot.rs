@@ -1,5 +1,10 @@
+mod common;
+
+use axum::http::StatusCode;
+use common::{TestApp, id};
 use nexttodo_server::{AppState, Clock, Db, auth, db};
 use rusqlite::Connection;
+use serde_json::json;
 
 #[tokio::test]
 async fn snapshots_hold_the_data_and_only_the_newest_are_kept() {
@@ -34,4 +39,49 @@ async fn snapshots_hold_the_data_and_only_the_newest_are_kept() {
     // Closed first: Windows deletes no file that is open.
     drop((copy, state));
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+async fn restoring_a_snapshot_has_devices_download_everything_again() {
+    let dir = std::env::temp_dir().join(format!("nexttodo-restore-{}", uuid::Uuid::now_v7()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("nexttodo.db");
+    let t = TestApp::on(Db::open(&file).unwrap());
+    let s = t.admin().await;
+    add(&t, &s, "快照里的").await;
+    let snapshot = db::snapshot(&file, &dir.join("snapshots"), 1_000, 7).unwrap();
+    add(&t, &s, "快照之后的").await;
+    let seen = t.snapshot(&s).await["seq"].as_i64().unwrap();
+    // The server stopped.
+    drop(t);
+
+    let kept = db::restore(&file, &snapshot, 2_000).unwrap().unwrap();
+    let t = TestApp::on(Db::open(&file).unwrap());
+    let stale = t.call("GET", &format!("/changes?since={seen}"), Some(&s), None).await;
+    assert_eq!((stale.status, stale.body["code"].as_str()), (StatusCode::GONE, Some("resync")));
+    let fresh = t.snapshot(&s).await;
+    let titles: Vec<&str> = fresh["tasks"].as_array().unwrap().iter().map(|t| t["title"].as_str().unwrap()).collect();
+    assert_eq!(titles, ["快照里的"]);
+    let since = fresh["seq"].as_i64().unwrap();
+    assert!(since > seen);
+    // Changes go on after it, and reach a device that downloaded it.
+    let changed = add(&t, &s, "恢复之后的").await;
+    assert!(changed > since);
+    let after = t.call("GET", &format!("/changes?since={since}"), Some(&s), None).await.body;
+    assert_eq!(after["changes"].as_array().unwrap().len(), 1);
+    let replaced = Connection::open(&kept).unwrap().query_row("SELECT count(*) FROM tasks", [], |r| r.get::<_, i64>(0)).unwrap();
+    assert_eq!(replaced, 2);
+
+    // Not from a file that isn't NextTodo's, nor one missing.
+    std::fs::write(dir.join("empty.db"), "").unwrap();
+    assert!(db::restore(&file, &dir.join("empty.db"), 3_000).is_err());
+    assert!(db::restore(&file, &dir.join("missing.db"), 3_000).is_err());
+    assert!(!dir.join("missing.db").exists());
+    drop(t);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// Adds a task; returns the change's sequence number.
+async fn add(t: &TestApp, secret: &str, title: &str) -> i64 {
+    t.mutate(secret, json!([{ "op": "task.create", "id": id(), "title": title }])).await.body["seq"].as_i64().unwrap()
 }

@@ -62,14 +62,16 @@ App 不用手动升级：它们从登录的服务器取更新，服务端升级�
 
 ## 备份和恢复
 
-服务端每天在 `data/snapshots/` 留一份数据库快照，保留最近 7 份。另外备份时复制整个 `data/` 即可。恢复：
+服务端每天在 `data/snapshots/` 留一份数据库快照，保留最近 7 份。要另外备份，复制这些快照即可；运行中直接复制 `nexttodo.db` 不一定得到完整的副本。恢复：
 
 ```sh
 docker compose stop
-cp data/snapshots/snapshot-<时间>.db data/nexttodo.db
-rm -f data/nexttodo.db-wal data/nexttodo.db-shm
+docker compose run --rm nexttodo restore /data/snapshots/snapshot-<时间>.db
 docker compose start
 ```
+
+- 被替换的数据留在 `data/before-restore-<时间>.db`，不自动删除。服务端运行时持有数据目录锁 `data/lock`，没停掉就运行 `restore` 会报错，什么都不改。
+- 快照之后的改动、登录和 API 令牌都会消失，快照之后才登录的设备要重新登录。各设备下次连上时重新下载全部数据，还没发出的改动保留，照常发送。原理见[数据模型](data-model.md#mutations)。
 
 ## 用部署脚本
 

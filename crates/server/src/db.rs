@@ -161,6 +161,11 @@ pub(crate) fn ours(c: &Connection) -> anyhow::Result<bool> {
     Ok(done > 0 && schema(c)? == schema(&empty)?)
 }
 
+/// The last sequence number given to a mutation.
+fn last_seq(c: &Connection) -> rusqlite::Result<i64> {
+    c.query_row("SELECT coalesce(max(seq), 0) FROM sqlite_sequence WHERE name = 'mutations'", [], |r| r.get(0))
+}
+
 fn schema(c: &Connection) -> rusqlite::Result<Vec<(String, String, Option<String>)>> {
     c.prepare("SELECT type, name, sql FROM sqlite_schema ORDER BY type, name")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
@@ -172,10 +177,11 @@ fn schema(c: &Connection) -> rusqlite::Result<Vec<(String, String, Option<String
 /// `before-restore-<Unix seconds>/`, returned when there was some.
 ///
 /// Devices are to download everything again, and lists kept with a sequence number, as the
-/// widget's, to take the new ones: the copy's log goes on from `now_ms`, every user's cut (see
-/// `prune`) there, unless its own numbers are higher. The numbers given before went up a change at a
-/// time, from 1 or from an earlier restore's time, and no server makes a change a millisecond: all
-/// are below it, without the database replaced, which may be damaged or gone, to say so.
+/// widget's, to take the new ones: the copy's log goes on above every number given before, every
+/// user's cut (see `prune`) there. Those are the database replaced's; when it is damaged or gone,
+/// `now_ms` stands for them: they went up a change at a time, from 1 or from an earlier restore's
+/// time, on average far slower than one a millisecond, so all are below it, unless the clock has
+/// gone back to before that restore.
 pub fn restore(db: &Path, from: &Path, now_ms: i64) -> anyhow::Result<Option<PathBuf>> {
     // Read-only: a mistyped path is not made into an empty database.
     let source =
@@ -191,9 +197,37 @@ pub fn restore(db: &Path, from: &Path, now_ms: i64) -> anyhow::Result<Option<Pat
     source.execute("VACUUM INTO ?1", [part.to_str().expect("data directory path is UTF-8")])?;
     let mut c = Connection::open(&part)?;
     migrate(&mut c)?;
+
+    let files = ["db", "db-wal", "db-shm"].map(|suffix| db.with_extension(suffix));
+    let mut there = Vec::new();
+    for file in &files {
+        if file.try_exists()? {
+            there.push(file);
+        }
+    }
+    let kept = if there.is_empty() {
+        None
+    } else {
+        let kept = crate::backup::kept(db.parent().expect("a database in a directory"), now_ms)?;
+        std::fs::create_dir(&kept)?;
+        for file in there {
+            std::fs::copy(file, kept.join(file.file_name().expect("a file name")))?;
+        }
+        Some(kept)
+    };
+    // Read once kept: closed, the connection takes in the -wal, so that, cut short from here on, the
+    // data replaced is whole without it, unless damaged.
+    let given = if db.try_exists()? {
+        Connection::open(db).and_then(|c| last_seq(&c)).unwrap_or_else(|e| {
+            tracing::warn!(error = %e, "database replaced unreadable, numbered on from the time");
+            0
+        })
+    } else {
+        0
+    };
+
     let tx = c.transaction()?;
-    let cut: i64 =
-        tx.query_row("SELECT max(?1, coalesce(max(seq), 0) + 1) FROM sqlite_sequence WHERE name = 'mutations'", [now_ms], |r| r.get(0))?;
+    let cut = now_ms.max(given + 1).max(last_seq(&tx)? + 1);
     tx.execute("DELETE FROM sqlite_sequence WHERE name = 'mutations'", [])?;
     tx.execute("INSERT INTO sqlite_sequence (name, seq) VALUES ('mutations', ?1)", [cut])?;
     // Cleared up to the cut, as `prune` leaves it.
@@ -204,21 +238,7 @@ pub fn restore(db: &Path, from: &Path, now_ms: i64) -> anyhow::Result<Option<Pat
     // One file, without a -wal beside it.
     c.pragma_update_and_check(None, "journal_mode", "DELETE", |_| Ok(()))?;
     drop(c);
-    let files = ["db", "db-wal", "db-shm"].map(|suffix| db.with_extension(suffix));
-    let kept = if db.try_exists()? {
-        let kept = db.with_file_name(format!("before-restore-{:010}", now_ms / 1000));
-        std::fs::create_dir(&kept)?;
-        for file in &files {
-            if file.try_exists()? {
-                std::fs::copy(file, kept.join(file.file_name().expect("a file name")))?;
-            }
-        }
-        Some(kept)
-    } else {
-        None
-    };
-    // Beside the copy, SQLite would apply the replaced data's -wal to it. Cut short from here on, the
-    // data replaced is in use again, without its -wal, until the restore runs again.
+    // Beside the copy, SQLite would apply the replaced data's -wal to it.
     for file in &files[1..] {
         if file.try_exists()? {
             std::fs::remove_file(file)?;

@@ -99,19 +99,25 @@ pub(crate) fn finish(dir: &Path) -> anyhow::Result<()> {
     }
     let data = dir.join(DB_DIR);
     if data.try_exists()? {
-        let name = format!("before-restore-{}", Clock::system().now() / 1000);
-        let mut kept = dir.join(&name);
-        for n in 2.. {
-            if !kept.try_exists()? {
-                break;
-            }
-            kept = dir.join(format!("{name}-{n}"));
-        }
-        std::fs::rename(&data, kept)?;
+        std::fs::rename(&data, kept(dir, Clock::system().now())?)?;
         sync_dir(dir)?;
     }
     std::fs::rename(ready, data)?;
     Ok(sync_dir(dir)?)
+}
+
+/// Where in `dir` to keep the data a restore at `now_ms` replaces: `before-restore-<Unix seconds>`,
+/// with `-2`, `-3`… after it when that is taken, by a restore run again within the second say.
+pub(crate) fn kept(dir: &Path, now_ms: i64) -> std::io::Result<PathBuf> {
+    let name = format!("before-restore-{}", now_ms / 1000);
+    let mut kept = dir.join(&name);
+    for n in 2.. {
+        if !kept.try_exists()? {
+            break;
+        }
+        kept = dir.join(format!("{name}-{n}"));
+    }
+    Ok(kept)
 }
 
 /// A removal, where nothing to remove counts as done.

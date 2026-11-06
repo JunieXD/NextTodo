@@ -4,6 +4,7 @@ use axum::http::StatusCode;
 use common::{TestApp, id};
 use nexttodo_server::{AppState, Clock, Db, auth, db};
 use rusqlite::Connection;
+use rusqlite::config::DbConfig;
 use serde_json::json;
 
 #[tokio::test]
@@ -57,8 +58,7 @@ async fn restoring_a_snapshot_has_devices_download_everything_again() {
 
     let kept = db::restore(&file, &snapshot, 2_000).unwrap().unwrap();
     let t = TestApp::on(Db::open(&file).unwrap());
-    let stale = t.call("GET", &format!("/changes?since={seen}"), Some(&s), None).await;
-    assert_eq!((stale.status, stale.body["code"].as_str()), (StatusCode::GONE, Some("resync")));
+    assert!(resyncs(&t, &s, seen).await);
     let fresh = t.snapshot(&s).await;
     let titles: Vec<&str> = fresh["tasks"].as_array().unwrap().iter().map(|t| t["title"].as_str().unwrap()).collect();
     assert_eq!(titles, ["快照里的"]);
@@ -73,15 +73,38 @@ async fn restoring_a_snapshot_has_devices_download_everything_again() {
     assert_eq!(replaced.query_row("SELECT count(*) FROM tasks", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
     drop((t, replaced));
 
-    // With the database replaced damaged, then gone, all the same; the damaged one is kept as it was.
+    // Numbers above the time, as after the clock went back, still in the -wal of a server killed: they
+    // count, and the -wal is kept as it was. Again within the second, beside the first.
+    let c = Connection::open(&file).unwrap();
+    c.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true).unwrap();
+    c.execute("UPDATE sqlite_sequence SET seq = 1000000 WHERE name = 'mutations'", []).unwrap();
+    drop(c);
+    let wal = std::fs::read(file.with_extension("db-wal")).unwrap();
+    let again = db::restore(&file, &snapshot, 2_500).unwrap().unwrap();
+    assert_eq!((kept.file_name().unwrap(), again.file_name().unwrap()), ("before-restore-2".as_ref(), "before-restore-2-2".as_ref()));
+    assert_eq!(std::fs::read(again.join("nexttodo.db-wal")).unwrap(), wal);
+    let t = TestApp::on(Db::open(&file).unwrap());
+    assert!(resyncs(&t, &s, 1_000_000).await);
+    drop(t);
+
+    // With the database replaced damaged, then gone with a -wal left beside it: all the same, and what
+    // there was is kept as it was.
     std::fs::write(&file, "damaged").unwrap();
     let kept = db::restore(&file, &snapshot, 3_000).unwrap().unwrap();
     assert_eq!(std::fs::read(kept.join("nexttodo.db")).unwrap(), b"damaged");
-    std::fs::remove_file(&file).unwrap();
-    assert_eq!(db::restore(&file, &snapshot, 4_000).unwrap(), None);
     let t = TestApp::on(Db::open(&file).unwrap());
-    let stale = t.call("GET", &format!("/changes?since={changed}"), Some(&s), None).await;
-    assert_eq!((stale.status, stale.body["code"].as_str()), (StatusCode::GONE, Some("resync")));
+    let changed = add(&t, &s, "恢复之后的").await;
+    drop(t);
+    std::fs::remove_file(&file).unwrap();
+    std::fs::write(file.with_extension("db-wal"), "left").unwrap();
+    let kept = db::restore(&file, &snapshot, 4_000).unwrap().unwrap();
+    let names: Vec<_> = std::fs::read_dir(&kept).unwrap().map(|e| e.unwrap().file_name()).collect();
+    assert_eq!(names, ["nexttodo.db-wal"]);
+    let t = TestApp::on(Db::open(&file).unwrap());
+    assert!(resyncs(&t, &s, changed).await);
+    let elsewhere = dir.join("new");
+    std::fs::create_dir(&elsewhere).unwrap();
+    assert_eq!(db::restore(&elsewhere.join("nexttodo.db"), &snapshot, 5_000).unwrap(), None);
 
     // Not from a file that isn't NextTodo's database, nor from one missing; nothing changes then.
     let fake = Connection::open(dir.join("fake.db")).unwrap();
@@ -95,12 +118,18 @@ async fn restoring_a_snapshot_has_devices_download_everything_again() {
     drop(fake);
     std::fs::write(dir.join("empty.db"), "").unwrap();
     for from in ["fake.db", "empty.db", "missing.db"] {
-        assert!(db::restore(&file, &dir.join(from), 5_000).is_err(), "{from}");
+        assert!(db::restore(&file, &dir.join(from), 6_000).is_err(), "{from}");
     }
     assert!(!dir.join("missing.db").exists());
     assert_eq!(t.snapshot(&s).await["tasks"].as_array().unwrap().len(), 1);
     drop(t);
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// Whether a device that has seen the changes up to `since` is to download everything again.
+async fn resyncs(t: &TestApp, secret: &str, since: i64) -> bool {
+    let res = t.call("GET", &format!("/changes?since={since}"), Some(secret), None).await;
+    (res.status, res.body["code"].as_str()) == (StatusCode::GONE, Some("resync"))
 }
 
 /// Adds a task; returns the change's sequence number.

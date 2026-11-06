@@ -17,6 +17,9 @@ const compare = (a: Key, b: Key) => a[0] - b[0] || cmp(a[1], b[1]) || cmp(a[2], 
 /** Plain string order, as Rust compares strings. */
 export const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
+/** Whether a task's title or description has `q`, given trimmed and in lower case. */
+export const matches = (t: Task, q: string) => t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q);
+
 /** A snapshot indexed for lookups. `null` as a folder means the root. */
 export class Board {
   private readonly tasks = new Map<TaskId, Task>();
@@ -119,6 +122,11 @@ export class Board {
 
   subfolders(f: FolderId | null): Folder[] {
     return this.children.get(f) ?? [];
+  }
+
+  /** The folder `f` is in. */
+  parent(f: FolderId): FolderId | null {
+    return this.folders.get(f)!.parent_id;
   }
 
   /** Every folder, root first, each followed by its subfolders. */

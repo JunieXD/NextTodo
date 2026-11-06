@@ -12,7 +12,7 @@ import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import { lastKey } from "../domain/apply";
-import type { Board } from "../domain/board";
+import { type Board, matches } from "../domain/board";
 import { aiReady } from "../ai";
 import { type DueKind, dueKind, formatDay, localTime } from "../domain/dates";
 import { rekey } from "../domain/reorder";
@@ -225,7 +225,7 @@ export function SearchResults({ query, now }: { query: string; now: Date }) {
   const actions = useTaskActions();
   const q = query.trim().toLowerCase();
   const hits = board
-    .sort(board.snapshot.tasks.filter((t) => t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)))
+    .sort(board.snapshot.tasks.filter((t) => matches(t, q)))
     .sort((a, b) => Number(a.done_at !== null) - Number(b.done_at !== null));
   if (!hits.length) return <p className="empty">未找到包含“{query.trim()}”的事项。</p>;
   return (

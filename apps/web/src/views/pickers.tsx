@@ -1,10 +1,11 @@
 // Panels for choosing: a folder, a task to link, a due date.
 
-import { Check, Folder as FolderIcon, Search } from "lucide-react";
-import { useState } from "react";
+import { Check, ChevronLeft, ChevronRight, Folder as FolderIcon, Search } from "lucide-react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { Due } from "../api/types/Due";
 import type { FolderId } from "../api/types/FolderId";
 import type { Task } from "../api/types/Task";
+import { matches } from "../domain/board";
 import { REMINDERS, isoDate, remindLabel } from "../domain/dates";
 import { useView } from "../session";
 import { Modal } from "../ui/feedback";
@@ -51,39 +52,94 @@ export function FolderPicker({
   );
 }
 
-/** Picks a task to come before (`pred`) or after (`succ`) `task`. Tasks that would close a loop are
+/** Picks a task to come before (`pred`) or after (`succ`) `task`: folder by folder, as the folders page
+ * has them, starting in the task's own, or by searching them all. Tasks that would close a loop are
  * shown but cannot be picked. */
 export function TaskPicker({ task, dir, onPick, onClose }: { task: Task; dir: "pred" | "succ"; onPick(t: Task): void; onClose(): void }) {
   const { board } = useView();
   const [query, setQuery] = useState("");
+  const [at, setAt] = useState(task.folder_id);
+  const top = useRef<HTMLHeadingElement>(null);
+  // Into another folder, from its top. Returning nothing: Chromium's scrolls give a promise now.
+  useLayoutEffect(() => {
+    top.current?.scrollIntoView({ block: "nearest" });
+  }, [at]);
   const linked = new Set([task.id, ...(dir === "pred" ? board.before(task) : board.after(task)).map((t) => t.id)]);
+  const choice = (t: Task) => t.done_at === null && !linked.has(t.id);
+  const choices = board.snapshot.tasks.filter(choice);
+  const row = (t: Task, path: boolean) => {
+    const loop = dir === "pred" ? board.chain(task.id, t.id) : board.chain(t.id, task.id);
+    const note = loop ? "添加后将形成循环" : path && board.place(t.folder_id);
+    return (
+      <button key={t.id} className={`row dep${loop ? " disabled" : ""}`} onClick={() => (onPick(t), onClose())}>
+        <div className="row-inner">
+          <span className={`dot ${board.status(t)}`} />
+          <span className="dep-main">
+            <span className="dep-title">{t.title}</span>
+            {note && <span className="dep-path">{note}</span>}
+          </span>
+        </div>
+      </button>
+    );
+  };
+
   const q = query.trim().toLowerCase();
-  const candidates = board
-    .sort(board.snapshot.tasks.filter((t) => t.done_at === null && !linked.has(t.id) && t.title.toLowerCase().includes(q)))
-    .slice(0, 100);
+  let list;
+  if (q) {
+    const found = board.sort(choices.filter((t) => matches(t, q))).slice(0, 100);
+    list = found.length ? <div className="group picker">{found.map((t) => row(t, true))}</div> : <p className="empty">未找到包含“{query.trim()}”的事项。</p>;
+  } else {
+    // Only the folders with something to pick, at any depth.
+    const subs = board
+      .subfolders(at)
+      .map((f) => ({ f, n: choices.filter((t) => board.inSubtree(t.folder_id, f.id)).length }))
+      .filter(({ n }) => n > 0);
+    const here = board.tasksIn(at).filter(choice);
+    list = (
+      <>
+        <h2 className="group-title" ref={top}>
+          {board.place(at)}
+        </h2>
+        <div className="group picker">
+          {at !== null && (
+            <button className="row" onClick={() => setAt(board.parent(at))}>
+              <div className="row-inner">
+                <span className="chev">
+                  <Icon of={ChevronLeft} size={18} />
+                </span>
+                <span className="folder-main">上一级</span>
+              </div>
+            </button>
+          )}
+          {subs.map(({ f, n }) => (
+            <button key={f.id} className="row" onClick={() => setAt(f.id)}>
+              <div className="row-inner">
+                <span className="folder-ic">
+                  <Icon of={FolderIcon} size={18} />
+                </span>
+                <span className="folder-main">
+                  <span>{f.name}</span>
+                  <span className="folder-sub">{n} 项可选</span>
+                </span>
+                <span className="chev">
+                  <Icon of={ChevronRight} size={18} />
+                </span>
+              </div>
+            </button>
+          ))}
+          {here.map((t) => row(t, false))}
+        </div>
+        {subs.length + here.length === 0 && <p className="empty">{at === null ? "暂无可选的事项。" : "这里没有可选的事项。"}</p>}
+      </>
+    );
+  }
   return (
     <Modal title={dir === "pred" ? "添加前置" : "添加后续"} onClose={onClose}>
       <label className="search">
         <Icon of={Search} size={18} />
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索事项" autoComplete="off" />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索所有文件夹" autoComplete="off" />
       </label>
-      <div className="group picker">
-        {candidates.map((t) => {
-          const loop = dir === "pred" ? board.chain(task.id, t.id) : board.chain(t.id, task.id);
-          return (
-            <button key={t.id} className={`row dep${loop ? " disabled" : ""}`} onClick={() => (onPick(t), onClose())}>
-              <div className="row-inner">
-                <span className={`dot ${board.status(t)}`} />
-                <span className="dep-main">
-                  <span className="dep-title">{t.title}</span>
-                  <span className="dep-path">{loop ? "添加后将形成循环" : board.place(t.folder_id)}</span>
-                </span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-      {candidates.length === 0 && <p className="empty">暂无可选的事项。</p>}
+      {list}
     </Modal>
   );
 }

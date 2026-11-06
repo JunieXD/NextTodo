@@ -43,7 +43,8 @@ pub fn prepare(dir: &Path, from: &Path) -> anyhow::Result<()> {
     let copy = part.join(DB_FILE);
     let done = std::fs::copy(from, &copy).context("无法读取备份文件").and_then(|_| convert(&copy));
     let done = done.and_then(|()| {
-        std::fs::File::open(&copy)?.sync_all()?;
+        // Writable: Windows flushes no file opened for reading only.
+        std::fs::OpenOptions::new().write(true).open(&copy)?.sync_all()?;
         sync_dir(&part)?;
         Ok(sync_dir(dir)?)
     });

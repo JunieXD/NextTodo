@@ -31,5 +31,7 @@ async fn snapshots_hold_the_data_and_only_the_newest_are_kept() {
     let copy = Connection::open(last.unwrap()).unwrap();
     let user: String = copy.query_row("SELECT username FROM users", [], |r| r.get(0)).unwrap();
     assert_eq!(user, "alice");
+    // Closed first: Windows deletes no file that is open.
+    drop((copy, state));
     std::fs::remove_dir_all(dir).unwrap();
 }

@@ -61,7 +61,7 @@ async fn a_new_device_gets_a_local_user_who_never_signs_in() {
         let login = json!({ "username": "local", "password": password, "device": "浏览器" });
         assert_eq!(call(&local, "POST", "/auth/login", "", Some(login)).await.0, 401);
     }
-    std::fs::remove_dir_all(dir).unwrap();
+    clean([dir]);
 }
 
 #[tokio::test]
@@ -93,7 +93,7 @@ async fn a_database_from_a_server_becomes_the_local_users() {
     assert_eq!(call(&local, "POST", "/auth/login", "", Some(login)).await.0, 401);
     assert_eq!(call(&local, "GET", "/me", &session, None).await.1["is_admin"], false);
     assert_eq!((count(&dir, "invites"), count(&dir, "ai_settings")), (0, 0));
-    std::fs::remove_dir_all(dir).unwrap();
+    clean([dir]);
 }
 
 #[tokio::test]
@@ -103,7 +103,7 @@ async fn a_database_with_more_users_is_not_opened() {
     let e = Local::start(&dir).await.err().unwrap();
     assert_eq!(e.to_string(), "数据库里有多个用户，不能在本机使用");
     assert_eq!(count(&dir, "users"), 2);
-    std::fs::remove_dir_all(dir).unwrap();
+    clean([dir]);
 }
 
 #[tokio::test]
@@ -121,13 +121,13 @@ async fn a_database_not_ours_or_from_a_newer_version_is_left_alone() {
         let mut files: Vec<_> = std::fs::read_dir(dir.join("db")).unwrap().map(|e| e.unwrap().file_name()).collect();
         files.sort();
         assert_eq!(files, ["nexttodo.db"]);
-        std::fs::remove_dir_all(dir).unwrap();
+        clean([dir]);
     }
     let dir = data_dir();
     std::fs::create_dir_all(dir.join("db")).unwrap();
     std::fs::write(db_file(&dir), "not a database, but long enough to have a header the size SQLite reads first.....").unwrap();
     assert_eq!(Local::start(&dir).await.err().unwrap().to_string(), "数据库损坏");
-    std::fs::remove_dir_all(dir).unwrap();
+    clean([dir]);
 }
 
 #[tokio::test]
@@ -138,7 +138,7 @@ async fn a_new_session_revokes_the_earlier_ones() {
     let second = local.session().await.unwrap();
     assert_eq!(call(&local, "GET", "/me", &first, None).await.0, 401);
     assert_eq!(call(&local, "GET", "/me", &second, None).await.0, 200);
-    std::fs::remove_dir_all(dir).unwrap();
+    clean([dir]);
 }
 
 #[tokio::test]
@@ -157,7 +157,7 @@ async fn jobs_cut_short_have_failed_by_the_first_request() {
     let session = local.session().await.unwrap();
     let snapshot = call(&local, "GET", "/snapshot", &session, None).await.1;
     assert_eq!(snapshot["ai_jobs"][0]["state"], "failed");
-    std::fs::remove_dir_all(dir).unwrap();
+    clean([dir]);
 }
 
 #[tokio::test]
@@ -169,8 +169,7 @@ async fn the_epoch_stays_with_the_database() {
     drop(first);
     assert_eq!(Local::start(&dir).await.unwrap().epoch, epoch);
     assert_ne!(Local::start(&other).await.unwrap().epoch, epoch);
-    std::fs::remove_dir_all(dir).unwrap();
-    std::fs::remove_dir_all(other).unwrap();
+    clean([dir, other]);
 }
 
 async fn add(local: &Local, session: &str, title: &str) {
@@ -182,6 +181,14 @@ async fn titles(local: &Local) -> Vec<String> {
     let session = local.session().await.unwrap();
     let next = call(local, "POST", "/tools/next", &session, Some(json!({}))).await.1;
     next["data"]["tasks"].as_array().unwrap().iter().map(|t| t["title"].as_str().unwrap().to_owned()).collect()
+}
+
+/// Deletes what a test leaves. On Windows the files a server still running in the test's process has
+/// open can't be, which is no failure of the test.
+fn clean(paths: impl IntoIterator<Item = PathBuf>) {
+    for path in paths {
+        let _ = if path.is_dir() { std::fs::remove_dir_all(path) } else { std::fs::remove_file(path) };
+    }
 }
 
 fn names(dir: &Path) -> Vec<String> {
@@ -201,10 +208,8 @@ async fn a_backup_replaces_the_data_with_a_new_epoch_and_the_data_replaced_is_ke
     local.backup(file.clone()).await.unwrap();
     add(&local, &session, "备份后").await;
 
-    let replaced = Local::start(&other).await.unwrap();
-    let session = replaced.session().await.unwrap();
-    add(&replaced, &session, "被替换的").await;
-    drop(replaced);
+    // The data replaced, with nothing running on it, as when the app has restarted.
+    drop(existing(&other, &["alice"]).await);
     nexttodo_server::backup::prepare(&other, &file).unwrap();
     nexttodo_server::backup::commit(&other).unwrap();
     let restored = Local::start(&other).await.unwrap();
@@ -213,39 +218,34 @@ async fn a_backup_replaces_the_data_with_a_new_epoch_and_the_data_replaced_is_ke
     assert_ne!(restored.epoch, local.epoch);
     let kept = names(&other).into_iter().find(|n| n.starts_with("before-restore-")).unwrap();
     let c = Connection::open(other.join(kept).join("nexttodo.db")).unwrap();
-    assert_eq!(c.query_row("SELECT title FROM tasks", [], |r| r.get::<_, String>(0)).unwrap(), "被替换的");
-    for dir in [mine, other] {
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-    std::fs::remove_file(file).unwrap();
+    assert_eq!(c.query_row("SELECT username FROM users", [], |r| r.get::<_, String>(0)).unwrap(), "alice");
+    drop(c);
+    clean([mine, other, file]);
 }
 
 #[tokio::test]
 async fn a_restore_goes_on_where_it_was_cut_short() {
-    let (dir, file) = (data_dir(), data_dir().with_extension("db"));
-    let local = Local::start(&dir).await.unwrap();
+    let (source, uncommitted, cut, file) = (data_dir(), data_dir(), data_dir(), data_dir().with_extension("db"));
+    let local = Local::start(&source).await.unwrap();
     let session = local.session().await.unwrap();
     add(&local, &session, "备份里的").await;
     local.backup(file.clone()).await.unwrap();
-    add(&local, &session, "之后的").await;
-    let epoch = local.epoch.clone();
-    drop(local);
 
     // Prepared but never committed: it goes, and the data stays.
-    nexttodo_server::backup::prepare(&dir, &file).unwrap();
-    let local = Local::start(&dir).await.unwrap();
-    assert_eq!(local.epoch, epoch);
-    assert!(!names(&dir).contains(&"restore.part".to_owned()));
-    drop(local);
+    drop(existing(&uncommitted, &["alice"]).await);
+    nexttodo_server::backup::prepare(&uncommitted, &file).unwrap();
+    let started = Local::start(&uncommitted).await.unwrap();
+    assert_ne!(started.user, local.user);
+    assert!(!names(&uncommitted).contains(&"restore.part".to_owned()));
 
     // Cut short once the data replaced was moved away.
-    nexttodo_server::backup::prepare(&dir, &file).unwrap();
-    nexttodo_server::backup::commit(&dir).unwrap();
-    std::fs::rename(dir.join("db"), dir.join("before-restore-1")).unwrap();
-    let local = Local::start(&dir).await.unwrap();
-    assert_eq!(titles(&local).await, ["备份里的"]);
-    std::fs::remove_dir_all(dir).unwrap();
-    std::fs::remove_file(file).unwrap();
+    drop(existing(&cut, &["alice"]).await);
+    nexttodo_server::backup::prepare(&cut, &file).unwrap();
+    nexttodo_server::backup::commit(&cut).unwrap();
+    std::fs::rename(cut.join("db"), cut.join("before-restore-1")).unwrap();
+    let restored = Local::start(&cut).await.unwrap();
+    assert_eq!(titles(&restored).await, ["备份里的"]);
+    clean([source, uncommitted, cut, file]);
 }
 
 #[cfg(unix)]
@@ -265,8 +265,7 @@ async fn a_restore_that_cannot_go_on_deletes_nothing() {
     assert!(e.to_string().starts_with("无法完成恢复"), "{e}");
     assert_eq!(names(&dir), before);
     assert!(Local::start(&dir).await.is_ok());
-    std::fs::remove_dir_all(dir).unwrap();
-    std::fs::remove_file(file).unwrap();
+    clean([dir, file]);
 }
 
 #[tokio::test]
@@ -303,14 +302,11 @@ async fn a_backup_that_wont_do_changes_nothing() {
         assert!(!names(&dir).contains(&"restore.part".to_owned()));
     }
     assert_eq!(Local::start(&dir).await.unwrap().epoch, epoch);
-    for d in [dir, source, two, none] {
-        std::fs::remove_dir_all(d).unwrap();
-    }
+    clean([dir, source, two, none]);
 }
 
 #[tokio::test]
 async fn earlier_versions_and_a_servers_database_restore() {
-    let dir = data_dir();
     // A server's, with one user who has a password and is its administrator.
     let server = data_dir();
     drop(existing(&server, &["alice"]).await);
@@ -331,16 +327,14 @@ async fn earlier_versions_and_a_servers_database_restore() {
     )
     .unwrap();
     drop(c);
-    for (file, title) in [(db_file(&server), None), (older.clone(), Some("旧版本的"))] {
-        nexttodo_server::backup::prepare(&dir, &file).unwrap();
-        nexttodo_server::backup::commit(&dir).unwrap();
-        let local = Local::start(&dir).await.unwrap();
+    let dirs = [data_dir(), data_dir()];
+    for (dir, (file, title)) in dirs.iter().zip([(db_file(&server), None), (older.clone(), Some("旧版本的"))]) {
+        nexttodo_server::backup::prepare(dir, &file).unwrap();
+        nexttodo_server::backup::commit(dir).unwrap();
+        let local = Local::start(dir).await.unwrap();
         let session = local.session().await.unwrap();
         assert_eq!(call(&local, "GET", "/me", &session, None).await.1["username"], "local");
         assert_eq!(titles(&local).await, title.into_iter().collect::<Vec<_>>());
     }
-    for d in [dir, server] {
-        std::fs::remove_dir_all(d).unwrap();
-    }
-    std::fs::remove_file(older).unwrap();
+    clean(dirs.into_iter().chain([server, older]));
 }

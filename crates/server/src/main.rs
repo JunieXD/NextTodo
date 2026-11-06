@@ -7,7 +7,6 @@ use clap::{Parser, Subcommand};
 
 use nexttodo_server::ai::{Ai, llm::Https, secret::SecretKey};
 use nexttodo_server::{AppState, Clock, Db, app, auth, start, with_web};
-use tokio::signal::unix::{SignalKind, signal};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -88,10 +87,18 @@ fn read_password() -> anyhow::Result<String> {
     Ok(password)
 }
 
+/// Ctrl-C, or the SIGTERM a container gets when it stops; the server runs on Linux, and builds
+/// elsewhere for the tests of local mode, which runs in the Windows app.
 async fn shutdown() {
-    let mut term = signal(SignalKind::terminate()).expect("install SIGTERM handler");
-    tokio::select! {
-        _ = tokio::signal::ctrl_c() => {}
-        _ = term.recv() => {}
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut term = signal(SignalKind::terminate()).expect("install SIGTERM handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = term.recv() => {}
+        }
     }
+    #[cfg(not(unix))]
+    tokio::signal::ctrl_c().await.expect("listen for Ctrl-C");
 }

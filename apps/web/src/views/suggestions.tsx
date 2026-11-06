@@ -24,12 +24,14 @@ function parts(s: Suggestion, board: Board): Part[] {
   if (!t || t.done_at !== null) return [];
   const now = new Date();
   const out: Part[] = [];
-  if (s.title !== undefined) {
-    out.push({ key: "title", label: "标题", text: s.title, fields: { title: s.title }, ...(t.title !== s.was.title && { now: t.title }) });
-  }
-  if (s.description !== undefined) {
-    const changed = t.description !== s.was.description;
-    out.push({ key: "description", label: "描述", text: s.description, fields: { description: s.description }, ...(changed && { now: t.description || "（空）" }) });
+  // A new title and description go together: the title may have left details to the description.
+  const fields = { ...(s.title !== undefined && { title: s.title }), ...(s.description !== undefined && { description: s.description }) };
+  if (fields.title !== undefined || fields.description !== undefined) {
+    const label = fields.description === undefined ? "标题" : fields.title === undefined ? "描述" : "标题和描述";
+    const show = (title: string, description: string) =>
+      [fields.title !== undefined && title, fields.description !== undefined && (description || "（空）")].filter((x) => x !== false).join("\n\n");
+    const changed = (fields.title !== undefined && t.title !== s.was.title) || (fields.description !== undefined && t.description !== s.was.description);
+    out.push({ key: "text", label, text: show(fields.title ?? "", fields.description ?? ""), fields, ...(changed && { now: show(t.title, t.description) }) });
   }
   if (s.due) {
     const changed = !sameDue(t.due, s.was.due);
@@ -50,11 +52,10 @@ export function Suggestions({ job: j, board, onRetry, onClose }: { job: AiJob; b
   const undo = useUndo();
   const { snack } = useFeedback();
   const shown = (j.suggestions ?? []).map((s) => ({ s, parts: parts(s, board) })).filter((x) => x.parts.length);
-  // What the user picked, by part and by whether its field had changed since: taken unless told
-  // otherwise, but for a field changed since, the user's newer word, which a change meanwhile
-  // also asks about again.
+  // What the user picked, by part and by what the task has there now: taken unless told otherwise,
+  // but for a field changed since, the user's newer word; changed again, it is asked about again.
   const [picked, setPicked] = useState(() => new Map<string, boolean>());
-  const choice = (task: TaskId, p: Part) => `${key(task, p.key)} ${p.now !== undefined}`;
+  const choice = (task: TaskId, p: Part) => `${key(task, p.key)}\n${p.now ?? ""}`;
   const isTaken = (task: TaskId, p: Part) => picked.get(choice(task, p)) ?? p.now === undefined;
   const taken = shown.flatMap(({ s, parts }) => parts.filter((p) => isTaken(s.task, p)).map((p) => ({ s, p })));
   const toggle = (task: TaskId, p: Part) => setPicked((m) => new Map(m).set(choice(task, p), !isTaken(task, p)));
@@ -101,7 +102,7 @@ export function Suggestions({ job: j, board, onRetry, onClose }: { job: AiJob; b
                       <input type="checkbox" checked={isTaken(s.task, p)} onChange={() => toggle(s.task, p)} />
                       <span className="suggestion-text">
                         <b>{p.label}</b>
-                        {p.text || "（清空）"}
+                        {p.text}
                         {p.now !== undefined && <span className="suggestion-now">整理后已改为：{p.now}</span>}
                       </span>
                     </div>

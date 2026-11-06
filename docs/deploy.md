@@ -110,7 +110,7 @@ NEXTTODO_HOST=myserver NEXTTODO_DIR=/srv/nexttodo NEXTTODO_PORT=8080 deploy/depl
 
 | 命令 | 做什么 |
 |---|---|
-| `deploy/build.sh` | 构建全部，版本 `0.1.<提交数>`。`target/deploy` 是镜像的内容（两种架构的服务端、网页和 `/app/` 下的更新），`target/release-assets` 是安装包、各平台的命令行 `nexttodo-*` 和 `SHA256SUMS` |
+| `deploy/build.sh` | 构建全部，版本 `0.1.<提交数>`。`target/deploy` 是镜像的内容（两种架构的服务端、网页和 `/app/` 下的更新），`target/release-assets` 是安装包、各平台的命令行 `nexttodo-*`、本机模式用的更新（`android.json`、`desktop.json` 和 `NextTodo.app.tar.gz`）和 `SHA256SUMS` |
 | `deploy/release.sh <版本说明.md>` | 发布已推送的提交：镜像推到 GHCR（版本号和 `latest` 两个标签），安装包传到 GitHub Releases（标签 `v<版本号>`）。要先 `docker login ghcr.io` 并登录 `gh` |
 | `deploy/deploy.sh` | 见[用部署脚本](#用部署脚本) |
 

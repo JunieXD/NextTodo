@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { app } from "../api/http";
+import { ago } from "../domain/dates";
+import { inLocalMode } from "../local";
 import { useFeedback } from "../ui/feedback";
-import { appVersion, install, restart, usePending } from "../updates";
+import { appVersion, install, restart, useChecked, usePending } from "../updates";
 
 export function About() {
   const { snack } = useFeedback();
   const pending = usePending();
+  const checked = useChecked();
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
     appVersion().then(setVersion, (e) => snack(`读取版本失败：${e}`));
@@ -18,6 +21,10 @@ export function About() {
       <div className="group">
         <Row label="网页版本" value={import.meta.env.WEB_VERSION} />
         {app && <Row label="App 版本" value={version ?? ""} />}
+        {/* From GitHub, which may well be out of reach: whether it was, when nothing is waiting. */}
+        {inLocalMode() && checked && !pending && (
+          <Row label="更新" value={`${ago(checked.at, new Date())}检查${checked.failed ? "失败，稍后再试" : "，已是最新"}`} />
+        )}
         {pending && (
           <div className="row">
             <div className="row-inner">

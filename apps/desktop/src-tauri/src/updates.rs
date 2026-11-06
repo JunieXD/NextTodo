@@ -1,5 +1,5 @@
-//! Updates from the server the app is signed in to: a newer version is downloaded, and runs from the
-//! next start. See docs/desktop.md#更新.
+//! Updates from the server the app is signed in to, or in local mode from GitHub: a newer version is
+//! downloaded, and runs from the next start. See docs/desktop.md#更新 and docs/local.md#更新.
 
 use std::sync::Mutex;
 
@@ -12,13 +12,13 @@ use tauri_plugin_updater::{Update, UpdaterExt};
 #[derive(Default)]
 pub struct Downloaded(Mutex<Option<(Update, Vec<u8>)>>);
 
-/// Downloads the version `<server>/app/desktop.json` offers when it is newer, and returns it; nothing
-/// when this one is the newest. The file gives its downloads relative to itself, so that a server
-/// does not need to know its own address.
+/// Downloads the version the file at `manifest` offers when it is newer, and returns it; nothing when
+/// this one is the newest. A server's file gives its downloads relative to itself, so that it does
+/// not need to know its own address; GitHub's gives them in full.
 #[tauri::command]
-pub async fn update(app: AppHandle, downloaded: State<'_, Downloaded>, server: String) -> Result<Option<String>, String> {
-    let url = Url::parse(&format!("{}/app/desktop.json", server.trim_end_matches('/'))).map_err(|e| format!("服务器地址无效：{e}"))?;
-    let mut manifest = manifest(&url).await.map_err(|e| format!("检查更新失败：{e}"))?;
+pub async fn update(app: AppHandle, downloaded: State<'_, Downloaded>, manifest: String) -> Result<Option<String>, String> {
+    let url = Url::parse(&manifest).map_err(|e| format!("更新地址无效：{e}"))?;
+    let mut manifest = fetch(&url).await.map_err(|e| format!("检查更新失败：{e}"))?;
     if let Some(platforms) = manifest["platforms"].as_object_mut() {
         for platform in platforms.values_mut() {
             let download = platform["url"].as_str().and_then(|u| url.join(u).ok()).ok_or("检查更新失败：下载地址无效")?;
@@ -42,7 +42,7 @@ pub async fn update(app: AppHandle, downloaded: State<'_, Downloaded>, server: S
     Ok(Some(version))
 }
 
-async fn manifest(url: &Url) -> Result<serde_json::Value, String> {
+async fn fetch(url: &Url) -> Result<serde_json::Value, String> {
     let res = reqwest::get(url.clone()).await.and_then(|r| r.error_for_status()).map_err(|e| e.to_string())?;
     serde_json::from_slice(&res.bytes().await.map_err(|e| e.to_string())?).map_err(|e| e.to_string())
 }

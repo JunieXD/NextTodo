@@ -319,7 +319,7 @@ svg { display: block; flex: none; }
 .modal-body { overflow-y: auto; padding-bottom: 8px; }
 .search { margin: 0 16px 12px; height: 40px; border-radius: 12px; background: var(--surface-container); display: flex; align-items: center; gap: 8px; padding: 0 12px; color: var(--on-surface-variant); }
 .search input { flex: 1; border: 0; background: none; outline: none; font-size: 16px; color: var(--on-surface); min-width: 0; }
-.picker .row.disabled { opacity: .45; pointer-events: none; }
+.picker .row:disabled { opacity: .45; }
 .danger .row-inner { color: var(--error); justify-content: center; font-weight: 500; }
 .token-ic { width: 30px; height: 30px; border-radius: 8px; background: var(--surface-container); display: grid; place-items: center; color: var(--on-surface-variant); flex: none; }
 .dialog-scrim { position: absolute; z-index: 40; inset: 0; background: rgba(0, 0, 0, .4); display: grid; place-items: center; padding: 24px; }

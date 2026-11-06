@@ -124,6 +124,11 @@ export class Board {
     return this.children.get(f) ?? [];
   }
 
+  /** Whether there is a folder `f`: the root always, others until they are deleted. */
+  hasFolder(f: FolderId | null): boolean {
+    return f === null || this.folders.has(f);
+  }
+
   /** The folder `f` is in. */
   parent(f: FolderId): FolderId | null {
     return this.folders.get(f)!.parent_id;

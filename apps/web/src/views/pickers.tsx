@@ -32,7 +32,7 @@ export function FolderPicker({
         {board.folderTree().map((f) => {
           const disabled = exclude !== undefined && f !== null && board.inSubtree(f, exclude);
           return (
-            <button key={f ?? "root"} className={`row${disabled ? " disabled" : ""}`} onClick={() => (onPick(f), onClose())}>
+            <button key={f ?? "root"} className="row" disabled={disabled} onClick={() => (onPick(f), onClose())}>
               <div className="row-inner" style={{ paddingLeft: 16 + Math.max(0, board.depth(f) - 1) * 22 }}>
                 <span className="folder-ic">
                   <Icon of={FolderIcon} size={18} />
@@ -58,7 +58,9 @@ export function FolderPicker({
 export function TaskPicker({ task, dir, onPick, onClose }: { task: Task; dir: "pred" | "succ"; onPick(t: Task): void; onClose(): void }) {
   const { board } = useView();
   const [query, setQuery] = useState("");
-  const [at, setAt] = useState(task.folder_id);
+  const [wanted, setAt] = useState(task.folder_id);
+  // Deleted meanwhile, on another device say: from the root.
+  const at = board.hasFolder(wanted) ? wanted : null;
   const top = useRef<HTMLHeadingElement>(null);
   // Into another folder, from its top. Returning nothing: Chromium's scrolls give a promise now.
   useLayoutEffect(() => {
@@ -71,7 +73,7 @@ export function TaskPicker({ task, dir, onPick, onClose }: { task: Task; dir: "p
     const loop = dir === "pred" ? board.chain(task.id, t.id) : board.chain(t.id, task.id);
     const note = loop ? "添加后将形成循环" : path && board.place(t.folder_id);
     return (
-      <button key={t.id} className={`row dep${loop ? " disabled" : ""}`} onClick={() => (onPick(t), onClose())}>
+      <button key={t.id} className="row dep" disabled={!!loop} onClick={() => (onPick(t), onClose())}>
         <div className="row-inner">
           <span className={`dot ${board.status(t)}`} />
           <span className="dep-main">

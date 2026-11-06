@@ -377,7 +377,16 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
             </button>
           )}
           <div className="qa-btns">
-            <button type="button" className={`qa-btn icon${ai ? " on" : ""}`} aria-pressed={ai} aria-label="AI 整理" title="AI 整理" onClick={() => void switchMode()}>
+            {/* Not taking the focus from the text: on a phone the keyboard would go down and come up again. */}
+            <button
+              type="button"
+              className={`qa-btn icon${ai ? " on" : ""}`}
+              aria-pressed={ai}
+              aria-label="AI 整理"
+              title="AI 整理"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => void switchMode()}
+            >
               <Icon of={Sparkles} size={16} />
             </button>
             {pick}

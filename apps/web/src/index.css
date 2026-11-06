@@ -108,7 +108,7 @@ svg { display: block; flex: none; }
 .group-title.today { color: var(--warn); }
 .group { margin: 0 16px; background: var(--group-bg); border-radius: 14px; overflow: hidden; position: relative; }
 .row { position: relative; display: block; width: 100%; }
-.row + .row::before, .rail-list + .row::before { content: ""; position: absolute; z-index: 3; top: 0; right: 0; left: var(--sep-left, 52px); height: .5px; background: var(--outline-variant); }
+.row + .row::before, .rail-list + .row::before, .rail-note + .rail-list > .row:first-child::before { content: ""; position: absolute; z-index: 3; top: 0; right: 0; left: var(--sep-left, 52px); height: .5px; background: var(--outline-variant); }
 .row-inner { position: relative; display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 16px; background: var(--group-bg); transition: transform .25s var(--ease); }
 .row:active > .row-inner, .row.pressed > .row-inner { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 6%); }
 .row.selected > .row-inner { background: var(--secondary-container); }
@@ -151,6 +151,7 @@ svg { display: block; flex: none; }
 .rail { position: absolute; z-index: 1; top: 0; left: 0; pointer-events: none; overflow: visible; }
 .rail path { fill: none; stroke: var(--rail); stroke-width: 2; stroke-linecap: round; }
 .rail path.live { stroke: color-mix(in srgb, var(--primary), transparent 35%); }
+.rail-note .row-inner { min-height: 44px; justify-content: space-between; font-size: 13px; color: var(--on-surface-variant); }
 
 .folder-row .row-inner { gap: 12px; }
 .folder-ic { width: 30px; height: 30px; border-radius: 8px; background: var(--primary-container); color: var(--on-primary-container); display: grid; place-items: center; flex: none; }

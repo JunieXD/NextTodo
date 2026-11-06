@@ -9,15 +9,17 @@ import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
 import { dueKind, formatDue } from "../domain/dates";
-import { edgesAmong } from "../domain/graph";
+import { plainRail, railLayout } from "../domain/rail";
 import { range, rekey } from "../domain/reorder";
 import { useCommit } from "../session";
 import { useFeedback } from "../ui/feedback";
+import { useWide } from "../ui/hooks";
 import { Check } from "../ui/controls";
 import { Icon, Inbound, Outbound } from "../ui/icons";
 import { ContextMenu, type MenuItem } from "../ui/menu";
 import { useRowDrag } from "./drag";
 import { FolderContextMenu } from "./FolderMenu";
+import { useFolderView } from "./nav";
 import { useMarks } from "./marks";
 import { FolderPicker } from "./pickers";
 
@@ -199,54 +201,15 @@ export function FolderRow({ folder, board, onOpen }: { folder: Folder; board: Bo
   );
 }
 
-const RAIL_ROW = 64;
-const LANE = 24;
-const laneX = (c: number) => 28 + c * LANE;
-
-/** Lanes like a git commit graph: each dependency runs in a lane from its first task's row to the
- * second's, and parallel branches take separate lanes. */
-export function railLayout(list: Task[], board: Board) {
-  const index = new Map(list.map((t, i) => [t.id, i]));
-  const edges = edgesAmong(board, list);
-  const lanes: ({ to: TaskId } | null)[] = [];
-  const col = new Map<TaskId, number>();
-  const edgeLane = new Map<string, number>();
-  const free = () => {
-    const i = lanes.findIndex((l) => !l);
-    return i < 0 ? lanes.length : i;
-  };
-  let width = 1;
-  for (const t of list) {
-    const incoming = lanes.flatMap((l, i) => (l && l.to === t.id ? [i] : []));
-    const c = incoming.length ? Math.min(...incoming) : free();
-    col.set(t.id, c);
-    for (const i of incoming) lanes[i] = null;
-    edges
-      .filter(([a]) => a === t.id)
-      .sort((x, y) => index.get(x[1])! - index.get(y[1])!)
-      .forEach(([, to], k) => {
-        const l = k === 0 && !lanes[c] ? c : free();
-        lanes[l] = { to };
-        edgeLane.set(`${t.id}>${to}`, l);
-      });
-    width = Math.max(width, lanes.length, c + 1);
-  }
-  const gutter = 16 + width * LANE + 12;
-  const paths = edges.map(([a, b]) => {
-    const [xu, xl, xv] = [laneX(col.get(a)!), laneX(edgeLane.get(`${a}>${b}`)!), laneX(col.get(b)!)];
-    const [yu, yv] = [index.get(a)! * RAIL_ROW + 32, index.get(b)! * RAIL_ROW + 32];
-    let d = `M${xu} ${yu}`;
-    if (xl !== xu) d += ` L${xu} ${yu + 12} C${xu} ${yu + 24} ${xl} ${yu + 20} ${xl} ${yu + 32}`;
-    d += ` L${xl} ${yv - 32}`;
-    if (xl !== xv) d += ` C${xl} ${yv - 20} ${xv} ${yv - 24} ${xv} ${yv - 12}`;
-    d += ` L${xv} ${yv}`;
-    return { key: `${a}>${b}`, d, live: board.status(board.task(a)!) === "ready" };
-  });
-  return { gutter, height: list.length * RAIL_ROW, paths, x: (t: Task) => laneX(col.get(t.id)!) };
-}
+/** How many lanes the rail may take before the list goes without it: on a phone, on a computer. */
+const MAX_LANES = { narrow: 3, wide: 5 };
 
 export function RailList({ tasks, board, now, selected, actions }: { tasks: Task[]; board: Board; now: Date; selected: TaskId | null; actions: RowActions }) {
-  const rail = railLayout(tasks, board);
+  const layout = railLayout(tasks, board);
+  // Too many and the titles get squeezed: the graph view shows them better.
+  const drawn = layout.lanes <= MAX_LANES[useWide() ? "wide" : "narrow"];
+  const rail = drawn ? layout : { ...plainRail, x: () => plainRail.x };
+  const [, setView] = useFolderView();
   const commit = useCommit();
   const { snack } = useFeedback();
   const list = useRef<HTMLDivElement>(null);
@@ -265,15 +228,27 @@ export function RailList({ tasks, board, now, selected, actions }: { tasks: Task
     },
   });
   return (
-    <div className="rail-list reorderable" ref={list} style={{ "--gutter": `${rail.gutter}px`, "--sep-left": `${rail.gutter}px` } as React.CSSProperties}>
-      <svg className="rail" width={rail.gutter} height={rail.height}>
-        {rail.paths.map((p) => (
-          <path key={p.key} d={p.d} className={p.live ? "live" : undefined} />
+    <>
+      {!drawn && (
+        <button className="row rail-note" onClick={() => setView("graph")}>
+          <div className="row-inner">
+            依赖较多，列表里不画连线
+            <span className="text-primary">看关系图</span>
+          </div>
+        </button>
+      )}
+      <div className="rail-list reorderable" ref={list} style={{ "--gutter": `${rail.gutter}px`, "--sep-left": `${rail.gutter}px` } as React.CSSProperties}>
+        {drawn && (
+          <svg className="rail" width={layout.gutter} height={layout.height}>
+            {layout.paths.map((p) => (
+              <path key={p.key} d={p.d} className={p.live ? "live" : undefined} />
+            ))}
+          </svg>
+        )}
+        {tasks.map((t) => (
+          <TaskRow key={t.id} task={t} board={board} now={now} railX={rail.x(t)} selected={selected === t.id} actions={actions} />
         ))}
-      </svg>
-      {tasks.map((t) => (
-        <TaskRow key={t.id} task={t} board={board} now={now} railX={rail.x(t)} selected={selected === t.id} actions={actions} />
-      ))}
-    </div>
+      </div>
+    </>
   );
 }

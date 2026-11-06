@@ -155,6 +155,11 @@ export async function forgetSynced(userId: string) {
   await Promise.all([tx.objectStore("copies").delete(all(userId)), tx.objectStore("outbox").delete(all(userId)), tx.done]);
 }
 
+/** How many changes wait on this device to be sent, everyone's. */
+export async function unsent() {
+  return (await db()).count("outbox");
+}
+
 /** How many changes of everyone but the user wait on this device to be sent. */
 export async function unsentOfOthers(userId: string) {
   const outbox = (await db()).transaction("outbox").store;

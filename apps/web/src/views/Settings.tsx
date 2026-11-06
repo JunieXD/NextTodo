@@ -215,10 +215,23 @@ export function Settings({ start = "main", onClose, onSignOut }: { start?: Page;
   );
 }
 
-/** In place of the account: the data is on this device only, and how to move to a server. */
+/** In place of the account: the data is on this device only, its backups, and how to move to a
+ * server. */
 function LocalMode() {
   const session = useSession();
   const { confirm, snack } = useFeedback();
+  const backup = async () => {
+    try {
+      const to = await local.backup(session.store);
+      if (to) snack(`已备份到 ${to}`);
+    } catch (e) {
+      snack(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const restore = () =>
+    local
+      .restore((body) => confirm({ title: "用备份替换这台设备上的全部数据？", body, ok: "恢复", danger: true }), session)
+      .catch((e) => snack(`无法恢复：${e instanceof Error ? e.message : String(e)}`));
   const leave = async () => {
     const body = "本机的数据会留在这台设备上，以后再选“在本机使用”就能接着用。NextTodo 会重新启动。";
     if (!(await confirm({ title: "改用服务器？", body, ok: "改用服务器" }))) return;
@@ -237,6 +250,22 @@ function LocalMode() {
           </span>
         </div>
       </div>
+      <button className="row" onClick={backup}>
+        <div className="row-inner">
+          <span>备份</span>
+          <span className="chev" style={{ marginLeft: "auto" }}>
+            <Icon of={ChevronRight} size={18} />
+          </span>
+        </div>
+      </button>
+      <button className="row" onClick={restore}>
+        <div className="row-inner">
+          <span>恢复</span>
+          <span className="chev" style={{ marginLeft: "auto" }}>
+            <Icon of={ChevronRight} size={18} />
+          </span>
+        </div>
+      </button>
       <button className="row" onClick={leave}>
         <div className="row-inner">
           <span>改用服务器</span>

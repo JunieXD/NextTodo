@@ -172,3 +172,175 @@ async fn the_epoch_stays_with_the_database() {
     std::fs::remove_dir_all(dir).unwrap();
     std::fs::remove_dir_all(other).unwrap();
 }
+
+async fn add(local: &Local, session: &str, title: &str) {
+    assert_eq!(call(local, "POST", "/tools/add", session, Some(json!({ "title": title }))).await.0, 200);
+}
+
+/// The titles of the tasks, in the order of the `next` tool.
+async fn titles(local: &Local) -> Vec<String> {
+    let session = local.session().await.unwrap();
+    let next = call(local, "POST", "/tools/next", &session, Some(json!({}))).await.1;
+    next["data"]["tasks"].as_array().unwrap().iter().map(|t| t["title"].as_str().unwrap().to_owned()).collect()
+}
+
+fn names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+    names.sort();
+    names
+}
+
+#[tokio::test]
+async fn a_backup_replaces_the_data_with_a_new_epoch_and_the_data_replaced_is_kept() {
+    let (mine, other, file) = (data_dir(), data_dir(), data_dir().with_extension("db"));
+    let local = Local::start(&mine).await.unwrap();
+    let session = local.session().await.unwrap();
+    add(&local, &session, "备份前").await;
+    // Over a file that is there already.
+    std::fs::write(&file, "an older backup").unwrap();
+    local.backup(file.clone()).await.unwrap();
+    add(&local, &session, "备份后").await;
+
+    let replaced = Local::start(&other).await.unwrap();
+    let session = replaced.session().await.unwrap();
+    add(&replaced, &session, "被替换的").await;
+    drop(replaced);
+    nexttodo_server::backup::prepare(&other, &file).unwrap();
+    nexttodo_server::backup::commit(&other).unwrap();
+    let restored = Local::start(&other).await.unwrap();
+    assert_eq!(titles(&restored).await, ["备份前"]);
+    assert_eq!(restored.user, local.user);
+    assert_ne!(restored.epoch, local.epoch);
+    let kept = names(&other).into_iter().find(|n| n.starts_with("before-restore-")).unwrap();
+    let c = Connection::open(other.join(kept).join("nexttodo.db")).unwrap();
+    assert_eq!(c.query_row("SELECT title FROM tasks", [], |r| r.get::<_, String>(0)).unwrap(), "被替换的");
+    for dir in [mine, other] {
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    std::fs::remove_file(file).unwrap();
+}
+
+#[tokio::test]
+async fn a_restore_goes_on_where_it_was_cut_short() {
+    let (dir, file) = (data_dir(), data_dir().with_extension("db"));
+    let local = Local::start(&dir).await.unwrap();
+    let session = local.session().await.unwrap();
+    add(&local, &session, "备份里的").await;
+    local.backup(file.clone()).await.unwrap();
+    add(&local, &session, "之后的").await;
+    let epoch = local.epoch.clone();
+    drop(local);
+
+    // Prepared but never committed: it goes, and the data stays.
+    nexttodo_server::backup::prepare(&dir, &file).unwrap();
+    let local = Local::start(&dir).await.unwrap();
+    assert_eq!(local.epoch, epoch);
+    assert!(!names(&dir).contains(&"restore.part".to_owned()));
+    drop(local);
+
+    // Cut short once the data replaced was moved away.
+    nexttodo_server::backup::prepare(&dir, &file).unwrap();
+    nexttodo_server::backup::commit(&dir).unwrap();
+    std::fs::rename(dir.join("db"), dir.join("before-restore-1")).unwrap();
+    let local = Local::start(&dir).await.unwrap();
+    assert_eq!(titles(&local).await, ["备份里的"]);
+    std::fs::remove_dir_all(dir).unwrap();
+    std::fs::remove_file(file).unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_restore_that_cannot_go_on_deletes_nothing() {
+    use std::os::unix::fs::PermissionsExt;
+    let (dir, file) = (data_dir(), data_dir().with_extension("db"));
+    let local = Local::start(&dir).await.unwrap();
+    local.backup(file.clone()).await.unwrap();
+    drop(local);
+    nexttodo_server::backup::prepare(&dir, &file).unwrap();
+    nexttodo_server::backup::commit(&dir).unwrap();
+    let before = names(&dir);
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+    let e = Local::start(&dir).await.err().unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(e.to_string().starts_with("无法完成恢复"), "{e}");
+    assert_eq!(names(&dir), before);
+    assert!(Local::start(&dir).await.is_ok());
+    std::fs::remove_dir_all(dir).unwrap();
+    std::fs::remove_file(file).unwrap();
+}
+
+#[tokio::test]
+async fn a_backup_that_wont_do_changes_nothing() {
+    let dir = data_dir();
+    let local = Local::start(&dir).await.unwrap();
+    let epoch = local.epoch.clone();
+    drop(local);
+    let source = data_dir();
+    let newer = source.join("newer.db");
+    let other = source.join("other.db");
+    let two = data_dir();
+    drop(existing(&two, &["alice", "bob"]).await);
+    let none = data_dir();
+    drop(existing(&none, &[]).await);
+    std::fs::create_dir_all(&source).unwrap();
+    std::fs::write(source.join("text.db"), "not a database, but long enough to have a header the size SQLite reads first.....").unwrap();
+    std::fs::write(source.join("empty.db"), "").unwrap();
+    let c = Connection::open(&other).unwrap();
+    c.execute_batch("CREATE TABLE users (id TEXT); INSERT INTO users VALUES ('x'); PRAGMA user_version = 4").unwrap();
+    std::fs::copy(db_file(&two), &newer).unwrap();
+    Connection::open(&newer).unwrap().pragma_update(None, "user_version", 99).unwrap();
+    let not_ours = "这不是 NextTodo 的备份，或者文件已损坏";
+    for (file, error) in [
+        (source.join("text.db"), not_ours),
+        (source.join("empty.db"), not_ours),
+        (other, not_ours),
+        (newer, "数据来自更高版本的 NextTodo，请先更新"),
+        (db_file(&two), "备份里有多个用户，不能在本机使用"),
+        (db_file(&none), "备份里没有数据"),
+    ] {
+        let e = nexttodo_server::backup::prepare(&dir, &file).unwrap_err();
+        assert_eq!(e.to_string(), error, "{}", file.display());
+        assert!(!names(&dir).contains(&"restore.part".to_owned()));
+    }
+    assert_eq!(Local::start(&dir).await.unwrap().epoch, epoch);
+    for d in [dir, source, two, none] {
+        std::fs::remove_dir_all(d).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn earlier_versions_and_a_servers_database_restore() {
+    let dir = data_dir();
+    // A server's, with one user who has a password and is its administrator.
+    let server = data_dir();
+    drop(existing(&server, &["alice"]).await);
+    // Made before the epoch came in.
+    let older = data_dir().with_extension("db");
+    let c = Connection::open(&older).unwrap();
+    for sql in [
+        include_str!("../migrations/001_init.sql"),
+        include_str!("../migrations/002_ai.sql"),
+        include_str!("../migrations/003_custom_ecnu.sql"),
+    ] {
+        c.execute_batch(sql).unwrap();
+    }
+    c.execute_batch(
+        "PRAGMA user_version = 3;
+         INSERT INTO users (id, username, display_name, password_hash, created_at) VALUES ('u', 'alice', 'Alice', 'x', 0);
+         INSERT INTO tasks (id, owner_id, number, title, sort_key, created_at, updated_at) VALUES ('01900000-0000-7000-8000-000000000001', 'u', 1, '旧版本的', 'a0', 0, 0);",
+    )
+    .unwrap();
+    drop(c);
+    for (file, title) in [(db_file(&server), None), (older.clone(), Some("旧版本的"))] {
+        nexttodo_server::backup::prepare(&dir, &file).unwrap();
+        nexttodo_server::backup::commit(&dir).unwrap();
+        let local = Local::start(&dir).await.unwrap();
+        let session = local.session().await.unwrap();
+        assert_eq!(call(&local, "GET", "/me", &session, None).await.1["username"], "local");
+        assert_eq!(titles(&local).await, title.into_iter().collect::<Vec<_>>());
+    }
+    for d in [dir, server] {
+        std::fs::remove_dir_all(d).unwrap();
+    }
+    std::fs::remove_file(older).unwrap();
+}

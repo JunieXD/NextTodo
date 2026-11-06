@@ -4,6 +4,7 @@
 mod agent_port;
 pub mod ai;
 pub mod auth;
+pub mod backup;
 pub mod db;
 pub mod error;
 pub mod local;

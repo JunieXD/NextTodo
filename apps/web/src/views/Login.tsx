@@ -123,21 +123,31 @@ function Brand() {
 /** Local mode did not start: why, and what can be done. */
 export function StartFailedPage({ error, onRetry, onServer }: { error: local.StartFailed; onRetry(): Promise<void>; onServer(): Promise<void> }) {
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState("");
+  const { confirm } = useFeedback();
   const act = (f: () => Promise<void>) => () => {
     setBusy(true);
-    void f().finally(() => setBusy(false));
+    setFailed("");
+    void f()
+      .catch((e) => setFailed(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBusy(false));
   };
+  const restore = () => local.restore((body) => confirm({ title: "用备份替换这台设备上的全部数据？", body, ok: "恢复", danger: true }));
   return (
     <div className="login" data-tauri-drag-region="deep">
       <div className="login-card">
         <Brand />
         <p className="form-error">本机模式无法启动：{error.message}</p>
+        {failed && <p className="form-error">{failed}</p>}
         {error.locked && (
           <button className="filled-btn" disabled={busy} onClick={act(onRetry)}>
             重试
           </button>
         )}
         <div className="login-local">
+          <button className="text-btn" disabled={busy} onClick={act(restore)}>
+            恢复备份
+          </button>
           <button className="text-btn" disabled={busy} onClick={act(onServer)}>
             改用服务器
           </button>

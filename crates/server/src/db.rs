@@ -10,7 +10,7 @@ use rusqlite::{Connection, OpenFlags};
 
 use crate::error::ApiError;
 
-const MIGRATIONS: &[&str] = &[
+pub(crate) const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/001_init.sql"),
     include_str!("../migrations/002_ai.sql"),
     include_str!("../migrations/003_custom_ecnu.sql"),
@@ -56,13 +56,7 @@ impl Db {
     fn init(mut conn: Connection) -> anyhow::Result<Db> {
         conn.pragma_update(None, "foreign_keys", true)?;
         conn.busy_timeout(Duration::from_secs(5))?;
-        let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        let tx = conn.transaction()?;
-        for sql in pending(version)? {
-            tx.execute_batch(sql)?;
-        }
-        tx.pragma_update(None, "user_version", i64::try_from(MIGRATIONS.len())?)?;
-        tx.commit()?;
+        migrate(&mut conn)?;
         Ok(Db(Arc::new(Mutex::new(conn))))
     }
 
@@ -78,6 +72,18 @@ impl Db {
             .await
             .expect("database task panicked")
     }
+}
+
+/// Brings the database up to this version, all in one transaction.
+pub(crate) fn migrate(conn: &mut Connection) -> anyhow::Result<()> {
+    let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    let tx = conn.transaction()?;
+    for sql in pending(version)? {
+        tx.execute_batch(sql)?;
+    }
+    tx.pragma_update(None, "user_version", i64::try_from(MIGRATIONS.len())?)?;
+    tx.commit()?;
+    Ok(())
 }
 
 /// The name of the database's history: see the `epoch` migration.

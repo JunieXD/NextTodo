@@ -3,14 +3,16 @@
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::net::Ipv4Addr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use anyhow::Context;
 use rusqlite::{Connection, params};
 
 use crate::ai::{Ai, llm::Https};
 use crate::auth::{self, TokenKind};
+use crate::backup::{self, DB_DIR, DB_FILE};
 use crate::error::ApiError;
 use crate::{AppState, app, db, start};
 
@@ -58,6 +60,7 @@ pub struct Local {
     /// The database's epoch: see the `epoch` migration.
     pub epoch: String,
     state: AppState,
+    db: PathBuf,
     /// Held while the process runs; the system lets go of it when the process ends.
     _lock: File,
 }
@@ -66,17 +69,17 @@ impl Local {
     /// Starts the server on the data directory `dir`, listening on 127.0.0.1 at a port the system
     /// picks.
     pub async fn start(dir: &Path) -> Result<Local, StartError> {
-        private_dir(&dir.join("db"))?;
+        private_dir(dir)?;
         let lock = lock(&dir.join("lock"), LOCK_WAIT).await?;
+        backup::finish(dir).context("无法完成恢复")?;
+        std::fs::create_dir_all(dir.join(DB_DIR))?;
+        let db = dir.join(DB_DIR).join(DB_FILE);
         let now = crate::Clock::system().now();
-        let (started, (user, epoch)) = start::start(
-            &dir.join("db").join("nexttodo.db"),
-            dir.join("snapshots"),
-            (Ipv4Addr::LOCALHOST, 0).into(),
-            Ai::new(None, Arc::new(Https)),
-            move |c| Ok((local_user(c, now)?, db::epoch(c)?)),
-        )
-        .await?;
+        let (started, (user, epoch)) =
+            start::start(&db, dir.join("snapshots"), (Ipv4Addr::LOCALHOST, 0).into(), Ai::new(None, Arc::new(Https)), move |c| {
+                Ok((local_user(c, now)?, db::epoch(c)?))
+            })
+            .await?;
         let url = format!("http://{}", started.listener.local_addr()?);
         #[cfg(feature = "agent-port")]
         let agent_port = crate::agent_port::listen(dir).await?;
@@ -89,7 +92,13 @@ impl Local {
                 tracing::error!("local server stopped: {e}");
             }
         });
-        Ok(Local { url, user, epoch, state, _lock: lock })
+        Ok(Local { url, user, epoch, state, db, _lock: lock })
+    }
+
+    /// Writes a backup of the data to `to`, replacing the file there.
+    pub async fn backup(&self, to: PathBuf) -> anyhow::Result<()> {
+        let db = self.db.clone();
+        tokio::task::spawn_blocking(move || backup::write(&db, &to)).await?
     }
 
     /// Signs the app in: a new session for this device, the earlier ones revoked with it.
@@ -111,8 +120,8 @@ impl Local {
 }
 
 /// Makes `dir` and the directories above it that are missing, writable by the user alone: the
-/// address file in it says where agents send their token.
-fn private_dir(dir: &Path) -> std::io::Result<()> {
+/// address file in it says where agents send their token, and the data goes in and out by renames.
+pub(crate) fn private_dir(dir: &Path) -> std::io::Result<()> {
     let mut builder = std::fs::DirBuilder::new();
     builder.recursive(true);
     #[cfg(unix)]
@@ -135,7 +144,7 @@ async fn lock(path: &Path, wait: Duration) -> Result<File, StartError> {
 }
 
 /// Makes the database the local user's (docs/local.md#本机用户), and returns their id.
-fn local_user(c: &mut Connection, now: i64) -> Result<String, ApiError> {
+pub(crate) fn local_user(c: &mut Connection, now: i64) -> Result<String, ApiError> {
     let tx = c.transaction()?;
     let users: Vec<String> = tx.prepare("SELECT id FROM users")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
     let id = match users.as_slice() {

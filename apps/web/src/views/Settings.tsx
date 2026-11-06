@@ -413,14 +413,14 @@ function TokenCreated({ name, secret, onDone, onClose }: { name: string; secret:
   );
 }
 
-/** The environment variables the command line and Codex read: as a shell profile has them, or set
- * for good on Windows. */
+/** The environment variables the command line, and Codex but in local mode, read: as a shell
+ * profile has them, or set for good on Windows. */
 function EnvVars({ url, secret }: { url: string; secret: string }) {
   const [os, setOs] = useState<"unix" | "windows">(desktopOs === "Windows" ? "windows" : "unix");
   const unix = os === "unix";
   return (
     <Copyable
-      label="命令行和 Codex 用的环境变量"
+      label={url === "local" ? "命令行用的环境变量" : "命令行和 Codex 用的环境变量"}
       hint={unix ? "写进 ~/.zshrc 等 shell 配置" : "运行后重新打开终端"}
       text={unix ? `export NEXTTODO_URL=${url}\nexport NEXTTODO_TOKEN=${secret}` : `setx NEXTTODO_URL "${url}"\nsetx NEXTTODO_TOKEN "${secret}"`}
     >

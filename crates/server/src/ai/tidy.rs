@@ -168,7 +168,8 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             // Not having seen the description, it would lose what the title held that this lacks.
             title: s.title.filter(|x| sent.described && *x != t.title),
             description: s.description.filter(|x| sent.described && *x != t.description),
-            due: due.filter(|d| t.due.as_ref() != Some(d)),
+            // Only for a task without one: a changed one would lose its reminder.
+            due: due.filter(|_| t.due.is_none()),
             after,
             reason: s.reason,
             was: Was { title: t.title.clone(), description: t.description.clone(), due: t.due.clone() },

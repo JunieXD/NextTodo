@@ -12,9 +12,12 @@ import { formatDue } from "../domain/dates";
 import { useCommit, useUndo } from "../session";
 import { Modal, useFeedback } from "../ui/feedback";
 
-/** One change a suggestion makes: to the task's fields, or a task to put before it. `now` is the
- * field as it is, when it has changed since the model saw it. */
-type Part = { key: string; label: string; text: string; now?: string } & ({ fields: { title?: string; description?: string; due?: Due } } | { before: TaskId });
+/** One change a suggestion makes: to the task's fields, or a task to put before it. When a field
+ * has changed since the model saw it, `now` shows it as it is, and `current` holds its very value. */
+type Part = { key: string; label: string; text: string; now?: string; current?: string } & (
+  | { fields: { title?: string; description?: string; due?: Due } }
+  | { before: TaskId }
+);
 
 const sameDue = (a: Due | null, b: Due | null) => a?.date === b?.date && a?.time === b?.time && a?.remind_before === b?.remind_before;
 
@@ -31,11 +34,13 @@ function parts(s: Suggestion, board: Board): Part[] {
     const show = (title: string, description: string) =>
       [fields.title !== undefined && title, fields.description !== undefined && (description || "（空）")].filter((x) => x !== false).join("\n\n");
     const changed = (fields.title !== undefined && t.title !== s.was.title) || (fields.description !== undefined && t.description !== s.was.description);
-    out.push({ key: "text", label, text: show(fields.title ?? "", fields.description ?? ""), fields, ...(changed && { now: show(t.title, t.description) }) });
+    const current = JSON.stringify([fields.title !== undefined && t.title, fields.description !== undefined && t.description]);
+    out.push({ key: "text", label, text: show(fields.title ?? "", fields.description ?? ""), fields, ...(changed && { now: show(t.title, t.description), current }) });
   }
   if (s.due) {
     const changed = !sameDue(t.due, s.was.due);
-    out.push({ key: "due", label: "截止", text: formatDue(s.due, now), fields: { due: s.due }, ...(changed && { now: t.due ? formatDue(t.due, now) : "无" }) });
+    const shown = t.due ? `${formatDue(t.due, now)}${t.due.remind_before === undefined ? "" : "，有提醒"}` : "无";
+    out.push({ key: "due", label: "截止", text: formatDue(s.due, now), fields: { due: s.due }, ...(changed && { now: shown, current: JSON.stringify(t.due) }) });
   }
   for (const id of s.after) {
     const b = board.task(id);
@@ -55,7 +60,7 @@ export function Suggestions({ job: j, board, onRetry, onClose }: { job: AiJob; b
   // What the user picked, by part and by what the task has there now: taken unless told otherwise,
   // but for a field changed since, the user's newer word; changed again, it is asked about again.
   const [picked, setPicked] = useState(() => new Map<string, boolean>());
-  const choice = (task: TaskId, p: Part) => `${key(task, p.key)}\n${p.now ?? ""}`;
+  const choice = (task: TaskId, p: Part) => `${key(task, p.key)}\n${p.current ?? ""}`;
   const isTaken = (task: TaskId, p: Part) => picked.get(choice(task, p)) ?? p.now === undefined;
   const taken = shown.flatMap(({ s, parts }) => parts.filter((p) => isTaken(s.task, p)).map((p) => ({ s, p })));
   const toggle = (task: TaskId, p: Part) => setPicked((m) => new Map(m).set(choice(task, p), !isTaken(task, p)));

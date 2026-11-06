@@ -6,6 +6,8 @@ mod local;
 mod reminders;
 mod updates;
 
+use std::io::IsTerminal;
+
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::webview::NewWindowResponse;
@@ -15,6 +17,7 @@ use tauri::{AppHandle, Emitter, Manager, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_notification::{Action, ActionType, NotificationExt};
+use tracing_subscriber::EnvFilter;
 
 /// Started at login: in the menu bar only, without the window.
 const HIDDEN: &str = "--hidden";
@@ -82,6 +85,11 @@ fn tray(app: &AppHandle) -> tauri::Result<()> {
 }
 
 pub fn run() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_writer(std::io::stderr)
+        .with_ansi(std::io::stderr().is_terminal())
+        .init();
     // ⌃⌥Space on macOS, Ctrl+Alt+Space on Windows, from any app.
     let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::Space);
     tauri::Builder::default()

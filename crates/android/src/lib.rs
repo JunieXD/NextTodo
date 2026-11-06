@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 
+use android_logger::Config;
 use anyhow::Context;
 use jni::objects::{JClass, JString};
 use jni::{Env, EnvUnowned};
@@ -46,6 +47,8 @@ fn running<T>(f: impl FnOnce(&Local) -> anyhow::Result<T>) -> anyhow::Result<T> 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_cn_juniexd_nexttodo_LocalServer_start<'a>(env: EnvUnowned<'a>, _: JClass<'a>, dir: JString<'a>) -> JString<'a> {
     run(env, |env| {
+        // As the app's own, tagged NextTodo; at the level a server logs at.
+        android_logger::init_once(Config::default().with_tag("NextTodo").with_max_level(log::LevelFilter::Info));
         let dir = path(env, &dir)?;
         let mut server = SERVER.lock().expect("server lock");
         let started = match server.take() {

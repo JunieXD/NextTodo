@@ -11,6 +11,7 @@ import type { AiSettingsInput } from "../api/types/AiSettingsInput";
 import type { AiTestResult } from "../api/types/AiTestResult";
 import type { AiThinking } from "../api/types/AiThinking";
 import { keepAiConfig, localAiConfig } from "../ai";
+import { inLocalMode } from "../local";
 import { useSession } from "../session";
 import { Seg } from "../ui/controls";
 import { Modal, useFeedback } from "../ui/feedback";
@@ -127,7 +128,8 @@ export function AiPage({ onBack, onClose }: { onBack(): void; onClose(): void })
       onBack();
     });
   const clear = async () => {
-    if (!(await confirm({ title: "清除 AI 整理的配置？", body: "本机和服务器上保存的都会删除，等待中的请求要配置后才会整理。", ok: "清除", danger: true }))) return;
+    const body = `${inLocalMode() ? "" : "本机和服务器上保存的都会删除，"}等待中的请求要配置后才会整理。`;
+    if (!(await confirm({ title: "清除 AI 整理的配置？", body, ok: "清除", danger: true }))) return;
     await run(async () => {
       keepAiConfig(user.id, null);
       if (kept) await api("DELETE", "/ai/settings");
@@ -190,19 +192,23 @@ export function AiPage({ onBack, onClose }: { onBack(): void; onClose(): void })
           />
         </div>
       )}
-      <div className="field">
-        <span>
-          保存位置 <span className="hint">{place === "local" ? "这台设备联网时才会整理" : providers.sync ? "提交后设备可以离线，服务器自己整理" : ""}</span>
-        </span>
-        <Seg<Place>
-          items={[
-            ["local", "仅本机"],
-            ["server", "同步到服务器"],
-          ]}
-          value={place}
-          onChange={(p) => (p === "server" && !providers.sync ? setError("服务器没有设置 NEXTTODO_SECRET_KEY，配置只能保存在本机") : setPlace(p))}
-        />
-      </div>
+      {/* In local mode the server is this device, without the key to keep a configuration with
+          (docs/local.md#界面). */}
+      {!inLocalMode() && (
+        <div className="field">
+          <span>
+            保存位置 <span className="hint">{place === "local" ? "这台设备联网时才会整理" : providers.sync ? "提交后设备可以离线，服务器自己整理" : ""}</span>
+          </span>
+          <Seg<Place>
+            items={[
+              ["local", "仅本机"],
+              ["server", "同步到服务器"],
+            ]}
+            value={place}
+            onChange={(p) => (p === "server" && !providers.sync ? setError("服务器没有设置 NEXTTODO_SECRET_KEY，配置只能保存在本机") : setPlace(p))}
+          />
+        </div>
+      )}
       {result && <p className={result.ok ? "form-ok" : "form-error"}>{result.message}</p>}
       {error && <p className="form-error">{error}</p>}
       <div className="actions">

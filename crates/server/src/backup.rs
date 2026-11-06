@@ -95,10 +95,15 @@ fn schema(c: &Connection) -> rusqlite::Result<Vec<(String, String, Option<String
         .collect()
 }
 
-/// The user's go-ahead: from here on the backup replaces the data, at the next start.
+/// The user's go-ahead: from here on the backup replaces the data, at the next start. Fails only
+/// when it has not committed.
 pub fn commit(dir: &Path) -> anyhow::Result<()> {
     std::fs::rename(dir.join(PART), dir.join(READY))?;
-    Ok(sync_dir(dir)?)
+    // Committed all the same: losing power before the rename reaches the disk forgets the restore.
+    if let Err(e) = sync_dir(dir) {
+        tracing::warn!("restore committed, not yet on disk: {e}");
+    }
+    Ok(())
 }
 
 /// Carries on with a restore where it was left, before the database is opened. Each step is a

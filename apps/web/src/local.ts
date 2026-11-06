@@ -122,9 +122,11 @@ function open({ url, token, user, epoch }: Started): Promise<Session> {
   });
 }
 
-/** Forgets local mode, for signing in to a server: the app's own server stops when the app does. On
- * Android the session goes with it, the local server's, or an earlier one's. */
-export const forgetMode = () => setMode(false);
+/** Forgets local mode, when in it, for signing in to a server: the app's own server stops when the
+ * app does. On Android the session goes with it, the local server's, or an earlier one's. */
+export async function forgetMode() {
+  if (mode) await setMode(false);
+}
 
 /** Leaves local mode, keeping the local user's data on the device for coming back, and restarts the
  * app, at the sign-in page. */
@@ -172,9 +174,13 @@ export async function restore(confirm: (body: string) => Promise<boolean>, sessi
     `现在的数据会留在数据目录的旧数据文件夹里；从现在到 NextTodo 重新启动之间，${app === "android" ? "小组件" : "agent "}和 AI 整理写入的改动也只在那里。`,
   ].join("");
   if (!(await confirm(body))) return;
-  // Nothing more goes to the data being replaced. What is on the page stays, as when leaving local
-  // mode: with the backup's epoch, it is deleted then.
-  await session?.close(true);
+  // Should it fail, nothing has changed, and the session carries on.
   await shell.commitRestore();
-  await shell.restart();
+  // Committed: the app restarts whatever else happens. Nothing more goes to the data being replaced;
+  // what is on the page stays, as when leaving local mode: with the backup's epoch, it is deleted then.
+  try {
+    await session?.close(true);
+  } finally {
+    await shell.restart();
+  }
 }

@@ -60,7 +60,8 @@ pub struct Local {
     /// The database's epoch: see the `epoch` migration.
     pub epoch: String,
     state: AppState,
-    db: PathBuf,
+    /// The data directory.
+    dir: PathBuf,
     /// Held while the process runs; the system lets go of it when the process ends.
     _lock: File,
 }
@@ -94,13 +95,20 @@ impl Local {
                 tracing::error!("local server stopped: {e}");
             }
         });
-        Ok(Local { url, user, epoch, state, db, _lock: lock })
+        Ok(Local { url, user, epoch, state, dir: dir.to_owned(), _lock: lock })
     }
 
-    /// Writes a backup of the data to `to`, replacing the file there.
+    /// Writes a backup of the data to `to`, replacing the file there; not in the data directory, where
+    /// it could take the database's place.
     pub async fn backup(&self, to: PathBuf) -> anyhow::Result<()> {
-        let db = self.db.clone();
-        tokio::task::spawn_blocking(move || backup::write(&db, &to)).await?
+        let dir = self.dir.clone();
+        tokio::task::spawn_blocking(move || {
+            if to.parent().context("备份文件的路径无效")?.canonicalize()?.starts_with(dir.canonicalize()?) {
+                anyhow::bail!("备份不能放在 NextTodo 的数据目录里");
+            }
+            backup::write(&dir.join(DB_DIR).join(DB_FILE), &to)
+        })
+        .await?
     }
 
     /// Signs the app in: a new session for this device, the earlier ones revoked with it.

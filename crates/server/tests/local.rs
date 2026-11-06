@@ -206,6 +206,10 @@ async fn a_backup_replaces_the_data_with_a_new_epoch_and_the_data_replaced_is_ke
     // Over a file that is there already.
     std::fs::write(&file, "an older backup").unwrap();
     local.backup(file.clone()).await.unwrap();
+    // Not over the database, nor anywhere else in the data directory.
+    for into in [db_file(&mine), mine.join("backup.db")] {
+        assert_eq!(local.backup(into).await.unwrap_err().to_string(), "备份不能放在 NextTodo 的数据目录里");
+    }
     add(&local, &session, "备份后").await;
 
     // The data replaced, with nothing running on it, as when the app has restarted.

@@ -19,13 +19,17 @@ vi.stubGlobal(
   },
 );
 
-/** What `start_local` gives: the app's server, run on the database the test says. */
-const app = vi.hoisted(() => ({ user: "", epoch: "" }));
+/** The app: what `start_local` gives, the server run on the database the test says; whether it is in
+ * local mode; the commands the page called, and the one that fails. */
+const app = vi.hoisted(() => ({ user: "", epoch: "", mode: true, invoked: [] as string[], failing: "" }));
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: async (command: string) => {
+    app.invoked.push(command);
+    if (command === app.failing) throw "磁盘已满";
     if (command === "start_local") return { url: "http://127.0.0.1:1", token: "nt_test", user: app.user, epoch: app.epoch };
-    if (command === "local_mode") return true;
+    if (command === "local_mode") return app.mode;
+    if (command === "prepare_restore") return true;
   },
 }));
 
@@ -66,7 +70,10 @@ async function load() {
   return local.resume();
 }
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  Object.assign(app, { mode: true, invoked: [], failing: "" });
+});
 
 test("the same database opens the data left on the page", async () => {
   Object.assign(app, { user: user(1), epoch: "a" });
@@ -94,4 +101,25 @@ test("another user, from another device's backup, is as signing in as someone el
   await load();
   const { draft } = await import("./sync/drafts");
   expect([draft(user(3), "next"), localStorage.getItem(`ai:${user(3)}`)]).toEqual(["", null]);
+});
+
+test("signing in to a server outside local mode leaves the app's mode alone", async () => {
+  app.mode = false;
+  vi.resetModules();
+  const local = await import("./local");
+  await local.loadMode();
+  await local.forgetMode();
+  expect(app.invoked).toEqual(["local_mode"]);
+});
+
+test("a restore that did not commit leaves the session open; one that did restarts the app", async () => {
+  Object.assign(app, { user: user(5), epoch: "a", failing: "commit_restore" });
+  const session = await load();
+  const local = await import("./local");
+  const { syncToken } = await import("./api/http");
+  await expect(local.restore(async () => true, session)).rejects.toBe("磁盘已满");
+  expect([syncToken(), app.invoked.includes("restart")]).toEqual(["nt_test", false]);
+  app.failing = "";
+  await local.restore(async () => true, session);
+  expect([syncToken(), app.invoked.at(-1)]).toEqual([undefined, "restart"]);
 });

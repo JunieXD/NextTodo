@@ -17,6 +17,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import cn.juniexd.nexttodo.Local
 import com.capacitorjs.plugins.localnotifications.NotificationStorage
 import com.capacitorjs.plugins.localnotifications.TimedNotificationPublisher
 import java.time.LocalDate
@@ -192,6 +193,14 @@ object Widget {
         update(context) { Server.ended(context, token) && keep(it, "[]", null) }
     }
 
+    /** Empties the list and takes away every reminder, those shown already too: they are of data that
+     * is there no more (docs/local.md#数据代号). */
+    suspend fun forget(context: Context) {
+        update(context) { keep(it, "[]", null) }
+        NotificationStorage(context).getSavedNotificationIds().forEach { cancelReminder(context, it.toInt()) }
+        NotificationManagerCompat.from(context).cancelAll()
+    }
+
     /** Takes back a reminder the app scheduled with Capacitor's LocalNotifications (8.3), the way the
      * plugin does: the app may not be running to notice that the task is done. */
     private fun cancelReminder(context: Context, id: Int) {
@@ -208,12 +217,14 @@ object Widget {
         Toast.makeText(context, text, Toast.LENGTH_LONG).show()
     }
 
-    /** Every 15 minutes while online, the shortest WorkManager allows. */
+    /** Every 15 minutes, the shortest WorkManager allows; while online, but in local mode, whose server
+     * is in the app. Updates the refreshes there are to the mode now, keeping when they come. */
     fun schedule(context: Context) {
+        val network = if (Local.on(context)) NetworkType.NOT_REQUIRED else NetworkType.CONNECTED
         val request = PeriodicWorkRequestBuilder<RefreshWorker>(15, TimeUnit.MINUTES)
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(network).build())
             .build()
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(WORK, ExistingPeriodicWorkPolicy.KEEP, request)
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(WORK, ExistingPeriodicWorkPolicy.UPDATE, request)
     }
 
     fun unschedule(context: Context) {

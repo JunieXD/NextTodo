@@ -32,6 +32,13 @@ object WebUpdate {
     @Synchronized
     fun start(context: Context) {
         val prefs = prefs(context)
+        // In local mode, the APK's: it was made with the server the APK has (docs/local.md#android).
+        if (Local.on(context)) {
+            builds(context).deleteRecursively()
+            prefs.edit().clear().commit()
+            serve(context, null)
+            return
+        }
         // Builds downloaded for another APK may need what this one lacks, and Capacitor serves the
         // APK's after an update anyway.
         val sameApk = prefs.getInt("apk", -1) == BuildConfig.VERSION_CODE

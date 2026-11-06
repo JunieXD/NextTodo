@@ -1,7 +1,9 @@
 package cn.juniexd.nexttodo.widget
 
 import android.content.Context
+import cn.juniexd.nexttodo.Local
 import java.net.HttpURLConnection
+import java.net.Proxy
 import java.net.URL
 import java.nio.ByteBuffer
 import java.security.SecureRandom
@@ -49,7 +51,8 @@ object Server {
     /** Throws `HttpError` with the server's message when the server turns the request down. */
     private suspend fun post(context: Context, token: String, path: String, body: JSONObject): String = withContext(Dispatchers.IO) {
         val url = URL("${prefs(context).getString("server", null)}/api/v1$path")
-        val c = url.openConnection() as HttpURLConnection
+        // The system's proxy would get the token for local mode's server, in the app (docs/local.md#页面直连).
+        val c = (if (Local.on(context)) url.openConnection(Proxy.NO_PROXY) else url.openConnection()) as HttpURLConnection
         try {
             c.requestMethod = "POST"
             c.connectTimeout = 10_000

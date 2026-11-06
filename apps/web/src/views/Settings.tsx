@@ -38,6 +38,8 @@ export function Settings({ start = "main", onClose, onSignOut }: { start?: Page;
   const { prompt, confirm, snack } = useFeedback();
   const theme = useTheme();
   const inLocal = local.inLocalMode();
+  // Agents reach no phone: its server listens on the phone alone, which has no command line.
+  const withTokens = !inLocal || app === "desktop";
 
   const failed = (e: unknown) => {
     if (!(e instanceof ApiError)) throw e;
@@ -45,7 +47,7 @@ export function Settings({ start = "main", onClose, onSignOut }: { start?: Page;
   };
   const loadTokens = () => api<TokenInfo[]>("GET", "/tokens").then(setTokens, failed);
   useEffect(() => {
-    loadTokens();
+    if (withTokens) loadTokens();
     if (user.is_admin) api<Invite[]>("GET", "/invites").then(setInvites, failed);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loads once when opened
   }, []);
@@ -126,21 +128,25 @@ export function Settings({ start = "main", onClose, onSignOut }: { start?: Page;
         <AiRow onOpen={() => setPage("ai")} />
       </div>
 
-      <h2 className="group-title">
-        <span>令牌</span>
-        <span>供 agent 和命令行使用</span>
-      </h2>
-      <div className="group">
-        {apiTokens.map((t) => (
-          <TokenRow key={t.id} icon={KeyRound} title={t.name} sub={`${t.scope === "write" ? "读写" : "只读"}，${used(t)}`} action={["删除", () => revoke(t)]} />
-        ))}
-        <button className="row add-row" onClick={() => setPage("token")}>
-          <div className="row-inner">
-            <Icon of={Plus} />
-            生成令牌
+      {withTokens && (
+        <>
+          <h2 className="group-title">
+            <span>令牌</span>
+            <span>供 agent 和命令行使用</span>
+          </h2>
+          <div className="group">
+            {apiTokens.map((t) => (
+              <TokenRow key={t.id} icon={KeyRound} title={t.name} sub={`${t.scope === "write" ? "读写" : "只读"}，${used(t)}`} action={["删除", () => revoke(t)]} />
+            ))}
+            <button className="row add-row" onClick={() => setPage("token")}>
+              <div className="row-inner">
+                <Icon of={Plus} />
+                生成令牌
+              </div>
+            </button>
           </div>
-        </button>
-      </div>
+        </>
+      )}
 
       {!inLocal && (
         <>

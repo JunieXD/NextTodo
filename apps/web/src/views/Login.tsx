@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ApiError, api, app, deviceName, keepSession, native, serverUrl, setServer } from "../api/http";
+import { ApiError, api, deviceName, keepSession, native, serverUrl, setServer } from "../api/http";
 import type { Session as SignedIn } from "../api/types/Session";
 import type { User } from "../api/types/User";
 import * as local from "../local";
@@ -41,8 +41,9 @@ export function Login({
           : { ...fields, invite: fields.invite.trim(), username: fields.username.trim(), display_name: fields.display_name.trim(), device: deviceName() };
       await onSignIn(async () => {
         const session = await api<SignedIn>("POST", mode === "login" ? "/auth/login" : "/auth/register", body);
-        await keepSession(session.secret);
+        // First: on Android, leaving local mode takes the session there with it.
         await local.forgetMode();
+        await keepSession(session.secret);
         if (invite) history.replaceState(null, "", "/");
         return session.user;
       });
@@ -97,7 +98,7 @@ export function Login({
         <button className="filled-btn" disabled={busy}>
           {mode === "login" ? "登录" : "注册"}
         </button>
-        {app === "desktop" && (
+        {native && (
           <div className="login-local">
             <button type="button" className="text-btn" disabled={busy} onClick={enterLocal}>
               在本机使用

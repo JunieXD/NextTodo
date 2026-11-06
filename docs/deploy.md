@@ -93,7 +93,7 @@ NEXTTODO_HOST=myserver NEXTTODO_DIR=/srv/nexttodo NEXTTODO_PORT=8080 deploy/depl
 |---|---|
 | 服务端和命令行（Linux amd64、arm64） | Rust，`rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl`，`cargo-zigbuild` 和 Zig |
 | 网页端 | Node.js 和 pnpm |
-| Android | JDK 21 和 Android SDK，见 [Android](android.md#构建和签名) |
+| Android | JDK 21、Android SDK 和 NDK，`rustup target add aarch64-linux-android`，`cargo-ndk`，见 [Android](android.md#构建和签名) |
 | macOS 和 Windows | 见[桌面 App](desktop.md#构建) |
 | 镜像 | Docker（推多架构镜像要 buildx），`jq` |
 

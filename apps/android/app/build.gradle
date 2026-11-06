@@ -12,6 +12,7 @@ def count = { List<String> paths ->
     }.standardOutput.asText.get().trim().toInteger()
 }
 def commits = count([])
+def rustLibs = layout.buildDirectory.dir('rust')
 def nativeVersion = count(['apps/android', 'apps/web/capacitor.config.ts', 'apps/web/package.json'])
 
 android {
@@ -52,7 +53,18 @@ android {
         buildConfig true
         compose true
     }
+    sourceSets {
+        main.jniLibs.srcDir(rustLibs)
+    }
 }
+
+// Local mode's server (crates/android), for arm64-v8a alone: real devices and the emulators on
+// Apple silicon (docs/local.md#android).
+tasks.register('rust', Exec) {
+    workingDir rootProject.file('../..')
+    commandLine 'cargo', 'ndk', '-t', 'arm64-v8a', '-o', rustLibs.get().asFile.path, 'build', '--profile', 'android', '-p', 'nexttodo-android'
+}
+tasks.named('preBuild') { dependsOn 'rust' }
 
 kotlin {
     jvmToolchain(21)

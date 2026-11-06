@@ -38,6 +38,10 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 ureq = "3.5.0"
 uuid = { version = "1.29.0", features = ["v7", "serde"] }
 
+# For the page of the Android app, at another origin (src/local.rs).
+[target.'cfg(target_os = "android")'.dependencies]
+tower-http = { version = "0.7.1", features = ["cors"] }
+
 [lints]
 workspace = true
 

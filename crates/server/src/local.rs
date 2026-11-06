@@ -84,6 +84,8 @@ impl Local {
         #[cfg(feature = "agent-port")]
         let agent_port = crate::agent_port::listen(dir).await?;
         let (state, router) = (started.state.clone(), app(started.state.clone()));
+        #[cfg(target_os = "android")]
+        let router = router.layer(page_cors());
         #[cfg(feature = "agent-port")]
         agent_port.serve(router.clone());
         let serving = started.serve(router);
@@ -117,6 +119,17 @@ impl Local {
             })
             .await
     }
+}
+
+/// On Android the page is at `https://localhost`, another origin. It sends the session's token in
+/// `Authorization`; no cookie is ever set here (docs/local.md#页面直连).
+#[cfg(target_os = "android")]
+fn page_cors() -> tower_http::cors::CorsLayer {
+    use axum::http::{HeaderValue, Method, header};
+    tower_http::cors::CorsLayer::new()
+        .allow_origin(HeaderValue::from_static("https://localhost"))
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
 }
 
 /// Makes `dir` and the directories above it that are missing, writable by the user alone: the

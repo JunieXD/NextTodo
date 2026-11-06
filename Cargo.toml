@@ -19,3 +19,11 @@ opt-level = 3
 
 [profile.dev.package.blake2]
 opt-level = 3
+
+# The server library in the Android app (docs/local.md#android): small, as it goes in the APK.
+[profile.android]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+opt-level = "s"
+strip = true

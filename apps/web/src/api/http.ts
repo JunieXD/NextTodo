@@ -77,6 +77,13 @@ export class ApiError extends Error {
 
 export const OFFLINE = "offline";
 
+declare global {
+  interface Window {
+    /** The WebView's own `fetch`, which Capacitor keeps before it sends `fetch` through CapacitorHttp. */
+    CapacitorWebFetch: typeof fetch;
+  }
+}
+
 /** For the app's own server: straight to it. The HTTP plugin goes through the system's proxy, or
  * the one the environment gives, even to 127.0.0.1, and the proxy would get the token and the data.
  * A proxy given here replaces both, and `noProxy` sends 127.0.0.1 past it; `*` would match domain
@@ -94,13 +101,15 @@ export async function api<T>(method: string, path: string, body?: unknown, timeo
     const headers: Record<string, string> = body === undefined ? {} : { "Content-Type": "application/json" };
     if (server.token) headers.Authorization = `Bearer ${server.token}`;
     // From another origin than the server's: the Android app's fetch goes through CapacitorHttp, the
-    // macOS app's through Tauri's HTTP plugin, so that the server needs no CORS.
-    res = await (app === "desktop" ? tauriFetch : fetch)(`${server.url}/api/v1${path}`, {
+    // desktop app's through Tauri's HTTP plugin, so that the server needs no CORS. To the Android
+    // app's own server, the WebView's: CapacitorHttp would go through the system's proxy.
+    const send = app === "desktop" ? tauriFetch : server.local ? window.CapacitorWebFetch : fetch;
+    res = await send(`${server.url}/api/v1${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
-      ...(server.local && DIRECT),
+      ...(app === "desktop" && server.local && DIRECT),
     });
     text = await res.text();
   } catch {

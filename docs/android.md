@@ -8,6 +8,7 @@ Android App（包括小米澎湃 OS）：Capacitor 外壳加载打包在安装�
 |---|---|
 | `apps/web/capacitor.config.ts` | Capacitor 配置。网页端的代码和依赖只有一份，App 用的插件也装在 `apps/web` |
 | `apps/android` | 原生工程（Capacitor 的 `android.path` 指到这里）：外壳、小组件（Kotlin + Jetpack Glance）、给网页调用的小插件 |
+| `crates/android` | 本机模式的服务端，编译成动态库打进 APK，见[本机模式](local.md#android) |
 
 网页端用 `Capacitor.isNativePlatform()` 区分自己是在浏览器里还是在 App 里，只有连接服务器的方式和下面几项 App 专有的功能不同，界面完全一样。
 
@@ -82,6 +83,7 @@ Jetpack Glance 写的“接下来”小组件：
 ## 构建和签名
 
 - 需要 Android SDK（`ANDROID_HOME`）和 JDK 21（Capacitor 8 的 Gradle 版本还不支持更新的 JDK）。
+- 本机模式的动态库由 Gradle 在构建前编译（任务 `rust`，调用 `cargo ndk`），还需要 SDK 里的 NDK、`rustup target add aarch64-linux-android` 和 `cargo install cargo-ndk`。
 - `pnpm android:build`（在 `apps/web` 下）：构建网页端、`cap sync android`，再用 Gradle 打 release APK。
 - 正式版用自签名的密钥签名，直接安装。密钥库和密码不进仓库：路径和密码从环境变量 `NEXTTODO_KEYSTORE`、`NEXTTODO_KEYSTORE_PASSWORD` 读取。
 - 版本号见[更新](#更新)。发布用的 APK 由 `deploy/build.sh` 构建，放进服务端镜像，也上传到 GitHub Releases，见[部署](deploy.md#构建发布)。

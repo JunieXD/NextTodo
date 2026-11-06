@@ -1,8 +1,11 @@
-// Local mode in the desktop app: the server runs inside the app, for this device alone (docs/local.md).
-// Each time the page loads it starts the server, the first time, and signs in to it; where it
-// listens and the session's token are kept nowhere.
+// Local mode in the apps: the server runs inside the app, for this device alone (docs/local.md). On
+// the desktop the page starts it, the first time, and signs in to it each time it loads; on Android
+// the app does both as it starts, and the page asks for what it got. Where it listens and the
+// session's token are kept by the page nowhere.
 
+import { Preferences } from "@capacitor/preferences";
 import { invoke } from "@tauri-apps/api/core";
+import { NextTodo } from "./android";
 import { api, app, connectLocal, dropSession } from "./api/http";
 import type { User } from "./api/types/User";
 import { isoDate } from "./domain/dates";
@@ -14,18 +17,55 @@ import type { Store } from "./sync/store";
  * mode, as the data is, for coming back. Should it be lost, the data is downloaded again. */
 const EPOCH = "nexttodo.localEpoch";
 
-/** Whether the app is in local mode, as the app keeps it (`set_local_mode`). */
+/** What the page needs to open the local user's data. */
+export interface Started {
+  url: string;
+  token: string;
+  user: string;
+  epoch: string;
+}
+
+/** How the app's native part says the server did not start. */
+type Rejected = { message: string; code?: string; locked?: boolean };
+
+/** What the app's native part does for local mode: `apps/desktop/src-tauri/src/local.rs`, and
+ * `NextTodoPlugin` in `apps/android`. */
+const shell =
+  app === "android"
+    ? {
+        // Capacitor's, which the app reads as it starts.
+        mode: async () => (await Preferences.get({ key: "mode" })).value === "local",
+        setMode: (on: boolean) => NextTodo.setLocalMode({ on }),
+        start: () => NextTodo.openLocal(),
+        locked: (e: Rejected) => e.code === "locked",
+        backup: async (name: string) => (await NextTodo.backupLocal({ name })).saved ?? null,
+        prepareRestore: async () => (await NextTodo.prepareRestore()).picked,
+        commitRestore: () => NextTodo.commitRestore(),
+        restart: () => NextTodo.restart(),
+      }
+    : {
+        mode: () => invoke<boolean>("local_mode"),
+        setMode: (on: boolean) => invoke<void>("set_local_mode", { on }),
+        start: () => invoke<Started>("start_local"),
+        locked: (e: Rejected) => !!e.locked,
+        backup: (name: string) => invoke<string | null>("backup_local", { name }),
+        prepareRestore: () => invoke<boolean>("prepare_restore"),
+        commitRestore: () => invoke<void>("commit_restore"),
+        restart: () => invoke<void>("restart"),
+      };
+
+/** Whether the app is in local mode, as the app keeps it. */
 let mode = false;
 
 /** Reads whether the app is in local mode. Call before `inLocalMode`. */
 export async function loadMode() {
-  if (app === "desktop") mode = await invoke<boolean>("local_mode");
+  if (app) mode = await shell.mode();
 }
 
 export const inLocalMode = () => mode;
 
 async function setMode(on: boolean) {
-  await invoke("set_local_mode", { on });
+  await shell.setMode(on);
   mode = on;
 }
 
@@ -39,20 +79,12 @@ export class StartFailed extends Error {
   }
 }
 
-/** What `start_local` gives (`apps/desktop/src-tauri/src/local.rs`). */
-interface Started {
-  url: string;
-  token: string;
-  user: string;
-  epoch: string;
-}
-
 async function start(): Promise<Started> {
   try {
-    return await invoke<Started>("start_local");
+    return await shell.start();
   } catch (e) {
-    const { message, locked } = e as { message: string; locked: boolean };
-    throw new StartFailed(message, locked);
+    const rejected = e as Rejected;
+    throw new StartFailed(rejected.message, shell.locked(rejected));
   }
 }
 
@@ -61,15 +93,18 @@ export const resume = async () => open(await start());
 
 /** Enters local mode from the sign-in page, also when in it already, after the session ended say.
  * Changes of another account not sent yet would be lost: `confirm` is asked first, and null returned
- * when it declines. */
+ * when it declines. On Android, the app restarts into it. */
 export async function enter(confirm: (unsent: number) => Promise<boolean>): Promise<Session | null> {
-  const started = await start();
-  const unsent = await unsentOfOthers(started.user);
+  // Android's opens the data as it starts; its server starts here already, to say whose it is.
+  const started = app === "android" ? null : await start();
+  const unsent = await unsentOfOthers(started?.user ?? (await NextTodo.startLocal()).user);
   if (unsent && !(await confirm(unsent))) return null;
   // Should a server's token be kept, it never comes back: after local mode the app signs in afresh.
   await dropSession();
   await setMode(true);
-  return open(started);
+  if (started) return open(started);
+  await shell.restart();
+  return null;
 }
 
 /** Opens the local user's data, as signing in does: anyone else's on the page goes. */
@@ -87,7 +122,8 @@ function open({ url, token, user, epoch }: Started): Promise<Session> {
   });
 }
 
-/** Forgets local mode, for signing in to a server: the app's own server stops when the app does. */
+/** Forgets local mode, for signing in to a server: the app's own server stops when the app does. On
+ * Android the session goes with it, the local server's, or an earlier one's. */
 export const forgetMode = () => setMode(false);
 
 /** Leaves local mode, keeping the local user's data on the device for coming back, and restarts the
@@ -95,7 +131,7 @@ export const forgetMode = () => setMode(false);
 export async function leave(session: Session) {
   await forgetMode();
   await session.close(true);
-  await invoke("restart");
+  await shell.restart();
 }
 
 /** How long a backup, or a restore from the settings, waits for the changes made here to reach the
@@ -121,7 +157,7 @@ export function sent(store: Store): Promise<boolean> {
  * The changes made here are in it. */
 export async function backup(store: Store): Promise<string | null> {
   if (!(await sent(store))) throw new Error("还有改动没有保存，请稍后再试");
-  return invoke<string | null>("backup_local", { name: `NextTodo-备份-${isoDate(new Date())}.db` });
+  return shell.backup(`NextTodo-备份-${isoDate(new Date())}.db`);
 }
 
 /** Asks for a backup and, once `confirm` has agreed to what goes, replaces the data with it and
@@ -129,16 +165,16 @@ export async function backup(store: Store): Promise<string | null> {
  * else lost. Nothing changes when the user cancels. */
 export async function restore(confirm: (body: string) => Promise<boolean>, session?: Session) {
   if (session && !(await sent(session.store))) throw new Error("还有改动没有保存，请稍后再试");
-  if (!(await invoke<boolean>("prepare_restore"))) return;
+  if (!(await shell.prepareRestore())) return;
   const lost = session ? session.store.getView().pending : await unsent();
   const body = [
     lost ? `还没发出的 ${lost} 项改动会丢弃，找不回来。` : "",
-    "现在的数据会留在数据目录的旧数据文件夹里；从现在到 NextTodo 重新启动之间，agent 和 AI 整理写入的改动也只在那里。",
+    `现在的数据会留在数据目录的旧数据文件夹里；从现在到 NextTodo 重新启动之间，${app === "android" ? "小组件" : "agent "}和 AI 整理写入的改动也只在那里。`,
   ].join("");
   if (!(await confirm(body))) return;
   // Nothing more goes to the data being replaced. What is on the page stays, as when leaving local
   // mode: with the backup's epoch, it is deleted then.
   await session?.close(true);
-  await invoke("commit_restore");
-  await invoke("restart");
+  await shell.commitRestore();
+  await shell.restart();
 }

@@ -7,6 +7,7 @@ import { LocalNotifications, type PendingLocalNotificationSchema } from "@capaci
 import { navigate } from "wouter/use-browser-location";
 import type { Board } from "./domain/board";
 import { type Reminder, reminder, reminders } from "./domain/reminders";
+import type { Started } from "./local";
 import type { Store } from "./sync/store";
 import { back } from "./ui/back";
 
@@ -26,6 +27,22 @@ interface NextTodoPlugin {
   /** Downloads the APK and hands it to the system installer; `started: false` when the app may not
    * install apps yet, and the settings page that allows it opened instead. */
   installApp(o: { url: string }): Promise<{ started: boolean }>;
+  /** Local mode (docs/local.md), as the app's start opened it; should the server not have started,
+   * tries again, and rejects with code `locked` while an earlier process of the app has the data. */
+  openLocal(): Promise<Started>;
+  /** Starts local mode's server, to enter it: whose data it has. */
+  startLocal(): Promise<{ user: string }>;
+  /** Enters local mode or leaves it, from the next start. */
+  setLocalMode(o: { on: boolean }): Promise<void>;
+  /** Ends the app's process and opens the app again. */
+  restart(): Promise<void>;
+  /** Asks where to save a backup, offering `name`, and writes it there; `saved` is what the file is
+   * called, nothing when the user cancelled. */
+  backupLocal(o: { name: string }): Promise<{ saved?: string }>;
+  /** Asks for a backup and prepares it to replace the data; whether the user picked one. */
+  prepareRestore(): Promise<{ picked: boolean }>;
+  /** The backup prepared replaces the data at the next start. */
+  commitRestore(): Promise<void>;
 }
 
 export const NextTodo = registerPlugin<NextTodoPlugin>("NextTodo");

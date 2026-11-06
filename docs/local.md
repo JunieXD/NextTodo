@@ -37,7 +37,7 @@ App 的登录页在表单下方多一个“在本机使用”按钮，附一行�
 **重启**：
 
 - 桌面用 Tauri 的 `request_restart`（更新后的“重启”也是它）：先走完退出事件、释放单实例插件的占用，再启动新进程、退出旧的。
-- Android 要结束进程、由系统重新创建，不只是重建界面，这样 `Application.onCreate` 和服务端会重新来一遍。自动重新打开的方式要先在真机上验证（见[实验](#实现前先验证)）；做不到时结束进程前提示“请重新打开 NextTodo”。切换和恢复都在下次启动时续做，所以手动打开也一样完成。
+- Android 要结束进程、由系统重新创建，不只是重建界面，这样 `Application.onCreate` 和服务端会重新来一遍。做法和 ProcessPhoenix 一样：打开一个在单独进程里的透明界面，由它结束主进程、再打开 App。它自己是可见的界面，不受后台启动界面的限制；用 `AlarmManager` 定时打开会被拦下。澎湃 OS 真机还要验证（见[实验](#实现前先验证)），不行的话，结束进程前提示“请重新打开 NextTodo”。切换和恢复都在下次启动时续做，所以手动打开也一样完成。
 - 两边新旧进程都可能短暂并存，靠[数据目录锁](#启动)保证新进程等旧进程退出后才动数据。
 
 ## 本机的服务端
@@ -134,7 +134,12 @@ local/
   - `noProxy` 要写 IP 本身：`*` 只匹配域名，对 IP 地址不起作用。
   - macOS 和 Windows 上已实测。
 - WebSocket 走 WebView 自己的网络。macOS 的 WebKit 和 Windows 的 WebView2 上实测，连 `127.0.0.1` 都不走代理，给 WebView 单独设了代理也一样。
-- Android 的 CapacitorHttp 和小组件的 `HttpURLConnection` 同样要核实。不直连的，小组件改用 `Proxy.NO_PROXY`，CapacitorHttp 另想办法。
+- Android：系统设了代理（Wi-Fi 代理或全局代理）时，`HttpURLConnection` 默认连 `127.0.0.1` 也走代理。CapacitorHttp 和小组件都用它发请求，而 CapacitorHttp 不能按请求关掉代理。所以本机模式下：
+  - 页面的 HTTP 改用 WebView 自己的 `fetch`。Capacitor 给 `fetch` 打补丁之前，把原来的存在了 `window.CapacitorWebFetch`。WebView 连 `127.0.0.1` 不走代理，也不算混合内容。
+  - 本机的服务端在 Android 上允许来源 `https://localhost` 跨域，请求头 `Authorization` 和 `Content-Type`。
+  - 顺带，写请求也能按时取消了：CapacitorHttp 不转发 `AbortSignal`。
+  - 小组件的请求用 `Proxy.NO_PROXY`。
+  - Android 16、17 的模拟器上已实测。
 
 ### agent 接入
 
@@ -172,10 +177,12 @@ local/
 
 ## Android
 
-- 服务端编译成 `arm64-v8a` 的动态库（`cargo-ndk`），打进 APK 的 `jniLibs`。真机和 Apple 芯片 Mac 上的模拟器都是 arm64，只出这一种。JNI 的胶水代码放在一个单独的小 crate 里，只有几个入口：启动、签发会话、备份、准备恢复。
+- 服务端编译成 `arm64-v8a` 的动态库（`cargo-ndk`），打进 APK 的 `jniLibs`。真机和 Apple 芯片 Mac 上的模拟器都是 arm64，只出这一种。
+  - 用单独的 release profile：`lto = "fat"`、`codegen-units = 1`、`opt-level = "s"`、`strip = true`，动态库 6.9 MB；不开这些是 11.3 MB。
+  - APK 里按默认不压缩存放，装好后不用解压，安装包大约大 7 MB（现在 6.5 MB）。压缩存放能小一半，但装好后要解压出来，多占一份空间。JNI 的胶水代码放在一个单独的小 crate 里，只有几个入口：启动、签发会话、备份、准备恢复。
 - 新增自定义的 `Application`。它的 `onCreate` 里读到本机模式时，按顺序：
   1. 清掉 Preferences 里旧的 `server` 和 `token`。
-  2. 同步启动服务端（[启动](#启动)的全部步骤）。平时只要几毫秒，要在[实验](#实现前先验证)里量。
+  2. 同步启动服务端（[启动](#启动)的全部步骤）。模拟器上实测：已有数据库时约 1 毫秒；新建并迁移时 12～19 毫秒；偶尔有一次 60 毫秒。
   3. 按[数据代号](#数据代号)决定是否清空小组件和提醒。
   4. 签发会话，写入新的 `server` 和 `token`。
 - App、小组件、提醒、定时刷新，不管哪个让进程启动，都会先经过 `onCreate`。所以小组件读到的时候，服务端一定已经在了。小组件照旧从 Preferences 读地址和令牌，经 HTTP 取列表、勾选完成，进行中的操作照旧按令牌判断是否作废。
@@ -276,18 +283,14 @@ local/
 
 ## 实现前先验证
 
-还没做的，都在 Android 上：
+还没做的，要在澎湃 OS 真机上做：
 
-- WebView 里 `https://localhost` 的页面连 `ws://127.0.0.1`，会不会被当成混合内容拦下。
-- CapacitorHttp 和小组件的 `HttpURLConnection`，在只放行 `127.0.0.1` 的网络安全配置下能不能连上；设了 Wi-Fi 代理时是否直连。
-- 动态库会让 APK 大多少。
-- `Application.onCreate` 里同步启动服务端要多久。不能拖慢“打开到看到数据 300ms”，也不能有卡顿主线程的风险。太慢就改成后台启动，这时页面和小组件要改成等它就绪，[Android](#android) 一节的时序要一起改。
-- 重启：新进程确实在旧进程退出后拿到锁。
-- 自动重新打开 App：候选做法是在单独进程里的界面结束主进程、再打开 App（ProcessPhoenix 的做法），或用 `AlarmManager`。在 Android 16 和澎湃 OS 真机上验证后台启动限制、是否需要额外权限、延迟多久，选能用的一种；都不行就用手动重新打开。
+- 自动重新打开 App（ProcessPhoenix 的做法）：澎湃 OS 对后台启动和自启动管得比原生 Android 严。不行的话，改成提示手动重新打开。
+- 页面直连、`Application.onCreate` 的耗时，在真机上再看一眼。
 
 恢复时被打断后续做，由 Rust 测试在三个平台上覆盖；断电时能保证到哪一步无法实测，按[恢复](#恢复)里写的尽力而为。
 
-已验证的（2026-11-06，macOS 和 Windows 11，用单独的实验程序）：
+已验证的（2026-11-06，macOS、Windows 11、Android 16 和 17 模拟器，用单独的实验程序）：
 
 - 桌面重启：用 `request_restart` 时，单实例插件不会把新进程当成第二个实例；新进程等旧进程退出后拿到锁（Windows 上等了 83 毫秒）。
 - 端口：监听期间别的用户抢不走。macOS 上连同一用户都绑不上同一个地址和端口；Windows 上另一个用户绑同一地址被拒（tokio 不设 `SO_REUSEADDR`），不用设 `SO_EXCLUSIVEADDRUSE`。两边绑 `0.0.0.0`（macOS 上还有 `[::]`）的，都收不到发往 `127.0.0.1` 的连接。
@@ -295,6 +298,12 @@ local/
 - 命令行连 HTTPS 端口（ureq，只信任这次的 CA，不经代理，不跟随重定向）：连对的运行正常；连另一次运行的端口，握手失败，对方收不到请求；连只收字节的程序，对方只收到握手的开头，没有令牌和路径；有代理环境变量也直连；一个连接不握手，不影响别的连接。生成证书在 macOS 上约 1 毫秒，Windows（ARM 上模拟 x64）上第一次 65 毫秒。
 - 加密后端：桌面现有的依赖加上 `tokio-rustls`（只开 ring）和 `rcgen`，仍然只有 ring，rustls 不会 panic。
 - Windows 上的改名：进程刚退出就改名它用过的目录，200 次都成功；一边读地址文件一边改名替换它，2000 次没有失败，也没读到写了一半的内容。
+- Android 的页面：`https://localhost` 的页面连 `ws://127.0.0.1`、`fetch` `http://127.0.0.1`，都不算混合内容，WebView 的混合内容设置是默认最严的那档也一样。WebView 的请求在系统设了代理时也直连。带 `Authorization` 头的跨域请求（有预检）正常。
+- Android 的明文配置：只放行 `127.0.0.1` 的网络安全配置生效，`HttpURLConnection` 连 `127.0.0.1` 正常，明文连别的地址被拒。
+- Android 的代理：系统设了代理时，`HttpURLConnection` 默认连 `127.0.0.1` 也走代理，`Proxy.NO_PROXY` 时直连。由此改了[页面直连](#页面直连)的做法。
+- Android 的启动：`Application.onCreate` 里同步启动服务端，加载动态库约 0.5 毫秒，启动见 [Android](#android)。冷启动到页面显示 570～710 毫秒，大部分是 WebView 初始化。
+- Android 的重启：ProcessPhoenix 的做法在 16 和 17 上都能用，新进程约 0.1 秒后启动，拿锁不用等；`AlarmManager` 定时打开被后台启动限制拦下（即使创建 PendingIntent 时声明了允许）。
+- Android 动态库的大小：见 [Android](#android)。
 
 ## 测试
 

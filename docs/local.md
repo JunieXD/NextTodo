@@ -132,8 +132,8 @@ local/
 - HTTP：桌面的 HTTP 插件默认用系统代理和代理环境变量，而且不会自动绕开 `127.0.0.1`。本机模式下每个请求带上一个显式的代理设置 `{all: {url: <随便一个地址>, noProxy: "127.0.0.1"}}`，并且不跟随重定向（`maxRedirections: 0`）。
   - reqwest 只要给了显式的代理，就不再用系统代理和环境变量；`noProxy` 又让到 `127.0.0.1` 的请求直连。
   - `noProxy` 要写 IP 本身：`*` 只匹配域名，对 IP 地址不起作用。
-  - macOS 上已实测。
-- WebSocket 走 WebView 自己的网络。macOS 上实测，WebKit 连 `127.0.0.1` 不走代理，给 WebView 单独设了代理也一样；Windows 的 WebView2 要在[实验](#实现前先验证)里核实。
+  - macOS 和 Windows 上已实测。
+- WebSocket 走 WebView 自己的网络。macOS 的 WebKit 和 Windows 的 WebView2 上实测，连 `127.0.0.1` 都不走代理，给 WebView 单独设了代理也一样。
 - Android 的 CapacitorHttp 和小组件的 `HttpURLConnection` 同样要核实。不直连的，小组件改用 `Proxy.NO_PROXY`，CapacitorHttp 另想办法。
 
 ### agent 接入
@@ -276,16 +276,25 @@ local/
 
 ## 实现前先验证
 
-- Android WebView 里，`https://localhost` 的页面连 `ws://127.0.0.1` 会不会被当成混合内容拦下。
-- CapacitorHttp 和小组件的 `HttpURLConnection`，在只放行 `127.0.0.1` 的网络安全配置下能不能连上。
-- Android 动态库会让 APK 大多少。
-- 监听期间端口不会被别的用户抢走。Windows 上，第一个套接字没设 `SO_REUSEADDR` 时，别的用户绑不上同一个端口；要确认 tokio 在 Windows 上不设它，必要时在监听前设 `SO_EXCLUSIVEADDRUSE`。macOS 上已验证：连同一用户都绑不上同一个地址和端口，绑 `0.0.0.0` 或 `[::]` 的也收不到发往 `127.0.0.1` 的连接。
-- 页面直连：开着系统代理（包括不绕开 `127.0.0.1` 的规则）和 `HTTPS_PROXY` 等环境变量时，桌面上带显式代理设置的 HTTP 请求、WKWebView 和 WebView2 的 WebSocket，以及 Android 设了 Wi-Fi 代理时的 CapacitorHttp 和小组件，是否都直连。macOS 上的两项已验证。
-- 命令行只信任这次的 CA、不经代理、不跟随重定向的设置，在 macOS 和 Windows 上实际连一遍。macOS 上已验证：连对的运行正常；连另一次运行的端口握手失败，对方收不到请求；连只收字节的程序，对方只收到握手的开头，没有令牌和路径；不跟随重定向；有代理环境变量也直连；一个连接不握手不影响别的连接。生成证书约 1 毫秒。
+还没做的，都在 Android 上：
+
+- WebView 里 `https://localhost` 的页面连 `ws://127.0.0.1`，会不会被当成混合内容拦下。
+- CapacitorHttp 和小组件的 `HttpURLConnection`，在只放行 `127.0.0.1` 的网络安全配置下能不能连上；设了 Wi-Fi 代理时是否直连。
+- 动态库会让 APK 大多少。
 - `Application.onCreate` 里同步启动服务端要多久。不能拖慢“打开到看到数据 300ms”，也不能有卡顿主线程的风险。太慢就改成后台启动，这时页面和小组件要改成等它就绪，[Android](#android) 一节的时序要一起改。
-- 两个平台的重启：新进程确实在旧进程退出后拿到锁；桌面的重启和单实例插件不冲突；Windows 上旧进程刚退出时改名不会遇到文件占用。macOS 上已验证前两点。
-- Android 自动重新打开 App：候选做法是在单独进程里的界面结束主进程、再打开 App（ProcessPhoenix 的做法），或用 `AlarmManager`。在 Android 16 和澎湃 OS 真机上验证后台启动限制、是否需要额外权限、延迟多久，选能用的一种；都不行就用手动重新打开。
-- 恢复时的改名在三个平台上的行为：被打断后续做，以及断电保证能做到哪一步。
+- 重启：新进程确实在旧进程退出后拿到锁。
+- 自动重新打开 App：候选做法是在单独进程里的界面结束主进程、再打开 App（ProcessPhoenix 的做法），或用 `AlarmManager`。在 Android 16 和澎湃 OS 真机上验证后台启动限制、是否需要额外权限、延迟多久，选能用的一种；都不行就用手动重新打开。
+
+恢复时被打断后续做，由 Rust 测试在三个平台上覆盖；断电时能保证到哪一步无法实测，按[恢复](#恢复)里写的尽力而为。
+
+已验证的（2026-11-06，macOS 和 Windows 11，用单独的实验程序）：
+
+- 桌面重启：用 `request_restart` 时，单实例插件不会把新进程当成第二个实例；新进程等旧进程退出后拿到锁（Windows 上等了 83 毫秒）。
+- 端口：监听期间别的用户抢不走。macOS 上连同一用户都绑不上同一个地址和端口；Windows 上另一个用户绑同一地址被拒（tokio 不设 `SO_REUSEADDR`），不用设 `SO_EXCLUSIVEADDRUSE`。两边绑 `0.0.0.0`（macOS 上还有 `[::]`）的，都收不到发往 `127.0.0.1` 的连接。
+- 页面直连：HTTP 插件默认会把到 `127.0.0.1` 的请求发给代理环境变量里的代理；带上[页面直连](#页面直连)的设置后直连，也不跟随重定向。WebKit 和 WebView2 的 WebSocket 和 fetch 连 `127.0.0.1` 都不走代理，WebView 单独设了代理也一样。页面（`tauri://localhost`、`http://tauri.localhost`）连 `ws://127.0.0.1` 不算混合内容。
+- 命令行连 HTTPS 端口（ureq，只信任这次的 CA，不经代理，不跟随重定向）：连对的运行正常；连另一次运行的端口，握手失败，对方收不到请求；连只收字节的程序，对方只收到握手的开头，没有令牌和路径；有代理环境变量也直连；一个连接不握手，不影响别的连接。生成证书在 macOS 上约 1 毫秒，Windows（ARM 上模拟 x64）上第一次 65 毫秒。
+- 加密后端：桌面现有的依赖加上 `tokio-rustls`（只开 ring）和 `rcgen`，仍然只有 ring，rustls 不会 panic。
+- Windows 上的改名：进程刚退出就改名它用过的目录，200 次都成功；一边读地址文件一边改名替换它，2000 次没有失败，也没读到写了一半的内容。
 
 ## 测试
 

@@ -69,14 +69,36 @@ async fn restoring_a_snapshot_has_devices_download_everything_again() {
     assert!(changed > since);
     let after = t.call("GET", &format!("/changes?since={since}"), Some(&s), None).await.body;
     assert_eq!(after["changes"].as_array().unwrap().len(), 1);
-    let replaced = Connection::open(&kept).unwrap().query_row("SELECT count(*) FROM tasks", [], |r| r.get::<_, i64>(0)).unwrap();
-    assert_eq!(replaced, 2);
+    let replaced = Connection::open(kept.join("nexttodo.db")).unwrap();
+    assert_eq!(replaced.query_row("SELECT count(*) FROM tasks", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
+    drop((t, replaced));
 
-    // Not from a file that isn't NextTodo's, nor one missing.
+    // With the database replaced damaged, then gone, all the same; the damaged one is kept as it was.
+    std::fs::write(&file, "damaged").unwrap();
+    let kept = db::restore(&file, &snapshot, 3_000).unwrap().unwrap();
+    assert_eq!(std::fs::read(kept.join("nexttodo.db")).unwrap(), b"damaged");
+    std::fs::remove_file(&file).unwrap();
+    assert_eq!(db::restore(&file, &snapshot, 4_000).unwrap(), None);
+    let t = TestApp::on(Db::open(&file).unwrap());
+    let stale = t.call("GET", &format!("/changes?since={changed}"), Some(&s), None).await;
+    assert_eq!((stale.status, stale.body["code"].as_str()), (StatusCode::GONE, Some("resync")));
+
+    // Not from a file that isn't NextTodo's database, nor from one missing; nothing changes then.
+    let fake = Connection::open(dir.join("fake.db")).unwrap();
+    fake.execute_batch(
+        "CREATE TABLE users (id TEXT, pruned_seq INTEGER);
+         CREATE TABLE mutations (seq INTEGER PRIMARY KEY AUTOINCREMENT, ops TEXT, effects TEXT, reply TEXT);
+         CREATE TABLE epoch (value TEXT);
+         PRAGMA user_version = 4;",
+    )
+    .unwrap();
+    drop(fake);
     std::fs::write(dir.join("empty.db"), "").unwrap();
-    assert!(db::restore(&file, &dir.join("empty.db"), 3_000).is_err());
-    assert!(db::restore(&file, &dir.join("missing.db"), 3_000).is_err());
+    for from in ["fake.db", "empty.db", "missing.db"] {
+        assert!(db::restore(&file, &dir.join(from), 5_000).is_err(), "{from}");
+    }
     assert!(!dir.join("missing.db").exists());
+    assert_eq!(t.snapshot(&s).await["tasks"].as_array().unwrap().len(), 1);
     drop(t);
     std::fs::remove_dir_all(dir).unwrap();
 }

@@ -5,7 +5,7 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, anyhow, bail};
+use anyhow::{Context, bail};
 use rusqlite::Connection;
 
 use crate::{Clock, db, local};
@@ -58,21 +58,9 @@ pub fn prepare(dir: &Path, from: &Path) -> anyhow::Result<()> {
 /// Checks that the database at `copy` is NextTodo's, of this version or an earlier one, with one
 /// user, then migrates it and makes it the local user's.
 fn convert(copy: &Path) -> anyhow::Result<()> {
-    let not_ours = || anyhow!("这不是 NextTodo 的备份，或者文件已损坏");
     let mut c = Connection::open(copy)?;
-    let check: String = c.query_row("PRAGMA integrity_check", [], |r| r.get(0)).map_err(|_| not_ours())?;
-    if check != "ok" || c.prepare("PRAGMA foreign_key_check")?.exists([])? {
-        return Err(not_ours());
-    }
-    let version: i64 = c.pragma_query_value(None, "user_version", |r| r.get(0))?;
-    let done = db::MIGRATIONS.len() - db::pending(version)?.len();
-    // The tables as that version's migrations make them, and nothing else.
-    let empty = Connection::open_in_memory()?;
-    for sql in &db::MIGRATIONS[..done] {
-        empty.execute_batch(sql)?;
-    }
-    if done == 0 || schema(&c)? != schema(&empty)? {
-        return Err(not_ours());
+    if !db::ours(&c)? {
+        bail!("这不是 NextTodo 的备份，或者文件已损坏");
     }
     match c.query_row("SELECT count(*) FROM users", [], |r| r.get::<_, i64>(0))? {
         1 => {}
@@ -87,12 +75,6 @@ fn convert(copy: &Path) -> anyhow::Result<()> {
     // One file, without a -wal beside it.
     c.pragma_update_and_check(None, "journal_mode", "DELETE", |_| Ok(()))?;
     Ok(())
-}
-
-fn schema(c: &Connection) -> rusqlite::Result<Vec<(String, String, Option<String>)>> {
-    c.prepare("SELECT type, name, sql FROM sqlite_schema ORDER BY type, name")?
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
-        .collect()
 }
 
 /// The user's go-ahead: from here on the backup replaces the data, at the next start. Fails only

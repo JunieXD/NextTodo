@@ -1,14 +1,13 @@
-use std::fs::File;
+use std::fs::{File, OpenOptions, TryLockError};
 use std::io::IsTerminal;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 
 use nexttodo_server::ai::{Ai, llm::Https, secret::SecretKey};
-use nexttodo_server::{AppState, Clock, Db, app, auth, db, local, start, with_web};
+use nexttodo_server::{AppState, Clock, Db, app, auth, db, start, with_web};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -56,7 +55,7 @@ async fn main() -> anyhow::Result<()> {
     let db = cli.data.join("nexttodo.db");
     match cli.command {
         Command::Serve { listen, web } => {
-            let _lock = lock(&cli.data).await?;
+            let _lock = lock(&cli.data, false)?;
             let ai = Ai::new(secret, Arc::new(Https));
             let (started, ()) = start::start(&db, cli.data.join("snapshots"), listen, ai, |_| Ok(())).await?;
             let router = match &web {
@@ -68,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Restore { snapshot } => {
-            let _lock = lock(&cli.data).await?;
+            let _lock = lock(&cli.data, true)?;
             match db::restore(&db, &snapshot, Clock::system().now())? {
                 Some(kept) => println!("已恢复，被替换的数据在 {}", kept.display()),
                 None => println!("已恢复"),
@@ -76,6 +75,7 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::CreateAdmin { username, display_name } => {
+            let _lock = lock(&cli.data, false)?;
             let state = AppState::new(Db::open(&db)?, Clock::system());
             let password = read_password()?;
             let display_name = display_name.unwrap_or_else(|| username.clone());
@@ -86,10 +86,16 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-/// The data directory's lock, held until the process ends: a restore never replaces the database
-/// under a server running on it.
-async fn lock(data: &Path) -> anyhow::Result<File> {
-    local::lock(&data.join("lock"), Duration::ZERO).await.map_err(|e| anyhow::anyhow!("{e}"))
+/// The data directory's lock, held until the process ends: shared by the commands that use the
+/// database, and taken `alone` by `restore`, which never replaces it under them.
+fn lock(data: &Path, alone: bool) -> anyhow::Result<File> {
+    let file = OpenOptions::new().create(true).truncate(false).write(true).open(data.join("lock"))?;
+    match if alone { file.try_lock() } else { file.try_lock_shared() } {
+        Ok(()) => Ok(file),
+        Err(TryLockError::WouldBlock) if alone => anyhow::bail!("服务端还在运行，先停掉它"),
+        Err(TryLockError::WouldBlock) => anyhow::bail!("正在恢复数据库"),
+        Err(TryLockError::Error(e)) => Err(e.into()),
+    }
 }
 
 /// Asks twice on a terminal; reads one line when the password is piped in (scripts, `docker exec` without `-t`).

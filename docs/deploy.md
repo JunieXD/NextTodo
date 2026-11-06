@@ -70,7 +70,9 @@ docker compose run --rm nexttodo restore /data/snapshots/snapshot-<时间>.db
 docker compose start
 ```
 
-- 被替换的数据留在 `data/before-restore-<时间>.db`，不自动删除。服务端运行时持有数据目录锁 `data/lock`，没停掉就运行 `restore` 会报错，什么都不改。
+- 快照先检查是不是完好的 NextTodo 数据库，不是就报错，什么都不改。现在的数据库损坏或者丢了也能恢复。
+- 被替换的数据库连同 `-wal`、`-shm` 原样复制到 `data/before-restore-<时间>/`，不自动删除。
+- `serve` 和 `create-admin` 运行时共享数据目录锁 `data/lock`，`restore` 要独占它：服务端没停就运行 `restore` 会报错，什么都不改。中途被打断时，再运行一次即可。
 - 快照之后的改动、登录和 API 令牌都会消失，快照之后才登录的设备要重新登录。各设备下次连上时重新下载全部数据，还没发出的改动保留，照常发送。原理见[数据模型](data-model.md#mutations)。
 
 ## 用部署脚本

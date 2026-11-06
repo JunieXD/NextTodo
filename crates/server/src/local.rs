@@ -151,8 +151,7 @@ pub(crate) fn private_dir(dir: &Path) -> std::io::Result<()> {
 }
 
 /// Takes the lock on the data directory, waiting up to `wait` for another process to let go of it.
-/// The server's `serve` and `restore` take it too.
-pub async fn lock(path: &Path, wait: Duration) -> Result<File, StartError> {
+async fn lock(path: &Path, wait: Duration) -> Result<File, StartError> {
     let file = OpenOptions::new().create(true).truncate(false).write(true).open(path)?;
     let since = Instant::now();
     loop {

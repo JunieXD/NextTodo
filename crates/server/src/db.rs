@@ -145,53 +145,81 @@ pub fn snapshot(db: &Path, dir: &Path, now_ms: i64, keep: usize) -> anyhow::Resu
     Ok(path)
 }
 
+/// Whether the database `c` is NextTodo's and intact, of this version or an earlier one: its tables
+/// as that version's migrations make them, and nothing else. An error when it is from a newer one.
+pub(crate) fn ours(c: &Connection) -> anyhow::Result<bool> {
+    let Ok(check) = c.query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0)) else { return Ok(false) };
+    if check != "ok" || c.prepare("PRAGMA foreign_key_check")?.exists([])? {
+        return Ok(false);
+    }
+    let version: i64 = c.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    let done = MIGRATIONS.len() - pending(version)?.len();
+    let empty = Connection::open_in_memory()?;
+    for sql in &MIGRATIONS[..done] {
+        empty.execute_batch(sql)?;
+    }
+    Ok(done > 0 && schema(c)? == schema(&empty)?)
+}
+
+fn schema(c: &Connection) -> rusqlite::Result<Vec<(String, String, Option<String>)>> {
+    c.prepare("SELECT type, name, sql FROM sqlite_schema ORDER BY type, name")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect()
+}
+
 /// Replaces the database at `db`, with the server stopped, by a copy of NextTodo's database at
-/// `from`, a snapshot say. Returns where the data replaced was kept, when there was some. The copy's
-/// log goes on after the replaced one's, with every user's cut (see `prune`) just past it: devices,
-/// which have seen no change after that, download everything again, and lists kept with a sequence
-/// number, as the widget's, take the next ones.
+/// `from`, a snapshot say. The data replaced, damaged even, is kept as it was in
+/// `before-restore-<Unix seconds>/`, returned when there was some.
+///
+/// Devices are to download everything again, and lists kept with a sequence number, as the
+/// widget's, to take the new ones: the copy's log goes on from `now_ms`, every user's cut (see
+/// `prune`) there, unless its own numbers are higher. The numbers given before went up a change at a
+/// time, from 1 or from an earlier restore's time, and no server makes a change a millisecond: all
+/// are below it, without the database replaced, which may be damaged or gone, to say so.
 pub fn restore(db: &Path, from: &Path, now_ms: i64) -> anyhow::Result<Option<PathBuf>> {
     // Read-only: a mistyped path is not made into an empty database.
     let source =
         Connection::open_with_flags(from, OpenFlags::SQLITE_OPEN_READ_ONLY).with_context(|| format!("无法打开 {}", from.display()))?;
-    let version: i64 = source.pragma_query_value(None, "user_version", |r| r.get(0))?;
-    if version == 0 {
-        bail!("这不是 NextTodo 的数据库");
+    if !ours(&source)? {
+        bail!("这不是 NextTodo 的数据库，或者文件已损坏");
     }
-    pending(version)?;
-    let path = |p: &Path| p.to_str().expect("data directory path is UTF-8").to_owned();
-    let mut last = 0;
-    let kept = if db.try_exists()? {
-        let kept = db.with_file_name(format!("before-restore-{:010}.db", now_ms / 1000));
-        let c = Connection::open(db)?;
-        last = c.query_row("SELECT coalesce(max(seq), 0) FROM sqlite_sequence WHERE name = 'mutations'", [], |r| r.get(0))?;
-        c.execute("VACUUM INTO ?1", [path(&kept)])?;
-        Some(kept)
-    } else {
-        None
-    };
     let part = db.with_extension("db.restore");
     // Left by a restore cut short: VACUUM INTO won't write over it.
     if part.try_exists()? {
         std::fs::remove_file(&part)?;
     }
-    source.execute("VACUUM INTO ?1", [path(&part)])?;
+    source.execute("VACUUM INTO ?1", [part.to_str().expect("data directory path is UTF-8")])?;
     let mut c = Connection::open(&part)?;
     migrate(&mut c)?;
     let tx = c.transaction()?;
-    let next: i64 =
-        tx.query_row("SELECT max(?1, coalesce(max(seq), 0)) + 1 FROM sqlite_sequence WHERE name = 'mutations'", [last], |r| r.get(0))?;
+    let cut: i64 =
+        tx.query_row("SELECT max(?1, coalesce(max(seq), 0) + 1) FROM sqlite_sequence WHERE name = 'mutations'", [now_ms], |r| r.get(0))?;
     tx.execute("DELETE FROM sqlite_sequence WHERE name = 'mutations'", [])?;
-    tx.execute("INSERT INTO sqlite_sequence (name, seq) VALUES ('mutations', ?1)", [next])?;
+    tx.execute("INSERT INTO sqlite_sequence (name, seq) VALUES ('mutations', ?1)", [cut])?;
     // Cleared up to the cut, as `prune` leaves it.
-    tx.execute("UPDATE users SET pruned_seq = ?1", [next])?;
+    tx.execute("UPDATE users SET pruned_seq = ?1", [cut])?;
     tx.execute("UPDATE mutations SET ops = NULL, effects = NULL, reply = NULL WHERE effects IS NOT NULL", [])?;
     tx.execute("UPDATE epoch SET value = lower(hex(randomblob(16)))", [])?;
     tx.commit()?;
+    // One file, without a -wal beside it.
+    c.pragma_update_and_check(None, "journal_mode", "DELETE", |_| Ok(()))?;
     drop(c);
-    // What they held of the data replaced is in `kept`; beside the copy, SQLite would apply it.
-    for suffix in ["db-wal", "db-shm"] {
-        let file = db.with_extension(suffix);
+    let files = ["db", "db-wal", "db-shm"].map(|suffix| db.with_extension(suffix));
+    let kept = if db.try_exists()? {
+        let kept = db.with_file_name(format!("before-restore-{:010}", now_ms / 1000));
+        std::fs::create_dir(&kept)?;
+        for file in &files {
+            if file.try_exists()? {
+                std::fs::copy(file, kept.join(file.file_name().expect("a file name")))?;
+            }
+        }
+        Some(kept)
+    } else {
+        None
+    };
+    // Beside the copy, SQLite would apply the replaced data's -wal to it. Cut short from here on, the
+    // data replaced is in use again, without its -wal, until the restore runs again.
+    for file in &files[1..] {
         if file.try_exists()? {
             std::fs::remove_file(file)?;
         }

@@ -3,7 +3,7 @@
 
 import { DropdownMenu } from "radix-ui";
 import { Ellipsis, FolderInput, FolderPlus, Pencil, Trash2 } from "lucide-react";
-import { type ReactElement, type ReactNode, useContext, useState } from "react";
+import { type ReactElement, type ReactNode, useContext, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
@@ -83,12 +83,28 @@ export function FolderMenu({ folder }: { folder: FolderId }) {
   const root = useContext(RootContext);
   const { items, picker } = useFolderActions(folder);
   const [menu, setMenu] = useState(false);
+  // A finger come down on the button, to open the menu once the tap is done.
+  const tap = useRef(false);
   useBack("dialog", menu ? () => setMenu(false) : null);
   if (!items.length) return null;
   return (
     <>
       <DropdownMenu.Root open={menu} onOpenChange={setMenu}>
-        <DropdownMenu.Trigger className="icon-btn" aria-label="文件夹操作">
+        <DropdownMenu.Trigger
+          className="icon-btn"
+          aria-label="文件夹操作"
+          // Radix opens the menu as the button goes down. A finger's opens it once the tap is done, as the
+          // system's menus do: the press shows, and a scroll or a long press begun on it opens nothing.
+          // A tap while the menu is open comes down outside it, closing it, and is not one.
+          onPointerDown={(e) => {
+            tap.current = e.pointerType !== "mouse";
+            if (tap.current) e.preventDefault();
+          }}
+          onClick={() => {
+            if (tap.current) setMenu(true);
+            tap.current = false;
+          }}
+        >
           <Icon of={Ellipsis} />
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal container={root}>

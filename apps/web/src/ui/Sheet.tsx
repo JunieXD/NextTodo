@@ -4,13 +4,16 @@
 
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useBack } from "./back";
+import { useLeave } from "./leave";
 
 export function Sheet({ label, onClose, children }: { label: string; onClose(): void; children: ReactNode }) {
   const [full, setFull] = useState(false);
+  const scrim = useRef<HTMLDivElement>(null);
   const sheet = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const state = useRef({ full, onClose });
   useBack("panel", onClose);
+  useLeave([scrim, sheet]);
   useEffect(() => {
     state.current = { full, onClose };
   });
@@ -38,14 +41,13 @@ export function Sheet({ label, onClose, children }: { label: string; onClose(): 
       const { top, v } = drag;
       drag = null;
       el.classList.remove("dragging");
-      el.style.transform = "";
       if (top === null) return;
       const { full, onClose } = state.current;
-      if (v > 0.6) {
-        if (full) setFull(false);
-        else onClose();
-      } else if (v < -0.6) setFull(true);
-      else if (top > innerHeight * 0.72) onClose();
+      // Closed, it goes on down from where it was let go.
+      if (v > 0.6 ? !full : v >= -0.6 && top > innerHeight * 0.72) return onClose();
+      el.style.transform = "";
+      if (v > 0.6) setFull(false);
+      else if (v < -0.6) setFull(true);
       else setFull(top < innerHeight * 0.3);
     };
 
@@ -100,7 +102,7 @@ export function Sheet({ label, onClose, children }: { label: string; onClose(): 
   const mode = full ? "full" : "half";
   return (
     <>
-      <div className={`scrim ${mode} enter`} onClick={onClose} />
+      <div ref={scrim} className={`scrim ${mode} enter`} onClick={onClose} />
       <div ref={sheet} className={`sheet ${mode} enter`} role="dialog" aria-label={label}>
         <div className="sheet-grab" data-drag>
           <span className="handle" />

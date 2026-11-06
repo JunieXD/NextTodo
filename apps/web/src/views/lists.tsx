@@ -24,6 +24,7 @@ import { RootContext, useFeedback } from "../ui/feedback";
 import { Seg } from "../ui/controls";
 import { Icon } from "../ui/icons";
 import { composing } from "../ui/keys";
+import { useLeave } from "../ui/leave";
 import { useTaskActions } from "./actions";
 import { useRowDrag } from "./drag";
 import { useNewFolder } from "./FolderMenu";
@@ -72,7 +73,7 @@ export function NextBody({ now }: { now: Date }) {
           <h2 className={`group-title ${cls}`}>{label}</h2>
           <div className="group">
             {groups.get(g)!.map((t) => (
-              <TaskRow key={t.id} task={t} board={board} now={now} path selected={selected === t.id} actions={actions} />
+              <TaskRow key={t.id} task={t} board={board} now={now} path open selected={selected === t.id} actions={actions} />
             ))}
           </div>
         </section>
@@ -417,12 +418,16 @@ function Editor(props: {
 }) {
   const root = useContext(RootContext);
   const area = useRef<HTMLTextAreaElement>(null);
+  const scrim = useRef<HTMLDivElement>(null);
+  const page = useRef<HTMLDivElement>(null);
+  useLeave([scrim, page]);
   useBack("dialog", props.onClose);
   return (
     <Dialog.Root open onOpenChange={(o) => !o && props.onClose()}>
       <Dialog.Portal container={root}>
-        <Dialog.Overlay className="modal-scrim enter" />
+        <Dialog.Overlay ref={scrim} className="modal-scrim enter" />
         <Dialog.Content
+          ref={page}
           className="editor enter"
           aria-describedby={undefined}
           // Goes on writing where the text ends. Without scrolling: the page is still sliding in, and

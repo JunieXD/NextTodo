@@ -2,7 +2,7 @@
 // open task's details on the right.
 
 import { ChevronRight, CircleCheck, Folder as FolderIcon, FolderRoot, History, PanelLeft, Search } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { Fragment, type ReactNode, useState } from "react";
 import { Redirect, useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
 import { formatToday } from "../domain/dates";
@@ -92,7 +92,8 @@ export function Desktop({ onSettings }: { onSettings(): void }) {
             <Icon of={PanelLeft} />
           </button>
         </div>
-        {main}
+        {/* Each place a page of its own, which fades in. */}
+        <Fragment key={query.trim() ? "search" : `${at} ${view}`}>{main}</Fragment>
       </main>
       <aside className="detail-pane" inert={!open}>
         <div className="pane-inner">{shown && <Detail key={shown} id={shown} now={now} closing={!open} onClose={close} />}</div>

@@ -1,7 +1,7 @@
 // Rows in lists: tasks, folders, and the folder view's tasks with the dependency rail on the left.
 
 import { ChevronRight, Clock, Folder as FolderIcon, FolderInput, Check as CheckIcon, PanelRightOpen, RotateCcw, Trash2 } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FolderId } from "../api/types/FolderId";
 import type { Op } from "../api/types/Op";
 import type { Folder } from "../api/types/Folder";
@@ -43,6 +43,7 @@ export function TaskRow({
   now,
   path,
   railX,
+  open,
   selected,
   actions,
 }: {
@@ -53,6 +54,8 @@ export function TaskRow({
   path?: boolean;
   /** Where the check sits on the rail. */
   railX?: number;
+  /** In a list of open tasks, which a completed one leaves by folding away. */
+  open?: boolean;
   selected: boolean;
   actions: RowActions;
 }) {
@@ -84,6 +87,12 @@ export function TaskRow({
       </span>,
     );
   }
+  const row = useRef<HTMLDivElement>(null);
+  const leaving = open && marks.leaving.has(t.id) && t.done_at !== null;
+  // Folding from the height it has.
+  useLayoutEffect(() => {
+    if (leaving) row.current!.style.setProperty("--h", `${row.current!.offsetHeight}px`);
+  }, [leaving]);
   const inner = useRef<HTMLDivElement>(null);
   const swiped = useSwipe(inner, (dx) => (dx > 0 ? actions.toggle(t) : actions.remove(t)));
   const [moving, setMoving] = useState(false);
@@ -93,12 +102,12 @@ export function TaskRow({
     { icon: FolderInput, label: "移动到…", onSelect: () => setMoving(true) },
     { icon: Trash2, label: "删除", danger: true, onSelect: () => actions.remove(t) },
   ];
-  const cls = ["row", "task", status, marks.flash.has(t.id) && "unlocked", selected && "selected"].filter(Boolean).join(" ");
+  const cls = ["row", "task", status, marks.flash.has(t.id) && "unlocked", leaving && "leaving", selected && "selected"].filter(Boolean).join(" ");
   // The picker is not inside the row, where its clicks would also open the task.
   return (
     <>
       <ContextMenu items={menu}>
-        <div className={cls} onClick={() => !swiped.current && actions.open(t)}>
+        <div ref={row} className={cls} onClick={() => !swiped.current && actions.open(t)}>
           <div className="swipe-bg">
             <span>
               <Icon of={CheckIcon} size={18} />
@@ -245,7 +254,7 @@ export function RailList({ tasks, board, now, selected, actions }: { tasks: Task
           </svg>
         )}
         {tasks.map((t) => (
-          <TaskRow key={t.id} task={t} board={board} now={now} railX={rail.x(t)} selected={selected === t.id} actions={actions} />
+          <TaskRow key={t.id} task={t} board={board} now={now} railX={rail.x(t)} open selected={selected === t.id} actions={actions} />
         ))}
       </div>
     </>

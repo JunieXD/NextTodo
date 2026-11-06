@@ -34,6 +34,10 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --tabbar-h: calc(64px + var(--safe-bottom));
   --ease: cubic-bezier(.2, .9, .25, 1);
+  /* Leaving: slow at first, then away. */
+  --ease-exit: cubic-bezier(.3, 0, .8, .15);
+  /* Moving within the page: off gently, then settling. */
+  --ease-move: cubic-bezier(.2, 0, 0, 1);
   color-scheme: light;
 }
 :root[data-theme="dark"] {
@@ -148,7 +152,11 @@ svg { display: block; flex: none; }
 .rail-list { position: relative; }
 .rail-list .row-inner { height: 64px; min-height: 0; padding-left: var(--gutter); }
 .rail-list .check { position: absolute; z-index: 2; top: 20px; }
-.rail { position: absolute; z-index: 1; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.rail { position: absolute; z-index: 1; top: 0; left: 0; pointer-events: none; overflow: visible; transition: opacity .2s; }
+/* A completed task folds away, the rows below moving up; the rail waits for them to settle. */
+.task.leaving { overflow: hidden; animation: fold .3s var(--ease-move) forwards; }
+@keyframes fold { from { height: var(--h); } to { height: 0; opacity: 0; } }
+.rail-list:has(.leaving) .rail { opacity: 0; }
 .rail path { fill: none; stroke: var(--rail); stroke-width: 2; stroke-linecap: round; }
 .rail path.live { stroke: color-mix(in srgb, var(--primary), transparent 35%); }
 .rail-note .row-inner { min-height: 44px; justify-content: space-between; font-size: 13px; color: var(--on-surface-variant); }
@@ -192,6 +200,7 @@ svg { display: block; flex: none; }
 /* AI organizing's text expanded: a page of its own on phones, a large window on computers */
 .editor { position: absolute; z-index: 31; inset: 0; display: flex; flex-direction: column; background: var(--surface-low); padding: var(--safe-top) 0 calc(12px + var(--safe-bottom)); }
 .editor.enter { animation: sheet-in .38s var(--ease); }
+.editor.leave { animation: sheet-out .26s var(--ease-exit) forwards; }
 .editor textarea { flex: 1; min-height: 0; border: 0; background: none; outline: none; resize: none; font-size: 16px; line-height: 1.6; padding: 4px 24px 12px; }
 .editor textarea::placeholder { color: var(--outline); }
 .editor-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 16px 0; }
@@ -250,12 +259,16 @@ svg { display: block; flex: none; }
 .scrim { position: absolute; z-index: 20; inset: 0; background: rgba(0, 0, 0, .36); transition: opacity .3s; }
 .scrim.half { opacity: 0; pointer-events: none; }
 .scrim.enter { animation: fade .3s; }
+.scrim.leave { animation: fade-out .28s var(--ease-exit) forwards; }
 @keyframes fade { from { opacity: 0; } }
+@keyframes fade-out { to { opacity: 0; } }
 .sheet { position: absolute; z-index: 21; left: 0; right: 0; bottom: 0; height: calc(100dvh - var(--safe-top) - 10px); display: flex; flex-direction: column;
   background: var(--surface-low); border-radius: 28px 28px 0 0; box-shadow: 0 -8px 32px rgba(0, 0, 0, .14); transition: transform .38s var(--ease); }
 .sheet.half { transform: translateY(calc(100% - 60dvh)); }
 .sheet.enter { animation: sheet-in .42s var(--ease); }
+.sheet.leave { animation: sheet-out .28s var(--ease-exit) forwards; }
 @keyframes sheet-in { from { transform: translateY(100%); } }
+@keyframes sheet-out { to { transform: translateY(100%); } }
 .sheet.dragging { transition: none; }
 .sheet-grab { flex: none; height: 26px; display: grid; place-items: center; touch-action: none; cursor: grab; }
 .handle { width: 36px; height: 5px; border-radius: 3px; background: var(--outline-variant); }
@@ -313,8 +326,15 @@ svg { display: block; flex: none; }
 
 .modal-scrim { position: absolute; z-index: 30; inset: 0; background: rgba(0, 0, 0, .36); }
 .modal-scrim.enter { animation: fade .25s; }
-.modal { position: absolute; z-index: 31; left: 0; right: 0; bottom: 0; max-height: 86dvh; display: flex; flex-direction: column; background: var(--surface-low); border-radius: 28px 28px 0 0; padding-bottom: calc(16px + var(--safe-bottom)); }
+.modal-scrim.leave { animation: fade-out .26s var(--ease-exit) forwards; }
+.modal { position: absolute; z-index: 31; left: 0; right: 0; bottom: 0; max-height: 86dvh; display: flex; flex-direction: column; background: var(--surface-low); border-radius: 28px 28px 0 0; padding-bottom: calc(16px + var(--safe-bottom)); overflow: hidden; }
 .modal.enter { animation: sheet-in .38s var(--ease); }
+.modal.leave { animation: sheet-out .26s var(--ease-exit) forwards; }
+/* One page of the settings for another: the panel stays, its content moves on or back. */
+.modal.forth:not(.leave) :is(.modal-head h3, .modal-body) { animation: page-forth .3s var(--ease); }
+.modal.back:not(.leave) :is(.modal-head h3, .modal-body) { animation: page-back .3s var(--ease); }
+@keyframes page-forth { from { transform: translateX(40px); opacity: 0; } }
+@keyframes page-back { from { transform: translateX(-40px); opacity: 0; } }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 12px 10px 24px; }
 .modal-head h3 { margin: 0; font-size: 18px; font-weight: 600; }
 .modal-body { overflow-y: auto; padding-bottom: 8px; }
@@ -327,7 +347,10 @@ svg { display: block; flex: none; }
 .dialog-scrim.enter { animation: fade .2s; }
 .dialog { width: min(320px, 100%); background: var(--surface-high); border-radius: 28px; padding: 24px 24px 16px; }
 .dialog-scrim.enter .dialog { animation: dialog-in .25s var(--ease); }
+.dialog-scrim.leave { animation: fade-out .16s var(--ease-exit) forwards; }
+.dialog-scrim.leave .dialog { animation: dialog-out .16s var(--ease-exit) forwards; }
 @keyframes dialog-in { from { transform: scale(.92); opacity: 0; } }
+@keyframes dialog-out { to { transform: scale(.96); opacity: 0; } }
 .dialog h3 { margin: 0 0 12px; font-size: 22px; font-weight: 500; }
 .dialog p { margin: 0 0 20px; font-size: 14px; line-height: 1.55; color: var(--on-surface-variant); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 4px; }
@@ -340,6 +363,7 @@ svg { display: block; flex: none; }
 .snackbar { position: absolute; z-index: 50; left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 72px); min-height: 48px; padding: 6px 8px 6px 16px; border-radius: 12px;
   display: flex; align-items: center; gap: 8px; background: var(--inverse-surface); color: var(--inverse-on-surface); font-size: 14px; box-shadow: var(--shadow-3); }
 .snackbar.enter { animation: snack-in .3s var(--ease); }
+.snackbar.leave { animation: fade-out .16s var(--ease-exit) forwards; }
 @keyframes snack-in { from { transform: translateY(16px); opacity: 0; } }
 .snackbar span { flex: 1; }
 .snackbar button { height: 36px; padding: 0 12px; border-radius: 18px; color: var(--inverse-primary); font-weight: 600; }
@@ -376,6 +400,7 @@ svg { display: block; flex: none; }
 .main-head .seg { width: 200px; }
 .head-actions { display: flex; align-items: center; gap: 8px; }
 .main-scroll { flex: 1; overflow-y: auto; padding: 0 12px 40px; }
+.main > :not(.main-tools) { animation: fade .2s var(--ease); }
 .main-scroll .group-title:first-child { margin-top: 6px; }
 .desk .quick-add { position: static; margin: 4px 28px 6px; box-shadow: none; border: 1px solid var(--outline-variant); }
 .desk .graph-tools { padding: 0 28px 10px; }
@@ -387,6 +412,8 @@ svg { display: block; flex: none; }
 .detail-empty { height: 100%; display: grid; place-items: center; color: var(--outline); font-size: 14px; text-align: center; padding: 32px; }
 .desk .modal { left: 0; right: 0; margin: 0 auto; bottom: auto; top: 12vh; width: 440px; border-radius: 28px; max-height: 76vh; padding-bottom: 12px; }
 .desk .modal.enter { animation: dialog-in .25s var(--ease); }
+.desk .modal-scrim.leave { animation-duration: .16s; }
+.desk .modal.leave, .desk .editor.leave { animation: dialog-out .16s var(--ease-exit) forwards; }
 .desk .editor { inset: auto; left: 0; right: 0; top: 10vh; margin: 0 auto; width: 640px; height: min(560px, 76vh); border-radius: 28px; padding: 0 0 16px; }
 .desk .editor.enter { animation: dialog-in .25s var(--ease); }
 .desk .snackbar { left: 0; right: 0; margin: 0 auto; bottom: 24px; width: 440px; }
@@ -444,7 +471,12 @@ svg { display: block; flex: none; }
 .copy-head .seg button { white-space: nowrap; }
 .dialog .field { margin: 0 0 20px; }
 .status-note { margin: 4px 20px 0; font-size: 13px; color: var(--outline); }
-.menu { min-width: 200px; padding: 6px; border-radius: 14px; background: var(--surface-high); box-shadow: var(--shadow-3); z-index: 60; }
+.menu { min-width: 200px; padding: 6px; border-radius: 14px; background: var(--surface-high); box-shadow: var(--shadow-3); z-index: 60;
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin, var(--radix-context-menu-content-transform-origin)); }
+.menu[data-state="open"] { animation: menu-in .18s var(--ease); }
+.menu[data-state="closed"] { animation: menu-out .12s var(--ease-exit) forwards; }
+@keyframes menu-in { from { transform: scale(.94); opacity: 0; } }
+@keyframes menu-out { to { transform: scale(.96); opacity: 0; } }
 .menu-item { display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 10px; font-size: 15px; color: var(--on-surface); outline: none; cursor: pointer; }
 .menu-item[data-highlighted] { background: var(--press); }
 .menu-item.danger-text { color: var(--error); }

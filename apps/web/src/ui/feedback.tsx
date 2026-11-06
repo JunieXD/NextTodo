@@ -3,10 +3,11 @@
 
 import { Dialog } from "radix-ui";
 import { X } from "lucide-react";
-import { type ReactNode, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Checked } from "../domain/text";
 import { useBack } from "./back";
 import { Icon } from "./icons";
+import { useLeave } from "./leave";
 
 export const RootContext = createContext<HTMLElement | null>(null);
 
@@ -99,25 +100,34 @@ export function FeedbackProvider({ outside, children }: { outside: boolean; chil
   return (
     <FeedbackContext value={feedback}>
       {children}
-      {snack && (
-        <div key={snack.key} className="snackbar enter" role="status">
-          <span>{snack.text}</span>
-          {snack.action && <button onClick={act}>{snack.action}</button>}
-        </div>
-      )}
+      {snack && <Snackbar key={snack.key} text={snack.text} action={snack.action} onAction={act} />}
       {open?.kind === "confirm" && <ConfirmDialog {...open} close={(ok) => (setOpen(null), open.resolve(ok))} />}
       {open?.kind === "prompt" && <PromptDialog {...open} close={(value) => (setOpen(null), open.resolve(value))} />}
     </FeedbackContext>
   );
 }
 
+/** A new one comes in over the one it replaces as that fades. */
+function Snackbar({ text, action, onAction }: { text: string; action?: string; onAction(): void }) {
+  const el = useRef<HTMLDivElement>(null);
+  useLeave([el]);
+  return (
+    <div ref={el} className="snackbar enter" role="status">
+      <span>{text}</span>
+      {action && <button onClick={onAction}>{action}</button>}
+    </div>
+  );
+}
+
 function DialogFrame({ title, close, children }: { title: string; close(): void; children: ReactNode }) {
   const root = useContext(RootContext);
+  const scrim = useRef<HTMLDivElement>(null);
+  useLeave([scrim]);
   useBack("dialog", close);
   return (
     <Dialog.Root open onOpenChange={(o) => !o && close()}>
       <Dialog.Portal container={root}>
-        <Dialog.Overlay className="dialog-scrim enter">
+        <Dialog.Overlay ref={scrim} className="dialog-scrim enter">
           <Dialog.Content className="dialog" role="alertdialog" aria-describedby={undefined}>
             <Dialog.Title asChild>
               <h3>{title}</h3>
@@ -175,16 +185,29 @@ function PromptDialog({ title, label, value = "", placeholder, ok, check, close 
   );
 }
 
+/** How many panels are shown. */
+let modals = 0;
+
 /** A panel for choosing or settings: a bottom sheet on phones, a centred card on desktops. Back goes
  * to `onBack` when given, such as the page the panel came from, otherwise closes it. */
 export function Modal({ title, onClose, onBack, children }: { title: string; onClose(): void; onBack?: () => void; children: ReactNode }) {
   const root = useContext(RootContext);
+  const scrim = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  // Shown in place of another, as one page of the settings for the next, the panel stays put and its
+  // content moves on, or back to the first page.
+  const [replacing] = useState(() => modals > 0);
+  useLayoutEffect(() => {
+    modals++;
+    return () => void modals--;
+  }, []);
+  useLeave([scrim, panel], () => modals > 0);
   useBack("dialog", onBack ?? onClose);
   return (
     <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal container={root}>
-        <Dialog.Overlay className="modal-scrim enter" />
-        <Dialog.Content className="modal enter" aria-describedby={undefined}>
+        <Dialog.Overlay ref={scrim} className={`modal-scrim${replacing ? "" : " enter"}`} />
+        <Dialog.Content ref={panel} className={`modal ${replacing ? (onBack ? "forth" : "back") : "enter"}`} aria-describedby={undefined}>
           <div className="modal-head">
             <Dialog.Title asChild>
               <h3>{title}</h3>

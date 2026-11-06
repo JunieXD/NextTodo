@@ -18,7 +18,7 @@ pub struct Downloaded(Mutex<Option<(Update, Vec<u8>)>>);
 #[tauri::command]
 pub async fn update(app: AppHandle, downloaded: State<'_, Downloaded>, manifest: String) -> Result<Option<String>, String> {
     // Also on standard error: the release's page has no console to read it in.
-    download(app, downloaded, &manifest).await.inspect_err(|e| tracing::warn!(manifest, "{e}"))
+    download(app, downloaded, &manifest).await.inspect_err(|e| tracing::warn!("{e}"))
 }
 
 async fn download(app: AppHandle, downloaded: State<'_, Downloaded>, manifest: &str) -> Result<Option<String>, String> {
@@ -37,7 +37,10 @@ async fn download(app: AppHandle, downloaded: State<'_, Downloaded>, manifest: &
     // The plugin's client brings no TLS crypto, and panics with none installed: its own check
     // installs ring, which restoring an update skips. Installing fails only when one is already.
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let bytes = update.download(|_, _| {}, || {}).await.map_err(|e| format!("下载更新失败：{e}"))?;
+    let bytes = update.download(|_, _| {}, || {}).await.map_err(|e| match e {
+        tauri_plugin_updater::Error::Reqwest(e) => format!("下载更新失败：{}", e.without_url()),
+        e => format!("下载更新失败：{e}"),
+    })?;
     let version = update.version.clone();
     if cfg!(windows) {
         *downloaded.0.lock().expect("never poisoned") = Some((update, bytes));
@@ -47,9 +50,11 @@ async fn download(app: AppHandle, downloaded: State<'_, Downloaded>, manifest: &
     Ok(Some(version))
 }
 
+/// Errors come without the address: the server's may have been typed with a password in it, and
+/// GitHub's downloads redirect to addresses signed for a while.
 async fn fetch(url: &Url) -> Result<serde_json::Value, String> {
-    let res = reqwest::get(url.clone()).await.and_then(|r| r.error_for_status()).map_err(|e| e.to_string())?;
-    serde_json::from_slice(&res.bytes().await.map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+    let res = reqwest::get(url.clone()).await.and_then(|r| r.error_for_status()).map_err(|e| e.without_url().to_string())?;
+    serde_json::from_slice(&res.bytes().await.map_err(|e| e.without_url().to_string())?).map_err(|e| e.to_string())
 }
 
 /// Starts the app again, running the version downloaded if there is one: on Windows its installer

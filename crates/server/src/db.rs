@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use anyhow::{Context, anyhow, bail};
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, ErrorCode, OpenFlags};
 
 use crate::error::ApiError;
 
@@ -180,8 +180,9 @@ fn schema(c: &Connection) -> rusqlite::Result<Vec<(String, String, Option<String
 /// widget's, to take the new ones: the copy's log goes on above every number given before, every
 /// user's cut (see `prune`) there. Those are the database replaced's; when it is damaged or gone,
 /// `now_ms` stands for them: they went up a change at a time, from 1 or from an earlier restore's
-/// time, on average far slower than one a millisecond, so all are below it, unless the clock has
-/// gone back to before that restore.
+/// time, so all are below it, unless the clock has gone back to before that restore, or the changes
+/// since came faster than one a millisecond. Then devices that had seen the higher ones go on with
+/// what they have.
 pub fn restore(db: &Path, from: &Path, now_ms: i64) -> anyhow::Result<Option<PathBuf>> {
     // Read-only: a mistyped path is not made into an empty database.
     let source =
@@ -195,6 +196,8 @@ pub fn restore(db: &Path, from: &Path, now_ms: i64) -> anyhow::Result<Option<Pat
         std::fs::remove_file(&part)?;
     }
     source.execute("VACUUM INTO ?1", [part.to_str().expect("data directory path is UTF-8")])?;
+    // From the database replaced itself, none of its files is open from here on.
+    drop(source);
     let mut c = Connection::open(&part)?;
     migrate(&mut c)?;
 
@@ -215,16 +218,8 @@ pub fn restore(db: &Path, from: &Path, now_ms: i64) -> anyhow::Result<Option<Pat
         }
         Some(kept)
     };
-    // Read once kept: closed, the connection takes in the -wal, so that, cut short from here on, the
-    // data replaced is whole without it, unless damaged.
-    let given = if db.try_exists()? {
-        Connection::open(db).and_then(|c| last_seq(&c)).unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "database replaced unreadable, numbered on from the time");
-            0
-        })
-    } else {
-        0
-    };
+    // Read once kept, as reading changes it.
+    let given = if db.try_exists()? { replaced_seq(db)? } else { 0 };
 
     let tx = c.transaction()?;
     let cut = now_ms.max(given + 1).max(last_seq(&tx)? + 1);
@@ -246,4 +241,25 @@ pub fn restore(db: &Path, from: &Path, now_ms: i64) -> anyhow::Result<Option<Pat
     }
     std::fs::rename(&part, db)?;
     Ok(kept)
+}
+
+/// The last sequence number the database replaced gave, with its -wal taken in, so that, a restore
+/// cut short, it is whole without it; 0 when it is damaged, or has no log, as an empty file. An error
+/// when it is in use, or can't be read for another reason, the permissions or the disk.
+fn replaced_seq(db: &Path) -> anyhow::Result<i64> {
+    let read = Connection::open(db).and_then(|c| {
+        let seq = last_seq(&c)?;
+        Ok((seq, c.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get::<_, i64>(0))?))
+    });
+    match read {
+        Ok((seq, 0)) => Ok(seq),
+        // A reader in another program: its -wal would go with frames not taken in.
+        Ok(_) => bail!("现在的数据库正被别的程序使用"),
+        // Unknown is SQLITE_ERROR: here, no table to read.
+        Err(e) if matches!(e.sqlite_error_code(), Some(ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase | ErrorCode::Unknown)) => {
+            tracing::warn!(error = %e, "database replaced damaged, numbered on from the time");
+            Ok(0)
+        }
+        Err(e) => Err(e).context("无法读取现在的数据库"),
+    }
 }

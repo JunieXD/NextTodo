@@ -126,6 +126,43 @@ async fn restoring_a_snapshot_has_devices_download_everything_again() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+#[tokio::test]
+async fn a_restore_takes_in_the_wal_of_the_database_replaced_or_stops() {
+    let dir = std::env::temp_dir().join(format!("nexttodo-restore-{}", uuid::Uuid::now_v7()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("nexttodo.db");
+    let t = TestApp::on(Db::open(&file).unwrap());
+    let s = t.admin().await;
+    add(&t, &s, "快照里的").await;
+    let snapshot = db::snapshot(&file, &dir.join("snapshots"), 1_000, 7).unwrap();
+    drop(t);
+    // As when the server was killed: its last change only in the -wal.
+    let c = Connection::open(&file).unwrap();
+    c.set_db_config(DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, true).unwrap();
+    c.execute("UPDATE sqlite_sequence SET seq = 1000000 WHERE name = 'mutations'", []).unwrap();
+    drop(c);
+
+    // Read by another program, it can't be taken in: the restore stops, the -wal still there.
+    let reader = Connection::open(&file).unwrap();
+    reader.execute_batch("BEGIN").unwrap();
+    reader.query_row("SELECT count(*) FROM tasks", [], |r| r.get::<_, i64>(0)).unwrap();
+    let wal = std::fs::read(file.with_extension("db-wal")).unwrap();
+    assert_eq!(db::restore(&file, &snapshot, 2_000).unwrap_err().to_string(), "现在的数据库正被别的程序使用");
+    assert_eq!(std::fs::read(file.with_extension("db-wal")).unwrap(), wal);
+    drop(reader);
+
+    // Taken in, and its numbers count; with a copy of itself, read from it, open the while.
+    db::restore(&file, &snapshot, 3_000).unwrap();
+    let t = TestApp::on(Db::open(&file).unwrap());
+    assert!(resyncs(&t, &s, 1_000_000).await);
+    drop(t);
+    db::restore(&file, &file, 4_000).unwrap();
+    let t = TestApp::on(Db::open(&file).unwrap());
+    assert_eq!(t.snapshot(&s).await["tasks"].as_array().unwrap().len(), 1);
+    drop(t);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// Whether a device that has seen the changes up to `since` is to download everything again.
 async fn resyncs(t: &TestApp, secret: &str, since: i64) -> bool {
     let res = t.call("GET", &format!("/changes?since={since}"), Some(secret), None).await;

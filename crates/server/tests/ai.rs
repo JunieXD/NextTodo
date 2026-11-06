@@ -12,7 +12,7 @@ use common::{TestApp, id};
 use nexttodo_core::model::{AiJobId, JobState};
 use nexttodo_server::ai::llm::{Api, Config, Failure, Prompt};
 use nexttodo_server::ai::secret::SecretKey;
-use nexttodo_server::ai::{ACTOR, Ai, run_queue};
+use nexttodo_server::ai::{ACTOR, Ai, interrupted, run_queue};
 use nexttodo_server::mutate::{Actor, set_job_state};
 use serde_json::{Value, json};
 
@@ -309,8 +309,8 @@ async fn a_restart_fails_the_jobs_it_cut_short() {
         })
         .await
         .unwrap();
-    tokio::spawn(run_queue(t.state.clone()));
-    let snap = until(&t, &s, |s| job_state(s, &cut).unwrap().0 == "failed").await;
+    interrupted(&t.state).await.unwrap();
+    let snap = t.snapshot(&s).await;
     assert_eq!(job_state(&snap, &cut).unwrap().1, "服务器重启，整理中断");
     assert_eq!(job_state(&snap, &waiting).unwrap().0, "waiting");
 }

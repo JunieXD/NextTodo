@@ -224,7 +224,7 @@ fn load_user(c: &Connection, id: &str) -> rusqlite::Result<User> {
     })
 }
 
-fn create_user(
+pub(crate) fn create_user(
     c: &Connection,
     username: &str,
     display_name: &str,
@@ -261,7 +261,7 @@ struct Session {
     user: User,
 }
 
-fn create_session(c: &Connection, user_id: &str, device: &str, now: i64) -> rusqlite::Result<String> {
+pub(crate) fn create_session(c: &Connection, user_id: &str, device: &str, now: i64) -> rusqlite::Result<String> {
     let secret = new_secret();
     c.execute(
         "INSERT INTO tokens (id, user_id, kind, name, scope, secret_hash, created_at, last_used_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",

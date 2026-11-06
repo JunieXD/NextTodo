@@ -124,13 +124,10 @@ const UNOPENED: &str = "服务器解不开保存的 API 密钥，请在设置里
 
 // The queue.
 
-/// Organizes the jobs of users whose settings are on the server, until the server stops. Jobs a
-/// restart cut short fail first. Then each change to a user's data, and each job that ends, has it
-/// look for a job to start.
+/// Organizes the jobs of users whose settings are on the server, until the server stops: each change
+/// to a user's data, and each job that ends, has it look for a job to start.
 pub async fn run_queue(st: AppState) {
     let mut changes = st.hub.subscribe();
-    // An error is logged where it happens.
-    let _ = interrupted(&st).await;
     let mut owner = None;
     loop {
         let _ = start_waiting(&st, owner.take()).await;
@@ -146,7 +143,7 @@ pub async fn run_queue(st: AppState) {
 }
 
 /// Fails the jobs that were being organized when the server stopped.
-async fn interrupted(st: &AppState) -> Result<(), ApiError> {
+pub async fn interrupted(st: &AppState) -> Result<(), ApiError> {
     let (now, hub) = (st.clock.now(), st.hub.clone());
     st.db
         .call(move |c| {

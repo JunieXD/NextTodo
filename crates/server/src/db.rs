@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use rusqlite::Connection;
+use anyhow::{anyhow, bail};
+use rusqlite::{Connection, OpenFlags};
 
 use crate::error::ApiError;
 
@@ -13,13 +14,35 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/001_init.sql"),
     include_str!("../migrations/002_ai.sql"),
     include_str!("../migrations/003_custom_ecnu.sql"),
+    include_str!("../migrations/004_epoch.sql"),
 ];
 
 #[derive(Clone)]
 pub struct Db(Arc<Mutex<Connection>>);
 
+/// The migrations a database at `version` still needs; an error when it is not one of ours, or from
+/// a newer version of NextTodo.
+pub(crate) fn pending(version: i64) -> anyhow::Result<&'static [&'static str]> {
+    let Ok(done) = usize::try_from(version) else { bail!("数据库损坏") };
+    match MIGRATIONS.get(done..) {
+        Some(pending) => Ok(pending),
+        None => bail!("数据来自更高版本的 NextTodo，请先更新"),
+    }
+}
+
 impl Db {
+    /// Opens the database at `path`, made when missing, and migrates it. One that would not migrate
+    /// is looked at read-only first and left as it is.
     pub fn open(path: &Path) -> anyhow::Result<Db> {
+        if path.try_exists()? {
+            let version = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .and_then(|c| c.pragma_query_value(None, "user_version", |r| r.get(0)))
+                .map_err(|e| {
+                    tracing::error!(error = %e, "database unreadable");
+                    anyhow!("数据库损坏")
+                })?;
+            pending(version)?;
+        }
         let conn = Connection::open(path)?;
         conn.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(()))?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
@@ -35,7 +58,7 @@ impl Db {
         conn.busy_timeout(Duration::from_secs(5))?;
         let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
         let tx = conn.transaction()?;
-        for sql in &MIGRATIONS[usize::try_from(version)?..] {
+        for sql in pending(version)? {
             tx.execute_batch(sql)?;
         }
         tx.pragma_update(None, "user_version", i64::try_from(MIGRATIONS.len())?)?;
@@ -55,6 +78,11 @@ impl Db {
             .await
             .expect("database task panicked")
     }
+}
+
+/// The name of the database's history: see the `epoch` migration.
+pub fn epoch(conn: &Connection) -> rusqlite::Result<String> {
+    conn.query_row("SELECT value FROM epoch", [], |r| r.get(0))
 }
 
 /// Clears the operations and effects of mutations older than `cutoff`. The rows stay, so that a

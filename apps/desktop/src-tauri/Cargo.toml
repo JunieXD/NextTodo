@@ -35,6 +35,7 @@ tauri-plugin-notification = "2.8.0"
 # Started again on Windows, the app shows the window of the one running, as macOS does by itself.
 tauri-plugin-single-instance = "2.5.5"
 tauri-plugin-updater = "2.14.1"
+tracing = "0.1.44"
 # The log, the server's and the plugins', on standard error (docs/local.md#可靠性).
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 

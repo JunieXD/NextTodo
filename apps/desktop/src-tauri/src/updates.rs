@@ -17,7 +17,12 @@ pub struct Downloaded(Mutex<Option<(Update, Vec<u8>)>>);
 /// not need to know its own address; GitHub's gives them in full.
 #[tauri::command]
 pub async fn update(app: AppHandle, downloaded: State<'_, Downloaded>, manifest: String) -> Result<Option<String>, String> {
-    let url = Url::parse(&manifest).map_err(|e| format!("更新地址无效：{e}"))?;
+    // Also on standard error: the release's page has no console to read it in.
+    download(app, downloaded, &manifest).await.inspect_err(|e| tracing::warn!(manifest, "{e}"))
+}
+
+async fn download(app: AppHandle, downloaded: State<'_, Downloaded>, manifest: &str) -> Result<Option<String>, String> {
+    let url = Url::parse(manifest).map_err(|e| format!("更新地址无效：{e}"))?;
     let mut manifest = fetch(&url).await.map_err(|e| format!("检查更新失败：{e}"))?;
     if let Some(platforms) = manifest["platforms"].as_object_mut() {
         for platform in platforms.values_mut() {

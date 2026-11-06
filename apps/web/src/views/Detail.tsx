@@ -13,6 +13,7 @@ import { useCommit, useSession, useUndo, useView } from "../session";
 import { Check, Seg } from "../ui/controls";
 import { useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
+import { composing } from "../ui/keys";
 import { Description } from "../ui/Markdown";
 import { useTaskActions } from "./actions";
 import { useMarks } from "./marks";
@@ -208,7 +209,8 @@ function Title({ task, onSave }: { task: Task; onSave: Save }) {
       onChange={(e) => setDraft({ ...draft, text: e.target.value.replace(/\n/g, "") })}
       onBlur={save}
       onKeyDown={(e) => {
-        if (e.key === "Enter" && !e.nativeEvent.isComposing) e.currentTarget.blur();
+        if (composing(e)) return;
+        if (e.key === "Enter") e.currentTarget.blur();
         if (e.key === "Escape") setDraft(null);
       }}
     />

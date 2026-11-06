@@ -23,6 +23,7 @@ import { useBack } from "../ui/back";
 import { RootContext, useFeedback } from "../ui/feedback";
 import { Seg } from "../ui/controls";
 import { Icon } from "../ui/icons";
+import { composing } from "../ui/keys";
 import { useTaskActions } from "./actions";
 import { useRowDrag } from "./drag";
 import { useNewFolder } from "./FolderMenu";
@@ -335,7 +336,7 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   // A title is one line, so Enter adds it; AI organizing's text has many, so Enter starts one and
   // Ctrl or ⌘ + Enter submits. Not while an input method is still composing.
   const enter = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && (!ai || e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) {
+    if (e.key === "Enter" && (!ai || e.ctrlKey || e.metaKey) && !composing(e)) {
       e.preventDefault();
       e.currentTarget.form!.requestSubmit();
     }

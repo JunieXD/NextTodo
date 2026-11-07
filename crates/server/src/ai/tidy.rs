@@ -51,7 +51,7 @@ const SYSTEM: &str = r#"你负责整理一个文件夹里未完成的待办事�
 7. description_omitted 为 true 的事项只能改 due 和 after，不要写 title 和 description：没看到描述，改标题可能丢掉信息。
 8. 已经清楚的事项不要列出，不要为改而改。
 9. 用原文的语言写。
-10. 输出前把每条建议和原标题、原描述逐句对照一遍：原来的每一处都要能在新标题或新描述里找到，找不到的补上。"#;
+10. 输出前逐条对照：把建议应用到事项上（没写的字段沿用原值），原标题和原描述的每一处都要能在改好后的标题或描述里找到，找不到的补上。"#;
 
 /// The tasks the model was shown, by number, and every dependency, before and after.
 pub struct Shown {

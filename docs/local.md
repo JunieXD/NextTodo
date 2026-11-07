@@ -176,7 +176,7 @@ local/
   - 都要先装命令行，见 [agent 接入](agent.md#命令行)；不在 `PATH` 里的，写完整路径。
 - 不支持直接调 HTTP 工具接口：地址和证书每次都变。
 - 没用 Unix 套接字和 Windows 命名管道：命名管道在 App 没运行时同样能被别的用户抢先创建，要另做校验；HTTPS 加证书在两个平台上是同一种做法，也不用另做一套传输。
-- 命令行不随 App 打包：Windows 上 agent 开着的 `nexttodo mcp` 会占住这个文件，App 更新时换不掉它。
+- 命令行随桌面 App 安装，Windows 上运行中的 `nexttodo mcp` 不妨碍 App 更新，见[桌面 App](desktop.md#命令行)。
 
 ## Android
 

@@ -5,7 +5,8 @@
   "identifier": "cn.juniexd.nexttodo",
   "build": {
     "frontendDist": "../../web/dist",
-    "beforeBuildCommand": "cd ../web && pnpm exec tsc && pnpm exec vite build"
+    "beforeDevCommand": "./cli.sh",
+    "beforeBuildCommand": "./cli.sh && cd ../web && pnpm exec tsc && pnpm exec vite build"
   },
   "app": {
     "windows": [

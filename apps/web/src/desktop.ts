@@ -1,5 +1,6 @@
-// What only the desktop app does: deadline reminders, shown by the app while it runs, and quick add
-// from the menu bar or tray icon and the global shortcut. See docs/desktop.md.
+// What only the desktop app does: deadline reminders, shown by the app while it runs, quick add from
+// the menu bar or tray icon and the global shortcut, and the command line it carries. See
+// docs/desktop.md.
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen as on } from "@tauri-apps/api/event";
@@ -54,3 +55,9 @@ export async function listen() {
   await on("quick-add", () => navigate("/?add"));
   await on<string>("open-task", (e) => navigate(`/?open=${e.payload}`));
 }
+
+/** The command line the app carries: whether it is where a terminal finds it, and putting it there. */
+export const cli = {
+  installed: () => invoke<boolean>("cli_installed"),
+  install: () => invoke<void>("install_cli"),
+};

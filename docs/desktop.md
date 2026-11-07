@@ -54,6 +54,26 @@
 
 设置页“关于”显示网页版本和 App 版本。
 
+## 命令行
+
+安装包里带着同一版本的命令行 `nexttodo`（用法见 [agent 接入](agent.md#命令行)）。设置里令牌下面有“命令行”一组：没装时点“安装”，装好后显示“已安装”，在终端里直接运行 `nexttodo`。App 更新后命令行也随之更新。
+
+| | macOS | Windows |
+|---|---|---|
+| 在安装包里 | `NextTodo.app/Contents/MacOS/nexttodo`（Tauri 的 `externalBin`） | 安装目录下的 `bin\nexttodo.exe`（`resources`）。单独一个目录，加进 PATH 的只有它 |
+| 安装 | 在 `/usr/local/bin` 建指向它的符号链接；没有写权限时，由系统弹窗要管理员密码 | 把 `bin` 目录加进当前用户的 PATH |
+| 已安装 | 链接存在，并指向这个 App 里的命令行 | 当前用户的 PATH 里有这个目录 |
+| App 更新后 | 链接指向的文件随 App 一起换成新版本 | 安装程序先把旧文件改名，再写入新文件 |
+
+- macOS：
+  - 从浏览器下载的 App 带隔离属性，从终端运行其中的命令行时，系统会弹出无法验证开发者的对话框并拦下它。安装时一并去掉整个 App 的隔离属性：用户已经同意打开这个 App。App 自己下载的更新不带隔离属性。
+  - 直接从下载的磁盘映像或“下载”文件夹打开时，系统把 App 放在随机的只读路径里运行（App Translocation），链接会失效。这时提示“请先把 NextTodo 移到“应用程序”文件夹”。
+  - App 移动位置后链接失效，显示为未安装，再安装一次即可。
+- Windows：
+  - PATH 由 PowerShell 写入：读出注册表里的原值（不展开 `%变量%`），加上目录后按 `REG_EXPAND_SZ` 写回，再通知正在运行的程序环境变量已变，之后新打开的终端就能用。外壳禁止 `unsafe`，所以不直接调 Win32 API。
+  - 运行中的 `nexttodo mcp` 会占住命令行文件，安装程序不能覆盖它，但可以改名。安装程序的钩子（`src-tauri/windows/hooks.nsh`）在写入前把它改成临时文件名，并删掉以前留下的、已经没有程序占用的旧文件。
+  - 卸载 App 时不改 PATH，留下的目录已不存在，不影响使用。
+
 ## 开机自启
 
 设置页“开机自启”开关，用 `tauri-plugin-autostart`（macOS 写 LaunchAgent，Windows 写注册表的启动项），读写失败时提示。开机启动时带 `--hidden`，只出现在菜单栏或托盘，不弹窗口；macOS 上也不占 Dock，打开窗口以后才出现在 Dock 里。
@@ -61,6 +81,8 @@
 ## 构建
 
 都在 Mac 上构建，在 `apps/desktop` 下运行。更新包要用更新密钥签名，打包前设好[更新](#更新)里的两个环境变量，没有它们打包会失败。
+
+Tauri 构建前先运行 `apps/desktop/cli.sh`（`beforeBuildCommand`、`beforeDevCommand`），编译目标平台的[命令行](#命令行)，放进 `src-tauri/binaries/`。直接用 `cargo` 编译或检查外壳前，先运行一次 `./cli.sh`。
 
 | 平台 | 命令 | 产物 |
 |---|---|---|

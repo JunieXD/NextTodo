@@ -166,26 +166,34 @@ $ nexttodo graph 工作
 
 ## 命令行
 
-从 [Releases](https://github.com/JunieXD/NextTodo/releases/latest) 下载对应平台的文件，改名为 `nexttodo`（Windows 是 `nexttodo.exe`），放进 `PATH` 里的目录：
+安装：
 
-| 平台 | 文件 |
-|---|---|
-| macOS（Apple 芯片） | `nexttodo-macos-arm64` |
-| Linux x64 | `nexttodo-linux-x64` |
-| Linux arm64 | `nexttodo-linux-arm64` |
-| Windows x64 | `nexttodo-windows-x64.exe` |
+- **桌面 App**：在设置的“命令行”一组点“安装”，App 更新时命令行一起更新，见[桌面 App](desktop.md#命令行)。
+- **macOS 和 Linux**：运行安装脚本（`apps/site/public/install.sh`，随官网发布）。它下载最新版到 `~/.local/bin`，这个目录不在 `PATH` 里时，给出要加进 shell 配置文件的一行：
+
+  ```sh
+  curl -fsSL https://juniexd.github.io/NextTodo/install.sh | sh
+  ```
+
+- **手动下载**：从 [Releases](https://github.com/JunieXD/NextTodo/releases/latest) 下载对应平台的文件，改名为 `nexttodo`（Windows 是 `nexttodo.exe`），放进 `PATH` 里的目录。macOS 会拦下用浏览器下载的文件，下载后运行 `xattr -d com.apple.quarantine <文件>`。
+
+  | 平台 | 文件 |
+  |---|---|
+  | macOS（Apple 芯片） | `nexttodo-macos-arm64` |
+  | Linux x64 | `nexttodo-linux-x64` |
+  | Linux arm64 | `nexttodo-linux-arm64` |
+  | Windows x64 | `nexttodo-windows-x64.exe` |
+
+- **从源码**：装了 Rust 的，运行 `cargo install --git https://github.com/JunieXD/NextTodo nexttodo-cli`。
+
+装好后登录，再把 skill 装给 agent：
 
 ```sh
-mkdir -p ~/.local/bin                    # 这个目录要在 PATH 里
-curl -fL -o ~/.local/bin/nexttodo https://github.com/JunieXD/NextTodo/releases/latest/download/nexttodo-macos-arm64
-chmod +x ~/.local/bin/nexttodo
 nexttodo login --url https://todo.example.com --name "Claude Code"
 nexttodo skill install                   # 见 Skill
 ```
 
-- macOS 会拦下用浏览器下载的文件，用上面的 `curl` 下载就不会；已经用浏览器下了的，运行 `xattr -d com.apple.quarantine <文件>`。
-- 装了 Rust 也可以从源码装：`cargo install --git https://github.com/JunieXD/NextTodo nexttodo-cli`。
-- 命令行和服务端用同一个版本，服务端升级后命令行也跟着换；`nexttodo --version` 显示版本。
+- 命令行和服务端用同一个版本：服务端升级后，桌面 App 里装的随 App 更新，其他方式装的重新装一次；`nexttodo --version` 显示版本。
 - 也可以不登录，用 App 里生成的令牌设置下面的环境变量，令牌页面会给出填好的写法。
 
 - `login` 用用户名和密码登录，生成一个以 `--name` 命名（默认“命令行”）的读写令牌，加 `--read-only` 生成只读令牌。令牌存在 `~/.config/nexttodo/config.json`（权限 600），登录用的会话随即注销。

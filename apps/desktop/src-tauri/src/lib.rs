@@ -1,7 +1,8 @@
 //! The desktop app, for macOS and Windows: the web app in a window that closing only hides, a menu
 //! bar or tray icon and a global shortcut for quick add, deadline reminders while it runs, updates,
-//! and the server inside it for local mode. See docs/desktop.md.
+//! the server inside it for local mode, and the command line it carries. See docs/desktop.md.
 
+mod cli;
 mod local;
 mod reminders;
 mod updates;
@@ -121,7 +122,9 @@ pub fn run() {
             local::start_local,
             local::backup_local,
             local::prepare_restore,
-            local::commit_restore
+            local::commit_restore,
+            cli::cli_installed,
+            cli::install_cli
         ])
         .setup(move |app| {
             use tauri_plugin_global_shortcut::GlobalShortcutExt;

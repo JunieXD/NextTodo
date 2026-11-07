@@ -27,10 +27,13 @@ version=0.1.$(git rev-list --count HEAD)
 # cargo-xwin builds the Windows app with clang-cl and llvm-rc, which Homebrew's llvm has but does not
 # put on the PATH.
 PATH="$(brew --prefix llvm)/bin:$PATH"
-tauri="{\"version\":\"$version\",\"build\":{\"beforeBuildCommand\":\"\"}}"
+# The web app is built once, below, for all; the command line the desktop app carries, for each.
+tauri="{\"version\":\"$version\",\"build\":{\"beforeBuildCommand\":\"./cli.sh\"}}"
 # Panic messages carry the paths of the sources: the ones on the build machine, which name its user
 # and disks, become neutral ones. cargo-xwin and cargo-zigbuild add their own flags to these.
 export RUSTFLAGS="--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$(rustc --print sysroot)=/rustc --remap-path-prefix=$PWD=/nexttodo"
+# The command line, which says this version (`nexttodo --version`).
+export NEXTTODO_VERSION=$version
 
 pnpm install --frozen-lockfile
 (cd apps/web && pnpm exec tsc && pnpm exec vite build)
@@ -44,13 +47,10 @@ pnpm install --frozen-lockfile
 for arch in x86_64 aarch64; do
   cargo zigbuild --release --locked -p nexttodo-server --target "$arch-unknown-linux-musl"
 done
-# The command line, which says this version (`nexttodo --version`).
-export NEXTTODO_VERSION=$version
-cargo build --release --locked -p nexttodo-cli
+# The command line for Linux; the desktop builds made those for macOS and Windows.
 for arch in x86_64 aarch64; do
   cargo zigbuild --release --locked -p nexttodo-cli --target "$arch-unknown-linux-musl"
 done
-cargo xwin build --release --locked -p nexttodo-cli --target x86_64-pc-windows-msvc
 
 stage=target/deploy
 assets=target/release-assets
@@ -85,7 +85,7 @@ jq -n --arg version "$version" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg
 cp "$apk" "$assets/NextTodo-android.apk"
 cp "$bundle/dmg/NextTodo_${version}_aarch64.dmg" "$assets/NextTodo-macos-arm64.dmg"
 cp "$windows" "$assets/NextTodo-windows-x64-setup.exe"
-cp target/release/nexttodo "$assets/nexttodo-macos-arm64"
+cp target/aarch64-apple-darwin/release/nexttodo "$assets/nexttodo-macos-arm64"
 cp target/x86_64-unknown-linux-musl/release/nexttodo "$assets/nexttodo-linux-x64"
 cp target/aarch64-unknown-linux-musl/release/nexttodo "$assets/nexttodo-linux-arm64"
 cp target/x86_64-pc-windows-msvc/release/nexttodo.exe "$assets/nexttodo-windows-x64.exe"

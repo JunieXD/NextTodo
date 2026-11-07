@@ -1,0 +1,12 @@
+{
+  "bundle": {
+    "resources": {
+      "binaries/nexttodo-x86_64-pc-windows-msvc.exe": "bin/nexttodo.exe"
+    },
+    "windows": {
+      "nsis": {
+        "installerHooks": "windows/hooks.nsh"
+      }
+    }
+  }
+}

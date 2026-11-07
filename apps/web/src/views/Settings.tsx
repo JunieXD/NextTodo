@@ -1,6 +1,6 @@
 // Account, devices and tokens, invites, appearance, versions.
 
-import { ChevronRight, Copy, HardDrive, KeyRound, Mail, Monitor, Plus, Sparkles } from "lucide-react";
+import { ChevronRight, Copy, HardDrive, KeyRound, Mail, Monitor, Plus, Sparkles, SquareTerminal } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, app, desktopOs, serverUrl } from "../api/http";
 import type { CreatedToken } from "../api/types/CreatedToken";
@@ -9,6 +9,7 @@ import type { Scope } from "../api/types/Scope";
 import type { TokenInfo } from "../api/types/TokenInfo";
 import type { User } from "../api/types/User";
 import { ago } from "../domain/dates";
+import { cli } from "../desktop";
 import { checkDisplayName, checkTokenName } from "../domain/text";
 import * as local from "../local";
 import { useSession } from "../session";
@@ -146,6 +147,7 @@ export function Settings({ start = "main", onClose, onSignOut }: { start?: Page;
               </div>
             </button>
           </div>
+          {app === "desktop" && <CommandLine />}
         </>
       )}
 
@@ -304,6 +306,46 @@ function AiRow({ onOpen }: { onOpen(): void }) {
   );
 }
 
+/** The command line the app carries, and putting it where a terminal finds it (docs/desktop.md#命令行). */
+function CommandLine() {
+  const { snack } = useFeedback();
+  const [installed, setInstalled] = useState<boolean | null>(null);
+  useEffect(() => {
+    cli.installed().then(setInstalled, (e) => snack(`读取命令行的状态失败：${e}`));
+  }, [snack]);
+  const install = () =>
+    cli.install().then(
+      () => (setInstalled(true), snack(desktopOs === "Windows" ? "已安装命令行，新打开的终端可以使用" : "已安装命令行")),
+      (e) => snack(String(e)),
+    );
+  return (
+    <>
+      <h2 className="group-title">
+        <span>命令行</span>
+        <span>供 agent 在终端使用</span>
+      </h2>
+      <div className="group">
+        <div className="row">
+          <div className="row-inner">
+            <span className="token-ic">
+              <Icon of={SquareTerminal} size={18} />
+            </span>
+            <span className="folder-main">
+              <span>nexttodo</span>
+              <span className="folder-sub">{installed ? "已安装，在终端里运行 nexttodo" : "未安装"}</span>
+            </span>
+            {installed === false && (
+              <button className="text-btn" onClick={install}>
+                安装
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function TokenRow({ icon, title, sub, action }: { icon: typeof KeyRound; title: string; sub: string; action?: [string, () => void] }) {
   return (
     <div className="row">
@@ -426,7 +468,8 @@ function TokenCreated({ name, secret, onDone, onClose }: { name: string; secret:
   return (
     <Modal title="令牌已生成" onClose={onClose} onBack={onDone}>
       <p className="empty">
-        “{name}”的令牌只显示这一次。下面的写法已经填好{inLocal ? "令牌，都要先装命令行" : "服务器地址和令牌"}，复制即可。<Help to="agent">如何安装命令行</Help>
+        “{name}”的令牌只显示这一次。下面的写法已经填好{inLocal ? "令牌，都要先装命令行" : "服务器地址和令牌"}，复制即可。
+        {app === "desktop" ? "命令行在设置的“命令行”一组安装。" : <Help to="agent">如何安装命令行</Help>}
       </p>
       <Copyable label="令牌" text={secret} />
       {inLocal ? (

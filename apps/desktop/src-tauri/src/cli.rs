@@ -49,13 +49,10 @@ mod platform {
 
     const LINK: &str = "/usr/local/bin/nexttodo";
 
-    /// Takes the quarantine off the app, then links to its command line. A downloaded app has it: run
-    /// from a terminal, the command line would be stopped, waiting on the system's dialog. The user
-    /// opened the app already.
-    const SCRIPT: &str = r#"set -e
-xattr -dr com.apple.quarantine "${1%/Contents/MacOS/nexttodo}"
-mkdir -p /usr/local/bin
-ln -sfn "$1" /usr/local/bin/nexttodo"#;
+    /// Links to the command line. A downloaded app keeps its quarantine, which needs no taking off:
+    /// the system checks the command line, run from a terminal, as the app it is in, and the user
+    /// opened that already. Nor could it be: nothing may change an app once opened, not even root.
+    const SCRIPT: &str = r#"mkdir -p /usr/local/bin && ln -sfn "$1" /usr/local/bin/nexttodo"#;
 
     pub fn status() -> Result<Status, String> {
         let link = match std::fs::symlink_metadata(LINK) {

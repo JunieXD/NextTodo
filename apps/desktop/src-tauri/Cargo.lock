@@ -2908,6 +2908,7 @@ dependencies = [
 name = "nexttodo-desktop"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "nexttodo-server",
  "open",
  "rustls",

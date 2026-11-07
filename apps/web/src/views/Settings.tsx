@@ -9,7 +9,7 @@ import type { Scope } from "../api/types/Scope";
 import type { TokenInfo } from "../api/types/TokenInfo";
 import type { User } from "../api/types/User";
 import { ago } from "../domain/dates";
-import { cli } from "../desktop";
+import { type CliStatus, cli } from "../desktop";
 import { checkDisplayName, checkTokenName } from "../domain/text";
 import * as local from "../local";
 import { useSession } from "../session";
@@ -308,16 +308,21 @@ function AiRow({ onOpen }: { onOpen(): void }) {
 
 /** The command line the app carries, and putting it where a terminal finds it (docs/desktop.md#命令行). */
 function CommandLine() {
-  const { snack } = useFeedback();
-  const [installed, setInstalled] = useState<boolean | null>(null);
+  const { confirm, snack } = useFeedback();
+  const [status, setStatus] = useState<CliStatus | null>(null);
   useEffect(() => {
-    cli.installed().then(setInstalled, (e) => snack(`读取命令行的状态失败：${e}`));
+    cli.status().then(setStatus, (e) => snack(`读取命令行的状态失败：${e}`));
   }, [snack]);
-  const install = () =>
-    cli.install().then(
-      () => (setInstalled(true), snack(desktopOs === "Windows" ? "已安装命令行，新打开的终端可以使用" : "已安装命令行")),
+  const install = async () => {
+    const replace = status?.state === "taken";
+    const body = `/usr/local/bin/nexttodo 现在${status?.state === "taken" ? status.by : ""}，将换成 NextTodo 带的命令行。`;
+    if (replace && !(await confirm({ title: "替换已有的 nexttodo？", body, ok: "替换", danger: true }))) return;
+    await cli.install(replace).then(
+      () => (setStatus({ state: "installed" }), snack(desktopOs === "Windows" ? "已安装命令行，新打开的终端可以使用" : "已安装命令行")),
       (e) => snack(String(e)),
     );
+  };
+  const sub = { installed: "已安装，在终端里运行 nexttodo", missing: "未安装", taken: "已有另一个 nexttodo" };
   return (
     <>
       <h2 className="group-title">
@@ -332,11 +337,11 @@ function CommandLine() {
             </span>
             <span className="folder-main">
               <span>nexttodo</span>
-              <span className="folder-sub">{installed ? "已安装，在终端里运行 nexttodo" : "未安装"}</span>
+              <span className="folder-sub">{status && sub[status.state]}</span>
             </span>
-            {installed === false && (
+            {status && status.state !== "installed" && (
               <button className="text-btn" onClick={install}>
-                安装
+                {status.state === "taken" ? "替换" : "安装"}
               </button>
             )}
           </div>

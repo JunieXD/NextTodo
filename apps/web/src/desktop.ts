@@ -56,8 +56,13 @@ export async function listen() {
   await on<string>("open-task", (e) => navigate(`/?open=${e.payload}`));
 }
 
-/** The command line the app carries: whether it is where a terminal finds it, and putting it there. */
+/** Where the command line the app carries stands: on macOS its place may hold another one, `by` says
+ * what (`apps/desktop/src-tauri/src/cli.rs`). */
+export type CliStatus = { state: "installed" | "missing" } | { state: "taken"; by: string };
+
+/** The command line the app carries: where it stands, and putting it where a terminal finds it, in
+ * place of another one only when told to `replace` it. */
 export const cli = {
-  installed: () => invoke<boolean>("cli_installed"),
-  install: () => invoke<void>("install_cli"),
+  status: () => invoke<CliStatus>("cli_status"),
+  install: (replace: boolean) => invoke<void>("install_cli", { replace }),
 };

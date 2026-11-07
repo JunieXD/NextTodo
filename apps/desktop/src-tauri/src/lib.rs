@@ -123,7 +123,7 @@ pub fn run() {
             local::backup_local,
             local::prepare_restore,
             local::commit_restore,
-            cli::cli_installed,
+            cli::cli_status,
             cli::install_cli
         ])
         .setup(move |app| {

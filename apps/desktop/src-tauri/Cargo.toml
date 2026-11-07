@@ -39,8 +39,9 @@ tracing = "0.1.44"
 # The log, the server's and the plugins', on standard error (docs/local.md#可靠性).
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
-# Whether the command line is on the user's PATH (src/cli.rs).
+# Putting the command line on the user's PATH, and seeing whether it is (src/cli.rs).
 [target.'cfg(windows)'.dependencies]
+base64 = "0.22.1"
 windows-registry = "0.6.1"
 
 [lints.rust]

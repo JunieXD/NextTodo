@@ -52,7 +52,7 @@ mod platform {
     /// Links to the command line, leaving a downloaded app's quarantine as it is: once opened, the app
     /// may be changed only by programs the user allowed App Management, which this one is not, as
     /// root neither. Run from a terminal, the command line is checked by Gatekeeper as the app it is
-    /// in (docs/desktop.md#命令行).
+    /// in, and runs once the user opened that (docs/desktop.md#命令行).
     const SCRIPT: &str = r#"mkdir -p /usr/local/bin && ln -sfn "$1" /usr/local/bin/nexttodo"#;
 
     pub fn status() -> Result<Status, String> {

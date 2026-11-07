@@ -1,0 +1,1 @@
+import{_ as e,o as a,c as l,a2 as r}from"./chunks/framework.mzJ8I8R4.js";const _=JSON.parse('{"title":"AI 整理","description":"","frontmatter":{},"headers":[],"relativePath":"guide/ai.md","filePath":"guide/ai.md"}'),i={name:"guide/ai.md"};function d(o,t,p,h,n,s){return a(),l("div",null,[...t[0]||(t[0]=[r("",24)])])}const A=e(i,[["render",d]]);export{_ as __pageData,A as default};

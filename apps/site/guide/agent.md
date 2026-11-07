@@ -27,7 +27,7 @@ agent 有两种接入方式，任选其一：
 2. macOS 上可能会弹出系统的密码框，输入登录密码确认。
 3. 新打开一个终端窗口，运行 `nexttodo --version`，显示的版本应和“设置 → 关于”里的 App 版本相同。
 
-版本不同，说明以前用别的方式装过命令行，终端用的是那一个。查看终端实际用的是哪个：macOS 上运行 `which -a nexttodo`，Windows 上运行 `where nexttodo`，第一行就是。把它删掉即可；macOS 上也可以在 shell 配置文件里把 `/usr/local/bin` 排到它所在的目录前面。
+版本不同，说明以前用别的方式装过命令行，终端用的是那一个。查看终端实际用的是哪个：macOS 上运行 `which -a nexttodo`，Windows 上运行 `where.exe nexttodo`（PowerShell 和命令提示符都适用），第一行就是。确认它是以前自己装的 NextTodo 命令行（比如用 `cargo install` 或安装脚本装的）后，按原来的方式卸载或删掉它；macOS 上也可以在 shell 配置文件里把 `/usr/local/bin` 排到它所在的目录前面。
 
 App 更新时，命令行会一起更新。macOS 上要先把 App 移到“应用程序”文件夹，见[下载和安装](./install#macos)。
 

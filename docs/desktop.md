@@ -73,7 +73,7 @@
 - Windows：
   - PATH 由 PowerShell 写入：读出注册表里的原值（不展开 `%变量%`），把目录加在最前面，排在用户以别的方式装的命令行之前，再按 `REG_EXPAND_SZ` 写回，再像系统设置那样向所有窗口广播 `WM_SETTINGCHANGE`，之后新打开的终端就能用。外壳禁止 `unsafe`，所以由 PowerShell 调用这个 Win32 API。脚本用 `-EncodedCommand` 传入，不受命令行引号转义的影响；出错即停，报告失败。
   - 运行中的 `nexttodo mcp` 会占住命令行文件，安装程序不能覆盖它，但可以改名。安装程序的钩子（`src-tauri/windows/hooks.nsh`）在写入前先删旧文件，删不掉（正被占用）就改成临时文件名，并删掉以前留下的、已经没有程序占用的旧文件。
-  - 系统的 PATH 排在用户的前面，那里有别的 `nexttodo` 时仍会先用它。往系统 PATH 里放命令行要管理员手动操作，很少见，App 不去解析完整的 PATH，[教程](https://juniexd.github.io/NextTodo/guide/agent#cli)里教用户用 `where nexttodo` 检查。
+  - 系统的 PATH 排在用户的前面，那里有别的 `nexttodo` 时仍会先用它。往系统 PATH 里放命令行要管理员手动操作，很少见，App 不去解析完整的 PATH，[教程](https://juniexd.github.io/NextTodo/guide/agent#cli)里教用户用 `where.exe nexttodo` 检查。
   - 卸载 App 时不改 PATH，留下的目录已不存在，不影响使用。
 
 ## 开机自启

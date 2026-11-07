@@ -18,6 +18,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import cn.juniexd.nexttodo.Local
+import cn.juniexd.nexttodo.forUser
 import com.capacitorjs.plugins.localnotifications.NotificationStorage
 import com.capacitorjs.plugins.localnotifications.TimedNotificationPublisher
 import java.time.LocalDate
@@ -164,7 +165,7 @@ object Widget {
             val seq = try {
                 Server.complete(context, token, task)
             } catch (e: Exception) {
-                if (e is HttpError && e.status == 401) ended(context, token) else toast(context, "完成失败：${e.message}")
+                if (e is HttpError && e.status == 401) ended(context, token) else toast(context, forUser("完成事项", e))
                 return
             }
             // Signed in again meanwhile, maybe as someone else, whose reminder this number may be.
@@ -180,7 +181,7 @@ object Widget {
         try {
             refresh(context)
         } catch (e: Exception) {
-            toast(context, "刷新失败：${e.message}")
+            toast(context, forUser("刷新", e))
         }
     }
 

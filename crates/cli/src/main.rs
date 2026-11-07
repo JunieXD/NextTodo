@@ -271,7 +271,7 @@ fn create_private(path: &Path) -> std::io::Result<File> {
 /// What `NEXTTODO_URL` is set to for the app on this computer in local mode.
 const LOCAL: &str = "local";
 
-const UNREACHABLE: &str = "连不上本机模式的 NextTodo：App 没有在运行，或者正在启动";
+const UNREACHABLE: &str = "无法连接本机模式的 NextTodo：App 未运行或正在启动";
 
 /// The server and token: environment variables first, then the configuration file. In local mode
 /// the token comes from the environment only: the file's is a server's.
@@ -331,7 +331,7 @@ impl Server {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => bail!("{UNREACHABLE}"),
             read => read.with_context(|| format!("无法读取本机模式的地址文件 {}", path.display()))?,
         };
-        let bad = || format!("本机模式的地址文件 {} 格式不对", path.display());
+        let bad = || format!("本机模式的地址文件 {} 格式错误", path.display());
         let address: Address = serde_json::from_str(&text).with_context(bad)?;
         // Nothing but the port may vary: no user, path or query.
         let port = address.url.strip_prefix("https://127.0.0.1:").and_then(|p| p.parse::<u16>().ok()).filter(|&p| p != 0);
@@ -360,7 +360,7 @@ impl Server {
     /// What to say when a request could not be sent, or its reply not read.
     fn unreachable(&self, e: ureq::Error) -> anyhow::Error {
         if self.mismatch(&e) {
-            anyhow!("本机 NextTodo 的证书对不上，App 可能刚重启过")
+            anyhow!("本机 NextTodo 的证书不匹配，App 可能刚重启过")
         } else {
             anyhow::Error::new(e).context(if self.local { UNREACHABLE } else { "无法连接服务器" })
         }

@@ -11,7 +11,7 @@ NextTodo 是用户自己的待办应用，核心是事项之间的先后关系�
 
 - 有终端时用命令行 `nexttodo`；`nexttodo --help` 和 `nexttodo <命令> --help` 列出全部参数。
 - 有名为 `nexttodo` 的 MCP 服务时，用它的工具也一样，工具名和参数与命令行对应（`ls` 对应 `list`，`mv` 对应 `move`，`rm` 对应 `delete`，`dep add` / `dep rm` 对应 `dep_add` / `dep_remove`，`edit --replace 原文 新文` 对应 `replace: [{old, new}]`）。
-- 命令行报“尚未登录”时，请用户运行 `nexttodo login --url <服务器地址> --name <你的名字>`，不要替用户输入密码。
+- 命令行报“尚未登录”时，请用户运行 `nexttodo login --url <服务器地址> --name <agent 名称>`，不要替用户输入密码。
 
 引用方式：事项用编号（`12`），文件夹用路径（`/工作/网站改版`，根目录是 `/`）。截止时间写 `2026-11-20` 或 `"2026-11-20 18:00"`，用户说的“周五”“下周”要先换算成具体日期。
 

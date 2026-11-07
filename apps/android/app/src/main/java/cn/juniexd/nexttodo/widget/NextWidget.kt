@@ -45,6 +45,7 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import cn.juniexd.nexttodo.MainActivity
 import cn.juniexd.nexttodo.R
+import cn.juniexd.nexttodo.forUser
 import java.time.LocalDateTime
 
 /** The colours of docs/ui.md, light and dark. */
@@ -177,7 +178,7 @@ class RefreshAction : ActionCallback {
         try {
             Widget.refresh(context)
         } catch (e: Exception) {
-            Widget.toast(context, "刷新失败：${e.message}")
+            Widget.toast(context, forUser("刷新", e))
         }
     }
 }

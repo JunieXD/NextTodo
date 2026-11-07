@@ -55,8 +55,8 @@ function useKeepEdit(field: "title" | "description", what: string) {
     if (mine === base) return { value: t[field], mine: false };
     if (t[field] !== base && t[field] !== mine) {
       const theirs = await confirm({
-        title: `${what}在你编辑时${t.updated_via ? `被“${t.updated_via}”` : "在别处被"}改过`,
-        body: "对方现在的版本如下。保留对方的，你这次的修改就会丢掉。",
+        title: `${what}在编辑期间已${t.updated_via ? `被“${t.updated_via}”` : "在别处"}改过`,
+        body: "对方现在的版本如下。保留对方的版本，本次修改将丢弃。",
         detail: t[field],
         ok: "保留对方的",
         cancel: "用我的覆盖",
@@ -67,7 +67,7 @@ function useKeepEdit(field: "title" | "description", what: string) {
       if (theirs) return { value: t[field], mine: false };
       if (t[field] !== mine) {
         const r = save(mine);
-        if (r) snack({ text: `已用你的版本覆盖${what}`, action: "撤销", onAction: () => undo(r.id) });
+        if (r) snack({ text: `已用本次修改覆盖${what}`, action: "撤销", onAction: () => undo(r.id) });
       }
       return { value: mine, mine: true };
     }

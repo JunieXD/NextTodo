@@ -15,7 +15,7 @@ import * as local from "../local";
 import { useSession } from "../session";
 import { type Theme, setTheme, useTheme } from "../theme";
 import { Seg } from "../ui/controls";
-import { Modal, useFeedback } from "../ui/feedback";
+import { Modal, forUser, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
 import { Icon } from "../ui/icons";
 import { About } from "./About";
@@ -234,17 +234,17 @@ function LocalMode() {
       const to = await local.backup(session.store);
       if (to) snack(`已备份到 ${to}`);
     } catch (e) {
-      snack(e instanceof Error ? e.message : String(e));
+      snack(forUser("备份", e));
     }
   };
   const restore = () =>
     local
       .restore((body) => confirm({ title: "用备份替换这台设备上的全部数据？", body, ok: "恢复", danger: true }), session)
-      .catch((e) => snack(`无法恢复：${e instanceof Error ? e.message : String(e)}`));
+      .catch((e) => snack(forUser("恢复", e)));
   const leave = async () => {
     const body = "本机的数据会留在这台设备上，以后再选“在本机使用”就能接着用。NextTodo 会重新启动。";
     if (!(await confirm({ title: "改用服务器？", body, ok: "改用服务器" }))) return;
-    await local.leave(session).catch((e) => snack(`重新启动失败：${e}`));
+    await local.leave(session).catch((e) => snack(forUser("改用服务器", e)));
   };
   return (
     <div className="group">
@@ -311,7 +311,7 @@ function CommandLine() {
   const { confirm, snack } = useFeedback();
   const [status, setStatus] = useState<CliStatus | null>(null);
   useEffect(() => {
-    cli.status().then(setStatus, (e) => snack(`读取命令行的状态失败：${e}`));
+    cli.status().then(setStatus, (e) => snack(forUser("读取命令行的状态", e)));
   }, [snack]);
   const install = async () => {
     const replace = status?.state === "taken";
@@ -319,7 +319,7 @@ function CommandLine() {
     if (replace && !(await confirm({ title: "替换已有的 nexttodo？", body, ok: "替换", danger: true }))) return;
     await cli.install(replace).then(
       () => (setStatus({ state: "installed" }), snack(desktopOs === "Windows" ? "已安装命令行，新打开的终端可以使用" : "已安装命令行")),
-      (e) => snack(String(e)),
+      (e) => snack(forUser("安装命令行", e)),
     );
   };
   const sub = { installed: "已安装，在终端里运行 nexttodo", missing: "未安装", taken: "已有另一个 nexttodo" };

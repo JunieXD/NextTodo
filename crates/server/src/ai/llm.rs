@@ -293,12 +293,19 @@ fn agent(timeout: Duration, public_only: bool) -> ureq::Agent {
     ureq::Agent::with_parts(config, DefaultConnector::default(), Addresses { names: DefaultResolver::default(), public_only })
 }
 
+/// Why the API could not be reached, in words for the user. The network's own go to the log, where
+/// they help: to the user they mean little.
 fn transport(e: ureq::Error) -> Failure {
     Failure::new(match e {
-        ureq::Error::Timeout(_) => "接口超时".to_owned(),
-        ureq::Error::BodyExceedsLimit(_) => "接口的回复过长".to_owned(),
-        ureq::Error::Io(e) if e.kind() == ErrorKind::PermissionDenied => NOT_PUBLIC.to_owned(),
-        e => format!("无法连接接口：{e}"),
+        ureq::Error::Timeout(_) => "接口超时，请稍后重试",
+        ureq::Error::BodyExceedsLimit(_) => "接口的回复过长",
+        ureq::Error::Io(e) if e.kind() == ErrorKind::PermissionDenied => NOT_PUBLIC,
+        ureq::Error::HostNotFound => "找不到接口地址的域名，请检查接口地址",
+        ureq::Error::Tls(_) | ureq::Error::Rustls(_) => "接口的 HTTPS 证书无效，请检查接口地址",
+        e => {
+            tracing::warn!("无法连接模型接口：{e}");
+            "无法连接接口，请检查接口地址和网络"
+        }
     })
 }
 
@@ -311,14 +318,30 @@ fn api_message(v: &Value) -> &str {
         .unwrap_or_default()
 }
 
-/// The error an API answered with: its message, or just the status.
+/// What an error status of an API most likely means, for the user: its own message follows, which
+/// says more, but often in English, and in its terms.
+fn meaning(status: u16) -> Option<&'static str> {
+    Some(match status {
+        // Not followed: the address is another than the provider's own.
+        300..=399 => "接口地址有误，请按服务商的文档填写",
+        401 => "API 密钥无效",
+        402 => "账户余额不足",
+        403 => "API 密钥没有权限",
+        404 => "接口地址或模型名称有误",
+        429 => "请求过于频繁或额度已用完，请稍后重试",
+        500..=599 => "服务商暂时不可用，请稍后重试",
+        _ => return None,
+    })
+}
+
+/// The error an API answered with: what its status means, then its message, or just the status.
 fn refused(status: u16, body: &str) -> Failure {
     let v: Value = serde_json::from_str(body).unwrap_or_default();
-    let message = api_message(&v);
-    Failure {
-        status: Some(status),
-        message: if message.is_empty() { format!("接口返回 {status}") } else { format!("接口返回 {status}：{message}") },
-    }
+    let said = match api_message(&v) {
+        "" => format!("接口返回 {status}"),
+        message => format!("接口返回 {status}：{message}"),
+    };
+    Failure { status: Some(status), message: meaning(status).map_or_else(|| said.clone(), |m| format!("{m}（{said}）")) }
 }
 
 impl Https {
@@ -502,7 +525,7 @@ mod tests {
     #[test]
     fn a_key_in_a_message_is_not_kept() {
         let echoed = refused(401, r#"{"error":{"message":"invalid token: sk-secret-1234"}}"#).without("sk-secret-1234");
-        assert_eq!(echoed.message, "接口返回 401：invalid token: ***");
+        assert!(echoed.message.contains("invalid token: ***"), "{}", echoed.message);
     }
 
     #[test]
@@ -514,10 +537,17 @@ mod tests {
                       data: [DONE]\n";
         assert_eq!(read_stream(stream.as_bytes()).unwrap(), "{\"a\": 1}");
         let failed = read_stream("data: {\"error\":{\"message\":\"余额不足\"}}\n".as_bytes()).unwrap_err();
-        assert_eq!(failed.message, "接口报错：余额不足");
-        assert_eq!(refused(401, "{\"error\":{\"message\":\"invalid key\"}}").message, "接口返回 401：invalid key");
-        assert_eq!(refused(502, "<html>").message, "接口返回 502");
-        assert_eq!(refused(401, "{\"detail\":\"token 无效或已过期\"}").message, "接口返回 401：token 无效或已过期");
+        assert!(failed.message.contains("余额不足"), "{}", failed.message);
+        // What the status means first, then what the API said: whatever is in its answer.
+        for (status, body, said) in [
+            (401, "{\"error\":{\"message\":\"invalid key\"}}", "invalid key"),
+            (401, "{\"detail\":\"token 无效或已过期\"}", "token 无效或已过期"),
+        ] {
+            let f = refused(status, body);
+            assert!(f.message.contains(said) && !f.message.starts_with("接口返回"), "{}", f.message);
+        }
+        assert!(refused(502, "<html>").message.contains("502"));
+        assert_eq!(refused(418, "{}").message, refused(418, "<html>").message);
         assert_eq!(read_whole("{\"choices\":[{\"message\":{\"content\":\"好\"}}]}".as_bytes()).unwrap(), "好");
     }
 }

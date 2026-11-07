@@ -1,30 +1,40 @@
-// The versions running, and an update waiting: see docs/design.md#app-更新.
+// The versions running, and updates: see docs/design.md#app-更新.
 
+import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { app } from "../api/http";
 import { ago } from "../domain/dates";
-import { inLocalMode } from "../local";
-import { useFeedback } from "../ui/feedback";
+import { forUser, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
-import { appVersion, install, restart, useChecked, usePending } from "../updates";
+import { Icon } from "../ui/icons";
+import { appVersion, check, failureText, install, restart, useChecked, useChecking, usePending } from "../updates";
 
 export function About() {
   const { snack } = useFeedback();
   const pending = usePending();
-  const checked = useChecked();
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
-    appVersion().then(setVersion, (e) => snack(`读取版本失败：${e}`));
+    appVersion().then(setVersion, (e) => snack(forUser("读取版本", e)));
   }, [snack]);
   return (
     <>
       <h2 className="group-title">关于</h2>
       <div className="group">
         <Row label="网页版本" value={import.meta.env.WEB_VERSION} />
-        {app && <Row label="App 版本" value={version ?? ""} />}
-        {/* From GitHub, which may well be out of reach: whether it was, when nothing is waiting. */}
-        {inLocalMode() && checked && !pending && (
-          <Row label="更新" value={`${ago(checked.at, new Date())}检查${checked.failed ? "失败，稍后再试" : "，已是最新"}`} />
+        {app && (
+          // Checks at once, however lately it did.
+          <button className="row" title="检查更新" onClick={() => void check(true)}>
+            <div className="row-inner">
+              <span className="folder-main">
+                <span>App 版本</span>
+                <LastCheck />
+              </span>
+              <span className="row-value">{version}</span>
+              <span className="chev">
+                <Icon of={RefreshCw} size={16} />
+              </span>
+            </div>
+          </button>
         )}
         {pending && (
           <div className="row">
@@ -51,6 +61,26 @@ export function About() {
       </p>
     </>
   );
+}
+
+/** How the last check for updates went, under the app's version: why it failed, also with an update
+ * waiting, which the row below shows. */
+function LastCheck() {
+  const checking = useChecking();
+  const checked = useChecked();
+  const pending = usePending();
+  const text = checking
+    ? "正在检查更新…"
+    : !checked
+      ? null
+      : checked.failure
+        ? failureText("检查更新", checked.failure)
+        : pending
+          ? null
+          : checked.staged
+            ? "新版本已下载，下次打开时生效"
+            : `已是最新版本，${ago(checked.at, new Date())}检查`;
+  return text && <span className="folder-sub full">{text}</span>;
 }
 
 function Row({ label, value }: { label: string; value: string }) {

@@ -98,11 +98,11 @@ object WebUpdate {
      * version; nothing when there is none to download. Fails while another download is under way,
      * one the page before a recreated activity started say, so that this check is not taken as done. */
     suspend fun update(context: Context, server: String): String? = withContext(Dispatchers.IO) {
-        if (!busy.compareAndSet(false, true)) throw IOException("正在下载另一个版本")
+        if (!busy.compareAndSet(false, true)) throw Unavailable("正在下载另一个版本")
         try {
             val info = JSONObject(String(download("$server/app/web.json")))
             // A commit, which names a directory here.
-            val version = info.getString("version").takeIf { it.matches(Regex("[0-9a-f]{7,40}")) } ?: throw IOException("版本号无效")
+            val version = info.getString("version").takeIf { it.matches(Regex("[0-9a-f]{7,40}")) } ?: throw Unavailable("版本号无效")
             val prefs = prefs(context)
             val known = setOf(running, prefs.getString("staged", null)) + prefs.getStringSet("bad", null).orEmpty()
             if (version in known || info.getInt("native") > BuildConfig.NATIVE) return@withContext null
@@ -110,7 +110,7 @@ object WebUpdate {
             val files = info.getJSONArray("files")
             for (i in 0 until files.length()) {
                 val path = files.getString(i)
-                if (path.split('/').any { it.isEmpty() || it == "." || it == ".." }) throw IOException("文件路径无效：$path")
+                if (path.split('/').any { it.isEmpty() || it == "." || it == ".." }) throw Unavailable("文件路径无效：$path")
                 val to = File(part, path).apply { parentFile!!.mkdirs() }
                 // Vite names these after their content: the same name is the same file.
                 val have = if (path.startsWith("assets/")) current(context, path) else null
@@ -121,7 +121,7 @@ object WebUpdate {
                 }
             }
             // Released again meanwhile, the server may have given files of the next build.
-            if (JSONObject(String(download("$server/app/web.json"))).getString("version") != version) throw IOException("服务器上的版本已更新，下次再下载")
+            if (JSONObject(String(download("$server/app/web.json"))).getString("version") != version) throw Unavailable("服务器上的版本已更新，下次再下载")
             File(part, "app").mkdirs()
             File(part, "app/web.json").writeText(info.toString())
             stage(context, part, version)
@@ -138,7 +138,7 @@ object WebUpdate {
         val into = File(builds(context), version)
         into.deleteRecursively()
         into.parentFile!!.mkdirs()
-        if (!part.renameTo(into)) throw IOException("无法保存新版本")
+        if (!part.renameTo(into)) throw IOException("下载新版本失败：无法保存新版本")
         prefs.getString("staged", null)?.let { File(builds(context), it).deleteRecursively() }
         prefs.edit().putString("staged", version).commit()
     }
@@ -155,13 +155,17 @@ object WebUpdate {
         runCatching { JSONObject(context.assets.open("public/app/web.json").bufferedReader().use { it.readText() }).getString("version") }.getOrNull()
 }
 
-/** The file at `url`; throws when the server does not give it. */
+/** An update not to be had for now: a file the server did not give, say, or gave of another build.
+ * What the message says goes to the log only. */
+class Unavailable(message: String) : IOException(message)
+
+/** The file at `url`; throws `Unavailable` when the server does not give it. */
 fun download(url: String): ByteArray {
     val c = URL(url).openConnection() as HttpURLConnection
     try {
         c.connectTimeout = 10_000
         c.readTimeout = 30_000
-        if (c.responseCode != 200) throw IOException("下载失败（${c.responseCode}）：$url")
+        if (c.responseCode != 200) throw Unavailable("${c.responseCode}：$url")
         return c.inputStream.use { it.readBytes() }
     } finally {
         c.disconnect()

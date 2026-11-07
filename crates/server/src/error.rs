@@ -78,6 +78,41 @@ impl ApiError {
     }
 }
 
+/// What to tell the user of `e`, which made `what` fail, as docs/ui.md#文案 has it: `what` failed,
+/// then why in words for them: the messages in `e` written for the user, in Chinese as all such are
+/// (AGENTS.md), and what the system's own words after them mean, for the common failures of files.
+/// Without any, that it may be tried again. The system's words go to the log, where they help: to
+/// the user they mean little.
+pub fn for_user(what: &str, e: &(dyn std::error::Error + 'static)) -> String {
+    let chain = || std::iter::successors(Some(e), |e| e.source());
+    tracing::warn!("{what}：{}", chain().map(ToString::to_string).collect::<Vec<_>>().join(": "));
+    let mut why: Vec<String> = chain().map(ToString::to_string).take_while(|m| chinese(m)).collect();
+    why.extend(chain().filter(|e| !chinese(&e.to_string())).find_map(meaning).map(str::to_owned));
+    if why.is_empty() { format!("{what}失败，请稍后重试") } else { format!("{what}失败：{}", why.join("：")) }
+}
+
+fn chinese(s: &str) -> bool {
+    s.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c))
+}
+
+/// What a failure of files means, in words for the user.
+fn meaning(e: &(dyn std::error::Error + 'static)) -> Option<&'static str> {
+    use std::io::ErrorKind;
+    if let Some(e) = e.downcast_ref::<std::io::Error>() {
+        return match e.kind() {
+            ErrorKind::PermissionDenied | ErrorKind::ReadOnlyFilesystem => Some("没有权限访问这个位置"),
+            ErrorKind::StorageFull | ErrorKind::QuotaExceeded => Some("存储空间不足"),
+            ErrorKind::NotFound => Some("找不到文件"),
+            _ => None,
+        };
+    }
+    match e.downcast_ref::<rusqlite::Error>()?.sqlite_error_code()? {
+        rusqlite::ErrorCode::DiskFull => Some("存储空间不足"),
+        rusqlite::ErrorCode::ReadOnly | rusqlite::ErrorCode::PermissionDenied => Some("没有权限访问这个位置"),
+        _ => None,
+    }
+}
+
 impl ApiError {
     /// The message, with the field it is about when there is one.
     pub fn describe(&self) -> String {
@@ -169,5 +204,22 @@ impl<S: Send + Sync, T: DeserializeOwned> FromRequest<S> for Json<T> {
 impl<T: Serialize> IntoResponse for Json<T> {
     fn into_response(self) -> Response {
         axum::Json(self.0).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tells_the_user_ours_not_the_systems() {
+        let denied = || std::io::Error::new(std::io::ErrorKind::PermissionDenied, "Permission denied (os error 13)");
+        let ours = anyhow::Error::from(denied()).context("备份失败");
+        let told = for_user("恢复", ours.as_ref());
+        assert!(told.starts_with("恢复失败：备份失败：") && !told.contains("os error"), "{told}");
+        let bare = for_user("读取备份", &std::io::Error::other("unexpected end of file"));
+        assert!(bare.starts_with("读取备份失败") && !bare.contains("unexpected"), "{bare}");
+        let written = anyhow::anyhow!("这不是 NextTodo 的备份，或者文件已损坏");
+        assert_eq!(for_user("读取备份", written.as_ref()), format!("读取备份失败：{written}"));
     }
 }

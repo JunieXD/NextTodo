@@ -39,6 +39,16 @@ impl std::fmt::Display for StartError {
     }
 }
 
+impl StartError {
+    /// What to tell the user (`error::for_user`).
+    pub fn for_user(&self) -> String {
+        match self {
+            StartError::Locked => format!("启动本机模式失败：{self}"),
+            StartError::Failed(e) => crate::error::for_user("启动本机模式", e.as_ref()),
+        }
+    }
+}
+
 impl From<anyhow::Error> for StartError {
     fn from(e: anyhow::Error) -> Self {
         StartError::Failed(e)

@@ -49,7 +49,7 @@ object Local {
             prefs.edit().putString(EPOCH, epoch).commit()
         }
         val token = LocalServer.session()
-        if (!prefs.edit().putString("server", started.getString("url")).putString("token", token).commit()) throw IOException("无法保存本机模式的会话")
+        if (!prefs.edit().putString("server", started.getString("url")).putString("token", token).commit()) throw IOException("打开本机模式失败：无法保存会话")
         return JSObject(started.toString()).put("token", token).also { opened = it }
     }
 
@@ -64,7 +64,7 @@ object Local {
     fun set(context: Context, on: Boolean) {
         val edit = Server.prefs(context).edit()
         if (on) edit.putString(MODE, LOCAL) else edit.remove(MODE).remove("server").remove("token").remove(EPOCH)
-        if (!edit.commit()) throw IOException("无法切换本机模式")
+        if (!edit.commit()) throw IOException("切换本机模式失败，请稍后重试")
     }
 
     fun backup(to: File) = LocalServer.backup(to.path)

@@ -97,7 +97,7 @@ async fn nothing_is_sent_where_the_app_no_longer_is() {
     let (proxy, proxied) = proxy();
     let (ok, _, err) = run(home.nexttodo("nt_none", &proxy).arg("next"));
     assert!(!ok);
-    assert!(err.contains("连不上本机模式的 NextTodo"), "{err}");
+    assert!(err.contains("无法连接本机模式的 NextTodo"), "{err}");
 
     let local = Local::start(&home.local()).await.unwrap();
     let token = local.session().await.unwrap();
@@ -113,7 +113,7 @@ async fn nothing_is_sent_where_the_app_no_longer_is() {
     with_url(other_address["url"].as_str().unwrap().to_owned());
     let (ok, _, err) = run(home.nexttodo(&token, &proxy).args(["add", "不该出现"]));
     assert!(!ok);
-    assert!(err.contains("证书对不上"), "{err}");
+    assert!(err.contains("证书不匹配"), "{err}");
     assert!(!next(&other, &other_token).contains("不该出现"));
 
     // A port nothing listens on any more.
@@ -121,14 +121,14 @@ async fn nothing_is_sent_where_the_app_no_longer_is() {
     with_url(format!("https://127.0.0.1:{closed}"));
     let (ok, _, err) = run(home.nexttodo(&token, &proxy).arg("next"));
     assert!(!ok);
-    assert!(err.contains("连不上本机模式的 NextTodo"), "{err}");
+    assert!(err.contains("无法连接本机模式的 NextTodo"), "{err}");
 
     // Anywhere but 127.0.0.1, or with more than a port.
     for url in ["https://localhost:443".to_owned(), format!("https://127.0.0.1:{closed}/x"), format!("http://127.0.0.1:{closed}")] {
         with_url(url);
         let (ok, _, err) = run(home.nexttodo(&token, &proxy).arg("next"));
         assert!(!ok);
-        assert!(err.contains("格式不对"), "{err}");
+        assert!(err.contains("格式错误"), "{err}");
     }
     assert_eq!(proxied.load(Ordering::SeqCst), 0);
 }
@@ -162,7 +162,7 @@ async fn mcp_reads_the_address_again_for_each_message() {
     std::fs::rename(&file, file.with_extension("away")).unwrap();
     let reply = ask(json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/list" })).unwrap();
     assert_eq!(reply["id"], 3);
-    assert!(reply["error"]["message"].as_str().unwrap().contains("连不上本机模式的 NextTodo"), "{reply}");
+    assert!(reply["error"]["message"].as_str().unwrap().contains("无法连接本机模式的 NextTodo"), "{reply}");
 
     // And it is back.
     std::fs::rename(file.with_extension("away"), &file).unwrap();

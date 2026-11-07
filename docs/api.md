@@ -52,7 +52,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 // 依赖
 { "before": "<前置 id>", "after": "<后续 id>", "created_at": … }
 // AI 整理请求
-{ "id": "…", "folder_id": "…", "text": "…", "local_time": "2026-11-04 16:30 星期三", "state": "failed", "error": "接口返回 401：…",
+{ "id": "…", "folder_id": "…", "text": "…", "local_time": "2026-11-04 16:30 星期三", "state": "failed", "error": "API 密钥无效（接口返回 401：…）",
   "created_at": …, "updated_at": … }
 // 用户
 { "id": "…", "username": "alice", "display_name": "Alice", "is_admin": true }

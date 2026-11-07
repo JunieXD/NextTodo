@@ -518,6 +518,6 @@ pub async fn run(
     auth.require_device()?;
     let id = Uuid::parse_str(&id).ok().and_then(|u| AiJobId::try_from(u).ok()).ok_or_else(|| ApiError::not_found("AI 整理请求不存在"))?;
     let config = checked(config)?;
-    let turn = st.ai.claim(&auth.user_id).ok_or_else(|| ApiError::conflict("正在整理另一条请求，稍后再试"))?;
+    let turn = st.ai.claim(&auth.user_id).ok_or_else(|| ApiError::conflict("正在整理另一条请求，请稍后重试"))?;
     if start(&st, turn, id, config).await? { Ok(StatusCode::ACCEPTED) } else { Err(ApiError::conflict("这条请求不在等待整理")) }
 }

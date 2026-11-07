@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
+use nexttodo_server::error::for_user;
 use serde::Serialize;
 
 /// Where the command line stands. On macOS its place may hold another one: `by` says what, and
@@ -22,7 +23,7 @@ pub enum Status {
 /// Next to the app's own executable: where `externalBin` puts it on macOS, and the directory of it
 /// that `resources` makes on Windows.
 fn carried(name: &str) -> Result<PathBuf, String> {
-    Ok(std::env::current_exe().map_err(|e| e.to_string())?.with_file_name(name))
+    Ok(std::env::current_exe().map_err(|e| for_user("查找命令行", &e))?.with_file_name(name))
 }
 
 #[tauri::command]
@@ -33,12 +34,13 @@ pub fn cli_status() -> Result<Status, String> {
 #[tauri::command]
 pub async fn install_cli(replace: bool) -> Result<(), String> {
     // Waits on the system's password dialog on macOS: off the thread that runs the app.
-    tauri::async_runtime::spawn_blocking(move || platform::install(replace)).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || platform::install(replace)).await.map_err(|e| for_user("安装命令行", &e))?
 }
 
-/// What went wrong, from a command's standard error.
+/// What to tell the user when a command failed: what it said goes to the log.
 fn failed(output: &Output) -> String {
-    format!("安装失败：{}", String::from_utf8_lossy(&output.stderr).trim())
+    tracing::warn!("安装命令行：{}", String::from_utf8_lossy(&output.stderr).trim());
+    "安装命令行失败，请稍后重试".into()
 }
 
 #[cfg(target_os = "macos")]
@@ -57,10 +59,10 @@ mod platform {
 
     pub fn status() -> Result<Status, String> {
         let link = match std::fs::symlink_metadata(LINK) {
-            Ok(m) if m.is_symlink() => std::fs::read_link(LINK).map_err(|e| e.to_string())?,
+            Ok(m) if m.is_symlink() => std::fs::read_link(LINK).map_err(|e| for_user("读取命令行的状态", &e))?,
             Ok(_) => return Ok(Status::Taken { by: "是一个文件".into() }),
             Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Status::Missing),
-            Err(e) => return Err(e.to_string()),
+            Err(e) => return Err(for_user("读取命令行的状态", &e)),
         };
         Ok(match link == carried("nexttodo")? {
             true => Status::Installed,
@@ -79,7 +81,7 @@ mod platform {
         if carried.to_string_lossy().contains("/AppTranslocation/") {
             return Err("请先把 NextTodo 移到“应用程序”文件夹，再安装命令行".into());
         }
-        let run = |command: &mut Command| command.arg(&carried).output().map_err(|e| e.to_string());
+        let run = |command: &mut Command| command.arg(&carried).output().map_err(|e| for_user("安装命令行", &e));
         if run(Command::new("/bin/sh").args(["-c", SCRIPT, "sh"]))?.status.success() {
             return Ok(());
         }
@@ -125,7 +127,7 @@ if ($dirs -notcontains $env:NEXTTODO_BIN) {
             Ok(path) => path,
             // ERROR_FILE_NOT_FOUND: no PATH of the user's own yet.
             Err(e) if e.code().0 as u32 == 0x8007_0002 => String::new(),
-            Err(e) => return Err(e.to_string()),
+            Err(e) => return Err(for_user("读取命令行的状态", &e)),
         };
         let on = path.split(';').any(|dir| dir.trim_end_matches('\\').eq_ignore_ascii_case(&bin.to_string_lossy()));
         Ok(if on { Status::Installed } else { Status::Missing })
@@ -140,7 +142,7 @@ if ($dirs -notcontains $env:NEXTTODO_BIN) {
             .env("NEXTTODO_BIN", carried("bin")?)
             .creation_flags(CREATE_NO_WINDOW)
             .output()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| for_user("安装命令行", &e))?;
         if output.status.success() { Ok(()) } else { Err(failed(&output)) }
     }
 }

@@ -10,6 +10,7 @@ use anyhow::Context;
 use jni::objects::{JClass, JString};
 use jni::{Env, EnvUnowned};
 use nexttodo_server::backup;
+use nexttodo_server::error::for_user;
 use nexttodo_server::local::{Local, StartError};
 use serde_json::json;
 
@@ -20,12 +21,13 @@ static RUNTIME: LazyLock<tokio::runtime::Runtime> =
 /// The server once started, until the process ends.
 static SERVER: Mutex<Option<Local>> = Mutex::new(None);
 
-/// Runs a native method: an error becomes a Java exception with its message, a panic one of its own.
-fn run<'a, T: Default>(mut env: EnvUnowned<'a>, f: impl FnOnce(&mut Env<'a>) -> anyhow::Result<T>) -> T {
+/// Runs the native method that does `what`: an error becomes a Java exception with what to tell the
+/// user (`error::for_user`), a panic one of its own.
+fn run<'a, T: Default>(mut env: EnvUnowned<'a>, what: &str, f: impl FnOnce(&mut Env<'a>) -> anyhow::Result<T>) -> T {
     env.with_env(|env| -> jni::errors::Result<T> {
         f(env).or_else(|e| {
             // Throwing gives `Err(JavaException)`, which is what is wanted: the exception goes up.
-            let _ = env.throw(format!("{e:#}"));
+            let _ = env.throw(for_user(what, e.as_ref()));
             Ok(T::default())
         })
     })
@@ -46,7 +48,7 @@ fn running<T>(f: impl FnOnce(&Local) -> anyhow::Result<T>) -> anyhow::Result<T> 
 #[allow(unsafe_code, reason = "JNI finds a native method by its unmangled name")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_cn_juniexd_nexttodo_LocalServer_start<'a>(env: EnvUnowned<'a>, _: JClass<'a>, dir: JString<'a>) -> JString<'a> {
-    run(env, |env| {
+    run(env, "启动本机模式", |env| {
         // As the app's own, tagged NextTodo; at the level a server logs at.
         android_logger::init_once(Config::default().with_tag("NextTodo").with_max_level(log::LevelFilter::Info));
         let dir = path(env, &dir)?;
@@ -60,7 +62,7 @@ pub extern "system" fn Java_cn_juniexd_nexttodo_LocalServer_start<'a>(env: EnvUn
                 let local = server.insert(local);
                 json!({ "url": local.url, "user": local.user, "epoch": local.epoch })
             }
-            Err(e) => json!({ "error": e.to_string(), "locked": matches!(e, StartError::Locked) }),
+            Err(e) => json!({ "error": e.for_user(), "locked": matches!(e, StartError::Locked) }),
         };
         Ok(JString::from_str(env, reply.to_string())?)
     })
@@ -70,7 +72,7 @@ pub extern "system" fn Java_cn_juniexd_nexttodo_LocalServer_start<'a>(env: EnvUn
 #[allow(unsafe_code, reason = "JNI finds a native method by its unmangled name")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_cn_juniexd_nexttodo_LocalServer_session<'a>(env: EnvUnowned<'a>, _: JClass<'a>) -> JString<'a> {
-    run(env, |env| {
+    run(env, "登录本机模式", |env| {
         let token = running(|local| Ok(RUNTIME.block_on(local.session())?))?;
         Ok(JString::from_str(env, token)?)
     })
@@ -80,9 +82,9 @@ pub extern "system" fn Java_cn_juniexd_nexttodo_LocalServer_session<'a>(env: Env
 #[allow(unsafe_code, reason = "JNI finds a native method by its unmangled name")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_cn_juniexd_nexttodo_LocalServer_backup<'a>(env: EnvUnowned<'a>, _: JClass<'a>, to: JString<'a>) {
-    run(env, |env| {
+    run(env, "备份", |env| {
         let to = path(env, &to)?;
-        running(|local| RUNTIME.block_on(local.backup(to)).context("备份失败"))
+        running(|local| RUNTIME.block_on(local.backup(to)))
     })
 }
 
@@ -96,12 +98,12 @@ pub extern "system" fn Java_cn_juniexd_nexttodo_LocalServer_prepare<'a>(
     dir: JString<'a>,
     from: JString<'a>,
 ) {
-    run(env, |env| backup::prepare(&path(env, &dir)?, &path(env, &from)?))
+    run(env, "读取备份", |env| backup::prepare(&path(env, &dir)?, &path(env, &from)?))
 }
 
 /// The user's go-ahead: the backup prepared replaces the data in `dir` when the app starts next.
 #[allow(unsafe_code, reason = "JNI finds a native method by its unmangled name")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_cn_juniexd_nexttodo_LocalServer_commit<'a>(env: EnvUnowned<'a>, _: JClass<'a>, dir: JString<'a>) {
-    run(env, |env| backup::commit(&path(env, &dir)?).context("恢复失败"))
+    run(env, "恢复", |env| backup::commit(&path(env, &dir)?))
 }

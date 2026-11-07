@@ -30,7 +30,7 @@ class NextTodoApp : Application() {
     private fun processName(): String =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) Application.getProcessName() else File("/proc/self/cmdline").readText().substringBefore('\u0000')
 
-    private companion object {
+    companion object {
         const val TAG = "NextTodo"
     }
 }

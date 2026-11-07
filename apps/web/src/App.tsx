@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import * as local from "./local";
 import { Session } from "./session";
 import { Root } from "./ui/Root";
+import { forUser } from "./ui/feedback";
 import { started } from "./updates";
 import { Login, StartFailedPage } from "./views/Login";
 import { Main } from "./views/Main";
@@ -18,7 +19,7 @@ const resume = () => (local.inLocalMode() ? local.resume() : Session.resume());
 const outcome = (opening: Promise<Session | null>): Promise<State> =>
   opening.then(
     (session) => (session ? { kind: "in", session } : { kind: "out" }),
-    (e: Error) => (e instanceof local.StartFailed ? { kind: "failed", error: e } : { kind: "out", notice: e.message }),
+    (e: Error) => (e instanceof local.StartFailed ? { kind: "failed", error: e } : { kind: "out", notice: forUser("读取登录信息", e) }),
   );
 
 // Started once, outside React, so that development's double effects do not open two sessions.

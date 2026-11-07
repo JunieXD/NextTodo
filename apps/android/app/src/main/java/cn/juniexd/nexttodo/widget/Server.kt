@@ -63,7 +63,7 @@ object Server {
             c.outputStream.use { it.write(body.toString().toByteArray()) }
             if (c.responseCode !in 200..299) {
                 val error = c.errorStream?.bufferedReader()?.use { it.readText() }
-                throw HttpError(c.responseCode, error?.let { runCatching { JSONObject(it).getString("message") }.getOrNull() } ?: "服务器错误（${c.responseCode}）")
+                throw HttpError(c.responseCode, error?.let { runCatching { JSONObject(it).getString("message") }.getOrNull() } ?: "服务器错误（${c.responseCode}），请稍后重试")
             }
             c.inputStream.bufferedReader().use { it.readText() }
         } finally {

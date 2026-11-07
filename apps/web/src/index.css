@@ -167,6 +167,8 @@ svg { display: block; flex: none; }
 /* One line each, as in task rows: dragging takes the rows of a list to be as tall as each other. */
 .folder-main > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .folder-sub { font-size: 13px; color: var(--on-surface-variant); }
+/* Unless it says what to do, to be read in full: why updates failed, say. */
+.folder-main > .folder-sub.full { white-space: normal; }
 .chev { color: var(--outline); }
 .done-toggle .row-inner { color: var(--on-surface-variant); font-size: 15px; min-height: 48px; }
 .done-toggle .chev { transition: transform .2s; margin-left: auto; }
@@ -467,6 +469,8 @@ svg { display: block; flex: none; }
 .login-brand .brand-mark { width: 56px; height: 56px; }
 .login-brand h1 { margin: 0; font-size: 28px; font-weight: 700; }
 .login-brand p { margin: 0; color: var(--on-surface-variant); font-size: 15px; }
+.error-details { margin-top: 16px; color: var(--on-surface-variant); font-size: 13px; overflow-wrap: anywhere; }
+.error-details summary { cursor: pointer; }
 .login .seg { margin: 0 16px 18px; }
 .login .filled-btn { display: flex; width: calc(100% - 32px); height: 48px; border-radius: 24px; margin: 8px 16px 0; font-size: 15px; }
 .login-local { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 16px 16px 0; text-align: center; }

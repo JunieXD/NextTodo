@@ -7,7 +7,7 @@ import { app } from "../api/http";
 import type { LogEntry } from "../api/types/LogEntry";
 import type { Board } from "../domain/board";
 import { type Session, SessionContext, useSession, useUndo } from "../session";
-import { useFeedback } from "../ui/feedback";
+import { forUser, useFeedback } from "../ui/feedback";
 import { useWide } from "../ui/hooks";
 import { Root } from "../ui/Root";
 import { EVERY_MS, check, install, restart, usePending } from "../updates";
@@ -72,7 +72,7 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
       signedOut: () => onSignedOut("登录已失效，请重新登录"),
       rejected: (_, e) => snack(`保存失败：${e.message}`),
       unsaved: () => snack("无法保存到本机，关闭页面前请保持联网"),
-      appFailed: (e) => snack(`${app === "android" ? "提醒和小组件" : "提醒"}更新失败：${e instanceof Error ? e.message : String(e)}`),
+      appFailed: (e) => snack(forUser(app === "android" ? "更新提醒和小组件" : "更新提醒", e)),
       arrived(entries) {
         // Not a job starting or failing: its row shows that.
         const told = (e: LogEntry) => e.effects.some((x) => !(x.kind === "ai_job" && x.before && x.after));
@@ -104,7 +104,7 @@ function Updates() {
     };
   }, []);
   useEffect(() => {
-    if (pending?.kind === "apk") snack({ text: `NextTodo ${pending.version} 可以安装了`, action: "安装", onAction: () => void install(pending.url, snack), ms: 8000 });
+    if (pending?.kind === "apk") snack({ text: `NextTodo ${pending.version} 可以安装`, action: "安装", onAction: () => void install(pending.url, snack), ms: 8000 });
     if (pending?.kind === "restart") snack({ text: "新版本已准备好，重启后生效", action: "重启", onAction: () => void restart(snack), ms: 8000 });
   }, [pending, snack]);
   return null;
@@ -114,7 +114,7 @@ function Updates() {
 function describe(entry: LogEntry, board: Board): string {
   const tasks = entry.effects.filter((e) => e.kind === "task");
   const created = tasks.filter((e) => !e.before).map((e) => e.after!);
-  if (entry.actor === AI_ACTOR && created.length) return `AI 整理好了，添加了 ${created.length} 项`;
+  if (entry.actor === AI_ACTOR && created.length) return `AI 整理完成，添加了 ${created.length} 项`;
   if (created.length && created.length === tasks.length) {
     const folders = new Set(created.map((t) => t.folder_id));
     const [only] = folders;

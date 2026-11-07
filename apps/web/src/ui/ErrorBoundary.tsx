@@ -16,12 +16,16 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
         <div className="login-card">
           <div className="login-brand">
             <h1>页面出错</h1>
-            <p>{this.state.error.message}</p>
             <p>本机数据未受影响，重新加载即可继续。</p>
           </div>
           <button className="filled-btn" onClick={() => location.reload()}>
             重新加载
           </button>
+          {/* For telling the developer: it means little to the user. */}
+          <details className="error-details">
+            <summary>错误详情</summary>
+            {this.state.error.message}
+          </details>
         </div>
       </div>
     );

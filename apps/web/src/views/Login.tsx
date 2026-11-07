@@ -6,7 +6,7 @@ import type { User } from "../api/types/User";
 import * as local from "../local";
 import type { Session } from "../session";
 import { Seg } from "../ui/controls";
-import { useFeedback } from "../ui/feedback";
+import { forUser, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
 import { Icon } from "../ui/icons";
 
@@ -54,7 +54,7 @@ export function Login({
       });
     } catch (e) {
       // Saving on this device can fail too, say in a private window.
-      setError(e instanceof ApiError ? { message: e.message, field: e.field } : { message: `登录失败：${e}` });
+      setError(e instanceof ApiError ? { message: e.message, field: e.field } : { message: forUser(mode === "login" ? "登录" : "注册", e) });
       setBusy(false);
     }
   };
@@ -68,7 +68,7 @@ export function Login({
       );
       if (session) return onLocal(session);
     } catch (e) {
-      setError({ message: e instanceof Error ? e.message : String(e) });
+      setError({ message: forUser("进入本机模式", e) });
     }
     setBusy(false);
   };
@@ -164,11 +164,11 @@ export function StartFailedPage({ error, onRetry, onServer }: { error: local.Sta
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState("");
   const { confirm } = useFeedback();
-  const act = (f: () => Promise<void>) => () => {
+  const act = (what: string, f: () => Promise<void>) => () => {
     setBusy(true);
     setFailed("");
     void f()
-      .catch((e) => setFailed(e instanceof Error ? e.message : String(e)))
+      .catch((e) => setFailed(forUser(what, e)))
       .finally(() => setBusy(false));
   };
   const restore = () => local.restore((body) => confirm({ title: "用备份替换这台设备上的全部数据？", body, ok: "恢复", danger: true }));
@@ -176,18 +176,18 @@ export function StartFailedPage({ error, onRetry, onServer }: { error: local.Sta
     <div className="login" data-tauri-drag-region="deep">
       <div className="login-card">
         <Brand />
-        <p className="form-error">本机模式无法启动：{error.message}</p>
+        <p className="form-error">{error.message}</p>
         {failed && <p className="form-error">{failed}</p>}
         {error.locked && (
-          <button className="filled-btn" disabled={busy} onClick={act(onRetry)}>
+          <button className="filled-btn" disabled={busy} onClick={act("启动本机模式", onRetry)}>
             重试
           </button>
         )}
         <div className="login-local">
-          <button className="text-btn" disabled={busy} onClick={act(restore)}>
+          <button className="text-btn" disabled={busy} onClick={act("恢复备份", restore)}>
             恢复备份
           </button>
-          <button className="text-btn" disabled={busy} onClick={act(onServer)}>
+          <button className="text-btn" disabled={busy} onClick={act("改用服务器", onServer)}>
             改用服务器
           </button>
         </div>

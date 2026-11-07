@@ -145,7 +145,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
         }
         let t = &sent.task;
         let due = match s.due {
-            Some(d) => Some(Due::new(d.date, d.time, None).map_err(|m| format!("事项 #{} 的截止时间不对：{m}", s.number))?),
+            Some(d) => Some(Due::new(d.date, d.time, None).map_err(|m| format!("事项 #{} 的截止时间无效：{m}", s.number))?),
             None => None,
         };
         let mut after = Vec::new();
@@ -162,7 +162,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             after.push(b);
         }
         if edges.len() - shown.edges.len() > LINKS {
-            return Err(format!("建议加的前置太多，超过 {LINKS} 条，请缩小范围再试"));
+            return Err(format!("建议加的前置太多，超过 {LINKS} 条，请缩小范围后重试"));
         }
         let suggestion = Suggestion {
             task: t.id,
@@ -265,6 +265,6 @@ mod tests {
         // Each task after every one before it: 1225 links, a DAG still.
         let all: Vec<Value> = (2..=50).map(|n| json!({ "number": n, "after": (1..n).collect::<Vec<_>>(), "reason": "" })).collect();
         let err = parse(&json!({ "suggestions": all }).to_string(), &shown).err().unwrap();
-        assert_eq!(err, format!("建议加的前置太多，超过 {LINKS} 条，请缩小范围再试"));
+        assert!(err.contains(&LINKS.to_string()), "{err}");
     }
 }

@@ -29,14 +29,14 @@ private var cleared = false
 /** What the web app asks of Android beyond the stock plugins: see `apps/web/src/android.ts`. */
 @CapacitorPlugin(name = "NextTodo")
 class NextTodoPlugin : Plugin() {
-    /** Does `work` off the bridge's thread: resolves `call` with what it gives, or rejects it with its
-     * error, whose message is for the user. */
-    private fun work(call: PluginCall, work: suspend () -> JSObject) {
+    /** Does `work`, which is to `what`, off the bridge's thread: resolves `call` with what it gives, or
+     * rejects it with what to tell the user, and the kind of failure as its code (`forUser`, `kind`). */
+    private fun work(call: PluginCall, what: String, work: suspend () -> JSObject) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 call.resolve(work())
             } catch (e: Exception) {
-                call.reject(e.message, e)
+                call.reject(forUser(what, e), kind(e), e)
             }
         }
     }
@@ -46,7 +46,7 @@ class NextTodoPlugin : Plugin() {
         val tasks = call.getString("tasks")!!
         // Not `getLong`: that gives nothing for a number small enough to arrive as an Int.
         val seq = call.data.takeIf { it.has("seq") }?.getLong("seq")
-        work(call) {
+        work(call, "更新小组件") {
             Widget.show(context, tasks, seq)
             JSObject()
         }
@@ -77,7 +77,7 @@ class NextTodoPlugin : Plugin() {
     @PluginMethod
     fun updateWeb(call: PluginCall) {
         val server = call.getString("server")!!
-        work(call) { JSObject().put("staged", WebUpdate.update(context, server)) }
+        work(call, "下载新版本") { JSObject().put("staged", WebUpdate.update(context, server)) }
     }
 
     /** Downloads the APK at `url` and hands it to the system installer. Without the permission to
@@ -93,7 +93,7 @@ class NextTodoPlugin : Plugin() {
         }
         val url = call.getString("url")!!
         if (!installing.compareAndSet(false, true)) return call.resolve(JSObject().put("started", true))
-        work(call) {
+        work(call, "下载新版本") {
             try {
                 val dir = File(context.cacheDir, "update")
                 if (!cleared) {
@@ -125,18 +125,18 @@ class NextTodoPlugin : Plugin() {
             } catch (e: Local.StartFailed) {
                 call.reject(e.message, if (e.locked) "locked" else null)
             } catch (e: Exception) {
-                call.reject(e.message, e)
+                call.reject(forUser("打开本机模式", e), kind(e), e)
             }
         }
     }
 
     /** Starts local mode's server here, to enter it: the local user, whose data it has. */
     @PluginMethod
-    fun startLocal(call: PluginCall) = work(call) { JSObject().put("user", Local.start(context).getString("user")) }
+    fun startLocal(call: PluginCall) = work(call, "启动本机模式") { JSObject().put("user", Local.start(context).getString("user")) }
 
     /** Enters local mode, or leaves it, from the next start: see `restart`. */
     @PluginMethod
-    fun setLocalMode(call: PluginCall) = work(call) {
+    fun setLocalMode(call: PluginCall) = work(call, "切换本机模式") {
         Local.set(context, call.getBoolean("on")!!)
         JSObject()
     }
@@ -163,7 +163,7 @@ class NextTodoPlugin : Plugin() {
     private fun backupTo(call: PluginCall?, result: ActivityResult) {
         if (call == null) return
         val uri = result.data?.data ?: return call.resolve()
-        work(call) {
+        work(call, "备份") {
             val file = File.createTempFile("backup-", ".db", context.cacheDir)
             try {
                 Local.backup(file)
@@ -187,7 +187,7 @@ class NextTodoPlugin : Plugin() {
     private fun restoreFrom(call: PluginCall?, result: ActivityResult) {
         if (call == null) return
         val uri = result.data?.data ?: return call.resolve(JSObject().put("picked", false))
-        work(call) {
+        work(call, "读取备份") {
             val file = File.createTempFile("restore-", ".db", context.cacheDir)
             try {
                 context.contentResolver.openInputStream(uri)!!.use { input -> file.outputStream().use { input.copyTo(it) } }
@@ -201,7 +201,7 @@ class NextTodoPlugin : Plugin() {
 
     /** The user's go-ahead: the backup prepared replaces the data when the app starts next. */
     @PluginMethod
-    fun commitRestore(call: PluginCall) = work(call) {
+    fun commitRestore(call: PluginCall) = work(call, "恢复") {
         Local.commit(context)
         JSObject()
     }

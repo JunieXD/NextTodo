@@ -3,7 +3,7 @@
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { useEffect, useState } from "react";
 import { desktopOs } from "../api/http";
-import { useFeedback } from "../ui/feedback";
+import { forUser, useFeedback } from "../ui/feedback";
 
 const TRAY = desktopOs === "Windows" ? "系统托盘" : "菜单栏";
 
@@ -11,7 +11,7 @@ export function StartAtLogin() {
   const { snack } = useFeedback();
   const [on, setOn] = useState<boolean | null>(null);
   useEffect(() => {
-    isEnabled().then(setOn, (e) => snack(`读取开机自启设置失败：${e}`));
+    isEnabled().then(setOn, (e) => snack(forUser("读取开机自启设置", e)));
   }, [snack]);
   if (on === null) return null;
   const toggle = async () => {
@@ -19,7 +19,7 @@ export function StartAtLogin() {
       await (on ? disable() : enable());
       setOn(await isEnabled());
     } catch (e) {
-      snack(`${on ? "关闭" : "开启"}开机自启失败：${e}`);
+      snack(forUser(`${on ? "关闭" : "开启"}开机自启`, e));
     }
   };
   return (

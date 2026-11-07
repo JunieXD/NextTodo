@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 
 use nexttodo_server::backup;
+use nexttodo_server::error::for_user;
 use nexttodo_server::local::{Local, StartError};
 use serde::Serialize;
 use tauri::async_runtime::Mutex;
@@ -32,13 +33,13 @@ pub struct Failed {
 
 impl From<StartError> for Failed {
     fn from(e: StartError) -> Self {
-        Failed { locked: matches!(e, StartError::Locked), message: e.to_string() }
+        Failed { locked: matches!(e, StartError::Locked), message: e.for_user() }
     }
 }
 
 /// The data directory, `local/` in the app's.
 fn dir(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(app.path().app_data_dir().map_err(|e| e.to_string())?.join("local"))
+    Ok(app.path().app_data_dir().map_err(|e| for_user("查找 App 的数据目录", &e))?.join("local"))
 }
 
 /// The file that is there while the app is in local mode: writing or removing it is the switch. Not
@@ -48,7 +49,7 @@ const ENABLED: &str = "enabled";
 
 #[tauri::command]
 pub fn local_mode(app: AppHandle) -> Result<bool, String> {
-    dir(&app)?.join(ENABLED).try_exists().map_err(|e| e.to_string())
+    dir(&app)?.join(ENABLED).try_exists().map_err(|e| for_user("读取本机模式的设置", &e))
 }
 
 #[tauri::command]
@@ -61,7 +62,7 @@ pub fn set_local_mode(app: AppHandle, on: bool) -> Result<(), String> {
             done => done,
         },
     };
-    done.map_err(|e| format!("无法切换本机模式：{e}"))
+    done.map_err(|e| for_user("切换本机模式", &e))
 }
 
 /// Starts the server the first time, and signs the page in: each call a new session, the earlier
@@ -74,7 +75,7 @@ pub async fn start_local(app: AppHandle, server: State<'_, Server>) -> Result<St
         None => Local::start(&dir(&app).map_err(|message| Failed { message, locked: false })?).await?,
     };
     let local = running.insert(local);
-    let token = local.session().await.map_err(|e| Failed { message: e.to_string(), locked: false })?;
+    let token = local.session().await.map_err(|e| Failed { message: e.describe(), locked: false })?;
     Ok(Started { url: local.url.clone(), token, user: local.user.clone(), epoch: local.epoch.clone() })
 }
 
@@ -91,8 +92,8 @@ fn dialog(app: &AppHandle) -> FileDialogBuilder<tauri::Wry> {
 async fn ask(dialog: FileDialogBuilder<tauri::Wry>, save: bool) -> Result<Option<PathBuf>, String> {
     let chosen = tauri::async_runtime::spawn_blocking(move || if save { dialog.blocking_save_file() } else { dialog.blocking_pick_file() })
         .await
-        .map_err(|e| e.to_string())?;
-    chosen.map(|file| file.into_path().map_err(|e| e.to_string())).transpose()
+        .map_err(|e| for_user("选择文件", &e))?;
+    chosen.map(|file| file.into_path().map_err(|e| for_user("选择文件", &e))).transpose()
 }
 
 /// Asks where to save a backup, offering `name`, and writes it there. Where it went; nothing when the
@@ -102,7 +103,7 @@ pub async fn backup_local(app: AppHandle, server: State<'_, Server>, name: Strin
     let Some(to) = ask(dialog(&app).set_file_name(name), true).await? else { return Ok(None) };
     let running = server.0.lock().await;
     let local = running.as_ref().ok_or("本机模式没有在运行")?;
-    local.backup(to.clone()).await.map_err(|e| format!("备份失败：{e:#}"))?;
+    local.backup(to.clone()).await.map_err(|e| for_user("备份", e.as_ref()))?;
     Ok(Some(to.display().to_string()))
 }
 
@@ -114,13 +115,13 @@ pub async fn prepare_restore(app: AppHandle) -> Result<bool, String> {
     let dir = dir(&app)?;
     tauri::async_runtime::spawn_blocking(move || backup::prepare(&dir, &from))
         .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| format!("{e:#}"))?;
+        .map_err(|e| for_user("读取备份", &e))?
+        .map_err(|e| for_user("读取备份", e.as_ref()))?;
     Ok(true)
 }
 
 /// The user's go-ahead: the backup prepared replaces the data when the app starts next.
 #[tauri::command]
 pub fn commit_restore(app: AppHandle) -> Result<(), String> {
-    backup::commit(&dir(&app)?).map_err(|e| format!("恢复失败：{e:#}"))
+    backup::commit(&dir(&app)?).map_err(|e| for_user("恢复", e.as_ref()))
 }

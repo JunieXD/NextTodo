@@ -113,13 +113,13 @@ export async function api<T>(method: string, path: string, body?: unknown, timeo
     });
     text = await res.text();
   } catch {
-    throw new ApiError(0, OFFLINE, "无法连接服务器，请检查网络");
+    throw new ApiError(0, OFFLINE, "无法连接服务器，请检查网络后重试");
   }
   // 202 and 204 come without a body.
   if (res.ok) return (text ? JSON.parse(text) : undefined) as T;
   const error = parseError(text);
   const field = (error.details as { field?: string } | undefined)?.field;
-  throw new ApiError(res.status, error.code ?? "error", error.message ?? `服务器错误（${res.status}）`, field);
+  throw new ApiError(res.status, error.code ?? "error", error.message ?? `服务器错误（${res.status}），请稍后重试`, field);
 }
 
 /** The server's error, or nothing when a proxy in between answers with a page of its own. */

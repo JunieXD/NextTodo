@@ -4,12 +4,25 @@
 import { Dialog } from "radix-ui";
 import { X } from "lucide-react";
 import { type ReactNode, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ApiError } from "../api/http";
 import type { Checked } from "../domain/text";
 import { useBack } from "./back";
 import { Icon } from "./icons";
 import { useLeave } from "./leave";
 
 export const RootContext = createContext<HTMLElement | null>(null);
+
+/** What to tell the user of `e`, which made `what` fail, as docs/ui.md#文案 has it: that `what` failed,
+ * then the server's reason; a message of the app's native part or of this page, written for the user
+ * in Chinese as all such are, says it all. Others go to the console, where they help: to the user
+ * they mean little. */
+export function forUser(what: string, e: unknown): string {
+  if (e instanceof ApiError) return `${what}失败：${e.message}`;
+  const message = typeof e === "string" ? e : (e as { message?: unknown } | null)?.message;
+  if (typeof message === "string" && /[\u4e00-\u9fff]/.test(message)) return message;
+  console.warn(what, e);
+  return `${what}失败，请稍后重试`;
+}
 
 interface Snack {
   text: string;

@@ -119,7 +119,7 @@ NEXTTODO_HOST=myserver NEXTTODO_DIR=/srv/nexttodo NEXTTODO_PORT=8080 deploy/depl
 | `deploy/deploy.sh` | 见[用部署脚本](#用部署脚本) |
 
 - 三个脚本都要求工作区干净，版本说明文件放在仓库外面。
-- 安装包的文件名带版本号：`NextTodo-<版本号>-android.apk`、`NextTodo-<版本号>-macos-arm64.dmg`、`NextTodo-<版本号>-windows-x64-setup.exe`。
+- 安装包和命令行的文件名不带版本号（`NextTodo-android.apk`、`NextTodo-macos-arm64.dmg`、`NextTodo-windows-x64-setup.exe`、`nexttodo-<平台>`），`https://github.com/JunieXD/NextTodo/releases/latest/download/<文件名>` 总是下载最新版，官网、README 和 App 都用这个地址。
 
 ## 官网
 

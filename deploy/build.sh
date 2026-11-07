@@ -81,21 +81,21 @@ jq -n --arg version "$version" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg
     "windows-x86_64": {signature: $windows, url: "NextTodo-setup.exe"}
   }}' > "$app/desktop.json"
 
-cp "$apk" "$assets/NextTodo-$version-android.apk"
-cp "$bundle/dmg/NextTodo_${version}_aarch64.dmg" "$assets/NextTodo-$version-macos-arm64.dmg"
-cp "$windows" "$assets/NextTodo-$version-windows-x64-setup.exe"
+# Without the version in their names, so that `releases/latest/download/<name>` always finds them.
+cp "$apk" "$assets/NextTodo-android.apk"
+cp "$bundle/dmg/NextTodo_${version}_aarch64.dmg" "$assets/NextTodo-macos-arm64.dmg"
+cp "$windows" "$assets/NextTodo-windows-x64-setup.exe"
+cp target/release/nexttodo "$assets/nexttodo-macos-arm64"
+cp target/x86_64-unknown-linux-musl/release/nexttodo "$assets/nexttodo-linux-x64"
+cp target/aarch64-unknown-linux-musl/release/nexttodo "$assets/nexttodo-linux-arm64"
+cp target/x86_64-pc-windows-msvc/release/nexttodo.exe "$assets/nexttodo-windows-x64.exe"
 # The same updates for the apps in local mode, which take the manifests from the latest release
 # (docs/local.md#更新): their downloads named in full, in this release, so that a manifest never
 # points into another one.
 release=https://github.com/JunieXD/NextTodo/releases/download/v$version
 cp "$bundle/macos/NextTodo.app.tar.gz" "$assets/"
-jq --arg url "$release/NextTodo-$version-android.apk" '.url = $url' "$app/android.json" > "$assets/android.json"
-jq --arg mac "$release/NextTodo.app.tar.gz" --arg windows "$release/NextTodo-$version-windows-x64-setup.exe" \
+jq --arg url "$release/NextTodo-android.apk" '.url = $url' "$app/android.json" > "$assets/android.json"
+jq --arg mac "$release/NextTodo.app.tar.gz" --arg windows "$release/NextTodo-windows-x64-setup.exe" \
   '.platforms["darwin-aarch64"].url = $mac | .platforms["windows-x86_64"].url = $windows' "$app/desktop.json" > "$assets/desktop.json"
-# Without the version in their names, so that `releases/latest/download/<name>` always finds them.
-cp target/release/nexttodo "$assets/nexttodo-macos-arm64"
-cp target/x86_64-unknown-linux-musl/release/nexttodo "$assets/nexttodo-linux-x64"
-cp target/aarch64-unknown-linux-musl/release/nexttodo "$assets/nexttodo-linux-arm64"
-cp target/x86_64-pc-windows-msvc/release/nexttodo.exe "$assets/nexttodo-windows-x64.exe"
 (cd "$assets" && shasum -a 256 NextTodo-* nexttodo-* > SHA256SUMS)
 echo "已构建 NextTodo $version：$stage、$assets"

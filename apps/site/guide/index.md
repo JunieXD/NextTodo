@@ -2,13 +2,13 @@
 
 ## 1. 安装 App
 
-到 [GitHub Releases](https://github.com/JunieXD/NextTodo/releases/latest) 下载对应平台的安装包：
+下载对应平台的安装包，都是最新版：
 
-| 平台 | 文件 | 要求 |
+| 平台 | 下载 | 要求 |
 |---|---|---|
-| Android | `NextTodo-<版本>-android.apk` | Android 8.0 及以上 |
-| macOS | `NextTodo-<版本>-macos-arm64.dmg` | Apple 芯片，macOS 14 及以上 |
-| Windows | `NextTodo-<版本>-windows-x64-setup.exe` | Windows 10 或 11，x64 |
+| Android | [NextTodo-android.apk](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-android.apk) | Android 8.0 及以上 |
+| macOS | [NextTodo-macos-arm64.dmg](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-macos-arm64.dmg) | Apple 芯片，macOS 14 及以上 |
+| Windows | [NextTodo-windows-x64-setup.exe](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-windows-x64-setup.exe) | Windows 10 或 11，x64 |
 
 macOS 和 Windows 的安装包没有经过商业签名，首次打开时系统会提示：
 

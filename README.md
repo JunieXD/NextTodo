@@ -52,11 +52,11 @@ App 可以只在本机使用，不需要服务器和账号；也可以连接自�
 
 ### 1. 安装 App
 
-| 平台 | 获取方式 | 要求 |
+| 平台 | 下载 | 要求 |
 |---|---|---|
-| Android | [下载](https://github.com/JunieXD/NextTodo/releases/latest) `NextTodo-<版本>-android.apk` | Android 8.0 及以上 |
-| macOS | [下载](https://github.com/JunieXD/NextTodo/releases/latest) `NextTodo-<版本>-macos-arm64.dmg` | Apple 芯片，macOS 14 及以上 |
-| Windows | [下载](https://github.com/JunieXD/NextTodo/releases/latest) `NextTodo-<版本>-windows-x64-setup.exe` | Windows 10 或 11，x64 |
+| Android | [NextTodo-android.apk](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-android.apk) | Android 8.0 及以上 |
+| macOS | [NextTodo-macos-arm64.dmg](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-macos-arm64.dmg) | Apple 芯片，macOS 14 及以上 |
+| Windows | [NextTodo-windows-x64-setup.exe](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-windows-x64-setup.exe) | Windows 10 或 11，x64 |
 | 网页 | 用浏览器打开服务器的域名，可以安装为 PWA | 需要先部署服务端 |
 
 macOS 和 Windows 的安装包没有经过商业签名。macOS 首次打开会被拦下，到“系统设置 → 隐私与安全性”中点击“仍要打开”；Windows 出现 SmartScreen 提示时，点击“更多信息 → 仍要运行”。

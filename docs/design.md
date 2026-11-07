@@ -218,6 +218,7 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 | 前端 `apps/web` | React、Vite、TypeScript、Tailwind CSS、Radix、React Flow + elkjs、react-markdown + remark-gfm、vite-plugin-pwa、Lucide（图标）；动效用 CSS 动画 |
 | Android `apps/android` | Capacitor，小组件用 Kotlin + Jetpack Glance |
 | 桌面 `apps/desktop` | Tauri 2（macOS、Windows） |
+| 官网 `apps/site` | VitePress，发布到 GitHub Pages，见[官网](deploy.md#官网) |
 | 类型共享 | ts-rs 从 Rust 类型生成 TypeScript 类型 |
 
 - 前端离线时需要自己计算派生状态和排序，所以这部分算法在 TypeScript 里也实现一份，和 Rust 版用同一套测试数据校验。

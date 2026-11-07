@@ -120,3 +120,15 @@ NEXTTODO_HOST=myserver NEXTTODO_DIR=/srv/nexttodo NEXTTODO_PORT=8080 deploy/depl
 
 - 三个脚本都要求工作区干净，版本说明文件放在仓库外面。
 - 安装包的文件名带版本号：`NextTodo-<版本号>-android.apk`、`NextTodo-<版本号>-macos-arm64.dmg`、`NextTodo-<版本号>-windows-x64-setup.exe`。
+
+## 官网
+
+官网 <https://juniexd.github.io/NextTodo/> 面向用户，介绍 NextTodo 并讲解怎么用；仓库的 `docs/` 是开发文档，官网用到其中的细节时链接过去。源码在 `apps/site`，用 VitePress 构建。
+
+| 命令 | 做什么 |
+|---|---|
+| `cd apps/site && pnpm dev` | 本地预览 |
+| `deploy/site.sh` | 发布：在本地构建，把构建结果作为一个提交推到 `gh-pages` 分支，GitHub Pages 从这个分支的根目录提供网页 |
+
+- 不用 GitHub Actions 构建。发布要求工作区干净；和上次发布的内容相同时不提交。
+- 截图用 `docs/images` 里的，和 README 共用一份。

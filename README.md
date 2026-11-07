@@ -3,6 +3,7 @@
   <h1>NextTodo</h1>
   <p><strong>理清先后，专注当下</strong></p>
   <p>以先后关系为核心的待办应用，可在本机使用，也可自行部署、多端同步</p>
+  <p><a href="https://juniexd.github.io/NextTodo/">官网</a> · <a href="https://juniexd.github.io/NextTodo/guide/">快速上手</a> · <a href="https://github.com/JunieXD/NextTodo/releases/latest">下载</a></p>
   <p>
     <a href="https://github.com/JunieXD/NextTodo/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/JunieXD/NextTodo?label=%E7%89%88%E6%9C%AC&color=2E8E6C"></a>
     <a href="LICENSE"><img alt="MIT 许可证" src="https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-2E8E6C"></a>
@@ -79,7 +80,7 @@ docker compose up -d
 docker compose exec nexttodo /nexttodo-server create-admin <用户名>
 ```
 
-服务端默认监听 `127.0.0.1:8080`，前面需要一个提供 HTTPS 的反向代理。反向代理的配置、升级和备份见[部署文档](docs/deploy.md)。其他人凭你在设置里生成的邀请码注册。
+服务端默认监听 `127.0.0.1:8080`，前面需要一个提供 HTTPS 的反向代理。反向代理的配置、升级和备份见[部署文档](docs/deploy.md)。其他人凭邀请码注册，邀请码由管理员在设置的“邀请注册”里生成。
 
 ### 4. 接入 agent
 
@@ -108,6 +109,7 @@ docker compose exec nexttodo /nexttodo-server create-admin <用户名>
 | 安装命令行 `nexttodo` | `cargo install --path crates/cli` |
 | 命令行连开发版 | `nexttodo login --url http://127.0.0.1:8080` |
 | 构建发布（服务端镜像内容和各端安装包） | `deploy/build.sh` |
+| 官网本地预览 | `cd apps/site && pnpm dev` |
 
 Android 和桌面 App 的构建见 [Android](docs/android.md#构建和签名) 和[桌面 App](docs/desktop.md#构建)，发布流程见[部署](docs/deploy.md#构建发布)。参与开发前请先读 [AGENTS.md](AGENTS.md)。
 
@@ -125,7 +127,7 @@ Android 和桌面 App 的构建见 [Android](docs/android.md#构建和签名) �
 | [网页端](docs/web.md) | 前端结构、本地数据和同步 |
 | [Android](docs/android.md) | Android App 和小组件 |
 | [桌面 App](docs/desktop.md) | macOS 和 Windows App |
-| [部署](docs/deploy.md) | 自己部署、升级、备份和构建发布 |
+| [部署](docs/deploy.md) | 自己部署、升级、备份、构建发布和官网 |
 
 ## 许可证
 

@@ -132,3 +132,4 @@ NEXTTODO_HOST=myserver NEXTTODO_DIR=/srv/nexttodo NEXTTODO_PORT=8080 deploy/depl
 
 - 不用 GitHub Actions 构建。发布要求工作区干净；和上次发布的内容相同时不提交。
 - 截图用 `docs/images` 里的，和 README 共用一份。
+- 站内搜索用浏览器的 `Intl.Segmenter` 把中文切成词（Chrome 87、Safari 14.1、Firefox 125 起），更早的浏览器里只有搜索用不了。

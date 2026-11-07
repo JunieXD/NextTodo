@@ -15,7 +15,9 @@ touch "$dist/.nojekyll"
 
 git fetch --quiet origin
 parent=$(git rev-parse --quiet --verify origin/gh-pages || true)
-index=$(mktemp -d)/index
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+index=$tmp/index
 GIT_INDEX_FILE=$index GIT_WORK_TREE=$dist git add --all
 tree=$(GIT_INDEX_FILE=$index git write-tree)
 if [[ -n $parent && $tree == $(git rev-parse "$parent^{tree}") ]]; then

@@ -61,16 +61,17 @@
 | | macOS | Windows |
 |---|---|---|
 | 在安装包里 | `NextTodo.app/Contents/MacOS/nexttodo`（Tauri 的 `externalBin`） | 安装目录下的 `bin\nexttodo.exe`（`resources`）。单独一个目录，加进 PATH 的只有它 |
-| 安装 | 在 `/usr/local/bin` 建指向它的符号链接；没有写权限时，由系统弹窗要管理员密码 | 把 `bin` 目录加进当前用户的 PATH |
+| 安装 | 在 `/usr/local/bin` 建指向它的符号链接；没有写权限时，由系统弹窗要管理员密码 | 把 `bin` 目录加到当前用户的 PATH 最前面 |
 | 已安装 | 链接存在，并指向这个 App 里的命令行 | 当前用户的 PATH 里有这个目录 |
 | App 更新后 | 链接指向的文件随 App 一起换成新版本 | 安装程序先把旧文件改名，再写入新文件 |
 
 - macOS：
   - 从浏览器下载的 App 带隔离属性，从终端运行其中的命令行时，系统会弹出无法验证开发者的对话框并拦下它。安装时一并去掉整个 App 的隔离属性：用户已经同意打开这个 App。App 自己下载的更新不带隔离属性。
   - 直接从下载的磁盘映像或“下载”文件夹打开时，系统把 App 放在随机的只读路径里运行（App Translocation），链接会失效。这时提示“请先把 NextTodo 移到“应用程序”文件夹”。
+  - shell 的 PATH 由用户自己的配置决定，别的目录里的 `nexttodo`（比如 `cargo install` 装的）可能排在前面。App 管不到这一点，[教程](https://juniexd.github.io/NextTodo/guide/agent#cli)里教用户用 `which -a nexttodo` 检查。
   - `/usr/local/bin/nexttodo` 已经是别的文件，或指向别处的链接（比如自己装的命令行，或移动位置前的这个 App）时，显示“已有另一个 nexttodo”，按钮是“替换”，确认后才覆盖。
 - Windows：
-  - PATH 由 PowerShell 写入：读出注册表里的原值（不展开 `%变量%`），加上目录后按 `REG_EXPAND_SZ` 写回，再像系统设置那样向所有窗口广播 `WM_SETTINGCHANGE`，之后新打开的终端就能用。外壳禁止 `unsafe`，所以由 PowerShell 调用这个 Win32 API。脚本用 `-EncodedCommand` 传入，不受命令行引号转义的影响；出错即停，报告失败。
+  - PATH 由 PowerShell 写入：读出注册表里的原值（不展开 `%变量%`），把目录加在最前面，排在用户以别的方式装的命令行之前，再按 `REG_EXPAND_SZ` 写回，再像系统设置那样向所有窗口广播 `WM_SETTINGCHANGE`，之后新打开的终端就能用。外壳禁止 `unsafe`，所以由 PowerShell 调用这个 Win32 API。脚本用 `-EncodedCommand` 传入，不受命令行引号转义的影响；出错即停，报告失败。
   - 运行中的 `nexttodo mcp` 会占住命令行文件，安装程序不能覆盖它，但可以改名。安装程序的钩子（`src-tauri/windows/hooks.nsh`）在写入前把它改成临时文件名，并删掉以前留下的、已经没有程序占用的旧文件。
   - 卸载 App 时不改 PATH，留下的目录已不存在，不影响使用。
 

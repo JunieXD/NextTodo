@@ -45,10 +45,10 @@ NextTodo 现在只在服务器内部的 8080 端口上运行，外面还访问�
 
 ## 3. 创建账号并登录
 
-回到 `nexttodo` 目录，创建管理员账号，按提示输入两次密码：
+回到 `nexttodo` 目录，创建管理员账号。下面的 `admin` 是用户名，可以换成自己想用的（字母、数字和下划线），然后按提示输入两次密码：
 
 ```sh
-docker compose exec nexttodo /nexttodo-server create-admin <用户名>
+docker compose exec nexttodo /nexttodo-server create-admin admin
 ```
 
 然后在 App 里点“连接服务器”，服务器地址填域名（如 `todo.example.com`），再填用户名和密码登录。浏览器里打开域名就是网页版。

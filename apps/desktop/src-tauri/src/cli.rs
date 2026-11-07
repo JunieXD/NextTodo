@@ -105,14 +105,15 @@ mod platform {
 
     use super::*;
 
-    /// Adds `NEXTTODO_BIN` to the user's PATH as the registry has it, `%variables%` unexpanded, then
-    /// tells the programs running, Explorer among them, as the system's own settings do.
+    /// Puts `NEXTTODO_BIN` first in the user's PATH, ahead of a command line installed otherwise, as the
+    /// registry has it, `%variables%` unexpanded; then tells the programs running, Explorer among
+    /// them, as the system's own settings do.
     const SCRIPT: &str = r#"
 $ErrorActionPreference = 'Stop'
 $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
 $dirs = @($key.GetValue('Path', '', 'DoNotExpandEnvironmentNames') -split ';' | Where-Object { $_ })
 if ($dirs -notcontains $env:NEXTTODO_BIN) {
-  $key.SetValue('Path', ($dirs + $env:NEXTTODO_BIN) -join ';', 'ExpandString')
+  $key.SetValue('Path', (@($env:NEXTTODO_BIN) + $dirs) -join ';', 'ExpandString')
   Add-Type -Namespace NextTodo -Name User32 -MemberDefinition '[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SendMessageTimeout(IntPtr window, uint message, UIntPtr w, string l, uint flags, uint timeout, out UIntPtr result);'
   $result = [UIntPtr]::Zero
   # WM_SETTINGCHANGE to every window, giving up on those that hang.

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { ChevronRight, Cloud, MonitorSmartphone } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { ApiError, api, deviceName, keepSession, native, serverUrl, setServer } from "../api/http";
 import type { Session as SignedIn } from "../api/types/Session";
 import type { User } from "../api/types/User";
@@ -6,6 +7,8 @@ import * as local from "../local";
 import type { Session } from "../session";
 import { Seg } from "../ui/controls";
 import { useFeedback } from "../ui/feedback";
+import { Help } from "../ui/help";
+import { Icon } from "../ui/icons";
 
 /** `onSignIn` signs in with `request`, which asks the server and says who signed in; `onLocal` hears
  * of the session opened in local mode. */
@@ -20,6 +23,8 @@ export function Login({
 }) {
   const invite = new URLSearchParams(location.search).get("invite") ?? "";
   const [mode, setMode] = useState<"login" | "register">(invite ? "register" : "login");
+  // The app opened for the first time asks how it is to be used; the form is for a server.
+  const [choosing, setChoosing] = useState(native && !serverUrl() && !invite && !notice);
   const [form, setForm] = useState({ server: serverUrl(), invite, username: "", display_name: "", password: "" });
   const [error, setError] = useState<{ message: string; field?: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -68,7 +73,7 @@ export function Login({
     setBusy(false);
   };
 
-  const field = (key: keyof typeof form, label: string, props: React.InputHTMLAttributes<HTMLInputElement>, hint?: string) => (
+  const field = (key: keyof typeof form, label: string, props: React.InputHTMLAttributes<HTMLInputElement>, hint?: ReactNode) => (
     <label className={`field${error?.field === key ? " error" : ""}`}>
       <span>
         {label} {hint && <span className="hint">{hint}</span>}
@@ -76,6 +81,20 @@ export function Login({
       <input value={form[key]} onChange={set(key)} required {...props} />
     </label>
   );
+  if (choosing)
+    return (
+      <div className="login" data-tauri-drag-region="deep">
+        <div className="login-card">
+          <Brand />
+          <Way icon={MonitorSmartphone} title="在本机使用" sub="数据只存在这台设备上，无须服务器和账号" disabled={busy} onClick={enterLocal} />
+          <Way icon={Cloud} title="连接服务器" sub="在多台设备之间同步，须先部署服务端" disabled={busy} onClick={() => setChoosing(false)} />
+          {error && <p className="form-error">{error.message}</p>}
+          <p className="help-line">
+            <Help to="#modes">了解两种用法</Help>
+          </p>
+        </div>
+      </div>
+    );
   return (
     <div className="login" data-tauri-drag-region="deep">
       <form className="login-card" onSubmit={submit}>
@@ -89,7 +108,13 @@ export function Login({
           onChange={(m) => (setMode(m), setError(null))}
         />
         {notice && !error && <p className="form-error">{notice}</p>}
-        {native && field("server", "服务器地址", { autoComplete: "url", autoCapitalize: "none", inputMode: "url", placeholder: "todo.example.com" })}
+        {native &&
+          field(
+            "server",
+            "服务器地址",
+            { autoComplete: "url", autoCapitalize: "none", inputMode: "url", placeholder: "todo.example.com" },
+            <Help to="server">如何部署</Help>,
+          )}
         {mode === "register" && field("invite", "邀请码", { autoComplete: "off" })}
         {field("username", "用户名", { autoComplete: "username", autoCapitalize: "none" }, mode === "register" ? "字母、数字和下划线，3–32 位" : undefined)}
         {mode === "register" && field("display_name", "显示名", { autoComplete: "nickname" }, "向他人显示的名称")}
@@ -108,6 +133,19 @@ export function Login({
         )}
       </form>
     </div>
+  );
+}
+
+function Way({ icon, title, sub, disabled, onClick }: { icon: typeof Cloud; title: string; sub: string; disabled: boolean; onClick(): void }) {
+  return (
+    <button type="button" className="way" disabled={disabled} onClick={onClick}>
+      <Icon of={icon} size={24} />
+      <span className="way-text">
+        <b>{title}</b>
+        <span>{sub}</span>
+      </span>
+      <Icon of={ChevronRight} size={18} />
+    </button>
   );
 }
 

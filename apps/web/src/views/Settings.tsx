@@ -15,6 +15,7 @@ import { useSession } from "../session";
 import { type Theme, setTheme, useTheme } from "../theme";
 import { Seg } from "../ui/controls";
 import { Modal, useFeedback } from "../ui/feedback";
+import { Help } from "../ui/help";
 import { Icon } from "../ui/icons";
 import { About } from "./About";
 import { AiPage, useAiSummary } from "./AiSettings";
@@ -254,6 +255,7 @@ function LocalMode() {
             <span>本机模式</span>
             <span className="folder-sub">数据只存在这台设备上，不同步</span>
           </span>
+          <Help to="local">说明</Help>
         </div>
       </div>
       <button className="row" onClick={backup}>
@@ -424,7 +426,7 @@ function TokenCreated({ name, secret, onDone, onClose }: { name: string; secret:
   return (
     <Modal title="令牌已生成" onClose={onClose} onBack={onDone}>
       <p className="empty">
-        “{name}”的令牌只显示这一次。下面的写法已经填好{inLocal ? "令牌，都要先装命令行（在 GitHub 的 Releases 下载）" : "服务器地址和令牌"}，复制即可。
+        “{name}”的令牌只显示这一次。下面的写法已经填好{inLocal ? "令牌，都要先装命令行" : "服务器地址和令牌"}，复制即可。<Help to="agent">如何安装命令行</Help>
       </p>
       <Copyable label="令牌" text={secret} />
       {inLocal ? (
@@ -438,7 +440,7 @@ function TokenCreated({ name, secret, onDone, onClose }: { name: string; secret:
       ) : (
         <Copyable label="Codex" hint="~/.codex/config.toml" text={`[mcp_servers.nexttodo]\nurl = "${url}/mcp"\nbearer_token_env_var = "NEXTTODO_TOKEN"`} />
       )}
-      <Copyable label="把 skill 装给 agent" hint="命令行在 GitHub 的 Releases 下载" text="nexttodo skill install" />
+      <Copyable label="把 skill 装给 agent" text="nexttodo skill install" />
       <div className="actions">
         <button className="filled-btn" onClick={onDone}>
           完成

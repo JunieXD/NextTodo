@@ -5,6 +5,7 @@ import { app } from "../api/http";
 import { ago } from "../domain/dates";
 import { inLocalMode } from "../local";
 import { useFeedback } from "../ui/feedback";
+import { Help } from "../ui/help";
 import { appVersion, install, restart, useChecked, usePending } from "../updates";
 
 export function About() {
@@ -45,6 +46,9 @@ export function About() {
           </div>
         )}
       </div>
+      <p className="help-line">
+        <Help to="">使用教程</Help>
+      </p>
     </>
   );
 }

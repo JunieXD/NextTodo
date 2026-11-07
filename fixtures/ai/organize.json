@@ -1,0 +1,168 @@
+[
+  {
+    "id": "short-two-things",
+    "note": "短得像标题，并列两样：都要留在标题里，不写描述",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/毕业论文", "open_tasks": [], "text": "论文查重和格式调整" },
+    "expect": { "tasks": [1, 2], "facts": [["查重"], ["格式"]], "description": false, "due": [], "after": [] }
+  },
+  {
+    "id": "short-noun",
+    "note": "只有一个名词，没说动作",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/生活", "open_tasks": [], "text": "牙医" },
+    "expect": { "tasks": [1, 1], "facts": [["牙医"]], "description": false, "due": [] }
+  },
+  {
+    "id": "short-due",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/学校课程", "open_tasks": [], "text": "周五前交实验报告" },
+    "expect": { "tasks": [1, 1], "facts": [["实验报告"]], "description": false, "due": ["2026-11-06"] }
+  },
+  {
+    "id": "short-two-errands",
+    "note": "两件不相干的小事",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/生活", "open_tasks": [], "text": "买牛奶和修电脑" },
+    "expect": { "tasks": [1, 2], "facts": [["牛奶"], ["电脑"]], "description": false, "linked": false }
+  },
+  {
+    "id": "short-terms",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/项目/后端", "open_tasks": [], "text": "Docker 镜像瘦身" },
+    "expect": { "tasks": [1, 1], "facts": [["docker"], ["镜像"], ["瘦身", "体积", "减小", "缩小", "精简"]], "description": false }
+  },
+  {
+    "id": "short-object",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/项目/文档", "open_tasks": [], "text": "README 英文版" },
+    "expect": { "tasks": [1, 1], "facts": [["readme"], ["英文"]], "description": false }
+  },
+  {
+    "id": "short-remind",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/毕业论文", "open_tasks": [], "text": "明天下午三点开组会，提前半小时提醒我" },
+    "expect": { "tasks": [1, 1], "facts": [["组会"]], "description": false, "due": ["2026-11-05 15:00"], "remind": [30] }
+  },
+  {
+    "id": "short-action",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/生活", "open_tasks": [], "text": "给房东打电话问暖气" },
+    "expect": { "tasks": [1, 1], "facts": [["房东"], ["暖气"]], "description": false }
+  },
+  {
+    "id": "short-question",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/个人网站", "open_tasks": [], "text": "要不要把博客从 Hexo 换成 Astro？" },
+    "expect": { "tasks": [1, 1], "facts": [["hexo"], ["astro"]], "description": false }
+  },
+  {
+    "id": "voice-filler",
+    "note": "语气词和口头填充都要去掉，细节都要留下",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/项目/前端", "open_tasks": [], "text": "就是那个，我觉得登录页的那个按钮颜色有点淡，嗯，在暗色模式下面几乎看不清，可以调深一点吧" },
+    "expect": { "tasks": [1, 1], "facts": [["登录"], ["按钮"], ["暗色", "深色", "夜间"], ["看不清", "对比度", "难以辨认", "不清楚", "辨认"], ["加深", "调深", "深一些", "深一点", "更深"]] }
+  },
+  {
+    "id": "voice-correction",
+    "note": "说到一半的改口：只留改过的",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/工作", "open_tasks": [], "text": "周三，不对，是周四之前把预算表发给王老师，记得用新模板" },
+    "expect": { "tasks": [1, 1], "facts": [["预算表"], ["王老师"], ["新模板", "新的模板"]], "absent": ["周三"], "due": ["2026-11-05"] }
+  },
+  {
+    "id": "voice-unsure",
+    "note": "不确定能不能做：这份不确定也是信息",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/杂项", "open_tasks": [], "text": "不知道 gh cli 能不能批量导出 star 过的仓库，能的话写个脚本，每周自动备份一次" },
+    "expect": { "tasks": [1, 2], "facts": [["gh"], ["star"], ["导出"], ["脚本"], ["每周", "每星期"], ["备份"], ["能否", "是否", "确认", "调研", "能不能", "可行"]] }
+  },
+  {
+    "id": "voice-reason",
+    "note": "理由也要留下",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/项目/后端", "open_tasks": [], "text": "上次服务器被刷爆了，所以想加个限流，按用户算每分钟最多六十次，超了就返回429" },
+    "expect": { "tasks": [1, 1], "facts": [["限流"], ["每分钟"], ["60", "六十"], ["429"], ["刷爆", "打满", "过载", "被刷", "压垮", "攻击", "请求过多", "流量"]] }
+  },
+  {
+    "id": "voice-steps-in-order",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/毕业论文", "open_tasks": [], "text": "先把数据清洗完，然后跑三组对照实验，最后把结果画成图放进论文第四章" },
+    "expect": { "tasks": [2, 3], "linked": true, "facts": [["清洗"], ["三组", "3 组"], ["对照"], ["图"], ["第四章", "第 4 章"]] }
+  },
+  {
+    "id": "voice-errands",
+    "note": "几件不相干的事，各自一条，不连",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/生活", "open_tasks": [], "text": "这周要做的：交水电费，取快递，还有把相机镜头送修" },
+    "expect": { "tasks": [3, 3], "linked": false, "facts": [["水电费"], ["快递"], ["镜头"], ["送修", "维修", "修理"]], "description": false }
+  },
+  {
+    "id": "voice-one-job-steps",
+    "note": "一件事的几步",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/生活", "open_tasks": [], "text": "搬家前把书整理一下，先分类，不看的捐掉，剩下的装箱贴标签" },
+    "expect": { "tasks": [1, 4], "facts": [["书"], ["分类"], ["捐"], ["装箱"], ["标签"], ["搬家"]] }
+  },
+  {
+    "id": "voice-feature",
+    "note": "一段功能想法，细节多",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/项目/App", "open_tasks": [], "text": "还有就是那个通知，我发现晚上十一点以后它还在推送，这个挺烦的，我觉得应该加一个免打扰的时间段，用户可以自己设置几点到几点，默认的话可以是晚上十一点到早上七点吧，然后紧急的提醒可以不受这个限制" },
+    "expect": { "tasks": [1, 2], "facts": [["免打扰"], ["十一点", "11 点", "23"], ["七点", "7 点", "7:00", "07:00"], ["自己设置", "自定义", "可设置", "用户设置", "自行设置"], ["紧急"], ["推送", "通知"]] }
+  },
+  {
+    "id": "voice-noisy",
+    "note": "大段填充词里只有一件事",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/生活", "open_tasks": [], "text": "嗯……那个，就是，呃，帮我记一下，下下周三之前要把护照续签的材料准备好，照片要白底的" },
+    "expect": { "tasks": [1, 1], "facts": [["护照"], ["续签"], ["材料"], ["白底"], ["照片"]], "absent": ["帮我记"], "due": ["2026-11-18"] }
+  },
+  {
+    "id": "voice-talk",
+    "note": "准备一次汇报，要点不少",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/毕业论文", "open_tasks": [], "text": "下周一组会要讲进度，PPT 还没做，主要讲两件事，一个是数据集扩充到了两万条，另一个是新模型比基线高了三个点，然后老师上次问的那个过拟合的问题也要准备一下怎么回答" },
+    "expect": { "tasks": [1, 3], "facts": [["组会"], ["ppt"], ["两万", "20000", "2 万", "20,000"], ["三个点", "3 个点", "3 个百分点", "三个百分点", "3%"], ["过拟合"], ["进度"]] }
+  },
+  {
+    "id": "prompt-for-agent",
+    "note": "写给 agent 的提示词原样保留",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/项目/后端", "open_tasks": [], "text": "让 agent 重构登录模块，提示词是：请把 auth.rs 里的 session 逻辑拆到单独的模块，对外接口保持不变，并补上单元测试。" },
+    "expect": { "tasks": [1, 1], "facts": [["重构"], ["登录"]], "verbatim": ["请把 auth.rs 里的 session 逻辑拆到单独的模块，对外接口保持不变，并补上单元测试。"] }
+  },
+  {
+    "id": "command",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/项目/运维", "open_tasks": [], "text": "磁盘老是满，部署脚本里加一句 docker system prune -f" },
+    "expect": { "tasks": [1, 1], "facts": [["磁盘"], ["部署脚本"]], "verbatim": ["docker system prune -f"] }
+  },
+  {
+    "id": "link",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/项目/后端", "open_tasks": [], "text": "看一下 https://example.com/rust-async-cancel 这篇讲异步取消的文章，再决定要不要改 tokio 的写法" },
+    "expect": { "tasks": [1, 2], "facts": [["取消"], ["tokio"]], "verbatim": ["https://example.com/rust-async-cancel"] }
+  },
+  {
+    "id": "follows-open-task",
+    "note": "要等已有事项做完才能开始",
+    "input": {
+      "local_time": "2026-11-04 16:30 星期三",
+      "folder": "/毕业论文",
+      "open_tasks": [{ "number": 11, "title": "搭好实验环境" }, { "number": 12, "title": "写开题报告", "due": "2026-11-20" }],
+      "text": "跑基线实验，顺便记一下显存占用"
+    },
+    "expect": { "tasks": [1, 1], "facts": [["基线"], ["显存"]], "after": [11], "before": [] }
+  },
+  {
+    "id": "unrelated-to-open-tasks",
+    "note": "和已有事项无关，不连",
+    "input": {
+      "local_time": "2026-11-04 16:30 星期三",
+      "folder": "/毕业论文",
+      "open_tasks": [{ "number": 11, "title": "搭好实验环境" }, { "number": 12, "title": "写开题报告", "due": "2026-11-20" }],
+      "text": "买打印纸"
+    },
+    "expect": { "tasks": [1, 1], "facts": [["打印纸"]], "description": false, "after": [], "before": [] }
+  },
+  {
+    "id": "before-open-task",
+    "note": "已有事项要等它做完",
+    "input": {
+      "local_time": "2026-11-04 16:30 星期三",
+      "folder": "/签证",
+      "open_tasks": [{ "number": 21, "title": "提交签证材料", "due": "2026-11-15" }],
+      "text": "去银行开存款证明"
+    },
+    "expect": { "tasks": [1, 1], "facts": [["银行"], ["存款证明"]], "description": false, "after": [], "before": [21] }
+  },
+  {
+    "id": "english",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/project", "open_tasks": [], "text": "Write unit tests for the parser, especially the edge cases with empty input and very long lines" },
+    "expect": { "tasks": [1, 1], "facts": [["unit test"], ["parser"], ["empty"], ["long line"]] }
+  },
+  {
+    "id": "numbers",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/健康", "open_tasks": [], "text": "体检报告出来了，血糖6.3，医生说三个月以后复查，平时少吃甜的" },
+    "expect": { "tasks": [1, 2], "facts": [["6.3"], ["三个月", "3 个月"], ["复查"], ["甜", "糖"], ["血糖"]] }
+  }
+]

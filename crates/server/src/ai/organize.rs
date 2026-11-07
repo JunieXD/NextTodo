@@ -15,7 +15,8 @@ use crate::tools::number;
 /// How many of the folder's open tasks the model is shown.
 const SHOWN: usize = 50;
 
-const SYSTEM: &str = r#"你负责把用户随手写下的一段话整理成待办事项。输入是一个 JSON 对象：
+/// The instructions. `examples/ai_eval.rs` tries others in their place (docs/ai.md#评测).
+pub const SYSTEM: &str = r#"你负责把用户随手写下的一段话整理成待办事项。输入是一个 JSON 对象：
 - local_time：用户提交时的本地时间；
 - folder：这些事项要放进的文件夹；
 - open_tasks：这个文件夹里已有的未完成事项，number 是编号，after 是它的前置事项的编号；
@@ -25,8 +26,8 @@ const SYSTEM: &str = r#"你负责把用户随手写下的一段话整理成待�
 {"tasks": [{"ref": "a", "title": "…", "description": "…", "due": "2026-11-20 18:00", "remind": 30, "after": [], "before": []}]}
 
 字段：
-- title：必填，一行，简短（最好不超过 30 个字），以动作开头，如“写开题报告初稿”；原文没说是什么动作的，不要为了以动作开头而猜一个动作或删词。
-- description：选填，Markdown，放标题装不下的细节；步骤可以写成清单“- [ ] ”。
+- title：必填，一行，简短（最好不超过 30 个字），以动作开头，如“写开题报告初稿”。原文没说是什么动作的，不要猜，保留原文的说法。
+- description：选填，Markdown，只写标题装不下的信息。
 - due：选填，截止时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"。
 - remind：只有原文明确要求提醒时才写：提前多少分钟提醒，0 表示截止时；只能和带具体时间的 due 一起用。
 - 选填的字段没有内容时省略，不要写空字符串。
@@ -35,14 +36,25 @@ const SYSTEM: &str = r#"你负责把用户随手写下的一段话整理成待�
 - before：选填，后续事项，这一项完成后才能做它们；取值同 after。
 
 整理时：
-1. 原文的每一条信息都要保留在某个事项的标题或描述里，一点不丢：要求、细节、理由、背景、疑问都写进描述，不要概括掉；不要编造原文没有的内容。原文很短、本身就像一个标题时也一样：它提到的每个对象都要出现在标题里（拆成几条时，各自出现在对应事项的标题里），只调整说法，不能删。例如原文“报销单和发票整理”，标题写“整理报销单和发票”，不能只写“整理报销单”。
-2. 原文常是语音输入的口语。描述用简洁的书面语重写，不照搬原话：去掉语气词、重复、说到一半的改口和“我觉得”“就是说”这类口头填充，但不能因此丢掉信息。
-3. 原文里写给 AI 或 agent 的提示词、代码、命令、链接、引文和数据，原样放进描述，一个字都不改；提示词和代码用代码块包起来。
-4. 原文说的是几件能分开做的事，就拆成几条，有先后的用 after 或 before 连起来；说的是一件事，就只输出一条，不要硬拆。
-5. 逐条看 open_tasks：这件事要用到某个已有事项的成果，或要等它做完才能开始，就用编号把它设为前置，例如“写官网文档”要等“建好官网”；已有事项要等这件事做完的，设为后续。只是主题相近、没有先后的，不连。
-6. 只有原文明确说了时间才写 due，“明天下午三点”“周五前”这类按 local_time 换算成具体日期；原文没说要提醒就不写 remind。
-7. 用原文的语言写。
-8. 输出前把原文逐句、逐个短语对照一遍：每一处都要能在结果的标题或描述里找到，找不到的补上。"#;
+1. 信息一点不丢：原文里的每个要求、细节、理由、背景、疑问和不确定之处，都要体现在某个事项的标题或描述里；不要编造原文没有的内容。
+2. 标题写清这件事本身。原文提到的每个对象都要出现在标题里（拆成几条时，各自出现在对应事项的标题里），只调整说法，不删减。
+3. 描述用简洁的书面语，自己重新组织，不照搬原话：
+   - 去掉语气词、口头填充（“就是”“那个”“然后”）、重复和说到一半的改口，改口只留改过的说法；
+   - 不写第一人称的口头叙述（“我觉得”“我发现”“我建议”），直接写事实和要求，如“我觉得按钮颜色有点淡”写成“按钮颜色偏淡”；
+   - 原文拿不准的地方照样写明，如“好像只能搜到标题”写成“目前似乎只能搜索标题，待确认”；
+   - 有几点时写成列表，每点一句；
+   - 不重复标题已经说了的内容。标题已经说全了（原文很短时通常如此），就不写描述。
+4. 原文里写给 AI 或 agent 的提示词、代码、命令、链接、引文和数据，原样放进描述，一个字都不改；提示词和代码用代码块包起来。
+5. 原文说的是几件能分开做的事，就拆成几条，有先后的用 after 或 before 连起来；说的是一件事，就只输出一条，不要硬拆。
+6. 逐条看 open_tasks：这件事要用到某个已有事项的成果，或要等它做完才能开始，就把那个编号写进这件事的 after，例如“写官网文档”要等“建好官网”；已有事项要等这件事做完才能开始的，把它的编号写进 before，例如“开存款证明”做完才能“提交签证材料”。只是主题相近、没有先后的，不连。
+7. 只有原文明确说了时间才写 due，“明天下午三点”“周五前”这类按 local_time 换算成具体日期；原文没说要提醒就不写 remind。
+8. 用原文的语言写。
+
+例子（只示范写法，不要套用其中的内容）：
+- 原文“嗯那个，就是周报模板我觉得太长了，好多栏目其实根本没人填，可以删掉一些吧，比如风险那栏，下周计划好像也可以合并到本周进展里”，输出：
+  {"tasks": [{"title": "精简周报模板", "description": "模板过长，不少栏目无人填写，可以删减：\n- 删去“风险”一栏\n- “下周计划”或可并入“本周进展”"}]}
+- 原文“报销单和发票整理”，输出：
+  {"tasks": [{"title": "整理报销单和发票"}]}"#;
 
 pub(super) fn due_text(d: &Due) -> String {
     match &d.at {
@@ -76,7 +88,13 @@ pub fn prompt(job: &AiJob, board: &Board) -> (Prompt, HashSet<i64>) {
         "open_tasks": tasks,
         "text": job.text.as_str(),
     });
-    (Prompt { system: SYSTEM.into(), user: serde_json::to_string_pretty(&input).expect("JSON values serialize") }, shown)
+    (chat(SYSTEM, &input), shown)
+}
+
+/// The chat that gives the model `input`, a job and its folder as `prompt` makes them, with the
+/// instructions `system`.
+pub fn chat(system: &str, input: &Value) -> Prompt {
+    Prompt { system: system.into(), user: serde_json::to_string_pretty(input).expect("JSON values serialize") }
 }
 
 /// A minimal chat that answers in JSON, to see whether a config works.

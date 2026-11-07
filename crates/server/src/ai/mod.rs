@@ -2,7 +2,7 @@
 //! tasks, with each user's own model. See `docs/ai.md`.
 
 pub mod llm;
-mod organize;
+pub mod organize;
 pub mod secret;
 mod tidy;
 

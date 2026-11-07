@@ -14,7 +14,7 @@ use clap::Parser;
 use nexttodo_core::board::{Board, Snapshot};
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::TaskId;
-use nexttodo_core::ops::Op;
+use nexttodo_core::ops::{MAX_OPS, Op};
 use nexttodo_server::ai::llm::{self, Config, Prompt, Thinking};
 use nexttodo_server::ai::organize;
 use nexttodo_server::tools;
@@ -219,7 +219,7 @@ fn ask(config: &Config, system: &str, case: &Case, index: usize, run: usize) -> 
             // As the server adds them: what it refuses fails the job.
             let planned = organize::parse(&text, &shown)
                 .and_then(|tasks| tools::plan_into(&Board::new(&snap), None, tasks).map_err(|e| e.describe()))
-                .and_then(|ops| acyclic(&snap, &ops).map(|()| ops));
+                .and_then(|ops| accepted(&snap, &ops).map(|()| ops));
             let checked = match planned {
                 Err(e) => Err(format!("出错：{e}")),
                 Ok(ops) => Ok(check(case, &serde_json::from_str(organize::unwrap(&text)).expect("parsed above"), &snap, &ops)),
@@ -274,8 +274,12 @@ fn snapshot(input: &Value) -> Snapshot {
     serde_json::from_value(json!({ "folders": [], "tasks": tasks, "dependencies": dependencies, "ai_jobs": [] })).expect("a snapshot")
 }
 
-/// Refuses a dependency that closes a cycle, as the server does when it adds them one by one.
-fn acyclic(snap: &Snapshot, ops: &[Op]) -> Result<(), String> {
+/// Refuses what the server refuses when it adds the tasks: more operations than a change holds, with
+/// the job's deletion; a dependency that closes a cycle, as they are added one by one.
+fn accepted(snap: &Snapshot, ops: &[Op]) -> Result<(), String> {
+    if ops.len() + 1 > MAX_OPS {
+        return Err(format!("每次最多 {MAX_OPS} 个操作，本次有 {} 个", ops.len() + 1));
+    }
     let mut edges: Vec<(TaskId, TaskId)> = snap.dependencies.iter().map(|d| (d.before, d.after)).collect();
     for op in ops {
         if let Op::DepAdd { before, after } = op {

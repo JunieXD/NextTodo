@@ -116,13 +116,16 @@
 改提示词前后，用同一批样例让真实模型各整理几遍，比较结果。
 
 ```sh
-NEXTTODO_EVAL_URL=https://api.deepseek.com NEXTTODO_EVAL_MODEL=deepseek-chat NEXTTODO_EVAL_KEY=<API 密钥> \
-  cargo run -p nexttodo-server --example ai_eval -- fixtures/ai/organize.json --repeat 3 [--system 待试的提示词.md]
+export NEXTTODO_EVAL_PROVIDER=deepseek NEXTTODO_EVAL_URL=https://api.deepseek.com NEXTTODO_EVAL_MODEL=deepseek-flash
+read -rs NEXTTODO_EVAL_KEY && export NEXTTODO_EVAL_KEY  # 粘贴 API 密钥后回车，不显示，也不进命令历史
+cargo run -p nexttodo-server --example ai_eval -- fixtures/ai/organize.json --repeat 3
 ```
 
-- 样例在 `fixtures/ai/organize.json`，都是虚构的：短得像标题的、语音口语的、几件事有先后或互不相干的、带提示词命令链接的、和文件夹里已有事项有先后的、英文的。每条是服务端发给模型的输入（`local_time`、`folder`、`open_tasks`、`text`）和对结果的要求，没写的不检查：`tasks` 条数范围；`facts` 每项要出现在某个标题或描述里，列出几种可以接受的说法；`verbatim` 要原样出现；`absent` 不能出现（如改口前的说法）；`description: false` 不该写描述；`due`、`remind`；`after`、`before` 是要连上的已有事项；`linked` 新事项之间是否连先后；`written: true` 表示原文已经是书面语，描述用原词不算照抄。
+服务商取 `llm.rs` 里预设的 `id`，自定义的接口用 `custom`；思考程度用 `NEXTTODO_EVAL_THINKING`（`off`、`low`、`high`，默认 `off`）。要试别的提示词，加上 `--system <文件>`；只跑部分样例，加上 `--only <id 里的一段>`。
+
+- 样例在 `fixtures/ai/organize.json`，都是虚构的：短得像标题的、语音口语的、几件事有先后或互不相干的、带提示词命令链接的、和文件夹里已有事项有先后的、英文的。每条是服务端发给模型的输入（`local_time`、`folder`、`open_tasks`、`text`）和对结果的要求，没写的不检查：`tasks` 条数范围；`facts` 每项要出现在某个标题或描述里，列出几种可以接受的说法；`verbatim` 要原样出现；`absent` 不能出现（如改口前的说法）；`description: false` 不该写描述；`due`、`remind`；`after`、`before` 是要连上的已有事项；`linked` 新事项之间是否连先后；`order` 按先后列出几个新事项标题里的词，检查它们确实按这个顺序相连；`written: true` 表示原文已经是书面语，描述用原词不算照抄。
 - 用户自己的原文不进仓库，可以另放一个同样格式的文件，跟在后面一起传入。
-- 检查：格式（用服务端解析结果的同一套代码）、条数、信息有没有丢、该不该有描述、描述里的口语词、照抄（描述里与原文相同的、6 个汉字以上的片段占描述汉字的一半以上）、描述重复标题、截止时间、提醒和先后。信息用关键词判断，换了说法可能误判，看不准的去 `target/ai-eval/` 里读回答原文。
+- 检查：先用服务端的同一套代码解析结果、生成要做的改动，再按服务端的规则查先后关系是否成环，服务端会拒绝的算出错；再查条数、信息有没有丢、该不该有描述、描述里的口语词（语气助词只算句尾的）、照抄（描述里与原文相同的、6 个汉字以上的片段占描述汉字的一半以上）、描述重复标题、截止时间、提醒和先后。信息用关键词判断，换了说法可能误判，看不准的去 `target/ai-eval/` 里读回答原文。
 - 同一提示词每次结果不同，两遍 6 次之间“通过”数能差 6 条左右；比较时每条至少跑 3 次，差别小于这个数就当作一样。
 - 接口直接连，不经过服务端的公网地址检查：开着 fake-ip 模式代理的电脑上，域名都解析到 `198.18.0.0/15`，服务端的检查会拒绝。
 

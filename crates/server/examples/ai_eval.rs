@@ -1,8 +1,6 @@
 //! Tries the instructions for AI organizing on a set of cases with a real model, and checks each
-//! answer against what its case expects (docs/ai.md#评测):
-//!
-//!   NEXTTODO_EVAL_URL=https://api.deepseek.com NEXTTODO_EVAL_MODEL=deepseek-chat NEXTTODO_EVAL_KEY=… \
-//!     cargo run -p nexttodo-server --example ai_eval -- fixtures/ai/organize.json [--system other.md]
+//! answer against what its case expects. The model and its key are given in the environment; how,
+//! and what is checked, in docs/ai.md#评测.
 //!
 //! The answers go to target/ai-eval, for reading them through.
 
@@ -13,8 +11,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
+use nexttodo_core::board::{Board, Snapshot};
+use nexttodo_core::dag::find_path;
+use nexttodo_core::model::TaskId;
+use nexttodo_core::ops::Op;
 use nexttodo_server::ai::llm::{self, Config, Prompt, Thinking};
 use nexttodo_server::ai::organize;
+use nexttodo_server::tools;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -87,10 +90,13 @@ struct Expect {
     before: Option<Vec<i64>>,
     /// Whether the new tasks are linked to each other.
     linked: Option<bool>,
+    /// Words in the titles of new tasks, in the order the tasks are to be done.
+    #[serde(default)]
+    order: Vec<String>,
 }
 
-/// Spoken filler, out of place in a description.
-const FILLERS: &[&str] = &[
+/// Spoken words, out of place in a description.
+const SPOKEN: &[&str] = &[
     "我觉得",
     "我感觉",
     "我想",
@@ -103,10 +109,6 @@ const FILLERS: &[&str] = &[
     "那个",
     "嗯",
     "呃",
-    "啊",
-    "吧",
-    "呢",
-    "嘛",
     "好像",
     "其实",
     "反正",
@@ -117,6 +119,8 @@ const FILLERS: &[&str] = &[
 /// Runs of this many Chinese characters shared with the text count as copied. Only these: names,
 /// terms and links in other scripts stay as they are anyway.
 const RUN: usize = 6;
+/// Particles that end spoken sentences, when they do: before a stop or at the end.
+const PARTICLES: &[&str] = &["吧", "呢", "啊", "嘛"];
 /// A description made mostly of runs of the text is the text, not a rewrite of it.
 const COPIED: f64 = 0.5;
 /// Nor is a description made of the title's words more than the title.
@@ -203,7 +207,8 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn ask(config: &Config, system: &str, case: &Case, index: usize, run: usize) -> Outcome {
-    let shown: HashSet<i64> = case.input["open_tasks"].as_array().into_iter().flatten().filter_map(|t| t["number"].as_i64()).collect();
+    let snap = snapshot(&case.input);
+    let shown: HashSet<i64> = snap.tasks.iter().map(|t| t.number).collect();
     let start = Instant::now();
     let answer = chat(config, &organize::chat(system, &case.input));
     let seconds = start.elapsed().as_secs_f64();
@@ -211,9 +216,13 @@ fn ask(config: &Config, system: &str, case: &Case, index: usize, run: usize) -> 
     let (answer, checked) = match answer {
         Err(e) => (String::new(), Err(format!("出错：{e}"))),
         Ok(text) => {
-            let checked = match organize::parse(&text, &shown) {
+            // As the server adds them: what it refuses fails the job.
+            let planned = organize::parse(&text, &shown)
+                .and_then(|tasks| tools::plan_into(&Board::new(&snap), None, tasks).map_err(|e| e.describe()))
+                .and_then(|ops| acyclic(&snap, &ops).map(|()| ops));
+            let checked = match planned {
                 Err(e) => Err(format!("出错：{e}")),
-                Ok(_) => Ok(check(case, &serde_json::from_str(organize::unwrap(&text)).expect("parsed above"), &shown)),
+                Ok(ops) => Ok(check(case, &serde_json::from_str(organize::unwrap(&text)).expect("parsed above"), &snap, &ops)),
             };
             (text, checked)
         }
@@ -246,8 +255,42 @@ fn chat(config: &Config, prompt: &Prompt) -> Result<String, String> {
     v["choices"][0]["message"]["content"].as_str().map(str::to_owned).ok_or_else(|| "回复里没有内容".into())
 }
 
-/// What is wrong with the answer `v`, and how many of the facts it keeps.
-fn check(case: &Case, v: &Value, shown: &HashSet<i64>) -> (Vec<String>, usize) {
+/// The case's folder as the server keeps it: its open tasks, and their dependencies.
+fn snapshot(input: &Value) -> Snapshot {
+    let id = |n: i64| format!("00000000-0000-7000-8000-{n:012}");
+    let open: Vec<&Value> = input["open_tasks"].as_array().into_iter().flatten().collect();
+    let tasks: Vec<Value> = open
+        .iter()
+        .map(|t| {
+            let n = t["number"].as_i64().expect("open tasks have numbers");
+            json!({ "id": id(n), "number": n, "folder_id": null, "title": t["title"], "description": "", "done_at": null, "due": null,
+                "sort_key": "a0", "created_at": 0, "updated_at": 0, "created_via": null, "updated_via": null })
+        })
+        .collect();
+    let dependencies: Vec<Value> = open
+        .iter()
+        .flat_map(|t| t["after"].as_array().into_iter().flatten().map(|b| json!({ "before": id(b.as_i64().unwrap_or_default()), "after": id(t["number"].as_i64().unwrap_or_default()), "created_at": 0 })))
+        .collect();
+    serde_json::from_value(json!({ "folders": [], "tasks": tasks, "dependencies": dependencies, "ai_jobs": [] })).expect("a snapshot")
+}
+
+/// Refuses a dependency that closes a cycle, as the server does when it adds them one by one.
+fn acyclic(snap: &Snapshot, ops: &[Op]) -> Result<(), String> {
+    let mut edges: Vec<(TaskId, TaskId)> = snap.dependencies.iter().map(|d| (d.before, d.after)).collect();
+    for op in ops {
+        if let Op::DepAdd { before, after } = op {
+            if before == after || find_path(&edges, *after, *before).is_some() {
+                return Err("先后关系成环".into());
+            }
+            edges.push((*before, *after));
+        }
+    }
+    Ok(())
+}
+
+/// What is wrong with the answer `v`, which the server would add as `ops`, and how many of the
+/// facts it keeps.
+fn check(case: &Case, v: &Value, snap: &Snapshot, ops: &[Op]) -> (Vec<String>, usize) {
     let e = &case.expect;
     let tasks: Vec<&Value> = v["tasks"].as_array().into_iter().flatten().collect();
     let field = |t: &Value, k: &str| t[k].as_str().map(str::trim).unwrap_or_default().to_owned();
@@ -283,7 +326,13 @@ fn check(case: &Case, v: &Value, shown: &HashSet<i64>) -> (Vec<String>, usize) {
             continue;
         }
         let prose = prose(&description, &e.verbatim);
-        let fillers: Vec<&str> = FILLERS.iter().copied().filter(|f| prose.contains(f)).collect();
+        let ends = |i: usize| prose[i..].chars().nth(1).is_none_or(|c| "，。！？；、,.!?;…~\n".contains(c));
+        let fillers: Vec<&str> = SPOKEN
+            .iter()
+            .copied()
+            .filter(|w| prose.contains(w))
+            .chain(PARTICLES.iter().copied().filter(|p| prose.match_indices(p).any(|(i, _)| ends(i))))
+            .collect();
         if !fillers.is_empty() {
             problems.push(format!("口语：{}", fillers.join("、")));
         }
@@ -308,22 +357,43 @@ fn check(case: &Case, v: &Value, shown: &HashSet<i64>) -> (Vec<String>, usize) {
             problems.push(format!("提醒 {got:?}，应为 {want:?}"));
         }
     }
-    let refs = |key: &str| -> Vec<Value> { tasks.iter().flat_map(|t| t[key].as_array().cloned().unwrap_or_default()).collect() };
-    // An open task by number, 12 or "#12"; anything else names one of the new tasks.
-    let open =
-        |r: &Value| r.as_i64().or_else(|| r.as_str().and_then(|s| s.trim_start_matches('#').parse().ok())).filter(|n| shown.contains(n));
-    for (key, want) in [("after", &e.after), ("before", &e.before)] {
-        if let Some(want) = want {
-            let got: BTreeSet<i64> = refs(key).iter().filter_map(open).collect();
-            if got != want.iter().copied().collect() {
-                problems.push(format!("{key} {got:?}，应为 {want:?}"));
-            }
+    // The dependencies as added: an open task is known by its number, a new one by its title.
+    let created: Vec<(TaskId, String)> = ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::TaskCreate { id, title, .. } => Some((*id, squash(title.as_str()))),
+            _ => None,
+        })
+        .collect();
+    let edges: Vec<(TaskId, TaskId)> = ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::DepAdd { before, after } => Some((*before, *after)),
+            _ => None,
+        })
+        .collect();
+    let new = |id: &TaskId| created.iter().any(|(c, _)| c == id);
+    let number = |id: &TaskId| snap.tasks.iter().find(|t| t.id == *id).map(|t| t.number);
+    let after: BTreeSet<i64> = edges.iter().filter(|(_, a)| new(a)).filter_map(|(b, _)| number(b)).collect();
+    let before: BTreeSet<i64> = edges.iter().filter(|(b, _)| new(b)).filter_map(|(_, a)| number(a)).collect();
+    for (key, want, got) in [("after", &e.after, after), ("before", &e.before, before)] {
+        if let Some(want) = want
+            && got != want.iter().copied().collect()
+        {
+            problems.push(format!("{key} {got:?}，应为 {want:?}"));
         }
     }
-    if let Some(want) = e.linked {
-        let got = refs("after").iter().chain(&refs("before")).any(|r| open(r).is_none());
-        if got != want {
-            problems.push(if want { "新事项之间没有连上先后".into() } else { "新事项之间不该连先后".into() });
+    if let Some(want) = e.linked
+        && edges.iter().any(|(b, a)| new(b) && new(a)) != want
+    {
+        problems.push(if want { "新事项之间没有连上先后".into() } else { "新事项之间不该连先后".into() });
+    }
+    let titled = |word: &str| created.iter().find(|(_, t)| t.contains(&squash(word))).map(|(id, _)| *id);
+    for pair in e.order.windows(2) {
+        match (titled(&pair[0]), titled(&pair[1])) {
+            (Some(a), Some(b)) if a == b || find_path(&edges, a, b).is_some() => {}
+            (Some(_), Some(_)) => problems.push(format!("“{}”没有排在“{}”之后", pair[1], pair[0])),
+            _ => problems.push(format!("标题里找不到“{}”或“{}”", pair[0], pair[1])),
         }
     }
     let found = e.facts.len() - missing.len();

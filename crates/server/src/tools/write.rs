@@ -157,7 +157,7 @@ pub(crate) fn number(s: &str) -> Option<i64> {
 }
 
 /// The operations adding `tasks` to `folder` as those of a plan for it: what AI organizing adds.
-pub(crate) fn plan_into(b: &Board, folder: Option<FolderId>, tasks: Vec<PlanTask>) -> Result<Vec<Op>, ApiError> {
+pub fn plan_into(b: &Board, folder: Option<FolderId>, tasks: Vec<PlanTask>) -> Result<Vec<Op>, ApiError> {
     plan_ops(b, Plan { folder: Some(b.path(folder)), tasks })
 }
 

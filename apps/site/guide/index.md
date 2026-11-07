@@ -1,8 +1,8 @@
 # 快速上手
 
-## 1. 安装 App
+NextTodo 是一个待办应用。和普通待办不同的是，事项之间可以设置先后：“建好官网”完成后才能“写官网文档”。NextTodo 据此只把现在能做的事列在“接下来”里，完成一项，它解锁的事项随即出现。
 
-下载对应平台的安装包，都是最新版：
+## 1. 安装 App
 
 | 平台 | 下载 | 要求 |
 |---|---|---|
@@ -10,43 +10,33 @@
 | macOS | [NextTodo-macos-arm64.dmg](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-macos-arm64.dmg) | Apple 芯片，macOS 14 及以上 |
 | Windows | [NextTodo-windows-x64-setup.exe](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-windows-x64-setup.exe) | Windows 10 或 11，x64 |
 
-macOS 和 Windows 的安装包没有经过商业签名，首次打开时系统会提示：
-
-- **macOS**：首次打开会被拦下。到“系统设置 → 隐私与安全性”中点击“仍要打开”。
-- **Windows**：出现 SmartScreen 提示时，点击“更多信息 → 仍要运行”。
+链接下载的都是最新版。第一次打开时系统可能会拦下，处理办法见[下载和安装](./install)。
 
 ## 2. 选择用法 {#modes}
 
-App 的登录页提供两种用法，两者的数据互不相通：
+第一次打开 App 时，要在两种用法之间选一种：
 
 | | 在本机使用 | 连接服务器 |
 |---|---|---|
-| 适合 | 只在一台设备上使用 | 在多台设备之间同步，或使用网页端 |
-| 需要 | 只需安装 App | 一台服务器和一个域名 |
+| 适合 | 只在一台设备上使用 | 在多台设备之间同步，或使用网页版 |
+| 需要 | 只需安装 App | 一台自己的服务器和一个域名 |
 | 账号 | 不需要 | 用户名和密码 |
 | 数据存放 | 这台设备上，可以备份和恢复 | 自己的服务器上，各设备各有一份副本 |
 
-- **在本机使用**：点击“在本机使用”即可开始。
-- **连接服务器**：先部署服务端（见下一节），再在登录页的“服务器地址”里填写域名，用用户名和密码登录。之后 App 从这台服务器获取更新，不需要再手动下载。
+- **在本机使用**：点击“在本机使用”即可开始，适合先试用。详见[在本机使用](./local)。
+- **连接服务器**：先按[部署服务器](./server)准备好服务器，再点击“连接服务器”，填写服务器地址、用户名和密码登录。
 
-## 3. 部署服务端
+两种用法的数据互不相通。先在本机使用、以后改用服务器也可以，但本机的数据不会自动搬过去。
 
-只在连接服务器时需要。服务端和网页端在同一个 Docker 镜像里，支持 amd64 和 arm64。在服务器上运行：
+## 3. 开始使用
 
-```sh
-mkdir nexttodo && cd nexttodo
-curl -fsSLO https://raw.githubusercontent.com/JunieXD/NextTodo/main/deploy/compose.yaml
-mkdir data && sudo chown 65534:65534 data
-docker compose up -d
-docker compose exec nexttodo /nexttodo-server create-admin <用户名>
-```
+1. 在添加框里写下一件事，按回车。添加框在手机屏幕底部，电脑上在标题下方。
+2. 点开这一项，在“前置”里选出要先完成的事项。
+3. 回到“接下来”，那里只列出现在能做的事。
 
-最后一条命令创建管理员账号，按提示输入两次密码。服务端默认监听 `127.0.0.1:8080`，前面需要一个提供 HTTPS 的反向代理。反向代理的配置、升级和备份见[部署文档](https://github.com/JunieXD/NextTodo/blob/main/docs/deploy.md)。
+详见[基本用法](./basics)。
 
-其他人注册需要邀请码，由管理员在设置的“邀请注册”里生成，也可以复制邀请链接发给对方。部署好后，用浏览器打开域名就是网页端，可以安装为 PWA。
+## 4. 更多
 
-## 4. 接入 agent
-
-在 App 的设置里生成令牌，页面上会给出填好地址和令牌的命令行、Claude Code 和 Codex 配置，复制即可。命令行的下载和安装见 [agent 接入](https://github.com/JunieXD/NextTodo/blob/main/docs/agent.md#命令行)。
-
-本机模式下，agent 只能在电脑上接入，并且要在 App 运行时使用。
+- [AI 整理](./ai)：把一大段话交给 AI，整理成带先后关系的事项。
+- [接入 agent](./agent)：让 Claude Code、Codex 这类 AI 助手直接管理待办。

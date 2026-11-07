@@ -474,7 +474,7 @@ function TokenCreated({ name, secret, onDone, onClose }: { name: string; secret:
     <Modal title="令牌已生成" onClose={onClose} onBack={onDone}>
       <p className="empty">
         “{name}”的令牌只显示这一次。下面的写法已经填好{inLocal ? "令牌，都要先装命令行" : "服务器地址和令牌"}，复制即可。
-        {app === "desktop" ? "命令行在设置的“命令行”一组安装。" : <Help to="agent">如何安装命令行</Help>}
+        {app === "desktop" ? "命令行在设置的“命令行”一组安装。" : <Help to="agent#cli">如何安装命令行</Help>}
       </p>
       <Copyable label="令牌" text={secret} />
       {inLocal ? (

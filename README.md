@@ -59,43 +59,26 @@ App 可以只在本机使用，不需要服务器和账号；也可以连接自�
 | Windows | [NextTodo-windows-x64-setup.exe](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-windows-x64-setup.exe) | Windows 10 或 11，x64 |
 | 网页 | 用浏览器打开服务器的域名，可以安装为 PWA | 需要先部署服务端 |
 
-macOS 和 Windows 的安装包没有经过商业签名。macOS 首次打开会被拦下，到“系统设置 → 隐私与安全性”中点击“仍要打开”；Windows 出现 SmartScreen 提示时，点击“更多信息 → 仍要运行”。
+macOS 和 Windows 的安装包没有经过商业签名。macOS 首次打开会被拦下，到“系统设置 → 隐私与安全性”中点击“仍要打开”；Windows 出现 SmartScreen 提示时，点击“更多信息 → 仍要运行”。详见官网的[下载和安装](https://juniexd.github.io/NextTodo/guide/install)。
 
 ### 2. 选择用法
 
-App 的登录页提供两种用法，两者的数据互不相通：
+App 第一次打开时，在两种用法之间选一种，两者的数据互不相通：
 
-- **在本机使用**：点击“在本机使用”即可，不需要服务器和账号。数据只存在这台设备上，不和其他设备同步，可以在设置里备份和恢复。详见[本机模式](docs/local.md)。
-- **连接服务器**：需要多台设备同步或使用网页端时，先按下一节部署服务端，再在“服务器地址”里填你的域名，用用户名和密码登录。之后的更新从这台服务器获取，不需要再手动下载。
+- **在本机使用**：不需要服务器和账号，数据只存在这台设备上，可以备份和恢复。
+- **连接服务器**：在多台设备之间同步，也可以用网页版。需要先用 Docker 部署服务端，步骤见官网的[部署服务器](https://juniexd.github.io/NextTodo/guide/server)，细节见[部署文档](docs/deploy.md)。
 
-### 3. 部署服务端（连接服务器时）
+### 3. 接入 agent
 
-服务端和网页端在同一个 Docker 镜像里，支持 amd64 和 arm64。在服务器上：
+在 App 的设置里生成令牌，页面上会给出填好的 Claude Code、Codex 配置。命令行可以在桌面 App 的设置里一键安装，也可以用安装脚本：
 
 ```sh
-mkdir nexttodo && cd nexttodo
-curl -fsSLO https://raw.githubusercontent.com/JunieXD/NextTodo/main/deploy/compose.yaml
-mkdir data && sudo chown 65534:65534 data
-docker compose up -d
-docker compose exec nexttodo /nexttodo-server create-admin <用户名>
+curl -fsSL https://juniexd.github.io/NextTodo/install.sh | sh
 ```
 
-服务端默认监听 `127.0.0.1:8080`，前面需要一个提供 HTTPS 的反向代理。反向代理的配置、升级和备份见[部署文档](docs/deploy.md)。其他人凭邀请码注册，邀请码由管理员在设置的“邀请注册”里生成。
+详见官网的[接入 agent](https://juniexd.github.io/NextTodo/guide/agent)，工具列表和计划格式见 [agent 接入](docs/agent.md)。
 
-### 4. 接入 agent
-
-- **命令行**：从 [Releases](https://github.com/JunieXD/NextTodo/releases/latest) 下载 `nexttodo`（macOS、Linux、Windows），登录后把 skill 装给 agent：
-
-  ```sh
-  nexttodo login --url https://todo.example.com --name "Claude Code"
-  nexttodo skill install
-  nexttodo next
-  ```
-
-- **MCP**：在 App 的设置里生成令牌，页面上会给出填好地址和令牌的 Claude Code、Codex 配置，复制即可。
-- **本机模式**：在电脑上使用，App 运行时可用。先装好命令行，再按令牌页给出的写法设置；MCP 经 `nexttodo mcp` 转接。Android 的本机模式不支持接入 agent。
-
-下载和安装的细节、工具列表、计划格式见 [agent 接入](docs/agent.md)。
+更多用法见[使用教程](https://juniexd.github.io/NextTodo/guide/)。
 
 ## 开发
 

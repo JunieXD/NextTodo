@@ -143,7 +143,7 @@ export function AiPage({ onBack, onClose }: { onBack(): void; onClose(): void })
   return (
     <Modal title="AI 整理" onClose={onClose} onBack={onBack}>
       <p className="empty">
-        在添加框点 ✦ 切到 AI 整理，写下一段话，由所选的模型整理成事项。原文、文件夹名和其中未完成的事项会发给这个服务商。<Help to="ai">如何获取 API 密钥</Help>
+        在添加框点 ✦ 切到 AI 整理，写下一段话，由所选的模型整理成事项。原文、文件夹名和其中未完成的事项会发给这个服务商。<Help to="ai#key">如何获取 API 密钥</Help>
       </p>
       <label className="field">
         服务商

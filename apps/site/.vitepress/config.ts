@@ -17,7 +17,30 @@ export default defineConfig({
       { text: "快速上手", link: "/guide/" },
       { text: "下载", link: releases },
     ],
-    sidebar: [{ text: "开始", items: [{ text: "快速上手", link: "/guide/" }] }],
+    sidebar: [
+      {
+        text: "开始",
+        items: [
+          { text: "快速上手", link: "/guide/" },
+          { text: "下载和安装", link: "/guide/install" },
+          { text: "基本用法", link: "/guide/basics" },
+        ],
+      },
+      {
+        text: "进阶",
+        items: [
+          { text: "AI 整理", link: "/guide/ai" },
+          { text: "接入 agent", link: "/guide/agent" },
+        ],
+      },
+      {
+        text: "数据",
+        items: [
+          { text: "在本机使用", link: "/guide/local" },
+          { text: "部署服务器", link: "/guide/server" },
+        ],
+      },
+    ],
     socialLinks: [{ icon: "github", link: "https://github.com/JunieXD/NextTodo" }],
     search: {
       provider: "local",

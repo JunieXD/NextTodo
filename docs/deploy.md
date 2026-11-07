@@ -132,4 +132,5 @@ NEXTTODO_HOST=myserver NEXTTODO_DIR=/srv/nexttodo NEXTTODO_PORT=8080 deploy/depl
 
 - 不用 GitHub Actions 构建。发布要求工作区干净；和上次发布的内容相同时不提交。
 - 截图用 `docs/images` 里的，和 README 共用一份。
+- “使用教程”（`apps/site/guide/`）写给什么都不懂的用户：一步步讲清怎么做，按钮和菜单的叫法和 App 里的一致；设计和实现的细节留在 `docs/`，教程链接过去。App 里的帮助链接指向这些页面（`apps/web/src/ui/help.tsx` 的调用处），改页面路径或标题锚点时一起改。
 - 站内搜索用浏览器的 `Intl.Segmenter` 把中文切成词（Chrome 87、Safari 14.1、Firefox 125 起），更早的浏览器里只有搜索用不了。

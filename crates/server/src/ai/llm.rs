@@ -205,9 +205,13 @@ pub fn body(c: &Config, p: &Provider, prompt: &Prompt, json: bool) -> Value {
     b
 }
 
-/// The API over HTTPS. It is the user's own address the server calls, so: HTTPS only, public
-/// addresses only, no redirects, and only so much read back.
-pub struct Https;
+/// The API over HTTPS, at the address the user gives: no redirects, and only so much read back.
+pub struct Https {
+    /// Public addresses only, on a server: several people use it, and none of them is to reach into
+    /// the network it runs in. Not in local mode, where the device's user is the only one, and a
+    /// proxy there may give every name an address of its own (fake-ip, in `198.18.0.0/15`).
+    pub public_only: bool,
+}
 
 /// How much of the model's answer is taken.
 const MAX_ANSWER: usize = 1 << 20;
@@ -256,15 +260,18 @@ fn public(ip: IpAddr) -> bool {
 
 const NOT_PUBLIC: &str = "接口地址不是公网地址，服务器不会访问";
 
-/// Resolves names as usual and keeps only public addresses, whatever a name resolves to. The
-/// connection goes to the addresses kept, so a name resolving differently later changes nothing.
-#[derive(Debug, Default)]
-struct PublicOnly(DefaultResolver);
+/// Resolves names as usual and, told to, keeps only public addresses, whatever a name resolves to.
+/// The connection goes to the addresses kept, so a name resolving differently later changes nothing.
+#[derive(Debug)]
+struct Addresses {
+    names: DefaultResolver,
+    public_only: bool,
+}
 
-impl Resolver for PublicOnly {
+impl Resolver for Addresses {
     fn resolve(&self, uri: &Uri, config: &ureq::config::Config, timeout: NextTimeout) -> Result<ResolvedSocketAddrs, ureq::Error> {
         let mut kept = self.empty();
-        for addr in self.0.resolve(uri, config, timeout)?.iter().filter(|a| public(a.ip())) {
+        for addr in self.names.resolve(uri, config, timeout)?.iter().filter(|a| !self.public_only || public(a.ip())) {
             kept.push(*addr);
         }
         if kept.is_empty() {
@@ -274,7 +281,7 @@ impl Resolver for PublicOnly {
     }
 }
 
-fn agent(timeout: Duration) -> ureq::Agent {
+fn agent(timeout: Duration, public_only: bool) -> ureq::Agent {
     let config = ureq::Agent::config_builder()
         .https_only(true)
         // It connects itself, so that the addresses are the ones checked.
@@ -283,7 +290,7 @@ fn agent(timeout: Duration) -> ureq::Agent {
         .http_status_as_error(false)
         .timeout_global(Some(timeout))
         .build();
-    ureq::Agent::with_parts(config, DefaultConnector::default(), PublicOnly::default())
+    ureq::Agent::with_parts(config, DefaultConnector::default(), Addresses { names: DefaultResolver::default(), public_only })
 }
 
 fn transport(e: ureq::Error) -> Failure {
@@ -336,7 +343,7 @@ impl Https {
 
     fn answer(&self, c: &Config, prompt: &Prompt, json: bool, timeout: Duration) -> Result<String, Failure> {
         let p = c.check().map_err(Failure::new)?;
-        let body = self.send(c, agent(timeout).post(c.url("/chat/completions")), &body(c, p, prompt, json))?;
+        let body = self.send(c, agent(timeout, self.public_only).post(c.url("/chat/completions")), &body(c, p, prompt, json))?;
         let streamed = body.mime_type() == Some("text/event-stream");
         let reader = body.into_with_config().limit(MAX_STREAM).reader();
         let answer = if streamed { read_stream(BufReader::new(reader))? } else { read_whole(reader)? };
@@ -348,7 +355,7 @@ impl Https {
 
     fn list(&self, c: &Config) -> Result<Vec<String>, Failure> {
         c.check().map_err(Failure::new)?;
-        let res = agent(Duration::from_secs(20))
+        let res = agent(Duration::from_secs(20), self.public_only)
             .get(c.url("/models"))
             .header("Authorization", format!("Bearer {}", c.api_key))
             .call()
@@ -486,7 +493,9 @@ mod tests {
         }
         for url in ["https://127.0.0.1:9/v1", "https://localhost:9/v1", "https://[::1]:9/v1"] {
             let c = Config { base_url: url.into(), ..config("custom", Thinking::Off) };
-            assert_eq!(Https.models(&c).unwrap_err().message, NOT_PUBLIC, "{url}");
+            assert_eq!(Https { public_only: true }.models(&c).unwrap_err().message, NOT_PUBLIC, "{url}");
+            // In local mode it is called: nothing listens there.
+            assert!(Https { public_only: false }.models(&c).unwrap_err().message.starts_with("无法连接接口"), "{url}");
         }
     }
 

@@ -76,11 +76,14 @@ impl Local {
         std::fs::create_dir_all(dir.join(DB_DIR))?;
         let db = dir.join(DB_DIR).join(DB_FILE);
         let now = crate::Clock::system().now();
-        let (started, (user, epoch)) =
-            start::start(&db, dir.join("snapshots"), (Ipv4Addr::LOCALHOST, 0).into(), Ai::new(None, Arc::new(Https)), move |c| {
-                Ok((local_user(c, now)?, db::epoch(c)?))
-            })
-            .await?;
+        let (started, (user, epoch)) = start::start(
+            &db,
+            dir.join("snapshots"),
+            (Ipv4Addr::LOCALHOST, 0).into(),
+            Ai::new(None, Arc::new(Https { public_only: false })),
+            move |c| Ok((local_user(c, now)?, db::epoch(c)?)),
+        )
+        .await?;
         let url = format!("http://{}", started.listener.local_addr()?);
         #[cfg(feature = "agent-port")]
         let agent_port = crate::agent_port::listen(dir).await?;

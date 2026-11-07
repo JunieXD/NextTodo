@@ -66,7 +66,7 @@ pub struct AppState {
 impl AppState {
     /// With API keys kept only on devices, and models called over HTTPS.
     pub fn new(db: Db, clock: Clock) -> Self {
-        AppState { db, clock, hub: Hub::default(), ai: Arc::new(ai::Ai::new(None, Arc::new(ai::llm::Https))) }
+        AppState { db, clock, hub: Hub::default(), ai: Arc::new(ai::Ai::new(None, Arc::new(ai::llm::Https { public_only: true }))) }
     }
 
     pub fn with_ai(self, ai: ai::Ai) -> Self {

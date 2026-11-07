@@ -15,7 +15,7 @@ use nexttodo_core::board::{Board, Snapshot};
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::TaskId;
 use nexttodo_core::ops::{MAX_OPS, Op};
-use nexttodo_server::ai::llm::{self, Config, Prompt, Thinking};
+use nexttodo_server::ai::llm::{Api, Config, Https, Thinking};
 use nexttodo_server::ai::organize;
 use nexttodo_server::tools;
 use serde::Deserialize;
@@ -210,7 +210,8 @@ fn ask(config: &Config, system: &str, case: &Case, index: usize, run: usize) -> 
     let snap = snapshot(&case.input);
     let shown: HashSet<i64> = snap.tasks.iter().map(|t| t.number).collect();
     let start = Instant::now();
-    let answer = chat(config, &organize::chat(system, &case.input));
+    // As in local mode, where any address is called: a proxy here may give every name one of its own.
+    let answer = Https { public_only: false }.chat(config, &organize::chat(system, &case.input), true, TIMEOUT).map_err(|f| f.message);
     let seconds = start.elapsed().as_secs_f64();
     let facts = case.expect.facts.len();
     let (answer, checked) = match answer {
@@ -232,27 +233,6 @@ fn ask(config: &Config, system: &str, case: &Case, index: usize, run: usize) -> 
         Err(e) => (vec![e], (0, facts)),
     };
     Outcome { case: index, run, answer, problems, facts, seconds }
-}
-
-/// The model's answer, asked as llm.rs asks it but in one piece, and without its check that the
-/// address is public: a proxy on the machine running this may give every name an address of its own.
-fn chat(config: &Config, prompt: &Prompt) -> Result<String, String> {
-    let mut body = llm::body(config, config.check()?, prompt, true);
-    body["stream"] = false.into();
-    let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(TIMEOUT)).http_status_as_error(false).build().into();
-    let mut res = agent
-        .post(format!("{}/chat/completions", config.base_url.trim_end_matches('/')))
-        .header("Authorization", format!("Bearer {}", config.api_key))
-        .content_type("application/json")
-        .send(body.to_string())
-        .map_err(|e| e.to_string())?;
-    let status = res.status().as_u16();
-    let text = res.body_mut().read_to_string().map_err(|e| e.to_string())?;
-    if status != 200 {
-        return Err(format!("接口返回 {status}：{}", text.replace(&config.api_key, "***").chars().take(300).collect::<String>()));
-    }
-    let v: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-    v["choices"][0]["message"]["content"].as_str().map(str::to_owned).ok_or_else(|| "回复里没有内容".into())
 }
 
 /// The case's folder as the server keeps it: its open tasks, and their dependencies.

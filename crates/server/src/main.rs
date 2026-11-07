@@ -56,7 +56,7 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Command::Serve { listen, web } => {
             let _lock = lock(&cli.data, false)?;
-            let ai = Ai::new(secret, Arc::new(Https));
+            let ai = Ai::new(secret, Arc::new(Https { public_only: true }));
             let (started, ()) = start::start(&db, cli.data.join("snapshots"), listen, ai, |_| Ok(())).await?;
             let router = match &web {
                 Some(dir) => with_web(app(started.state.clone()), dir),

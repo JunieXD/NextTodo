@@ -1,0 +1,21 @@
+[
+  { "name": "每天，今天完成今天的", "repeat": { "every": 1, "unit": "day", "from": "due" }, "due": "2026-11-08", "today": "2026-11-08", "next": "2026-11-09" },
+  { "name": "每天，提前完成明天的", "repeat": { "every": 1, "unit": "day", "from": "due" }, "due": "2026-11-09", "today": "2026-11-08", "next": "2026-11-10" },
+  { "name": "每天，逾期三天，跳过过去的日子", "repeat": { "every": 1, "unit": "day", "from": "due" }, "due": "2026-11-05", "today": "2026-11-08", "next": "2026-11-09" },
+  { "name": "每三天，按原来的日程跳过过去的", "repeat": { "every": 3, "unit": "day", "from": "due" }, "due": "2026-11-01", "today": "2026-11-08", "next": "2026-11-10" },
+  { "name": "每周一，周三才完成", "repeat": { "every": 1, "unit": "week", "from": "due" }, "due": "2026-11-09", "today": "2026-11-11", "next": "2026-11-16" },
+  { "name": "每周一，上周五提前完成", "repeat": { "every": 1, "unit": "week", "from": "due" }, "due": "2026-11-09", "today": "2026-11-06", "next": "2026-11-16" },
+  { "name": "每两周，跨年", "repeat": { "every": 2, "unit": "week", "from": "due" }, "due": "2026-12-25", "today": "2026-12-25", "next": "2027-01-08" },
+  { "name": "每 30 天，从完成那天算", "repeat": { "every": 30, "unit": "day", "from": "done" }, "due": "2026-11-01", "today": "2026-11-06", "next": "2026-12-06" },
+  { "name": "从完成那天算，提前完成也从今天算", "repeat": { "every": 1, "unit": "week", "from": "done" }, "due": "2026-11-20", "today": "2026-11-08", "next": "2026-11-15" },
+  { "name": "每月，同一天", "repeat": { "every": 1, "unit": "month", "from": "due" }, "due": "2026-11-15", "today": "2026-11-15", "next": "2026-12-15" },
+  { "name": "每月 30 号，二月取最后一天", "repeat": { "every": 1, "unit": "month", "from": "due" }, "due": "2027-01-30", "today": "2027-01-30", "next": "2027-02-28" },
+  { "name": "月末仍取月末：1 月 31 日到 2 月 28 日", "repeat": { "every": 1, "unit": "month", "from": "due" }, "due": "2027-01-31", "today": "2027-01-31", "next": "2027-02-28" },
+  { "name": "月末仍取月末：2 月 28 日到 3 月 31 日", "repeat": { "every": 1, "unit": "month", "from": "due" }, "due": "2027-02-28", "today": "2027-02-28", "next": "2027-03-31" },
+  { "name": "闰年的 2 月", "repeat": { "every": 1, "unit": "month", "from": "due" }, "due": "2028-01-31", "today": "2028-01-31", "next": "2028-02-29" },
+  { "name": "每月，逾期两个月，跳过过去的月份", "repeat": { "every": 1, "unit": "month", "from": "due" }, "due": "2026-09-10", "today": "2026-11-12", "next": "2026-12-10" },
+  { "name": "每月，逾期跨过短月，不因短月漂移", "repeat": { "every": 1, "unit": "month", "from": "due" }, "due": "2027-01-30", "today": "2027-03-15", "next": "2027-03-30" },
+  { "name": "每 12 个月，闰日到平年取 2 月 28 日", "repeat": { "every": 12, "unit": "month", "from": "due" }, "due": "2028-02-29", "today": "2028-02-29", "next": "2029-02-28" },
+  { "name": "每 3 个月，从完成那天算，跨年", "repeat": { "every": 3, "unit": "month", "from": "done" }, "due": "2026-10-01", "today": "2026-11-08", "next": "2027-02-08" },
+  { "name": "超出 9999 年就没有下一次", "repeat": { "every": 1, "unit": "day", "from": "due" }, "due": "9999-12-31", "today": "9999-12-31", "next": null }
+]

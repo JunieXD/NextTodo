@@ -5,15 +5,15 @@ use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
 use nexttodo_core::board::{Board, Snapshot, Status};
-use nexttodo_core::model::{Change, Description, Due, Effect, FolderId, MutationId, Name, Task, TaskId};
+use nexttodo_core::model::{Change, Date, Description, Due, Effect, FolderId, MutationId, Name, Repeat, RepeatFrom, Task, TaskId};
 use nexttodo_core::ops::Op;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::json;
 use uuid::Uuid;
 
 use super::args::{
-    AddArgs, ApplyArgs, DeleteArgs, DepArgs, EditArgs, MkdirArgs, MoveArgs, Plan, PlanRef, PlanTask, RenameArgs, Replace, TasksArgs,
-    UndoArgs,
+    AddArgs, ApplyArgs, DeleteArgs, DepArgs, DoneArgs, EditArgs, MkdirArgs, MoveArgs, Plan, PlanRef, PlanTask, RenameArgs, RepeatText,
+    Replace, TasksArgs, UndoArgs,
 };
 use super::text::{self, Names, task_view};
 use super::{Output, WriteFn, find_folder, find_task};
@@ -143,11 +143,22 @@ impl Folders<'_, '_> {
     }
 }
 
-fn due(due: Option<super::args::DueText>, remind: Option<u32>) -> Result<Option<Due>, ApiError> {
-    match (due, remind) {
-        (None, None) => Ok(None),
-        (None, Some(_)) => Err(ApiError::invalid("设置提醒需要截止时间", Some("remind".into()))),
-        (Some(d), remind) => Due::new(d.date, d.time, remind).map(Some).map_err(|m| ApiError::invalid(m, Some("due".into()))),
+fn due(due: Option<super::args::DueText>, remind: Option<u32>, repeat: Option<Repeat>) -> Result<Option<Due>, ApiError> {
+    match (due, remind, repeat) {
+        (None, None, None) => Ok(None),
+        (None, Some(_), _) => Err(ApiError::invalid("设置提醒需要截止时间", Some("remind".into()))),
+        (None, None, Some(_)) => Err(ApiError::invalid("设置重复需要截止时间", Some("repeat".into()))),
+        (Some(d), remind, repeat) => {
+            Due::new(d.date, d.time, remind, repeat).map(Some).map_err(|m| ApiError::invalid(m, Some("due".into())))
+        }
+    }
+}
+
+/// The repeat given, from the due date unless said.
+fn repeat(repeat: Option<RepeatText>, from: Option<RepeatFrom>) -> Result<Option<Repeat>, ApiError> {
+    match (repeat, from) {
+        (None, Some(_)) => Err(ApiError::invalid("repeat_from 只能和 repeat 一起给", Some("repeat_from".into()))),
+        (r, from) => Ok(r.map(|r| Repeat { every: r.every, unit: r.unit, from: from.unwrap_or(RepeatFrom::Due) })),
     }
 }
 
@@ -187,7 +198,7 @@ fn plan_ops(b: &Board, plan: Plan) -> Result<Vec<Op>, ApiError> {
     };
     let mut links = Vec::new();
     for (t, &id) in plan.tasks.into_iter().zip(&ids) {
-        let PlanTask { name: _, title, description, folder, due: due_text, remind, after, before } = t;
+        let PlanTask { name: _, title, description, folder, due: due_text, remind, repeat: repeat_text, repeat_from, after, before } = t;
         let folder_id = match folder {
             None => base,
             Some(p) if p.trim_start().starts_with('/') => folders.ensure(&mut ops, &p)?.0,
@@ -198,7 +209,7 @@ fn plan_ops(b: &Board, plan: Plan) -> Result<Vec<Op>, ApiError> {
             title,
             folder_id,
             description: description.unwrap_or_default(),
-            due: due(due_text, remind)?,
+            due: due(due_text, remind, repeat(repeat_text, repeat_from)?)?,
             sort_key: None,
             done: false,
         });
@@ -223,6 +234,8 @@ pub fn add(w: &WriteCx, a: AddArgs) -> Result<Write, ApiError> {
         folder: None,
         due: a.due,
         remind: a.remind,
+        repeat: a.repeat,
+        repeat_from: a.repeat_from,
         after: a.after.into_iter().map(PlanRef::Number).collect(),
         before: a.before.into_iter().map(PlanRef::Number).collect(),
     };
@@ -240,7 +253,8 @@ pub fn apply(w: &WriteCx, a: ApplyArgs) -> Result<Write, ApiError> {
 pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
     let b = w.board;
     let revising = !a.replace.is_empty() || a.append.is_some();
-    if a.title.is_none() && a.description.is_none() && !revising && a.due.is_none() && a.remind.is_none() {
+    let changes_repeat = a.repeat.is_some() || a.repeat_from.is_some();
+    if a.title.is_none() && a.description.is_none() && !revising && a.due.is_none() && a.remind.is_none() && !changes_repeat {
         return Err(ApiError::invalid("未指定要修改的内容", None));
     }
     if a.description.is_some() && revising {
@@ -248,24 +262,58 @@ pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
     }
     let t = find_task(b, a.task)?;
     let description = if revising { Some(revise(t.description.as_str(), a.replace, a.append)?) } else { a.description };
-    let current_remind = t.due.as_ref().and_then(|d| d.at.as_ref()).and_then(|at| at.remind_before);
+    let current = t.due.as_ref();
+    let current_remind = current.and_then(|d| d.at.as_ref()).and_then(|at| at.remind_before);
+    // `Some(None)` stops it repeating.
+    let new_repeat = if changes_repeat { Some(repeat(a.repeat.flatten(), a.repeat_from)?) } else { None };
+    let no_time = || ApiError::invalid("该事项没有具体的截止时间，无法设置提醒", Some("remind".into()));
     let new_due = match (a.due, a.remind) {
-        (None, None) => None,
-        (Some(None), Some(Some(_))) => return Err(ApiError::invalid("清除截止时间时不能同时设置提醒", Some("remind".into()))),
-        (Some(None), _) => Some(None),
-        (Some(Some(d)), remind) => {
-            // Moving the deadline keeps the reminder as long as there is still a time to remind before.
-            let remind = remind.unwrap_or(if d.time.is_some() { current_remind } else { None });
-            Some(due(Some(d), remind)?)
+        (None, None) if new_repeat.is_none() => None,
+        (Some(None), remind) => {
+            if matches!(remind, Some(Some(_))) {
+                return Err(ApiError::invalid("清除截止时间时不能同时设置提醒", Some("remind".into())));
+            }
+            if matches!(new_repeat, Some(Some(_))) {
+                return Err(ApiError::invalid("清除截止时间时不能同时设置重复", Some("repeat".into())));
+            }
+            Some(None)
         }
-        (None, Some(remind)) => match t.due.as_ref().and_then(|d| d.at.as_ref().map(|at| (d.date.clone(), at.time.clone()))) {
-            Some((date, time)) => Some(Some(Due::new(date, Some(time), remind).map_err(|m| ApiError::invalid(m, Some("remind".into())))?)),
-            // Without a time there is no reminder, so clearing it changes nothing.
-            None if remind.is_none() => None,
-            None => return Err(ApiError::invalid("该事项没有具体的截止时间，无法设置提醒", Some("remind".into()))),
+        (Some(Some(d)), remind) => {
+            // Moving the deadline keeps the reminder as long as there is still a time to remind before,
+            // and the repeat.
+            let remind = remind.unwrap_or(if d.time.is_some() { current_remind } else { None });
+            Some(due(Some(d), remind, new_repeat.unwrap_or(current.and_then(|c| c.repeat)))?)
+        }
+        (None, remind) => match current {
+            Some(c) => {
+                if matches!(remind, Some(Some(_))) && c.at.is_none() {
+                    return Err(no_time());
+                }
+                let time = c.at.as_ref().map(|at| at.time.clone());
+                let new = Due::new(c.date.clone(), time, remind.unwrap_or(current_remind), new_repeat.unwrap_or(c.repeat))
+                    .map_err(|m| ApiError::invalid(m, Some("remind".into())))?;
+                // Clearing a reminder there isn't changes nothing.
+                (Some(&new) != current).then_some(Some(new))
+            }
+            None if matches!(remind, Some(Some(_))) => return Err(no_time()),
+            None if matches!(new_repeat, Some(Some(_))) => {
+                return Err(ApiError::invalid("该事项没有截止时间，无法设置重复", Some("repeat".into())));
+            }
+            // Without a due date there is no reminder or repeat, so clearing them changes nothing.
+            None => None,
         },
     };
-    Ok(vec![Op::TaskUpdate { id: t.id, folder_id: None, title: a.title, description, due: new_due, sort_key: None, done: None }].into())
+    Ok(vec![Op::TaskUpdate {
+        id: t.id,
+        folder_id: None,
+        title: a.title,
+        description,
+        due: new_due,
+        sort_key: None,
+        done: None,
+        today: None,
+    }]
+    .into())
 }
 
 /// The description as it is now with each `old` replaced by its `new` in turn, then `append` on a
@@ -301,7 +349,8 @@ fn revise(current: &str, replace: Vec<Replace>, append: Option<String>) -> Resul
     Description::try_from(revised).map_err(|m| ApiError::invalid(m, Some("description".into())))
 }
 
-fn set_done(b: &Board, tasks: Vec<i64>, done: bool) -> Result<Write, ApiError> {
+/// Marks `tasks` done or open again; a repeating task done is due next time, counted from `today`.
+fn set_done(b: &Board, tasks: Vec<i64>, done: bool, today: Option<Date>) -> Result<Write, ApiError> {
     if tasks.is_empty() {
         return Err(ApiError::invalid("至少需要指定一个事项", Some("tasks".into())));
     }
@@ -310,20 +359,29 @@ fn set_done(b: &Board, tasks: Vec<i64>, done: bool) -> Result<Write, ApiError> {
     for n in tasks {
         let id = find_task(b, n)?.id;
         if seen.insert(id) {
-            ops.push(Op::TaskUpdate { id, folder_id: None, title: None, description: None, due: None, sort_key: None, done: Some(done) });
+            ops.push(Op::TaskUpdate {
+                id,
+                folder_id: None,
+                title: None,
+                description: None,
+                due: None,
+                sort_key: None,
+                done: Some(done),
+                today: today.clone(),
+            });
         }
     }
     Ok(ops.into())
 }
 
-pub fn done(w: &WriteCx, a: TasksArgs) -> Result<Write, ApiError> {
+pub fn done(w: &WriteCx, a: DoneArgs) -> Result<Write, ApiError> {
     let b = w.board;
-    set_done(b, a.tasks, true)
+    set_done(b, a.tasks, true, a.today)
 }
 
 pub fn reopen(w: &WriteCx, a: TasksArgs) -> Result<Write, ApiError> {
     let b = w.board;
-    set_done(b, a.tasks, false)
+    set_done(b, a.tasks, false, None)
 }
 
 pub fn mkdir(w: &WriteCx, a: MkdirArgs) -> Result<Write, ApiError> {
@@ -356,7 +414,16 @@ pub fn move_to(w: &WriteCx, a: MoveArgs) -> Result<Write, ApiError> {
     let mut ops = Vec::new();
     for n in a.tasks {
         let t = find_task(b, n)?;
-        ops.push(Op::TaskUpdate { id: t.id, folder_id: Some(to), title: None, description: None, due: None, sort_key: None, done: None });
+        ops.push(Op::TaskUpdate {
+            id: t.id,
+            folder_id: Some(to),
+            title: None,
+            description: None,
+            due: None,
+            sort_key: None,
+            done: None,
+            today: None,
+        });
     }
     for path in &a.folders {
         ops.push(Op::FolderUpdate { id: folder_id(b, path, "移动")?, name: None, parent_id: Some(to), sort_key: None });

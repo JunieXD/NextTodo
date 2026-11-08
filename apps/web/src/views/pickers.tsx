@@ -3,6 +3,9 @@
 import { Check, ChevronLeft, ChevronRight, Folder as FolderIcon, Search } from "lucide-react";
 import { useRef, useState } from "react";
 import type { Due } from "../api/types/Due";
+import type { Repeat } from "../api/types/Repeat";
+import type { RepeatFrom } from "../api/types/RepeatFrom";
+import type { RepeatUnit } from "../api/types/RepeatUnit";
 import type { FolderId } from "../api/types/FolderId";
 import type { Task } from "../api/types/Task";
 import { matches } from "../domain/board";
@@ -147,17 +150,31 @@ export function TaskPicker({ task, dir, onPick, onClose }: { task: Task; dir: "p
   );
 }
 
-/** Sets or clears the due date, its time and the reminder. */
-export function DueEditor({ due, onSave, onClose }: { due: Due | null; onSave(d: Due | null): void; onClose(): void }) {
+const UNITS: [RepeatUnit, string, string][] = [
+  ["day", "每天", "天"],
+  ["week", "每周", "周"],
+  ["month", "每月", "个月"],
+];
+
+/** Sets or clears the due date, its time, the reminder and how it repeats; a task `done` doesn't
+ * repeat. */
+export function DueEditor({ due, done, onSave, onClose }: { due: Due | null; done: boolean; onSave(d: Due | null): void; onClose(): void }) {
   const [date, setDate] = useState(due?.date ?? isoDate(new Date()));
   const [time, setTime] = useState(due?.time ?? "");
   const [remind, setRemind] = useState(due?.remind_before?.toString() ?? "");
+  const was = due?.repeat;
+  // One of the units, every one of them; or every so many of a unit.
+  const [kind, setKind] = useState<RepeatUnit | "custom" | "">(!was ? "" : was.every > 1 ? "custom" : was.unit);
+  const [every, setEvery] = useState(String(was?.every ?? 2));
+  const [unit, setUnit] = useState<RepeatUnit>(was?.unit ?? "day");
+  const [from, setFrom] = useState<RepeatFrom>(was?.from ?? "due");
+  const repeat: Repeat | null = kind === "" ? null : kind === "custom" ? { every: Number(every), unit, from } : { every: 1, unit: kind, from };
   // A reminder set elsewhere (say, by an agent) may not be one of the usual choices.
   const choices = [...new Set([...REMINDERS, ...(due?.remind_before === undefined ? [] : [due.remind_before])])].sort((a, b) => a - b);
   const save = (e: React.FormEvent) => {
     e.preventDefault();
     if (!date) return;
-    onSave({ date, ...(time && { time }), ...(time && remind && { remind_before: Number(remind) }) });
+    onSave({ date, ...(time && { time }), ...(time && remind && { remind_before: Number(remind) }), ...(repeat && { repeat }) });
     onClose();
   };
   return (
@@ -184,6 +201,42 @@ export function DueEditor({ due, onSave, onClose }: { due: Due | null; onSave(d:
             ))}
           </select>
         </label>
+        <label className="field">
+          重复
+          <select value={kind} disabled={done} onChange={(e) => setKind(e.target.value as typeof kind)}>
+            <option value="">{done ? "已完成的事项不能重复" : "不重复"}</option>
+            {UNITS.map(([u, label]) => (
+              <option key={u} value={u}>
+                {label}
+              </option>
+            ))}
+            <option value="custom">自定义</option>
+          </select>
+        </label>
+        {kind === "custom" && (
+          <div className="field">
+            间隔
+            <div className="pair">
+              <input type="number" aria-label="间隔数" min={1} max={365} step={1} required value={every} onChange={(e) => setEvery(e.target.value)} />
+              <select aria-label="单位" value={unit} onChange={(e) => setUnit(e.target.value as RepeatUnit)}>
+                {UNITS.map(([u, , name]) => (
+                  <option key={u} value={u}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+        {repeat && (
+          <label className="field">
+            下一次从
+            <select value={from} onChange={(e) => setFrom(e.target.value as RepeatFrom)}>
+              <option value="due">截止日期算</option>
+              <option value="done">完成那天算</option>
+            </select>
+          </label>
+        )}
         <div className="actions">
           {due && (
             <button type="button" className="text-btn danger-text" onClick={() => (onSave(null), onClose())}>

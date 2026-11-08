@@ -75,11 +75,14 @@
 | due_date | TEXT，可空 | |
 | due_time | TEXT，可空 | 只能在有 `due_date` 时设置 |
 | remind_before | INTEGER，可空 | 提前多少分钟提醒，0 表示截止时；只能在有 `due_time` 时设置 |
+| repeat_every | INTEGER，可空 | [重复](design.md#重复)的间隔数，1–365；只能在有 `due_date` 时设置 |
+| repeat_unit | TEXT，可空 | `day`、`week` 或 `month` |
+| repeat_from | TEXT，可空 | 下一次从哪天算：`due`（截止日期）或 `done`（完成那天） |
 | sort_key | TEXT | 文件夹内的手动顺序 |
 | created_at / updated_at | INTEGER | |
 | created_via / updated_via | TEXT，可空 | 用 API 令牌改动时记令牌名，AI 整理添加的记“AI 整理”；本人在设备上改动时为空 |
 
-`(owner_id, number)` 唯一。截止和提醒的约束同时用 `CHECK` 写在表上。
+`(owner_id, number)` 唯一。重复的三列同时有值或同时为空，已完成的事项（`done_at` 有值）不能有。截止、提醒和重复的约束同时用 `CHECK` 写在表上。
 
 ### dependencies
 

@@ -3,6 +3,7 @@
 import type { FolderId } from "../api/types/FolderId";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
+import { formatDue, isoDate } from "../domain/dates";
 import { useCommit, useSession, useUndo } from "../session";
 import { useFeedback } from "../ui/feedback";
 import { useMarking } from "./marks";
@@ -31,8 +32,15 @@ export function useTaskActions(): RowActions & { link(before: TaskId, after: Tas
         if (!ok) return;
       }
       const readyBefore = new Set(board().next().map((x) => x.id));
-      const r = commit([{ op: "task.update", id: t.id, done: completing }]);
+      const repeating = completing && t.due?.repeat !== undefined;
+      // A repeating task's next due date counts from the day here.
+      const r = commit([{ op: "task.update", id: t.id, done: completing, ...(repeating && { today: isoDate(new Date()) }) }]);
       if (!r) return;
+      if (repeating) {
+        marking.pop(t.id);
+        snack({ text: `下一次：${formatDue(board().task(t.id)!.due!, new Date())}`, action: "撤销", onAction: () => undo(r.id) });
+        return;
+      }
       if (!completing) {
         marking.pop(t.id);
         snack({ text: `已恢复“${t.title}”`, action: "撤销", onAction: () => undo(r.id) });

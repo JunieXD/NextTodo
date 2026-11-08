@@ -6,6 +6,7 @@ import { generateKeyBetween } from "fractional-indexing";
 import type { AiJob } from "../api/types/AiJob";
 import type { AiJobId } from "../api/types/AiJobId";
 import type { Dependency } from "../api/types/Dependency";
+import type { Due } from "../api/types/Due";
 import type { Effect } from "../api/types/Effect";
 import type { Folder } from "../api/types/Folder";
 import type { FolderId } from "../api/types/FolderId";
@@ -15,6 +16,7 @@ import type { Snapshot } from "../api/types/Snapshot";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import { cmp } from "./board";
+import { nextDue } from "./repeat";
 
 /** A user's data, keyed for changes. */
 export interface Data {
@@ -173,7 +175,16 @@ class Applier {
         if (op.description !== undefined) t.description = op.description;
         if (op.due !== undefined) t.due = op.due;
         if (op.sort_key !== undefined) t.sort_key = op.sort_key;
-        if (op.done !== undefined && op.done !== (t.done_at !== null)) t.done_at = op.done ? now : null;
+        if (op.done !== undefined && op.done !== (t.done_at !== null)) {
+          const repeat = t.due?.repeat;
+          // Done, a repeating task stays open, due next time (docs/design.md#重复).
+          if (op.done && t.due && repeat) {
+            if (!op.today) throw new Rejected("invalid", "完成重复的事项需要给出今天的日期");
+            const date = nextDue(repeat, t.due.date, op.today);
+            if (!date) throw new Rejected("invalid", "下一次的截止日期超出范围");
+            t.due = { ...t.due, date };
+          } else t.done_at = op.done ? now : null;
+        }
         this.updateTask(before, t);
         return;
       }
@@ -318,11 +329,13 @@ class Applier {
   }
 
   private createTask(t: Task) {
+    checkRepeat(t);
     this.push({ kind: "task", before: null, after: t });
   }
 
   private updateTask(before: Task, after: Task) {
     if (same(before, after)) return;
+    checkRepeat(after);
     if (after.folder_id !== before.folder_id && after.folder_id !== null) this.folder(after.folder_id);
     this.push({ kind: "task", before, after: { ...after, updated_at: this.cx.now, updated_via: null } });
   }
@@ -403,8 +416,8 @@ class Applier {
           this.createTask({ ...t, updated_at: now, updated_via: null });
         } else {
           const cur = this.d.tasks.get(e.before.id);
-          const fields = ["folder_id", "title", "description", "done_at", "due", "sort_key"] as const;
-          if (cur) this.updateTask(cur, restore(cur, e.before, e.after, fields));
+          const fields = ["folder_id", "title", "description", "done_at", "sort_key"] as const;
+          if (cur) this.updateTask(cur, { ...restore(cur, e.before, e.after, fields), due: restoreDue(cur.due, e.before.due, e.after.due) });
         }
       } else if (e.kind === "ai_job") {
         if (!e.before) {
@@ -443,6 +456,29 @@ function restore<T extends object>(cur: T, before: T, after: T, fields: readonly
   const restored = { ...cur };
   for (const f of fields) if (!same(before[f], after[f])) restored[f] = before[f];
   return restored;
+}
+
+/** `cur`'s due date with what changed from `before` to `after` set back, part by part: the date, the
+ * time with its reminder, and the repeat. Undoing moving a repeating task on so keeps a reminder or a
+ * repeat changed since, or cleared since with the due date; without a date to go on, the other parts
+ * have nothing to come back to. */
+function restoreDue(cur: Due | null, before: Due | null, after: Due | null): Due | null {
+  if (!before || !after) return same(before, after) ? cur : before;
+  const date = before.date !== after.date ? before.date : cur?.date;
+  if (!date) return null;
+  const at = before.time !== after.time || before.remind_before !== after.remind_before ? before : cur;
+  const repeat = same(before.repeat, after.repeat) ? cur?.repeat : before.repeat;
+  return {
+    date,
+    ...(at?.time && { time: at.time }),
+    ...(at?.remind_before !== undefined && { remind_before: at.remind_before }),
+    ...(repeat && { repeat }),
+  };
+}
+
+/** A repeating task is never done: done, it moves on (docs/design.md#重复). */
+function checkRepeat(t: Task) {
+  if (t.done_at !== null && t.due?.repeat) throw new Rejected("invalid", `“${t.title}”已完成，不能设置重复，请先重新打开`);
 }
 
 /** Equal as data: entities and their fields are plain JSON. */

@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use nexttodo_core::board::{Board, Snapshot, Status};
-use nexttodo_core::model::{AiJob, Change, Due, Effect, FolderId, JobState, Link, Task, TaskId};
+use nexttodo_core::model::{AiJob, Change, Date, Due, Effect, FolderId, JobState, Link, Repeat, RepeatFrom, RepeatUnit, Task, TaskId};
 use serde_json::{Value, json};
 
 /// How much of a title is shown where a task is only mentioned, not listed.
@@ -17,10 +17,33 @@ pub fn status_tag(s: Status) -> String {
     }
 }
 
+/// `2026-11-20 18:00`, with how it repeats: `2026-11-20，每周`.
 pub fn due(d: &Due) -> String {
-    match &d.at {
-        Some(at) => format!("{} {}", d.date.as_str(), at.time.as_str()),
-        None => d.date.as_str().to_owned(),
+    let mut s = d.date.as_str().to_owned();
+    if let Some(at) = &d.at {
+        s += &format!(" {}", at.time.as_str());
+    }
+    if let Some(r) = d.repeat {
+        s += &format!("，{}", repeat(r));
+    }
+    s
+}
+
+/// `每天`, `每 2 周`, `每 3 个月，从完成那天算`.
+pub fn repeat(r: Repeat) -> String {
+    let unit = match r.unit {
+        RepeatUnit::Day => "天",
+        RepeatUnit::Week => "周",
+        RepeatUnit::Month => "个月",
+    };
+    let every = match (r.every.get(), r.unit) {
+        (1, RepeatUnit::Month) => "每月".to_owned(),
+        (1, _) => format!("每{unit}"),
+        (n, _) => format!("每 {n} {unit}"),
+    };
+    match r.from {
+        RepeatFrom::Due => every,
+        RepeatFrom::Done => format!("{every}，从完成那天算"),
     }
 }
 
@@ -160,6 +183,7 @@ enum Kind {
     TaskCreated,
     TaskDone,
     TaskReopened,
+    TaskRepeated,
     TaskMoved,
     TaskEdited,
     TaskDeleted,
@@ -185,6 +209,7 @@ impl Kind {
             Kind::TaskCreated => ("添加", "添加", "项"),
             Kind::TaskDone => ("完成", "完成", "项"),
             Kind::TaskReopened => ("重新打开", "重新打开", "项"),
+            Kind::TaskRepeated => ("顺延", "顺延", "项"),
             Kind::TaskMoved => ("移动", "移动", "项"),
             Kind::TaskEdited => ("修改", "修改", "项"),
             Kind::TaskDeleted => ("删除", "删除", "项"),
@@ -210,6 +235,7 @@ impl Kind {
             Kind::TaskCreated => "task_created",
             Kind::TaskDone => "task_done",
             Kind::TaskReopened => "task_reopened",
+            Kind::TaskRepeated => "task_repeated",
             Kind::TaskMoved => "task_moved",
             Kind::TaskEdited => "task_edited",
             Kind::TaskDeleted => "task_deleted",
@@ -235,13 +261,22 @@ pub fn job_item(j: &AiJob) -> String {
     format!("“{}”", excerpt(j.text.as_str(), 20))
 }
 
-/// What changed in a task besides whether it is done and which folder it is in; its place in a
-/// folder only within the same folder, as a move puts it somewhere in the new one anyway.
+/// The due date a repeating task moved on to, done: only its date changed, and to a later one.
+fn moved_on<'a>(before: &Task, after: &'a Task) -> Option<&'a Date> {
+    match (&before.due, &after.due) {
+        (Some(b), Some(a)) if b.repeat.is_some() && a.repeat == b.repeat && a.at == b.at && a.date > b.date => Some(&a.date),
+        _ => None,
+    }
+}
+
+/// What changed in a task besides whether it is done, which folder it is in, and a repeating one's
+/// due date moving on; its place in a folder only within the same folder, as a move puts it
+/// somewhere in the new one anyway.
 fn edited(before: &Task, after: &Task) -> Vec<&'static str> {
     [
         ("title", before.title != after.title),
         ("description", before.description != after.description),
-        ("due", before.due != after.due),
+        ("due", before.due != after.due && moved_on(before, after).is_none()),
         ("order", before.sort_key != after.sort_key && before.folder_id == after.folder_id),
     ]
     .into_iter()
@@ -285,6 +320,9 @@ fn describe(e: &Effect, n: &Names) -> Vec<(Kind, String, Value)> {
                 (None, Some(_)) => found.push((Kind::TaskDone, item(t), json!({ "task": t.number }))),
                 (Some(_), None) => found.push((Kind::TaskReopened, item(t), json!({ "task": t.number }))),
                 _ => {}
+            }
+            if let Some(date) = moved_on(before, t) {
+                found.push((Kind::TaskRepeated, format!("{} → {}", item(t), date.as_str()), json!({ "task": t.number, "due": date })));
             }
             if before.folder_id != t.folder_id {
                 let to = n.path(t.folder_id);

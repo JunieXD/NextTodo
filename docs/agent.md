@@ -19,6 +19,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 - **事项**用编号：`12` 或 `#12`。
 - **文件夹**用路径：`/工作/网站改版`，根目录是 `/`。输入时开头的 `/` 可以省略；文件夹名本身像数字时（如 `2026`）必须带 `/`，否则会被当成事项编号。
 - **截止时间**写成 `2026-11-20` 或 `2026-11-20 18:00`。**提醒**写提前的分钟数，`0` 表示截止时提醒，只有带具体时间的截止才能设提醒。
+- **重复**写成间隔数加单位：`1d`、`2w`、`3m`（每天、每两周、每三个月），只有带截止时间的事项能设；`repeat_from` 是 `due`（按截止日期，默认）或 `done`（从完成那天），规则见[总体设计](design.md#重复)。
 - **批次**是改动记录里的序号，写操作的输出和 `log` 里都会给出，撤销时用它。
 
 ## 工具
@@ -33,9 +34,9 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `graph` | `graph [文件夹] [--all] [--mermaid]` | `folder?`、`all?`、`mermaid?` | 文件夹（含子文件夹）里的事项和依赖，按先后顺序；连到外面的事项也列出并注明文件夹 |
 | `log` | `log [-n 条数]` | `limit?` | 最近的改动批次，默认 10，最多 100 |
 | `jobs` | `jobs` | | [AI 整理](ai.md)的请求：等待、整理中和失败的，失败的带原因，以及建议待用户确认的整理文件夹；整理完的请求已经变成事项，不在这里 |
-| `add` | `add <标题> [--folder] [-d 描述] [--due] [--remind] [--after 编号…] [--before 编号…]` | `title`、`folder?`、`description?`、`due?`、`remind?`、`after?`、`before?` | 添加一个事项；文件夹不存在时一起新建 |
-| `edit` | `edit <事项> [--title] [-d 描述 \| --replace 原文 新文… \| --append 文本] [--due \| --no-due] [--remind \| --no-remind]` | `task`、`title?`、`description?`、`replace?`、`append?`、`due?`、`remind?` | 修改事项；`due`、`remind` 给 `null` 表示清除；描述的改法见[同时修改](#同时修改) |
-| `done` | `done <事项…>` | `tasks` | 标为完成，输出因此变成可做的事项 |
+| `add` | `add <标题> [--folder] [-d 描述] [--due] [--remind] [--repeat [--repeat-from]] [--after 编号…] [--before 编号…]` | `title`、`folder?`、`description?`、`due?`、`remind?`、`repeat?`、`repeat_from?`、`after?`、`before?` | 添加一个事项；文件夹不存在时一起新建 |
+| `edit` | `edit <事项> [--title] [-d 描述 \| --replace 原文 新文… \| --append 文本] [--due \| --no-due] [--remind \| --no-remind] [--repeat [--repeat-from] \| --no-repeat]` | `task`、`title?`、`description?`、`replace?`、`append?`、`due?`、`remind?`、`repeat?`、`repeat_from?` | 修改事项；`due`、`remind`、`repeat` 给 `null` 表示清除；描述的改法见[同时修改](#同时修改) |
+| `done` | `done <事项…>` | `tasks`、`today?` | 标为完成，输出因此变成可做的事项；重复的事项改为顺延，输出下一次的截止时间。有重复的事项时必须给 `today`（用户当地的当天日期），命令行自动带上本机日期 |
 | `reopen` | `reopen <事项…>` | `tasks` | 重新打开 |
 | `mkdir` | `mkdir <路径>` | `path` | 新建文件夹，路径上缺的层级一起建；已存在时报错 |
 | `rename` | `rename <文件夹> <新名字>` | `folder`、`name` | 文件夹改名 |
@@ -48,7 +49,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 
 - 命令行里 `mv`、`rm` 的参数像编号的是事项，其余是文件夹。
 - `list`、`next`、`search` 最多列出 `limit` 项，默认 50，最多 500；没列完时最后一行说明还有多少项。`list` 先列未完成的，再列已完成的。
-- `edit` 只改 `due` 不给 `remind` 时：新截止带具体时间就保留原来的提醒，否则去掉。
+- `edit` 只改 `due` 不给 `remind` 时：新截止带具体时间就保留原来的提醒，否则去掉；重复总是保留，清除截止时间时一起清除。`repeat_from` 只能和 `repeat` 一起给。
 - 每个写操作是一个批次，全部生效或全部不生效。
 - 只读令牌只能用前 8 个查询工具。
 
@@ -63,6 +64,7 @@ tasks:
     title: 出设计稿           # 必填
     due: 2026-11-20 18:00
     remind: 60
+    repeat: 1w                # 可选，写法同 add；repeat_from 也可以写
   - ref: api
     title: 写接口
     folder: 后端              # 可选，相对上面的 folder；以 / 开头是完整路径；不存在就新建

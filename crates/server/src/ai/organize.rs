@@ -141,6 +141,10 @@ pub fn parse(answer: &str, shown: &HashSet<i64>) -> Result<Vec<PlanTask>, String
         if t.folder.is_some() {
             return Err("模型返回的结果指定了文件夹".into());
         }
+        // Repeats are the user's to set (docs/design.md#重复).
+        if t.repeat.is_some() || t.repeat_from.is_some() {
+            return Err("模型返回的结果设了重复".into());
+        }
         for r in t.after.iter().chain(&t.before) {
             let n = match r {
                 PlanRef::Number(n) => Some(*n),

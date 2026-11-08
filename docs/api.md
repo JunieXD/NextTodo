@@ -47,7 +47,8 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 { "id": "…", "parent_id": null, "name": "毕业论文", "sort_key": "a0", "created_at": 1730000000000, "updated_at": 1730000000000 }
 // 事项
 { "id": "…", "number": 5, "folder_id": "…", "title": "设计问卷", "description": "…", "done_at": null,
-  "due": { "date": "2026-11-02", "time": "18:00", "remind_before": 60 },  // 没有截止时间时为 null；time、remind_before 可省略
+  "due": { "date": "2026-11-02", "time": "18:00", "remind_before": 60, "repeat": { "every": 1, "unit": "week", "from": "due" } },
+  // 没有截止时间时为 null；time、remind_before、repeat 可省略
   "sort_key": "a1", "created_at": …, "updated_at": …, "created_via": "Claude Code", "updated_via": null }
 // 依赖
 { "before": "<前置 id>", "after": "<后续 id>", "created_at": … }
@@ -79,12 +80,14 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | `folder.update` | `id`，可选 `name`、`parent_id`、`sort_key` | `parent_id: null` 表示移到根目录 |
 | `folder.delete` | `id` | 连同子文件夹、事项和相关依赖 |
 | `task.create` | `id`、`title`，可选 `folder_id`、`description`、`due`、`sort_key`、`done` | |
-| `task.update` | `id`，可选 `folder_id`、`title`、`description`、`due`、`sort_key`、`done` | 只带要改的字段；`due: null` 清除截止时间；`done: true/false` 完成或重新打开 |
+| `task.update` | `id`，可选 `folder_id`、`title`、`description`、`due`、`sort_key`、`done`、`today` | 只带要改的字段；`due: null` 清除截止时间（连同重复）；`done: true/false` 完成或重新打开 |
 | `task.delete` | `id` | 连同相关依赖 |
 | `dep.add` | `before`、`after` | |
 | `dep.remove` | `before`、`after` | |
 | `ai_job.create`、`ai_job.retry`、`ai_job.delete` | | 提交、重试、删除 AI 整理请求，见 [AI 整理](ai.md#接口) |
 | `undo` | `mutation` | 撤销一个改动：按相反顺序把它的变化恢复回去，恢复时同样要通过所有规则。要改回去的东西已经不存在的跳过；要恢复的事项或文件夹原来所在的文件夹、要恢复的依赖连着的事项已经被删除时，整个撤销不生效 |
+
+`task.update` 把有[重复](design.md#重复)的事项标为完成（`done: true`）时不记完成时间，而是按 `today`（发出改动的设备上的当天，`YYYY-MM-DD`）把截止日期顺延到下一次；这时缺了 `today` 返回 400。别的事项不看 `today`。已完成的事项不能有重复，新建或修改出这样的事项返回 400。
 
 成功返回 `{seq, effects}`。同一个 `id` 再次提交时直接返回第一次的结果，不会重复生效；超过保留期的只返回 `seq`，`effects` 为空。
 

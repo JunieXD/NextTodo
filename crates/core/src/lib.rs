@@ -6,4 +6,5 @@ pub mod board;
 pub mod dag;
 pub mod model;
 pub mod ops;
+pub mod repeat;
 pub mod sort_key;

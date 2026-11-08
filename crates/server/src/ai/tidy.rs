@@ -145,7 +145,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
         }
         let t = &sent.task;
         let due = match s.due {
-            Some(d) => Some(Due::new(d.date, d.time, None).map_err(|m| format!("事项 #{} 的截止时间无效：{m}", s.number))?),
+            Some(d) => Some(Due::new(d.date, d.time, None, None).map_err(|m| format!("事项 #{} 的截止时间无效：{m}", s.number))?),
             None => None,
         };
         let mut after = Vec::new();

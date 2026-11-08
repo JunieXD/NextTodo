@@ -107,7 +107,7 @@ tools! {
     Read "jobs"(NoArgs) => read::jobs, "用户提交的 AI 整理请求：等待、正在整理和失败的，失败的带原因。整理好的已经变成事项，不在这里。";
     Write "add"(AddArgs) => write::add, "添加一个事项；文件夹不存在时一起新建。一次加多个、带依赖的事项时用 apply。";
     Write "edit"(EditArgs) => write::edit, "修改事项的标题、描述、截止时间或提醒；只改给出的字段，due、remind 给 null 表示清除。改描述中的一段用 replace、加内容用 append，不要读出整段再整段写回，以免盖掉用户同时做的修改。";
-    Write "done"(TasksArgs) => write::done, "把事项标为完成，结果里会列出因此变成可做的事项。";
+    Write "done"(DoneArgs) => write::done, "把事项标为完成，结果里会列出因此变成可做的事项。重复的事项不会完成，而是把截止时间顺延到下一次，这时要给 today。";
     Write "reopen"(TasksArgs) => write::reopen, "重新打开已完成的事项。";
     Write "mkdir"(MkdirArgs) => write::mkdir, "新建文件夹，路径上缺的层级一起建。";
     Write "rename"(RenameArgs) => write::rename, "给文件夹改名。";

@@ -3,7 +3,7 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use ts_rs::TS;
 
-use crate::model::{AiJobId, Description, Due, FolderId, JobKind, JobText, LocalTime, MutationId, Name, SortKey, TaskId, Title};
+use crate::model::{AiJobId, Date, Description, Due, FolderId, JobKind, JobText, LocalTime, MutationId, Name, SortKey, TaskId, Title};
 
 pub const MAX_OPS: usize = 1000;
 
@@ -109,6 +109,11 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         done: Option<bool>,
+        /// The day on the device that marks a task done: a repeating task's next due date counts
+        /// from it, so it must be given for one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        today: Option<Date>,
     },
     #[serde(rename = "task.delete")]
     TaskDelete { id: TaskId },

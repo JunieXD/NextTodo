@@ -363,6 +363,21 @@ async fn users_cannot_see_or_touch_each_others_data() {
 }
 
 #[tokio::test]
+async fn done_moves_a_repeating_task_on_by_the_day_on_the_device() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let task = id();
+    let due = json!({ "date": "2026-01-31", "repeat": { "every": 1, "unit": "month", "from": "due" } });
+    t.mutate(&s, json!([{ "op": "task.create", "id": task, "title": "交房租", "due": due }])).await;
+    let r = t.mutate(&s, json!([{ "op": "task.update", "id": task, "done": true }])).await;
+    assert_eq!((r.status, r.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("today")));
+    let r = t.mutate(&s, json!([{ "op": "task.update", "id": task, "done": true, "today": "2026-01-31" }])).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    let after = &r.body["effects"][0]["after"];
+    assert_eq!((after["done_at"].clone(), after["due"]["date"].clone()), (Value::Null, json!("2026-02-28")), "the end of the month");
+}
+
+#[tokio::test]
 async fn bad_input_names_the_field() {
     let t = TestApp::new();
     let s = t.admin().await;

@@ -1,6 +1,6 @@
 //! Tool arguments. Descriptions are written for the agents that read the tool list.
 
-use nexttodo_core::model::{Date, Description, Name, Time, Title};
+use nexttodo_core::model::{Date, Description, Every, Name, RepeatFrom, RepeatUnit, Time, Title};
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer};
 
@@ -76,6 +76,13 @@ pub struct AddArgs {
     pub due: Option<DueText>,
     #[schemars(description = "提前多少分钟提醒，0 表示截止时；截止时间要带具体时间")]
     pub remind: Option<u32>,
+    #[schemars(
+        with = "Option<String>",
+        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月；要有截止时间。完成时顺延截止时间，不会真的完成"
+    )]
+    pub repeat: Option<RepeatText>,
+    #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
+    pub repeat_from: Option<RepeatFrom>,
     #[serde(default)]
     #[schemars(description = "前置事项的编号：它们完成后才能做这一项")]
     pub after: Vec<i64>,
@@ -109,6 +116,14 @@ pub struct EditArgs {
     #[serde(default, deserialize_with = "nullable")]
     #[schemars(description = "提前多少分钟提醒，0 表示截止时；null 清除")]
     pub remind: Option<Option<u32>>,
+    #[serde(default, deserialize_with = "nullable")]
+    #[schemars(
+        with = "Option<String>",
+        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月；null 不再重复。只改截止时间时重复保留"
+    )]
+    pub repeat: Option<Option<RepeatText>>,
+    #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
+    pub repeat_from: Option<RepeatFrom>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -125,6 +140,15 @@ pub struct Replace {
 pub struct TasksArgs {
     #[schemars(description = "事项编号", length(min = 1))]
     pub tasks: Vec<i64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DoneArgs {
+    #[schemars(description = "事项编号", length(min = 1))]
+    pub tasks: Vec<i64>,
+    #[schemars(with = "Option<String>", description = "用户当地今天的日期，如 2026-11-08；有重复的事项时必须给，下一次的截止时间据此计算")]
+    pub today: Option<Date>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -210,6 +234,13 @@ pub struct PlanTask {
     pub due: Option<DueText>,
     #[schemars(description = "提前多少分钟提醒，0 表示截止时；截止时间要带具体时间")]
     pub remind: Option<u32>,
+    #[schemars(
+        with = "Option<String>",
+        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月；要有截止时间。完成时顺延截止时间，不会真的完成"
+    )]
+    pub repeat: Option<RepeatText>,
+    #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
+    pub repeat_from: Option<RepeatFrom>,
     #[serde(default)]
     #[schemars(description = "前置：计划里的 ref，或已有事项的编号")]
     pub after: Vec<PlanRef>,
@@ -248,6 +279,28 @@ impl TryFrom<String> for DueText {
         let s = s.trim();
         let (date, time) = s.split_once(' ').map_or((s, None), |(d, t)| (d, Some(t.trim())));
         Ok(DueText { date: date.to_owned().try_into()?, time: time.map(|t| t.to_owned().try_into()).transpose()? })
+    }
+}
+
+/// A repeat as typed: `1d`, `2w`, `3m`.
+#[derive(Clone, Copy, Deserialize)]
+#[serde(try_from = "String")]
+pub struct RepeatText {
+    pub every: Every,
+    pub unit: RepeatUnit,
+}
+
+impl TryFrom<String> for RepeatText {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, String> {
+        let wrong = || format!("重复“{s}”格式错误，应为间隔数加单位，如 1d、2w、3m");
+        let units = [('d', RepeatUnit::Day), ('w', RepeatUnit::Week), ('m', RepeatUnit::Month)];
+        let Some((n, unit)) = units.into_iter().find_map(|(c, unit)| s.trim().strip_suffix(c).map(|n| (n, unit))) else {
+            return Err(wrong());
+        };
+        let n: u32 = n.parse().map_err(|_| wrong())?;
+        Ok(RepeatText { every: n.try_into()?, unit })
     }
 }
 

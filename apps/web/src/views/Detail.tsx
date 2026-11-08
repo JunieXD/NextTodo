@@ -8,6 +8,7 @@ import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
 import { formatDue, formatMoment, remindLabel } from "../domain/dates";
+import { repeatLabel } from "../domain/repeat";
 import { checkDescription, checkTitle } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
 import { Check, Seg } from "../ui/controls";
@@ -112,7 +113,13 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
 
       <div className="group">
         <Prop icon={FolderIcon} label="文件夹" value={board.place(t.folder_id)} onClick={() => setPanel("folder")} />
-        <Prop icon={Calendar} label="截止" value={t.due ? formatDue(t.due, now) : "未设置"} cls={t.due ? dueClass(t, now) : "muted"} onClick={() => setPanel("due")} />
+        <Prop
+          icon={Calendar}
+          label="截止"
+          value={t.due ? formatDue(t.due, now) + (t.due.repeat ? ` · ${repeatLabel(t.due.repeat)}` : "") : "未设置"}
+          cls={t.due ? dueClass(t, now) : "muted"}
+          onClick={() => setPanel("due")}
+        />
         {t.due?.time && (
           <Prop icon={Bell} label="提醒" value={remindLabel(t.due.remind_before)} cls={t.due.remind_before === undefined ? "muted" : ""} onClick={() => setPanel("due")} />
         )}
@@ -154,7 +161,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
           onClose={() => setPanel(null)}
         />
       )}
-      {panel === "due" && <DueEditor due={t.due} onSave={(due) => update({ due })} onClose={() => setPanel(null)} />}
+      {panel === "due" && <DueEditor due={t.due} done={t.done_at !== null} onSave={(due) => update({ due })} onClose={() => setPanel(null)} />}
       {(panel === "pred" || panel === "succ") && (
         <TaskPicker
           task={t}

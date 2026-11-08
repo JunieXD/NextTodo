@@ -451,6 +451,8 @@ svg { display: block; flex: none; }
 .field input, .field select { height: 48px; border-radius: 12px; border: 1px solid var(--outline-variant); background: var(--group-bg); padding: 0 14px; font: 400 16px var(--font); color: var(--on-surface); outline: none; }
 .field input:focus, .field select:focus { border-color: var(--primary); }
 .field .hint { font-weight: 400; color: var(--outline); }
+.field .pair { display: flex; gap: 8px; }
+.field .pair > * { flex: 1; min-width: 0; }
 .field textarea { border-radius: 12px; border: 1px solid var(--outline-variant); background: var(--group-bg); padding: 10px 14px; font: 400 15px/1.5 var(--font); color: var(--on-surface); outline: none; resize: vertical; min-height: 120px; }
 .field textarea:focus { border-color: var(--primary); }
 .field .link-btn { color: var(--primary); font-weight: 500; }

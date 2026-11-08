@@ -7,6 +7,7 @@ import java.net.Proxy
 import java.net.URL
 import java.nio.ByteBuffer
 import java.security.SecureRandom
+import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -42,9 +43,10 @@ object Server {
     /** The most `next` gives, as the app's list has them all. */
     private const val LIMIT = 500
 
-    /** Marks a task done; one done already stays so. Returns the change that did it. */
+    /** Marks a task done; one done already stays so, a repeating one moves on from today here.
+     * Returns the change that did it. */
     suspend fun complete(context: Context, token: String, task: String): Long {
-        val op = JSONObject().put("op", "task.update").put("id", task).put("done", true)
+        val op = JSONObject().put("op", "task.update").put("id", task).put("done", true).put("today", LocalDate.now().toString())
         return JSONObject(post(context, token, "/mutations", JSONObject().put("id", uuid7()).put("ops", JSONArray().put(op)))).getLong("seq")
     }
 

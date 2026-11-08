@@ -97,6 +97,10 @@ enum Command {
         due: Option<String>,
         #[arg(long, help = "提前多少分钟提醒，0 表示截止时")]
         remind: Option<u32>,
+        #[arg(long, value_name = "间隔", help = "重复：1d 每天、2w 每两周、3m 每三个月；要有截止时间")]
+        repeat: Option<String>,
+        #[arg(long, requires = "repeat", value_parser = ["due", "done"], help = "下一次从哪天算：due 按截止日期（默认），done 从完成那天")]
+        repeat_from: Option<String>,
         #[arg(long, num_args = 1.., value_parser = number, help = "前置事项的编号")]
         after: Vec<i64>,
         #[arg(long, num_args = 1.., value_parser = number, help = "后续事项的编号")]
@@ -129,6 +133,12 @@ enum Command {
         remind: Option<u32>,
         #[arg(long, help = "清除提醒")]
         no_remind: bool,
+        #[arg(long, value_name = "间隔", conflicts_with = "no_repeat", help = "重复：1d 每天、2w 每两周、3m 每三个月")]
+        repeat: Option<String>,
+        #[arg(long, requires = "repeat", value_parser = ["due", "done"], help = "下一次从哪天算：due 按截止日期（默认），done 从完成那天")]
+        repeat_from: Option<String>,
+        #[arg(long, help = "不再重复")]
+        no_repeat: bool,
     },
     #[command(about = "标为完成")]
     Done {
@@ -609,12 +619,15 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Graph { folder, all, mermaid } => call("graph", json!({ "folder": folder, "all": all, "mermaid": mermaid }), j),
         Command::Log { limit } => call("log", json!({ "limit": limit }), j),
         Command::Jobs => call("jobs", json!({}), j),
-        Command::Add { title, folder, description, due, remind, after, before } => call(
+        Command::Add { title, folder, description, due, remind, repeat, repeat_from, after, before } => call(
             "add",
-            json!({ "title": title, "folder": folder, "description": description, "due": due, "remind": remind, "after": after, "before": before }),
+            json!({
+                "title": title, "folder": folder, "description": description, "due": due, "remind": remind,
+                "repeat": repeat, "repeat_from": repeat_from, "after": after, "before": before
+            }),
             j,
         ),
-        Command::Edit { task, title, description, replace, append, due, no_due, remind, no_remind } => {
+        Command::Edit { task, title, description, replace, append, due, no_due, remind, no_remind, repeat, repeat_from, no_repeat } => {
             let mut args = Map::new();
             args.insert("task".into(), task.into());
             if let Some(title) = title {
@@ -635,9 +648,16 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             if no_remind || remind.is_some() {
                 args.insert("remind".into(), remind.into());
             }
+            if no_repeat || repeat.is_some() {
+                args.insert("repeat".into(), repeat.into());
+            }
+            if let Some(from) = repeat_from {
+                args.insert("repeat_from".into(), from.into());
+            }
             call("edit", args.into(), j)
         }
-        Command::Done { tasks } => call("done", json!({ "tasks": tasks }), j),
+        // A repeating task's next due date counts from today here.
+        Command::Done { tasks } => call("done", json!({ "tasks": tasks, "today": chrono::Local::now().format("%Y-%m-%d").to_string() }), j),
         Command::Reopen { tasks } => call("reopen", json!({ "tasks": tasks }), j),
         Command::Mkdir { path } => call("mkdir", json!({ "path": path }), j),
         Command::Rename { folder, name } => call("rename", json!({ "folder": folder, "name": name }), j),

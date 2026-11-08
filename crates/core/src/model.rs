@@ -98,6 +98,36 @@ macro_rules! text_type {
     };
 }
 
+/// An enum stored as the text it has in JSON, such as `waiting` or `day`.
+macro_rules! sql_text_enum {
+    ($name:ident { $($variant:ident = $text:literal),* }) => {
+        impl $name {
+            pub fn as_str(self) -> &'static str {
+                match self {
+                    $($name::$variant => $text),*
+                }
+            }
+        }
+
+        #[cfg(feature = "sql")]
+        impl rusqlite::ToSql for $name {
+            fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+                Ok(self.as_str().into())
+            }
+        }
+
+        #[cfg(feature = "sql")]
+        impl rusqlite::types::FromSql for $name {
+            fn column_result(v: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+                match v.as_str()? {
+                    $($text => Ok($name::$variant),)*
+                    _ => Err(rusqlite::types::FromSqlError::InvalidType),
+                }
+            }
+        }
+    };
+}
+
 /// Trims and checks a single-line value.
 pub fn line(s: String, what: &str, max: usize) -> Result<String, String> {
     let s = s.trim().to_owned();
@@ -167,17 +197,7 @@ text_type!(
             s.get(r).filter(|p| p.bytes().all(|c| c.is_ascii_digit())).and_then(|p| p.parse::<u32>().ok())
         };
         let valid = match (s.len() == 10 && s.get(4..5) == Some("-") && s.get(7..8) == Some("-"), digits(0..4), digits(5..7), digits(8..10)) {
-            (true, Some(y), Some(m), Some(d)) => {
-                let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
-                let days = match m {
-                    1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-                    4 | 6 | 9 | 11 => 30,
-                    2 if leap => 29,
-                    2 => 28,
-                    _ => 0,
-                };
-                (1..=days).contains(&d)
-            }
+            (true, Some(y), Some(m), Some(d)) => (1..=12).contains(&m) && (1..=days_in_month(y, m)).contains(&d),
             _ => false,
         };
         if valid { Ok(s) } else { Err(format!("日期“{s}”格式错误，应为 YYYY-MM-DD")) }
@@ -197,13 +217,24 @@ text_type!(
     }
 );
 
-/// When a task is due: a date, optionally with a time and a reminder.
+/// The days in month `m` (1–12) of year `y`.
+pub fn days_in_month(y: u32, m: u32) -> u32 {
+    match m {
+        4 | 6 | 9 | 11 => 30,
+        2 if y.is_multiple_of(4) && (!y.is_multiple_of(100) || y.is_multiple_of(400)) => 29,
+        2 => 28,
+        _ => 31,
+    }
+}
+
+/// When a task is due: a date, optionally with a time and a reminder, and how it repeats.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(try_from = "DueFields", into = "DueFields")]
 #[ts(export, as = "DueFields")]
 pub struct Due {
     pub date: Date,
     pub at: Option<DueAt>,
+    pub repeat: Option<Repeat>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -214,6 +245,78 @@ pub struct DueAt {
 }
 
 pub const MAX_REMIND_BEFORE: u32 = 30 * 24 * 60;
+
+/// A repeating task stays open: done, its due date moves on (docs/design.md#重复).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export)]
+pub struct Repeat {
+    pub every: Every,
+    pub unit: RepeatUnit,
+    pub from: RepeatFrom,
+}
+
+/// How many units apart the due dates of a repeating task are: 1–365.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(try_from = "u32", into = "u32")]
+#[ts(export, type = "number")]
+pub struct Every(u32);
+
+impl Every {
+    pub fn get(self) -> u32 {
+        self.0
+    }
+}
+
+impl TryFrom<u32> for Every {
+    type Error = &'static str;
+
+    fn try_from(n: u32) -> Result<Self, Self::Error> {
+        if (1..=365).contains(&n) { Ok(Every(n)) } else { Err("重复的间隔应为 1–365") }
+    }
+}
+
+impl From<Every> for u32 {
+    fn from(e: Every) -> u32 {
+        e.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum RepeatUnit {
+    Day,
+    Week,
+    Month,
+}
+
+/// What the next due date counts from: the one before, keeping to the schedule, or the day it is
+/// done.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum RepeatFrom {
+    Due,
+    Done,
+}
+
+sql_text_enum!(RepeatUnit { Day = "day", Week = "week", Month = "month" });
+sql_text_enum!(RepeatFrom { Due = "due", Done = "done" });
+
+#[cfg(feature = "sql")]
+impl rusqlite::types::FromSql for Every {
+    fn column_result(v: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        Every::try_from(u32::column_result(v)?).map_err(|e| rusqlite::types::FromSqlError::Other(e.into()))
+    }
+}
+
+#[cfg(feature = "sql")]
+impl rusqlite::ToSql for Every {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        Ok(self.0.into())
+    }
+}
 
 /// How `Due` looks in JSON.
 #[derive(Serialize, Deserialize, TS)]
@@ -227,10 +330,13 @@ pub struct DueFields {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     remind_before: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    repeat: Option<Repeat>,
 }
 
 impl Due {
-    pub fn new(date: Date, time: Option<Time>, remind_before: Option<u32>) -> Result<Due, String> {
+    pub fn new(date: Date, time: Option<Time>, remind_before: Option<u32>, repeat: Option<Repeat>) -> Result<Due, String> {
         if remind_before.is_some_and(|m| m > MAX_REMIND_BEFORE) {
             return Err("提醒最多提前 30 天".into());
         }
@@ -239,7 +345,7 @@ impl Due {
             (None, Some(_)) => return Err("设置提醒需要具体的截止时间".into()),
             (None, None) => None,
         };
-        Ok(Due { date, at })
+        Ok(Due { date, at, repeat })
     }
 }
 
@@ -247,14 +353,14 @@ impl TryFrom<DueFields> for Due {
     type Error = String;
 
     fn try_from(f: DueFields) -> Result<Self, String> {
-        Due::new(f.date, f.time, f.remind_before)
+        Due::new(f.date, f.time, f.remind_before, f.repeat)
     }
 }
 
 impl From<Due> for DueFields {
     fn from(d: Due) -> Self {
         let (time, remind_before) = d.at.map_or((None, None), |at| (Some(at.time), at.remind_before));
-        DueFields { date: d.date, time, remind_before }
+        DueFields { date: d.date, time, remind_before, repeat: d.repeat }
     }
 }
 
@@ -307,37 +413,6 @@ pub enum JobState {
     Ready,
 }
 
-impl JobState {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            JobState::Waiting => "waiting",
-            JobState::Running => "running",
-            JobState::Failed => "failed",
-            JobState::Ready => "ready",
-        }
-    }
-}
-
-#[cfg(feature = "sql")]
-impl rusqlite::ToSql for JobState {
-    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
-        Ok(self.as_str().into())
-    }
-}
-
-#[cfg(feature = "sql")]
-impl rusqlite::types::FromSql for JobState {
-    fn column_result(v: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
-        match v.as_str()? {
-            "waiting" => Ok(JobState::Waiting),
-            "running" => Ok(JobState::Running),
-            "failed" => Ok(JobState::Failed),
-            "ready" => Ok(JobState::Ready),
-            _ => Err(rusqlite::types::FromSqlError::InvalidType),
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
@@ -349,32 +424,8 @@ pub enum JobKind {
     Tidy,
 }
 
-impl JobKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            JobKind::Organize => "organize",
-            JobKind::Tidy => "tidy",
-        }
-    }
-}
-
-#[cfg(feature = "sql")]
-impl rusqlite::ToSql for JobKind {
-    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
-        Ok(self.as_str().into())
-    }
-}
-
-#[cfg(feature = "sql")]
-impl rusqlite::types::FromSql for JobKind {
-    fn column_result(v: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
-        match v.as_str()? {
-            "organize" => Ok(JobKind::Organize),
-            "tidy" => Ok(JobKind::Tidy),
-            _ => Err(rusqlite::types::FromSqlError::InvalidType),
-        }
-    }
-}
+sql_text_enum!(JobState { Waiting = "waiting", Running = "running", Failed = "failed", Ready = "ready" });
+sql_text_enum!(JobKind { Organize = "organize", Tidy = "tidy" });
 
 /// A change AI suggests to one of the folder's open tasks, for the user to take or leave.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
@@ -570,5 +621,14 @@ mod tests {
         assert!(from_value::<Due>(json!({ "date": "2026-11-20", "remind_before": 0 })).is_err());
         assert!(from_value::<Due>(json!({ "date": "2026-11-20", "time": "08:00", "remind_before": 50000 })).is_err());
         assert!(from_value::<Due>(json!({ "date": "2026-11-20", "when": "soon" })).is_err());
+        let repeating = json!({ "date": "2026-11-20", "repeat": { "every": 2, "unit": "week", "from": "done" } });
+        assert_eq!(to_value(from_value::<Due>(repeating.clone()).unwrap()).unwrap(), repeating);
+        for bad in [
+            json!({ "every": 0, "unit": "day", "from": "due" }),
+            json!({ "every": 366, "unit": "day", "from": "due" }),
+            json!({ "every": 1, "unit": "year", "from": "due" }),
+        ] {
+            assert!(from_value::<Due>(json!({ "date": "2026-11-20", "repeat": bad })).is_err(), "{bad}");
+        }
     }
 }

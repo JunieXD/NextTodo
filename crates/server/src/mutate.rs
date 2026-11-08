@@ -3,7 +3,7 @@
 
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
-    AiJob, AiJobId, Change, Dependency, Effect, Folder, FolderId, JobState, Link, MutationId, SortKey, Suggestion, Task, TaskId,
+    AiJob, AiJobId, Change, Dependency, Due, Effect, Folder, FolderId, JobState, Link, MutationId, SortKey, Suggestion, Task, TaskId,
 };
 use nexttodo_core::ops::{MAX_OPS, Mutation, Op};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -125,6 +125,29 @@ fn change_job(
 
 /// `cur` with the fields that changed from `before` to `after` set back to `before`, so that undoing
 /// a change leaves later changes to other fields alone.
+/// `cur`'s due date with what changed from `b` to `a` set back to `b`, part by part: the date, the
+/// time with its reminder, and the repeat. Undoing moving a repeating task on so keeps a reminder or
+/// a repeat changed since, or cleared since with the due date; without a date to go on, the other
+/// parts have nothing to come back to.
+fn restore_due(cur: &Option<Due>, b: &Option<Due>, a: &Option<Due>) -> Option<Due> {
+    let (Some(b), Some(a)) = (b, a) else { return if b != a { b.clone() } else { cur.clone() } };
+    let cur = cur.as_ref();
+    let date = if b.date != a.date { Some(&b.date) } else { cur.map(|c| &c.date) };
+    Some(Due {
+        date: date?.clone(),
+        at: if b.at != a.at { b.at.clone() } else { cur.and_then(|c| c.at.clone()) },
+        repeat: if b.repeat != a.repeat { b.repeat } else { cur.and_then(|c| c.repeat) },
+    })
+}
+
+/// A repeating task is never done: done, it moves on (docs/design.md#重复).
+fn check_repeat(t: &Task) -> Result<(), ApiError> {
+    if t.done_at.is_some() && t.due.as_ref().is_some_and(|d| d.repeat.is_some()) {
+        return Err(ApiError::invalid(format!("“{}”已完成，不能设置重复，请先重新打开", t.title.as_str()), Some("due".into())));
+    }
+    Ok(())
+}
+
 macro_rules! restore {
     ($cur:expr, $before:expr, $after:expr, $($field:ident),*) => {{
         let mut restored = $cur.clone();
@@ -211,7 +234,7 @@ impl Cx<'_> {
                 };
                 self.create_task(task)
             }
-            Op::TaskUpdate { id, folder_id, title, description, due, sort_key, done } => {
+            Op::TaskUpdate { id, folder_id, title, description, due, sort_key, done, today } => {
                 let before = self.task(*id)?;
                 let mut t = before.clone();
                 if let Some(folder_id) = folder_id {
@@ -232,7 +255,16 @@ impl Cx<'_> {
                 if let Some(done) = done
                     && *done != t.done_at.is_some()
                 {
-                    t.done_at = done.then_some(self.now);
+                    match t.due.as_mut().map(|d| (d.repeat, d)) {
+                        // Done, a repeating task stays open, due next time (docs/design.md#重复).
+                        Some((Some(r), d)) if *done => {
+                            let today = today
+                                .as_ref()
+                                .ok_or_else(|| ApiError::invalid("完成重复的事项需要给出今天的日期", Some("today".into())))?;
+                            d.date = r.next(&d.date, today).map_err(|m| ApiError::invalid(m, Some("due".into())))?;
+                        }
+                        _ => t.done_at = done.then_some(self.now),
+                    }
                 }
                 self.update_task(before, t)
             }
@@ -370,6 +402,7 @@ impl Cx<'_> {
     }
 
     fn create_task(&mut self, t: Task) -> Result<(), ApiError> {
+        check_repeat(&t)?;
         store::insert_task(self.c, self.owner, &t)?;
         self.effects.push(Effect::Task(Change::Created(Box::new(t))));
         Ok(())
@@ -379,6 +412,7 @@ impl Cx<'_> {
         if after == before {
             return Ok(());
         }
+        check_repeat(&after)?;
         if after.folder_id != before.folder_id
             && let Some(f) = after.folder_id
         {
@@ -492,7 +526,8 @@ impl Cx<'_> {
                 }
                 Effect::Task(Change::Updated { before: b, after: a }) => {
                     if let Some(cur) = store::load_task(self.c, self.owner, b.id)? {
-                        let restored = restore!(cur, b, a, folder_id, title, description, done_at, due, sort_key);
+                        let mut restored = restore!(cur, b, a, folder_id, title, description, done_at, sort_key);
+                        restored.due = restore_due(&cur.due, &b.due, &a.due);
                         self.update_task(cur, restored)?;
                     }
                 }

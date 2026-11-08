@@ -1,7 +1,7 @@
 // Panels for choosing: a folder, a task to link, a due date.
 
 import { Check, ChevronLeft, ChevronRight, Folder as FolderIcon, Search } from "lucide-react";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { Due } from "../api/types/Due";
 import type { Repeat } from "../api/types/Repeat";
 import type { RepeatFrom } from "../api/types/RepeatFrom";
@@ -65,12 +65,14 @@ export function TaskPicker({ task, dir, onPick, onClose }: { task: Task; dir: "p
   const [nav, setNav] = useState<{ folder: FolderId | null; move?: "forth" | "back" }>({ folder: task.folder_id });
   // Deleted meanwhile, on another device say: from the root.
   const at = board.hasFolder(nav.folder) ? nav.folder : null;
-  const folderPage = useRef<HTMLDivElement>(null);
-  const go = (folder: FolderId | null, move: "forth" | "back") => {
-    setNav({ folder, move });
-    // Into another folder, from its top: the top of the modal's body, which scrolls.
-    folderPage.current!.parentElement!.scrollTop = 0;
-  };
+  const go = (folder: FolderId | null, move: "forth" | "back") => setNav({ folder, move });
+  const field = useRef<HTMLLabelElement>(null);
+  const searching = query.trim() !== "";
+  // Another folder, or back at the root as this one went, and the results or the folder again, from
+  // the top: of the modal's body, which scrolls, and nothing around it, the panel still sliding in.
+  useLayoutEffect(() => {
+    field.current!.parentElement!.scrollTo(0, 0);
+  }, [at, searching]);
   const linked = new Set([task.id, ...(dir === "pred" ? board.before(task) : board.after(task)).map((t) => t.id)]);
   const choice = (t: Task) => t.done_at === null && !linked.has(t.id);
   const choices = board.snapshot.tasks.filter(choice);
@@ -103,7 +105,8 @@ export function TaskPicker({ task, dir, onPick, onClose }: { task: Task; dir: "p
       .filter(({ n }) => n > 0);
     const here = board.tasksIn(at).filter(choice);
     list = (
-      <div key={at ?? "root"} ref={folderPage} className={nav.move && `page-${nav.move}`}>
+      // Gone back to the root by itself, it doesn't slide in: that answers no step of the user's.
+      <div key={at ?? "root"} className={at === nav.folder && nav.move ? `page-${nav.move}` : undefined}>
         <h2 className="group-title">{board.place(at)}</h2>
         <div className="group picker">
           {at !== null && (
@@ -140,7 +143,7 @@ export function TaskPicker({ task, dir, onPick, onClose }: { task: Task; dir: "p
   }
   return (
     <Modal title={dir === "pred" ? "添加前置" : "添加后续"} onClose={onClose}>
-      <label className="search">
+      <label className="search" ref={field}>
         <Icon of={Search} size={18} />
         {/* Back from the results, the folder's page shows again without sliding in. */}
         <input value={query} onChange={(e) => (setQuery(e.target.value), setNav({ folder: at }))} placeholder="搜索所有文件夹" autoComplete="off" />

@@ -16,6 +16,12 @@
   <img src="docs/images/desktop-light.webp" alt="电脑上的“接下来”和事项详情">
 </picture>
 
+<p align="center">
+  <a href="https://www.bilibili.com/video/BV1adW76wEpD"><img src="docs/images/video-cover.webp" width="640" alt="视频介绍：只看现在能做的事"></a>
+  <br>
+  <a href="https://www.bilibili.com/video/BV1adW76wEpD">▶ 在 B 站观看视频介绍（2 分钟）</a>
+</p>
+
 ## 简介
 
 事项之间可以设置依赖，组成一张有向无环图。NextTodo 据此算出每个事项的状态：前置都已完成的可以开始，其余的等待前置。首页随时列出现在能做的事，完成一项，它解锁的后续随即出现。

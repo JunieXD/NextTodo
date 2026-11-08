@@ -29,6 +29,10 @@ features:
     details: 网页、Android、macOS 和 Windows 使用同一套界面；操作在本地立即生效，联网后自动同步。
 ---
 
+## 视频介绍
+
+<iframe class="video" src="https://player.bilibili.com/player.html?isOutside=true&bvid=BV1adW76wEpD&autoplay=0" loading="lazy" allowfullscreen title="视频介绍：只看现在能做的事"></iframe>
+
 ## 电脑上
 
 <img class="light-only" src="../../docs/images/desktop-light.webp" alt="电脑上的“接下来”和事项详情">

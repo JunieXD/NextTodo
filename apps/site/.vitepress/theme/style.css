@@ -30,6 +30,15 @@ html.dark .light-only {
   display: none;
 }
 
+/* The video on the home page, as wide as the screenshots. */
+.video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: 12px;
+}
+
 /* A table's first column labels its rows: on a phone it would wrap a character a line. */
 .vp-doc td:first-child {
   white-space: nowrap;

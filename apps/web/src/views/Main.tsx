@@ -1,6 +1,6 @@
 // The signed-in app: the layout for the screen size, settings, and what the session reports.
 
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { useLocalRunner } from "../ai";
 import { useLocation, useSearchParams } from "wouter";
 import { app } from "../api/http";
@@ -10,6 +10,8 @@ import { type Session, SessionContext, useSession, useUndo } from "../session";
 import { forUser, useFeedback } from "../ui/feedback";
 import { useWide } from "../ui/hooks";
 import { Root } from "../ui/Root";
+import { inLocalMode } from "../local";
+import { SERVER_EVERY_MS, checkServer, newer, useServerVersions } from "../server-update";
 import { EVERY_MS, check, install, restart, usePending } from "../updates";
 import { Desktop } from "./Desktop";
 import { MarksProvider } from "./marks";
@@ -45,6 +47,7 @@ export function Main({ session, onSignedOut }: { session: Session; onSignedOut(n
           <OpenSettings value={(page = "main") => setSettings(page)}>
             <Events onSignedOut={onSignedOut} />
             <Updates />
+            {session.user.is_admin && !inLocalMode() && <ServerUpdates />}
             {wide ? <Desktop onSettings={() => setSettings("main")} /> : <Phone onSettings={() => setSettings("main")} />}
             {settings && <Settings start={settings} onClose={() => setSettings(null)} onSignOut={signOut} />}
           </OpenSettings>
@@ -107,6 +110,36 @@ function Updates() {
     if (pending?.kind === "apk") snack({ text: `NextTodo ${pending.version} 可以安装`, action: "安装", onAction: () => void install(pending.url, snack), ms: 8000 });
     if (pending?.kind === "restart") snack({ text: "新版本已准备好，重启后生效", action: "重启", onAction: () => void restart(snack), ms: 8000 });
   }, [pending, snack]);
+  return null;
+}
+
+/** The latest version told about for each server, after this prefix and the server's address. */
+const SERVER_TOLD = "nexttodo.serverUpdateTold:";
+
+/** For the admin: looks for a newer server when the app opens, comes back to the front, and while it
+ * runs, and tells once about each (docs/design.md#部署). */
+function ServerUpdates() {
+  const { snack } = useFeedback();
+  const openSettings = useContext(OpenSettings);
+  const versions = useServerVersions();
+  useEffect(() => {
+    const shown = () => document.visibilityState === "visible" && void checkServer();
+    void checkServer();
+    document.addEventListener("visibilitychange", shown);
+    const timer = setInterval(() => void checkServer(), SERVER_EVERY_MS);
+    return () => {
+      document.removeEventListener("visibilitychange", shown);
+      clearInterval(timer);
+    };
+  }, []);
+  useEffect(() => {
+    const latest = versions?.latest;
+    if (!versions || !latest || !newer(latest, versions.server)) return;
+    const told = SERVER_TOLD + versions.of;
+    if (localStorage.getItem(told) === latest) return;
+    localStorage.setItem(told, latest);
+    snack({ text: `服务器可升级到 ${latest}`, action: "查看", onAction: () => openSettings("main"), ms: 8000 });
+  }, [versions, snack, openSettings]);
   return null;
 }
 

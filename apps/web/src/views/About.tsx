@@ -3,6 +3,9 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { app } from "../api/http";
+import { inLocalMode } from "../local";
+import { newer, useServerVersions } from "../server-update";
+import { useSession } from "../session";
 import { ago } from "../domain/dates";
 import { forUser, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
@@ -12,6 +15,8 @@ import { appVersion, check, failureText, install, restart, useChecked, useChecki
 export function About() {
   const { snack } = useFeedback();
   const pending = usePending();
+  const { user } = useSession();
+  const server = useServerVersions();
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
     appVersion().then(setVersion, (e) => snack(forUser("读取版本", e)));
@@ -35,6 +40,27 @@ export function About() {
               </span>
             </div>
           </button>
+        )}
+        {user.is_admin && !inLocalMode() && server && (
+          <div className="row">
+            <div className="row-inner">
+              <span className="folder-main">
+                <span>服务器版本</span>
+                <span className="folder-sub full">
+                  {server.latest === null ? (
+                    "无法查询最新版本"
+                  ) : newer(server.latest, server.server) ? (
+                    <>
+                      可升级到 {server.latest}，<Help to="server#升级">查看升级方法</Help>
+                    </>
+                  ) : (
+                    "已是最新版本"
+                  )}
+                </span>
+              </span>
+              <span className="row-value">{server.server}</span>
+            </div>
+          </div>
         )}
         {pending && (
           <div className="row">

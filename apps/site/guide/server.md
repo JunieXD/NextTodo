@@ -74,9 +74,15 @@ docker compose exec nexttodo /nexttodo-server create-admin admin
 
 ## 升级
 
+出了新版本时，管理员打开 NextTodo 会看到提示条“服务器可升级到 0.1.N”，设置的“关于”里也写着。想第一时间知道，可以在 [GitHub 仓库](https://github.com/JunieXD/NextTodo)右上角点 **Watch** → **Custom**，勾选 **Releases** 后点 **Apply**，发布新版本时 GitHub 会发邮件通知。
+
+在服务器上的 `nexttodo` 目录里运行：
+
 ```sh
 docker compose pull && docker compose up -d
 ```
+
+数据会自动升级，不用另外操作。如果在 `.env` 里写了 `NEXTTODO_IMAGE` 固定版本，先把其中的版本号改成新的。
 
 App 不用手动升级：服务器升级后，各设备的 App 会自动获取新版本。
 

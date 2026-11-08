@@ -94,17 +94,22 @@ const DIRECT = { proxy: { all: { url: "http://127.0.0.1:9", noProxy: "127.0.0.1"
  * sign in or out. Those that wait for a model give their own. */
 const TIMEOUT_MS = 20_000;
 
+/** Fetches `path` from the server. From another origin than the server's: the Android app's fetch
+ * goes through CapacitorHttp, the desktop app's through Tauri's HTTP plugin, so that the server needs
+ * no CORS. To the Android app's own server, the WebView's: CapacitorHttp would go through the
+ * system's proxy. */
+export function fetchServer(path: string, init?: RequestInit): Promise<Response> {
+  const send = app === "desktop" ? tauriFetch : server.local ? window.CapacitorWebFetch : fetch;
+  return send(`${server.url}${path}`, init);
+}
+
 export async function api<T>(method: string, path: string, body?: unknown, timeoutMs = TIMEOUT_MS): Promise<T> {
   let res: Response;
   let text: string;
   try {
     const headers: Record<string, string> = body === undefined ? {} : { "Content-Type": "application/json" };
     if (server.token) headers.Authorization = `Bearer ${server.token}`;
-    // From another origin than the server's: the Android app's fetch goes through CapacitorHttp, the
-    // desktop app's through Tauri's HTTP plugin, so that the server needs no CORS. To the Android
-    // app's own server, the WebView's: CapacitorHttp would go through the system's proxy.
-    const send = app === "desktop" ? tauriFetch : server.local ? window.CapacitorWebFetch : fetch;
-    res = await send(`${server.url}/api/v1${path}`, {
+    res = await fetchServer(`/api/v1${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),

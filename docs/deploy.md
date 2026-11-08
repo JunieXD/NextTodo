@@ -58,6 +58,10 @@ server {
 docker compose pull && docker compose up -d
 ```
 
+- 数据库在新版本启动时自动迁移。
+- 在 `.env` 里固定了版本的，先把 `NEXTTODO_IMAGE` 改成新的版本号。
+- 有新版本时，管理员在网页和 App 的设置“关于”里会看到提示，见[总体设计](design.md#部署)。
+
 App 不用手动升级：它们从登录的服务器取更新，服务端升级后，Android 的网页部分下次打开时生效，需要换安装包时会提示；桌面 App 在后台下载，重启后生效。见[总体设计](design.md#app-更新)。
 
 ## 备份和恢复

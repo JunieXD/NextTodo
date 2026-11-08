@@ -344,6 +344,9 @@ svg { display: block; flex: none; }
 .modal.back:not(.leave) :is(.modal-head h3, .modal-body) { animation: page-back .3s var(--ease); }
 @keyframes page-forth { from { transform: translateX(40px); opacity: 0; } }
 @keyframes page-back { from { transform: translateX(-40px); opacity: 0; } }
+/* A folder's page in the task picker, after a step into a subfolder or up. */
+.page-forth { animation: page-forth .3s var(--ease); }
+.page-back { animation: page-back .3s var(--ease); }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 12px 10px 24px; }
 .modal-head h3 { margin: 0; font-size: 18px; font-weight: 600; }
 .modal-body { overflow-y: auto; padding-bottom: 8px; }

@@ -1,7 +1,7 @@
 // Panels for choosing: a folder, a task to link, a due date.
 
 import { Check, ChevronLeft, ChevronRight, Folder as FolderIcon, Search } from "lucide-react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { Due } from "../api/types/Due";
 import type { FolderId } from "../api/types/FolderId";
 import type { Task } from "../api/types/Task";
@@ -58,14 +58,16 @@ export function FolderPicker({
 export function TaskPicker({ task, dir, onPick, onClose }: { task: Task; dir: "pred" | "succ"; onPick(t: Task): void; onClose(): void }) {
   const { board } = useView();
   const [query, setQuery] = useState("");
-  const [wanted, setAt] = useState(task.folder_id);
+  // `move`: the last step, into a subfolder or up, whose way the folder's page slides in.
+  const [nav, setNav] = useState<{ folder: FolderId | null; move?: "forth" | "back" }>({ folder: task.folder_id });
   // Deleted meanwhile, on another device say: from the root.
-  const at = board.hasFolder(wanted) ? wanted : null;
-  const top = useRef<HTMLHeadingElement>(null);
-  // Into another folder, from its top. Returning nothing: Chromium's scrolls give a promise now.
-  useLayoutEffect(() => {
-    top.current?.scrollIntoView({ block: "nearest" });
-  }, [at]);
+  const at = board.hasFolder(nav.folder) ? nav.folder : null;
+  const folderPage = useRef<HTMLDivElement>(null);
+  const go = (folder: FolderId | null, move: "forth" | "back") => {
+    setNav({ folder, move });
+    // Into another folder, from its top: the top of the modal's body, which scrolls.
+    folderPage.current!.parentElement!.scrollTop = 0;
+  };
   const linked = new Set([task.id, ...(dir === "pred" ? board.before(task) : board.after(task)).map((t) => t.id)]);
   const choice = (t: Task) => t.done_at === null && !linked.has(t.id);
   const choices = board.snapshot.tasks.filter(choice);
@@ -98,13 +100,11 @@ export function TaskPicker({ task, dir, onPick, onClose }: { task: Task; dir: "p
       .filter(({ n }) => n > 0);
     const here = board.tasksIn(at).filter(choice);
     list = (
-      <>
-        <h2 className="group-title" ref={top}>
-          {board.place(at)}
-        </h2>
+      <div key={at ?? "root"} ref={folderPage} className={nav.move && `page-${nav.move}`}>
+        <h2 className="group-title">{board.place(at)}</h2>
         <div className="group picker">
           {at !== null && (
-            <button className="row" onClick={() => setAt(board.parent(at))}>
+            <button className="row" onClick={() => go(board.parent(at), "back")}>
               <div className="row-inner">
                 <span className="chev">
                   <Icon of={ChevronLeft} size={18} />
@@ -114,7 +114,7 @@ export function TaskPicker({ task, dir, onPick, onClose }: { task: Task; dir: "p
             </button>
           )}
           {subs.map(({ f, n }) => (
-            <button key={f.id} className="row" onClick={() => setAt(f.id)}>
+            <button key={f.id} className="row" onClick={() => go(f.id, "forth")}>
               <div className="row-inner">
                 <span className="folder-ic">
                   <Icon of={FolderIcon} size={18} />
@@ -132,14 +132,15 @@ export function TaskPicker({ task, dir, onPick, onClose }: { task: Task; dir: "p
           {here.map((t) => row(t, false))}
         </div>
         {subs.length + here.length === 0 && <p className="empty">{at === null ? "暂无可选的事项。" : "这里没有可选的事项。"}</p>}
-      </>
+      </div>
     );
   }
   return (
     <Modal title={dir === "pred" ? "添加前置" : "添加后续"} onClose={onClose}>
       <label className="search">
         <Icon of={Search} size={18} />
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索所有文件夹" autoComplete="off" />
+        {/* Back from the results, the folder's page shows again without sliding in. */}
+        <input value={query} onChange={(e) => (setQuery(e.target.value), setNav({ folder: at }))} placeholder="搜索所有文件夹" autoComplete="off" />
       </label>
       {list}
     </Modal>

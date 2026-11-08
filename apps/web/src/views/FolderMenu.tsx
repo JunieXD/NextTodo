@@ -13,7 +13,7 @@ import { localTime } from "../domain/dates";
 import { checkFolderName, checkJobText } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
 import { useBack } from "../ui/back";
-import { RootContext, useFeedback } from "../ui/feedback";
+import { RootContext, Tip, useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { ContextMenu, type MenuItem, itemClass } from "../ui/menu";
 import { OpenSettings, folderUrl } from "./nav";
@@ -122,23 +122,24 @@ export function FolderMenu({ folder }: { folder: FolderId }) {
   return (
     <>
       <DropdownMenu.Root open={menu} onOpenChange={setMenu}>
-        <DropdownMenu.Trigger
-          className="icon-btn"
-          aria-label="文件夹操作"
-          // Radix opens the menu as the button goes down. A finger's opens it once the tap is done, as the
-          // system's menus do: the press shows, and a scroll or a long press begun on it opens nothing. A
-          // click with no pointer behind it, from a screen reader say, opens it too.
-          onPointerDown={(e) => {
-            tap.current = e.pointerType !== "mouse";
-            if (tap.current) e.preventDefault();
-          }}
-          onClick={(e) => {
-            if (tap.current || !(e.nativeEvent as PointerEvent).pointerType) setMenu(true);
-            tap.current = false;
-          }}
-        >
-          <Icon of={Ellipsis} />
-        </DropdownMenu.Trigger>
+        <Tip label="文件夹操作">
+          <DropdownMenu.Trigger
+            className="icon-btn"
+            // Radix opens the menu as the button goes down. A finger's opens it once the tap is done, as the
+            // system's menus do: the press shows, and a scroll or a long press begun on it opens nothing. A
+            // click with no pointer behind it, from a screen reader say, opens it too.
+            onPointerDown={(e) => {
+              tap.current = e.pointerType !== "mouse";
+              if (tap.current) e.preventDefault();
+            }}
+            onClick={(e) => {
+              if (tap.current || !(e.nativeEvent as PointerEvent).pointerType) setMenu(true);
+              tap.current = false;
+            }}
+          >
+            <Icon of={Ellipsis} />
+          </DropdownMenu.Trigger>
+        </Tip>
         <DropdownMenu.Portal container={root}>
           <DropdownMenu.Content
             className="menu"

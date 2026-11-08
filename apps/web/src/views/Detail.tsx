@@ -12,14 +12,15 @@ import { repeatLabel } from "../domain/repeat";
 import { checkDescription, checkTitle } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
 import { Check, Seg } from "../ui/controls";
-import { useFeedback } from "../ui/feedback";
+import { Tip, useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { composing } from "../ui/keys";
 import { Description } from "../ui/Markdown";
 import { useTaskActions } from "./actions";
+import { DueEditor } from "./due";
 import { useMarks } from "./marks";
 import { useSelection } from "./nav";
-import { DueEditor, FolderPicker, TaskPicker } from "./pickers";
+import { FolderPicker, TaskPicker } from "./pickers";
 import { dueClass } from "./rows";
 
 const STATUS = { ready: "可做", waiting: "等待中", done: "已完成" };
@@ -105,9 +106,11 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
           </div>
         </div>
         {onClose && (
-          <button className="icon-btn" onClick={onClose} aria-label="关闭">
-            <Icon of={X} />
-          </button>
+          <Tip label="关闭">
+            <button className="icon-btn" onClick={onClose}>
+              <Icon of={X} />
+            </button>
+          </Tip>
         )}
       </div>
 
@@ -269,6 +272,7 @@ function DescriptionSection({ task, onSave }: { task: Task; onSave: Save }) {
       <div className="d-sec">
         <h3>描述</h3>
         <Seg
+          label="描述"
           small
           items={[
             ["view", "预览"],
@@ -310,16 +314,17 @@ function Links({ board, list, onOpen, onRemove, onAdd, add }: { board: Board; li
                 <span className="dep-title">{o.title}</span>
                 <span className="dep-path">{board.place(o.folder_id)}</span>
               </button>
-              <button
-                className="icon-btn sm"
-                aria-label="移除此依赖"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRemove(o);
-                }}
-              >
-                <Icon of={X} size={16} />
-              </button>
+              <Tip label="移除此依赖">
+                <button
+                  className="icon-btn sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove(o);
+                  }}
+                >
+                  <Icon of={X} size={16} />
+                </button>
+              </Tip>
             </div>
           </div>
         );

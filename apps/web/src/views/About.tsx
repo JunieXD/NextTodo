@@ -28,7 +28,7 @@ export function About() {
         <Row label="网页版本" value={import.meta.env.WEB_VERSION} />
         {app && (
           // Checks at once, however lately it did.
-          <button className="row" title="检查更新" onClick={() => void check(true)}>
+          <button className="row" onClick={() => void check(true)}>
             <div className="row-inner">
               <span className="folder-main">
                 <span>App 版本</span>

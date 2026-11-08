@@ -1,9 +1,8 @@
 // Descriptions in Markdown. Raw HTML is not rendered. Checklist items can be ticked in place.
 
-import { Check } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Icon } from "./icons";
+import { Box } from "./controls";
 
 const TASK = /^(\s*(?:[-*+]|\d+[.)])\s+\[)([ xX])(\])/;
 
@@ -21,11 +20,7 @@ export function Description({ source, onChange }: { source: string; onChange(sou
       remarkPlugins={[remarkGfm]}
       components={{
         a: ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
-        input: ({ checked }) => (
-          <span className="box" data-checked={checked}>
-            <Icon of={Check} size={12} width={3} />
-          </span>
-        ),
+        input: ({ checked }) => <Box checked={!!checked} />,
         li: ({ node, className, children }) => {
           if (!className?.includes("task-list-item")) return <li>{children}</li>;
           const checked = node!.children.some((c) => c.type === "element" && c.tagName === "input" && c.properties.checked);

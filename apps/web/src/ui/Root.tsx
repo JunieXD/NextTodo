@@ -1,3 +1,4 @@
+import { Tooltip } from "radix-ui";
 import { type ReactNode, useState } from "react";
 import { FeedbackProvider, RootContext } from "./feedback";
 
@@ -8,7 +9,9 @@ export function Root({ className, outside = false, children }: { className: stri
   return (
     <div ref={setEl} className={className}>
       <RootContext value={el}>
-        <FeedbackProvider outside={outside}>{children}</FeedbackProvider>
+        <Tooltip.Provider delayDuration={500}>
+          <FeedbackProvider outside={outside}>{children}</FeedbackProvider>
+        </Tooltip.Provider>
       </RootContext>
     </div>
   );

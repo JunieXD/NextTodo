@@ -1,7 +1,8 @@
 // The settings of AI organizing: which model, how much it thinks, and whether they stay on this device
 // or go to the server for every device. See docs/ai.md#模型配置.
 
-import { useEffect, useState } from "react";
+import { Popover } from "radix-ui";
+import { useEffect, useId, useRef, useState } from "react";
 import { ApiError, api } from "../api/http";
 import type { AiConfig } from "../api/types/AiConfig";
 import type { AiModels } from "../api/types/AiModels";
@@ -13,7 +14,8 @@ import type { AiThinking } from "../api/types/AiThinking";
 import { keepAiConfig, localAiConfig } from "../ai";
 import { inLocalMode } from "../local";
 import { useSession } from "../session";
-import { Seg } from "../ui/controls";
+import { useBack } from "../ui/back";
+import { Seg, Select } from "../ui/controls";
 import { Modal, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
 
@@ -145,16 +147,10 @@ export function AiPage({ onBack, onClose }: { onBack(): void; onClose(): void })
       <p className="empty">
         在添加框点 ✦ 切到 AI 整理，写下一段话，由所选的模型整理成事项。原文、文件夹名和其中未完成的事项会发给这个服务商。<Help to="ai#key">如何获取 API 密钥</Help>
       </p>
-      <label className="field">
+      <div className="field">
         服务商
-        <select value={form.provider} onChange={(e) => pick(e.target.value)}>
-          {providers.providers.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </label>
+        <Select label="服务商" items={providers.providers.map((p): [string, string] => [p.id, p.name])} value={provider.id} onChange={pick} />
+      </div>
       <label className="field">
         <span>
           接口地址 <span className="hint">OpenAI 兼容，https 开头</span>
@@ -167,24 +163,20 @@ export function AiPage({ onBack, onClose }: { onBack(): void; onClose(): void })
         </span>
         <input type="password" autoComplete="off" value={form.api_key ?? ""} onChange={(e) => set({ api_key: e.target.value })} />
       </label>
-      <label className="field">
+      <div className="field">
         <span>
           模型{" "}
           <button type="button" className="hint link-btn" onClick={listModels} disabled={busy}>
             从接口获取列表
           </button>
         </span>
-        <input value={form.model} onChange={(e) => set({ model: e.target.value.trim() })} list="ai-models" />
-        <datalist id="ai-models">
-          {models.map((m) => (
-            <option key={m} value={m} />
-          ))}
-        </datalist>
-      </label>
+        <Suggest label="模型" value={form.model} options={models} onChange={(model) => set({ model: model.trim() })} />
+      </div>
       {provider.thinking !== "none" && (
         <div className="field">
           思考程度
           <Seg<AiThinking>
+            label="思考程度"
             items={[
               ["off", "关闭"],
               ["low", "低"],
@@ -203,6 +195,7 @@ export function AiPage({ onBack, onClose }: { onBack(): void; onClose(): void })
             保存位置 <span className="hint">{place === "local" ? "这台设备联网时才会整理" : providers.sync ? "提交后设备可以离线，服务器自己整理" : ""}</span>
           </span>
           <Seg<Place>
+            label="保存位置"
             items={[
               ["local", "仅本机"],
               ["server", "同步到服务器"],
@@ -228,5 +221,98 @@ export function AiPage({ onBack, onClose }: { onBack(): void; onClose(): void })
         </button>
       </div>
     </Modal>
+  );
+}
+
+/** A text field with `options` listed under it: all of them as it is focused or the options come,
+ * then those with what is typed in them. Arrow keys and Enter pick one too. */
+function Suggest({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange(v: string): void }) {
+  const id = useId();
+  const input = useRef<HTMLInputElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  // Typed since the field was focused; null for all the options.
+  const [query, setQuery] = useState<string | null>(null);
+  const [active, setActive] = useState(-1);
+  const [came, setCame] = useState(options);
+  if (came !== options) {
+    setCame(options);
+    setOpen(options.length > 0);
+    setQuery(null);
+    setActive(-1);
+  }
+  const shown = query === null ? options : options.filter((o) => o.toLowerCase().includes(query.toLowerCase()));
+  const listed = open && shown.length > 0;
+  useBack("dialog", listed ? () => setOpen(false) : null);
+  const show = (q: string | null) => {
+    setQuery(q);
+    setActive(-1);
+    setOpen(true);
+  };
+  const choose = (o: string) => {
+    onChange(o);
+    setOpen(false);
+  };
+  const key = (e: React.KeyboardEvent) => {
+    if (!listed) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const n = shown.length;
+      const i = e.key === "ArrowDown" ? (active + 1) % n : active <= 0 ? n - 1 : active - 1;
+      setActive(i);
+      list.current!.children[i].scrollIntoView({ block: "nearest" });
+    } else if (e.key === "Enter" && active >= 0) {
+      e.preventDefault();
+      choose(shown[active]);
+    }
+  };
+  return (
+    <Popover.Root open={listed} onOpenChange={setOpen}>
+      <Popover.Anchor asChild>
+        <input
+          ref={input}
+          role="combobox"
+          aria-label={label}
+          aria-autocomplete="list"
+          aria-expanded={listed}
+          aria-controls={id}
+          aria-activedescendant={listed && active >= 0 ? `${id}-${active}` : undefined}
+          autoComplete="off"
+          value={value}
+          onFocus={() => show(null)}
+          onClick={() => setOpen(true)}
+          onChange={(e) => (onChange(e.target.value), show(e.target.value.trim()))}
+          onKeyDown={key}
+        />
+      </Popover.Anchor>
+      {/* Not in a portal: inside the panel, the list scrolls, which the panel stops outside it. */}
+      <Popover.Content
+        ref={list}
+        id={id}
+        role="listbox"
+        className="menu suggest"
+        align="start"
+        sideOffset={4}
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onCloseAutoFocus={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.target === input.current && e.preventDefault()}
+      >
+        {shown.map((o, i) => (
+          <div
+            key={o}
+            id={`${id}-${i}`}
+            role="option"
+            aria-selected={i === active}
+            className="menu-item"
+            data-highlighted={i === active ? "" : undefined}
+            onMouseMove={() => setActive(i)}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => choose(o)}
+          >
+            {o}
+          </div>
+        ))}
+      </Popover.Content>
+    </Popover.Root>
   );
 }

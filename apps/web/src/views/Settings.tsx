@@ -15,7 +15,7 @@ import * as local from "../local";
 import { useSession } from "../session";
 import { type Theme, setTheme, useTheme } from "../theme";
 import { Seg } from "../ui/controls";
-import { Modal, forUser, useFeedback } from "../ui/feedback";
+import { Modal, Tip, forUser, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
 import { Icon } from "../ui/icons";
 import { About } from "./About";
@@ -180,9 +180,11 @@ export function Settings({ start = "main", onClose, onSignOut }: { start?: Page;
                     <span className="folder-sub">{i.used_by ? `${i.used_by} 已注册` : `未使用，${ago(i.created_at, now)}生成`}</span>
                   </span>
                   {!i.used_by && (
-                    <button className="icon-btn sm" aria-label="复制邀请链接" onClick={() => copy(inviteLink(i.code)).then(() => snack("已复制邀请链接"))}>
-                      <Icon of={Copy} size={16} />
-                    </button>
+                    <Tip label="复制邀请链接">
+                      <button className="icon-btn sm" onClick={() => copy(inviteLink(i.code)).then(() => snack("已复制邀请链接"))}>
+                        <Icon of={Copy} size={16} />
+                      </button>
+                    </Tip>
                   )}
                 </div>
               </div>
@@ -203,6 +205,7 @@ export function Settings({ start = "main", onClose, onSignOut }: { start?: Page;
       <h2 className="group-title">外观</h2>
       <div style={{ margin: "0 16px" }}>
         <Seg<Theme>
+          label="外观"
           items={[
             ["system", "跟随系统"],
             ["light", "浅色"],
@@ -375,33 +378,52 @@ function TokenRow({ icon, title, sub, action }: { icon: typeof KeyRound; title: 
 function PasswordPage({ onDone, onClose }: { onDone(): void; onClose(): void }) {
   const [old, setOld] = useState("");
   const [fresh, setFresh] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{ message: string; field?: string } | null>(null);
   const { snack } = useFeedback();
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!old) return setError({ message: "请填写当前密码", field: "old_password" });
+    if (!fresh) return setError({ message: "请填写新密码", field: "new_password" });
     try {
       await api("POST", "/auth/password", { old_password: old, new_password: fresh });
       snack("密码已修改，其他设备需重新登录");
       onDone();
     } catch (e) {
       if (!(e instanceof ApiError)) throw e;
-      setError(e.message);
+      setError({ message: e.message, field: e.field });
     }
   };
+  const wrong = (field: string) => error?.field === field;
   return (
     <Modal title="修改密码" onClose={onClose} onBack={onDone}>
       <form onSubmit={submit}>
-        <label className="field">
+        <label className={`field${wrong("old_password") ? " error" : ""}`}>
           当前密码
-          <input type="password" autoComplete="current-password" value={old} onChange={(e) => setOld(e.target.value)} required />
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={old}
+            onChange={(e) => (setOld(e.target.value), setError(null))}
+            aria-invalid={wrong("old_password")}
+          />
         </label>
-        <label className="field">
+        <label className={`field${wrong("new_password") ? " error" : ""}`}>
           <span>
             新密码 <span className="hint">至少 8 位</span>
           </span>
-          <input type="password" autoComplete="new-password" value={fresh} onChange={(e) => setFresh(e.target.value)} required minLength={8} />
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={fresh}
+            onChange={(e) => (setFresh(e.target.value), setError(null))}
+            aria-invalid={wrong("new_password")}
+          />
         </label>
-        {error && <p className="form-error">{error}</p>}
+        {error && (
+          <p className="form-error" role="alert">
+            {error.message}
+          </p>
+        )}
         <div className="actions">
           <button type="button" className="text-btn" onClick={onDone}>
             取消
@@ -439,6 +461,7 @@ function TokenPage({ onCreated, onBack, onClose }: { onCreated(c: CreatedToken):
         </label>
         <div style={{ margin: "0 16px 14px" }}>
           <Seg<Scope>
+            label="权限"
             items={[
               ["write", "读写"],
               ["read", "只读"],
@@ -510,6 +533,7 @@ function EnvVars({ url, secret }: { url: string; secret: string }) {
       text={unix ? `export NEXTTODO_URL=${url}\nexport NEXTTODO_TOKEN=${secret}` : `setx NEXTTODO_URL "${url}"\nsetx NEXTTODO_TOKEN "${secret}"`}
     >
       <Seg<"unix" | "windows">
+        label="系统"
         small
         items={[
           ["unix", "macOS、Linux"],
@@ -536,9 +560,11 @@ function Copyable({ label, hint, text, children }: { label: string; hint?: strin
       </div>
       <div className="secret">
         <span>{text}</span>
-        <button className="icon-btn sm" aria-label={`复制${label}`} onClick={() => copy(text).then(() => snack(`已复制${label}`))}>
-          <Icon of={Copy} size={18} />
-        </button>
+        <Tip label={`复制${label}`}>
+          <button className="icon-btn sm" onClick={() => copy(text).then(() => snack(`已复制${label}`))}>
+            <Icon of={Copy} size={18} />
+          </button>
+        </Tip>
       </div>
     </div>
   );

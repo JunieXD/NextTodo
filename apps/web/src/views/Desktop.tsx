@@ -8,6 +8,7 @@ import type { FolderId } from "../api/types/FolderId";
 import { formatToday } from "../domain/dates";
 import { useConnection, useSession, useView } from "../session";
 import { useBack } from "../ui/back";
+import { Tip } from "../ui/feedback";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { Detail } from "./Detail";
@@ -88,9 +89,11 @@ export function Desktop({ onSettings }: { onSettings(): void }) {
       <Sidebar at={query.trim() ? null : at} query={query} setQuery={setQuery} onSettings={onSettings} />
       <main className="main">
         <div className="main-tools" data-tauri-drag-region="deep">
-          <button className="icon-btn" onClick={() => setSideOpen(!sideOpen)} aria-pressed={sideOpen} aria-label={label} title={label}>
-            <Icon of={PanelLeft} />
-          </button>
+          <Tip label={label}>
+            <button className="icon-btn" onClick={() => setSideOpen(!sideOpen)} aria-pressed={sideOpen}>
+              <Icon of={PanelLeft} />
+            </button>
+          </Tip>
         </div>
         {/* Each place a page of its own, which fades in. */}
         <Fragment key={query.trim() ? "search" : `${at} ${view}`}>{main}</Fragment>

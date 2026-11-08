@@ -10,6 +10,7 @@ import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
 import { formatDue } from "../domain/dates";
 import { useCommit, useUndo } from "../session";
+import { Box } from "../ui/controls";
 import { Modal, useFeedback } from "../ui/feedback";
 
 /** One change a suggestion makes: to the task's fields, or a task to put before it. When a field
@@ -102,16 +103,16 @@ export function Suggestions({ job: j, board, onRetry, onClose }: { job: AiJob; b
               {parts.map((p) => {
                 const k = key(s.task, p.key);
                 return (
-                  <label key={k} className="row suggestion-part">
+                  <button key={k} className="row suggestion-part" role="checkbox" aria-checked={isTaken(s.task, p)} onClick={() => toggle(s.task, p)}>
                     <div className="row-inner">
-                      <input type="checkbox" checked={isTaken(s.task, p)} onChange={() => toggle(s.task, p)} />
+                      <Box checked={isTaken(s.task, p)} />
                       <span className="suggestion-text">
                         <b>{p.label}</b>
                         {p.text}
                         {p.now !== undefined && <span className="suggestion-now">整理后已改为：{p.now}</span>}
                       </span>
                     </div>
-                  </label>
+                  </button>
                 );
               })}
             </div>

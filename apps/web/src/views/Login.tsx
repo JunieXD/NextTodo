@@ -34,8 +34,12 @@ export function Login({
     setError(null);
   };
 
+  // The fields shown, each to be filled in, as `field` puts them on the page.
+  const asked: [keyof typeof form, string][] = [];
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const empty = asked.find(([key]) => !form[key]);
+    if (empty) return setError({ message: `请填写${empty[1]}`, field: empty[0] });
     setBusy(true);
     try {
       const { server, ...fields } = form;
@@ -73,14 +77,17 @@ export function Login({
     setBusy(false);
   };
 
-  const field = (key: keyof typeof form, label: string, props: React.InputHTMLAttributes<HTMLInputElement>, hint?: ReactNode) => (
-    <label className={`field${error?.field === key ? " error" : ""}`}>
-      <span>
-        {label} {hint && <span className="hint">{hint}</span>}
-      </span>
-      <input value={form[key]} onChange={set(key)} required {...props} />
-    </label>
-  );
+  const field = (key: keyof typeof form, label: string, props: React.InputHTMLAttributes<HTMLInputElement>, hint?: ReactNode) => {
+    asked.push([key, label]);
+    return (
+      <label className={`field${error?.field === key ? " error" : ""}`}>
+        <span>
+          {label} {hint && <span className="hint">{hint}</span>}
+        </span>
+        <input value={form[key]} onChange={set(key)} aria-invalid={error?.field === key} {...props} />
+      </label>
+    );
+  };
   if (choosing)
     return (
       <div className="login" data-tauri-drag-region="deep">
@@ -100,6 +107,7 @@ export function Login({
       <form className="login-card" onSubmit={submit}>
         <Brand />
         <Seg
+          label="方式"
           items={[
             ["login", "登录"],
             ["register", "邀请码注册"],
@@ -119,7 +127,11 @@ export function Login({
         {field("username", "用户名", { autoComplete: "username", autoCapitalize: "none" }, mode === "register" ? "字母、数字和下划线，3–32 位" : undefined)}
         {mode === "register" && field("display_name", "显示名", { autoComplete: "nickname" }, "向他人显示的名称")}
         {field("password", "密码", { type: "password", autoComplete: mode === "login" ? "current-password" : "new-password" }, mode === "register" ? "至少 8 位" : undefined)}
-        {error && <p className="form-error">{error.message}</p>}
+        {error && (
+          <p className="form-error" role="alert">
+            {error.message}
+          </p>
+        )}
         <button className="filled-btn" disabled={busy}>
           {mode === "login" ? "登录" : "注册"}
         </button>

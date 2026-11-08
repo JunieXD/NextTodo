@@ -7,6 +7,7 @@ import type { FolderId } from "../api/types/FolderId";
 import { formatToday } from "../domain/dates";
 import { useConnection, useSession, useView } from "../session";
 import { useBack } from "../ui/back";
+import { Tip } from "../ui/feedback";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { Sheet } from "../ui/Sheet";
@@ -113,9 +114,11 @@ function NextScreen({ anim, now }: { anim: string; now: Date }) {
     <Screen title="接下来" anim={anim} after={<QuickAdd />}>
       <div className="hero">
         <h1 className="large-title">接下来</h1>
-        <button className="icon-btn" onClick={() => navigate("/done")} aria-label="已完成" title="已完成">
-          <Icon of={History} />
-        </button>
+        <Tip label="已完成">
+          <button className="icon-btn" onClick={() => navigate("/done")}>
+            <Icon of={History} />
+          </button>
+        </Tip>
       </div>
       <p className="subtitle">
         {formatToday(now)}，{board.next().length} 项可做

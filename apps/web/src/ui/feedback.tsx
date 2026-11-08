@@ -1,9 +1,9 @@
-// Snackbar, confirmation and input dialogs, and modal panels, all inside the app's root element so
-// that the phone and desktop styles apply to them.
+// Snackbar, confirmation and input dialogs, modal panels and tips, all inside the app's root element
+// so that the phone and desktop styles apply to them.
 
-import { Dialog } from "radix-ui";
+import { Dialog, Tooltip } from "radix-ui";
 import { X } from "lucide-react";
-import { type ReactNode, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ReactElement, type ReactNode, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/http";
 import type { Checked } from "../domain/text";
 import { useBack } from "./back";
@@ -225,13 +225,38 @@ export function Modal({ title, onClose, onBack, children }: { title: string; onC
             <Dialog.Title asChild>
               <h3>{title}</h3>
             </Dialog.Title>
-            <Dialog.Close className="icon-btn" aria-label="关闭">
-              <Icon of={X} />
-            </Dialog.Close>
+            <Tip label="关闭">
+              <Dialog.Close className="icon-btn">
+                <Icon of={X} />
+              </Dialog.Close>
+            </Tip>
           </div>
           <div className="modal-body">{children}</div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+/** Says what a button without words does, in a bubble on hovering it with a mouse; also its name for
+ * screen readers. */
+export function Tip({ label, children }: { label: string; children: ReactElement }) {
+  const root = useContext(RootContext);
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger
+        asChild
+        aria-label={label}
+        // Focused from the keyboard, it shows too; not as a panel opens and focuses its first button.
+        onFocus={(e) => e.currentTarget.matches(":focus-visible") || e.preventDefault()}
+      >
+        {children}
+      </Tooltip.Trigger>
+      <Tooltip.Portal container={root}>
+        <Tooltip.Content className="tip" sideOffset={6}>
+          {label}
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
   );
 }

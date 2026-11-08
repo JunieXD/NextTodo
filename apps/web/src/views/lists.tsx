@@ -20,7 +20,7 @@ import { checkJobText, checkTitle } from "../domain/text";
 import { useCommit, useSession, useView } from "../session";
 import { draft, keepDraft } from "../sync/drafts";
 import { useBack } from "../ui/back";
-import { RootContext, useFeedback } from "../ui/feedback";
+import { RootContext, Tip, useFeedback } from "../ui/feedback";
 import { Seg } from "../ui/controls";
 import { Icon } from "../ui/icons";
 import { composing } from "../ui/keys";
@@ -176,6 +176,7 @@ export function FolderViewSeg() {
   const [view, setView] = useFolderView();
   return (
     <Seg
+      label="视图"
       items={[
         ["list", "列表", List],
         ["graph", "关系图", Workflow],
@@ -349,9 +350,11 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
     </button>
   );
   const send = (
-    <button type="submit" className="qa-btn icon send" aria-label={ai ? "交给 AI 整理" : "添加"} disabled={!title.trim()}>
-      <Icon of={ArrowUp} size={18} width={2.2} />
-    </button>
+    <Tip label={ai ? "交给 AI 整理" : "添加"}>
+      <button type="submit" className="qa-btn icon send" disabled={!title.trim()}>
+        <Icon of={ArrowUp} size={18} width={2.2} />
+      </button>
+    </Tip>
   );
 
   return (
@@ -373,23 +376,25 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
         </div>
         <div className="qa-side">
           {ai && tall && (
-            <button type="button" className="qa-btn icon expand" aria-label="展开编辑" title="展开编辑" onClick={() => setExpanded(true)}>
-              <Icon of={ChevronUp} size={18} />
-            </button>
+            <Tip label="展开编辑">
+              <button type="button" className="qa-btn icon expand" onClick={() => setExpanded(true)}>
+                <Icon of={ChevronUp} size={18} />
+              </button>
+            </Tip>
           )}
           <div className="qa-btns">
             {/* Not taking the focus from the text: on a phone the keyboard would go down and come up again. */}
-            <button
-              type="button"
-              className={`qa-btn icon${ai ? " on" : ""}`}
-              aria-pressed={ai}
-              aria-label="AI 整理"
-              title="AI 整理"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => void switchMode()}
-            >
-              <Icon of={Sparkles} size={16} />
-            </button>
+            <Tip label="AI 整理">
+              <button
+                type="button"
+                className={`qa-btn icon${ai ? " on" : ""}`}
+                aria-pressed={ai}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => void switchMode()}
+              >
+                <Icon of={Sparkles} size={16} />
+              </button>
+            </Tip>
             {pick}
             {send}
           </div>
@@ -450,9 +455,11 @@ function Editor(props: {
               <Dialog.Title asChild>
                 <h3>AI 整理</h3>
               </Dialog.Title>
-              <Dialog.Close className="icon-btn" aria-label="收起" title="收起">
-                <Icon of={ChevronDown} />
-              </Dialog.Close>
+              <Tip label="收起">
+                <Dialog.Close className="icon-btn">
+                  <Icon of={ChevronDown} />
+                </Dialog.Close>
+              </Tip>
             </div>
             <textarea ref={area} value={props.text} onChange={(e) => props.onEdit(e.target.value)} onKeyDown={props.onEnter} placeholder="交给 AI 整理" aria-label="交给 AI 整理的内容" />
             <div className="editor-foot">{props.children}</div>

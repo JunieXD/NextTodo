@@ -204,6 +204,11 @@ export function StartFailedPage({ message, retry, onRetry }: { message: string; 
             改用服务器
           </button>
         </div>
+        <p className="help-line">
+          <a className="help" href="https://qm.qq.com/q/yz6W1Q9NFS" target="_blank" rel="noreferrer">
+            到 QQ 群反馈问题
+          </a>
+        </p>
       </div>
     </div>
   );

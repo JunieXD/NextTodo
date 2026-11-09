@@ -2,610 +2,301 @@
   {
     "id": "default-rewrite",
     "note": "默认要求：口语描述改成书面语、补上漏掉的前置，不凭空加截止时间，信息不丢",
-    "input": {
-      "local_time": "2026-11-09 10:00 星期一",
-      "folder": "/学习/毕业论文",
-      "request": "把标题改清楚，描述改成简洁的书面语，补上漏掉的先后关系。",
-      "subfolders": [],
-      "open_tasks": [
-        {
-          "number": 11,
-          "title": "查文献"
-        },
-        {
-          "number": 12,
-          "title": "文献综述",
-          "description": "嗯就是那个，我觉得综述得等文献都查完了再写，至少要三十篇，老师说最好有近五年的英文文献"
-        },
-        {
-          "number": 13,
-          "title": "交开题报告",
-          "due": "2026-11-20 18:00",
-          "remind": 60
-        },
-        {
-          "number": 14,
-          "title": "和导师约时间",
-          "description": "周四下午导师有空，要先发邮件问一下"
-        }
-      ],
-      "done_tasks": []
-    },
-    "expect": {
-      "allowed": [
-        "title",
-        "description",
-        "after",
-        "due"
-      ],
-      "linked": [
-        [
-          11,
-          12
-        ]
-      ],
-      "untouched": [],
-      "facts": [
-        [
-          "综述"
-        ],
-        [
-          "三十篇",
-          "30 篇",
-          "30篇"
-        ],
-        [
-          "近五年",
-          "近 5 年",
-          "近5年"
-        ],
-        [
-          "英文"
-        ],
-        [
-          "周四"
-        ],
-        [
-          "邮件"
-        ],
-        [
-          "导师"
-        ]
-      ],
-      "due": []
-    }
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/学习/毕业论文", "request": "把标题改清楚，描述改成简洁的书面语，补上漏掉的先后关系。", "subfolders": [], "open_tasks": [{ "number": 11, "title": "查文献" }, { "number": 12, "title": "文献综述", "description": "嗯就是那个，我觉得综述得等文献都查完了再写，至少要三十篇，老师说最好有近五年的英文文献" }, { "number": 13, "title": "交开题报告", "due": "2026-11-20 18:00", "remind": 60 }, { "number": 14, "title": "和导师约时间", "description": "周四下午导师有空，要先发邮件问一下" }], "done_tasks": [] },
+    "expect": { "allowed": ["title", "description", "after", "due"], "linked": [[11, 12]], "due": [], "facts": [["综述"], ["三十篇", "30 篇", "30篇"], ["近五年", "近 5 年", "近5年"], ["英文"], ["周四"], ["邮件"], ["导师"]] }
   },
   {
     "id": "postpone",
     "note": "推迟已有的截止时间，提醒照旧",
-    "input": {
-      "local_time": "2026-11-09 10:00 星期一",
-      "folder": "/工作",
-      "request": "把“交季度报告”推迟到下周五，提醒照旧",
-      "subfolders": [],
-      "open_tasks": [
-        {
-          "number": 21,
-          "title": "交季度报告",
-          "due": "2026-11-13 18:00",
-          "remind": 60
-        },
-        {
-          "number": 22,
-          "title": "整理报销单"
-        }
-      ],
-      "done_tasks": []
-    },
-    "expect": {
-      "allowed": [
-        "due"
-      ],
-      "due": [
-        [
-          21,
-          "2026-11-20 18:00"
-        ]
-      ],
-      "untouched": [
-        22
-      ]
-    }
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/工作", "request": "把“交季度报告”推迟到下周五，提醒照旧", "subfolders": [], "open_tasks": [{ "number": 21, "title": "交季度报告", "due": "2026-11-13 18:00", "remind": 60 }, { "number": 22, "title": "整理报销单" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[21, "2026-11-20 18:00 !60"]], "untouched": [22] }
   },
   {
     "id": "reverse",
     "note": "把先后反过来：去掉原来的前置，加上反向的",
-    "input": {
-      "local_time": "2026-11-09 10:00 星期一",
-      "folder": "/旅行/东京",
-      "request": "改成先订酒店再订机票：酒店定了日期才知道哪天飞",
-      "subfolders": [],
-      "open_tasks": [
-        {
-          "number": 31,
-          "title": "订机票"
-        },
-        {
-          "number": 32,
-          "title": "订酒店",
-          "after": [
-            31
-          ]
-        },
-        {
-          "number": 33,
-          "title": "办签证"
-        }
-      ],
-      "done_tasks": []
-    },
-    "expect": {
-      "allowed": [
-        "after",
-        "unlink",
-        "description",
-        "order"
-      ],
-      "unlinked": [
-        [
-          31,
-          32
-        ]
-      ],
-      "linked": [
-        [
-          32,
-          31
-        ]
-      ],
-      "untouched": [
-        33
-      ]
-    }
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/旅行/东京", "request": "改成先订酒店再订机票：酒店定了日期才知道哪天飞", "subfolders": [], "open_tasks": [{ "number": 31, "title": "订机票" }, { "number": 32, "title": "订酒店", "requires": [31] }, { "number": 33, "title": "办签证" }], "done_tasks": [] },
+    "expect": { "allowed": ["after", "unlink", "description", "order"], "unlinked": [[31, 32]], "linked": [[32, 31]], "untouched": [33] }
   },
   {
     "id": "delete-and-done",
     "note": "要求里说了才删除、才标为完成",
-    "input": {
-      "local_time": "2026-11-09 10:00 星期一",
-      "folder": "/生活",
-      "request": "发票那个不用报销了，删掉；咖啡豆已经买了",
-      "subfolders": [],
-      "open_tasks": [
-        {
-          "number": 41,
-          "title": "报销打车发票"
-        },
-        {
-          "number": 42,
-          "title": "买咖啡豆"
-        },
-        {
-          "number": 43,
-          "title": "修自行车"
-        }
-      ],
-      "done_tasks": []
-    },
-    "expect": {
-      "allowed": [
-        "delete",
-        "done"
-      ],
-      "deleted": [
-        41
-      ],
-      "done": [
-        42
-      ],
-      "untouched": [
-        43
-      ]
-    }
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/生活", "request": "发票那个不用报销了，删掉；咖啡豆已经买了", "subfolders": [], "open_tasks": [{ "number": 41, "title": "报销打车发票" }, { "number": 42, "title": "买咖啡豆" }, { "number": 43, "title": "修自行车" }], "done_tasks": [] },
+    "expect": { "allowed": ["delete", "done"], "deleted": [41], "done": [42], "untouched": [43] }
   },
   {
     "id": "merge",
     "note": "合并重复的事项：删掉一项，信息并进留下的那项",
-    "input": {
-      "local_time": "2026-11-09 10:00 星期一",
-      "folder": "/生活/租房",
-      "request": "合并重复的事项",
-      "subfolders": [],
-      "open_tasks": [
-        {
-          "number": 51,
-          "title": "给房东转账"
-        },
-        {
-          "number": 52,
-          "title": "转房租给房东",
-          "description": "3200 元，每月 5 号前，转到招商银行尾号 6621 的卡"
-        },
-        {
-          "number": 53,
-          "title": "找人修热水器"
-        }
-      ],
-      "done_tasks": []
-    },
-    "expect": {
-      "allowed": [
-        "title",
-        "description",
-        "delete"
-      ],
-      "deletes": 1,
-      "untouched": [
-        53
-      ],
-      "facts": [
-        [
-          "3200"
-        ],
-        [
-          "6621"
-        ],
-        [
-          "5 号",
-          "5号",
-          "五号"
-        ],
-        [
-          "招商"
-        ],
-        [
-          "房东"
-        ]
-      ]
-    }
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/生活/租房", "request": "合并重复的事项", "subfolders": [], "open_tasks": [{ "number": 51, "title": "给房东转账" }, { "number": 52, "title": "转房租给房东", "description": "3200 元，每月 5 号前，转到招商银行尾号 6621 的卡" }, { "number": 53, "title": "找人修热水器" }], "done_tasks": [] },
+    "expect": { "allowed": ["title", "description", "delete"], "deletes": 1, "untouched": [53], "facts": [["3200"], ["6621"], ["5 号", "5号", "五号"], ["招商"], ["房东"]] }
   },
   {
     "id": "move",
     "note": "移进子文件夹，只移说了的",
-    "input": {
-      "local_time": "2026-11-09 10:00 星期一",
-      "folder": "/官网",
-      "request": "把写文档的事项都挪到“文档”文件夹",
-      "subfolders": [
-        "/官网/文档",
-        "/官网/设计"
-      ],
-      "open_tasks": [
-        {
-          "number": 61,
-          "title": "写安装说明"
-        },
-        {
-          "number": 62,
-          "title": "画首页设计稿"
-        },
-        {
-          "number": 63,
-          "title": "写 API 文档"
-        },
-        {
-          "number": 64,
-          "title": "买域名"
-        }
-      ],
-      "done_tasks": []
-    },
-    "expect": {
-      "allowed": [
-        "folder"
-      ],
-      "moved": [
-        [
-          61,
-          "/官网/文档"
-        ],
-        [
-          63,
-          "/官网/文档"
-        ]
-      ],
-      "untouched": [
-        62,
-        64
-      ]
-    }
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/官网", "request": "把写文档的事项都挪到“文档”文件夹", "subfolders": ["/官网/文档", "/官网/设计"], "open_tasks": [{ "number": 61, "title": "写安装说明" }, { "number": 62, "title": "画首页设计稿" }, { "number": 63, "title": "写 API 文档" }, { "number": 64, "title": "买域名" }], "done_tasks": [] },
+    "expect": { "allowed": ["folder"], "moved": [[61, "/官网/文档"], [63, "/官网/文档"]], "untouched": [62, 64] }
   },
   {
     "id": "create",
     "note": "新建事项，并接在已有事项前面",
-    "input": {
-      "local_time": "2026-11-09 10:00 星期一",
-      "folder": "/生活/搬家",
-      "request": "在“搬家”前面加两步：找搬家公司、打包行李",
-      "subfolders": [],
-      "open_tasks": [
-        {
-          "number": 71,
-          "title": "搬家",
-          "due": "2026-11-30"
-        }
-      ],
-      "done_tasks": []
-    },
-    "expect": {
-      "allowed": [
-        "create",
-        "after"
-      ],
-      "created": [
-        2,
-        2
-      ],
-      "linked": [
-        [
-          "搬家公司",
-          71
-        ],
-        [
-          "打包",
-          71
-        ]
-      ]
-    }
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/生活/搬家", "request": "在“搬家”前面加两步：找搬家公司、打包行李", "subfolders": [], "open_tasks": [{ "number": 71, "title": "搬家", "due": "2026-11-30" }], "done_tasks": [] },
+    "expect": { "allowed": ["create", "after"], "created": [2, 2], "linked": [["搬家公司", 71], ["打包", 71]] }
   },
   {
     "id": "reopen",
     "note": "重新打开已完成的事项，同时改截止时间",
-    "input": {
-      "local_time": "2026-11-09 10:00 星期一",
-      "folder": "/旅行",
-      "request": "“订机票”其实没订成，重新打开，截止改到这周三",
-      "subfolders": [],
-      "open_tasks": [
-        {
-          "number": 81,
-          "title": "订酒店"
-        }
-      ],
-      "done_tasks": [
-        {
-          "number": 82,
-          "title": "订机票"
-        }
-      ]
-    },
-    "expect": {
-      "allowed": [
-        "reopen",
-        "due"
-      ],
-      "reopened": [
-        82
-      ],
-      "due": [
-        [
-          82,
-          "2026-11-11"
-        ]
-      ],
-      "untouched": [
-        81
-      ]
-    }
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/旅行", "request": "“订机票”其实没订成，重新打开，截止改到这周三", "subfolders": [], "open_tasks": [{ "number": 81, "title": "订酒店" }], "done_tasks": [{ "number": 82, "title": "订机票" }] },
+    "expect": { "allowed": ["reopen", "due"], "reopened": [82], "due": [[82, "2026-11-11"]], "untouched": [81] }
   },
   {
     "id": "nothing",
     "note": "都已经清楚，默认要求下不该提任何修改",
-    "input": {
-      "local_time": "2026-11-09 10:00 星期一",
-      "folder": "/家务",
-      "request": "把标题改清楚，描述改成简洁的书面语，补上漏掉的先后关系。",
-      "subfolders": [],
-      "open_tasks": [
-        {
-          "number": 91,
-          "title": "倒垃圾"
-        },
-        {
-          "number": 92,
-          "title": "给绿萝浇水"
-        }
-      ],
-      "done_tasks": []
-    },
-    "expect": {
-      "allowed": [],
-      "untouched": [
-        91,
-        92
-      ]
-    }
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/家务", "request": "把标题改清楚，描述改成简洁的书面语，补上漏掉的先后关系。", "subfolders": [], "open_tasks": [{ "number": 91, "title": "倒垃圾" }, { "number": 92, "title": "给绿萝浇水" }], "done_tasks": [] },
+    "expect": { "allowed": [], "untouched": [91, 92] }
   },
   {
     "id": "clear-due",
     "note": "清除截止时间",
-    "input": {
-      "local_time": "2026-11-09 10:00 星期一",
-      "folder": "/读书",
-      "request": "“读完《三体》”不急，去掉截止时间",
-      "subfolders": [],
-      "open_tasks": [
-        {
-          "number": 101,
-          "title": "读完《三体》",
-          "due": "2026-11-15"
-        },
-        {
-          "number": 102,
-          "title": "读《人类简史》",
-          "due": "2026-12-01"
-        }
-      ],
-      "done_tasks": []
-    },
-    "expect": {
-      "allowed": [
-        "due"
-      ],
-      "due": [
-        [
-          101,
-          ""
-        ]
-      ],
-      "untouched": [
-        102
-      ]
-    }
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/读书", "request": "“读完《三体》”不急，去掉截止时间", "subfolders": [], "open_tasks": [{ "number": 101, "title": "读完《三体》", "due": "2026-11-15" }, { "number": 102, "title": "读《人类简史》", "due": "2026-12-01" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[101, ""]], "untouched": [102] }
   },
   {
-    "id": "verbatim",
-    "note": "描述里给 AI 的提示词原样保留，其余改成书面语",
-    "input": {
-      "local_time": "2026-11-09 10:00 星期一",
-      "folder": "/工作/客服机器人",
-      "request": "把标题改清楚，描述改成简洁的书面语，补上漏掉的先后关系。",
-      "subfolders": [],
-      "open_tasks": [
-        {
-          "number": 111,
-          "title": "提示词",
-          "description": "嗯这个提示词要发给 Claude 用的，就是下面这段，别改：\n\n你是一名客服助手。回答前先确认用户的订单号，不要承诺退款。\n\n然后呢我觉得还要再测一下长对话"
-        }
-      ],
-      "done_tasks": []
-    },
-    "expect": {
-      "allowed": [
-        "title",
-        "description"
-      ],
-      "verbatim": [
-        "你是一名客服助手。回答前先确认用户的订单号，不要承诺退款。"
-      ],
-      "facts": [
-        [
-          "Claude"
-        ],
-        [
-          "长对话"
-        ],
-        [
-          "测"
-        ],
-        [
-          "提示词"
-        ]
-      ]
-    }
+    "id": "spoken-prompt",
+    "note": "口述的提示词改成书面语，每条要求都在，路径原样",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/工作/文档翻译", "request": "把标题改清楚，描述改成简洁的书面语，补上漏掉的先后关系。", "subfolders": [], "open_tasks": [{ "number": 111, "title": "提示词", "description": "嗯这个是给 Claude 的提示词，就是说你帮我把这个仓库的 README 翻译成英文吧，然后呢那个代码块别翻译，保持原样，还有就是术语表在 docs/glossary.md 里面，翻的时候参考一下" }], "done_tasks": [] },
+    "expect": { "allowed": ["title", "description"], "verbatim": ["docs/glossary.md"], "facts": [["Claude"], ["README"], ["英文"], ["代码块"], ["术语表"]] }
   },
   {
     "id": "repeat",
-    "note": "设成重复",
-    "input": {
-      "local_time": "2026-11-09 10:00 星期一",
-      "folder": "/生活",
-      "request": "“交水电费”每月都要交，设成每月重复",
-      "subfolders": [],
-      "open_tasks": [
-        {
-          "number": 121,
-          "title": "交水电费",
-          "due": "2026-11-25"
-        },
-        {
-          "number": 122,
-          "title": "买菜"
-        }
-      ],
-      "done_tasks": []
-    },
-    "expect": {
-      "allowed": [
-        "due"
-      ],
-      "repeat": [
-        [
-          121,
-          "1m"
-        ]
-      ],
-      "untouched": [
-        122
-      ]
-    }
+    "note": "设成每月重复",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/生活", "request": "“交水电费”每月都要交，设成每月重复", "subfolders": [], "open_tasks": [{ "number": 121, "title": "交水电费", "due": "2026-11-25" }, { "number": 122, "title": "买菜" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[121, "2026-11-25 ~1m"]], "untouched": [122] }
   },
   {
     "id": "order",
     "note": "调整列表顺序，不连先后",
-    "input": {
-      "local_time": "2026-11-09 10:00 星期一",
-      "folder": "/周末",
-      "request": "把列表顺序调成：洗车、买菜、看电影",
-      "subfolders": [],
-      "open_tasks": [
-        {
-          "number": 131,
-          "title": "看电影"
-        },
-        {
-          "number": 132,
-          "title": "买菜"
-        },
-        {
-          "number": 133,
-          "title": "洗车"
-        }
-      ],
-      "done_tasks": []
-    },
-    "expect": {
-      "allowed": [
-        "order"
-      ],
-      "order": [
-        133,
-        132,
-        131
-      ]
-    }
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/周末", "request": "把列表顺序调成：洗车、买菜、看电影", "subfolders": [], "open_tasks": [{ "number": 131, "title": "看电影" }, { "number": 132, "title": "买菜" }, { "number": 133, "title": "洗车" }], "done_tasks": [] },
+    "expect": { "allowed": ["order"], "order": [133, 132, 131] }
   },
   {
     "id": "done-and-create",
     "note": "完成一项，再新建一项接在它后面",
-    "input": {
-      "local_time": "2026-11-09 10:00 星期一",
-      "folder": "/工作",
-      "request": "“写周报”写完了；再加一个“准备周一例会”，要在写周报之后",
-      "subfolders": [],
-      "open_tasks": [
-        {
-          "number": 141,
-          "title": "写周报"
-        },
-        {
-          "number": 142,
-          "title": "回复客户邮件"
-        }
-      ],
-      "done_tasks": []
-    },
-    "expect": {
-      "allowed": [
-        "done",
-        "create"
-      ],
-      "done": [
-        141
-      ],
-      "created": [
-        1,
-        1
-      ],
-      "linked": [
-        [
-          141,
-          "例会"
-        ]
-      ],
-      "untouched": [
-        142
-      ]
-    }
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/工作", "request": "“写周报”写完了；再加一个“准备周一例会”，要在写周报之后", "subfolders": [], "open_tasks": [{ "number": 141, "title": "写周报" }, { "number": 142, "title": "回复客户邮件" }], "done_tasks": [] },
+    "expect": { "allowed": ["done", "create"], "done": [141], "created": [1, 1], "linked": [[141, "例会"]], "untouched": [142] }
+  },
+  {
+    "id": "postpone-all",
+    "note": "批量推迟，只改日期，时间和提醒都留着",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/工作", "request": "所有有截止时间的事项都往后推两天，时间和提醒不变", "subfolders": [], "open_tasks": [{ "number": 1, "title": "写周报", "due": "2026-11-13 17:00", "remind": 30 }, { "number": 2, "title": "交发票", "due": "2026-11-11" }, { "number": 3, "title": "回复客户邮件" }, { "number": 4, "title": "季度复盘", "due": "2026-11-30 10:00" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2026-11-15 17:00 !30"], [2, "2026-11-13"], [4, "2026-12-02 10:00"]], "untouched": [3] }
+  },
+  {
+    "id": "today-to-tomorrow",
+    "note": "按今天的日期挑出事项，挪到明天，时间不变",
+    "input": { "local_time": "2026-11-09 18:30 星期一", "folder": "/生活", "request": "今天没做完的都挪到明天，时间不变", "subfolders": [], "open_tasks": [{ "number": 1, "title": "交报销单", "due": "2026-11-09 17:00", "remind": 15 }, { "number": 2, "title": "健身", "due": "2026-11-09" }, { "number": 3, "title": "买牛奶", "due": "2026-11-12" }, { "number": 4, "title": "看论文" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2026-11-10 17:00 !15"], [2, "2026-11-10"]], "untouched": [3, 4] }
+  },
+  {
+    "id": "due-for-undated",
+    "note": "只给没有截止时间的加上",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/家务", "request": "没有截止时间的都定在这周日", "subfolders": [], "open_tasks": [{ "number": 1, "title": "整理书架" }, { "number": 2, "title": "洗窗帘", "due": "2026-11-20" }, { "number": 3, "title": "修门把手" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2026-11-15"], [3, "2026-11-15"]], "untouched": [2] }
+  },
+  {
+    "id": "time-and-reminder",
+    "note": "加上具体时间和提醒",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/实验室", "request": "组会定在周三下午三点，提前半小时提醒我", "subfolders": [], "open_tasks": [{ "number": 1, "title": "开组会", "due": "2026-11-11" }, { "number": 2, "title": "准备组会 PPT" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2026-11-11 15:00 !30"]], "untouched": [2] }
+  },
+  {
+    "id": "no-reminder",
+    "note": "只去掉提醒，时间和重复留着",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/生活", "request": "交房租不用提醒了", "subfolders": [], "open_tasks": [{ "number": 1, "title": "交房租", "due": "2026-11-15 09:00", "remind": 60, "repeat": "1m" }, { "number": 2, "title": "交水电费" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2026-11-15 09:00 ~1m"]], "untouched": [2] }
+  },
+  {
+    "id": "stop-repeat",
+    "note": "只停止重复，截止时间留着",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/生活", "request": "健身卡到期了，“去健身房”不用再每周重复了，截止时间先留着", "subfolders": [], "open_tasks": [{ "number": 1, "title": "去健身房", "due": "2026-11-11 19:00", "repeat": "1w" }, { "number": 2, "title": "买蛋白粉" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2026-11-11 19:00"]], "untouched": [2] }
+  },
+  {
+    "id": "biweekly",
+    "note": "改重复的间隔",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/家人", "request": "“给爸妈打电话”改成每两周一次", "subfolders": [], "open_tasks": [{ "number": 1, "title": "给爸妈打电话", "due": "2026-11-15 20:00", "repeat": "1w" }, { "number": 2, "title": "寄快递" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2026-11-15 20:00 ~2w"]], "untouched": [2] }
+  },
+  {
+    "id": "repeat-from-done",
+    "note": "按天重复，从完成那天算",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/家务", "request": "换净水器滤芯每 90 天一次，从换的那天算，先定在月底", "subfolders": [], "open_tasks": [{ "number": 1, "title": "换净水器滤芯" }, { "number": 2, "title": "买洗碗块" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2026-11-30 ~90d/done"]], "untouched": [2] }
+  },
+  {
+    "id": "weekdays",
+    "note": "做不到的重复（每个工作日）：不能设成每天",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/工作", "request": "“写日报”改成每个工作日重复", "subfolders": [], "open_tasks": [{ "number": 1, "title": "写日报", "due": "2026-11-10 18:00" }], "done_tasks": [] },
+    "expect": { "allowed": ["description"], "due": [] }
+  },
+  {
+    "id": "cross-year",
+    "note": "跨年的日期；只改日期时保留原来的时间和提醒",
+    "input": { "local_time": "2026-12-30 10:00 星期三", "folder": "/工作", "request": "年终总结推迟到 1 月 5 号；体检改到三天后", "subfolders": [], "open_tasks": [{ "number": 1, "title": "写年终总结", "due": "2026-12-31 18:00", "remind": 60 }, { "number": 2, "title": "体检", "due": "2026-12-31" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2027-01-05 18:00 !60"], [2, "2027-01-02"]] }
+  },
+  {
+    "id": "day-before",
+    "note": "“前一天提醒”是提前 1440 分钟",
+    "input": { "local_time": "2026-11-11 09:00 星期三", "folder": "/毕业论文", "request": "答辩彩排定在周五上午十点，前一天提醒我", "subfolders": [], "open_tasks": [{ "number": 1, "title": "答辩彩排" }, { "number": 2, "title": "改答辩 PPT" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2026-11-13 10:00 !1440"]], "untouched": [2] }
+  },
+  {
+    "id": "chain",
+    "note": "按给出的顺序串成先后",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/装修", "request": "按这个顺序做：先买材料，再刷墙，然后装灯，最后打扫", "subfolders": [], "open_tasks": [{ "number": 1, "title": "打扫卫生" }, { "number": 2, "title": "装灯" }, { "number": 3, "title": "刷墙" }, { "number": 4, "title": "买材料" }], "done_tasks": [] },
+    "expect": { "allowed": ["after", "order"], "linked": [[4, 3], [3, 2], [2, 1]] }
+  },
+  {
+    "id": "fix-wrong-link",
+    "note": "改正连错的前置，补上该有的",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/产品", "request": "流程应该是设计、开发、测试，现在测试被设成了开发的前置，改过来", "subfolders": [], "open_tasks": [{ "number": 1, "title": "设计" }, { "number": 2, "title": "测试" }, { "number": 3, "title": "开发", "requires": [1, 2] }], "done_tasks": [] },
+    "expect": { "allowed": ["after", "unlink", "order"], "unlinked": [[2, 3]], "linked": [[1, 3], [3, 2]] }
+  },
+  {
+    "id": "drop-prereqs",
+    "note": "去掉一项的全部前置",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/聚餐", "request": "“订餐厅”不用等别的事了，现在就可以订", "subfolders": [], "open_tasks": [{ "number": 1, "title": "问大家时间" }, { "number": 2, "title": "统计人数", "requires": [1] }, { "number": 3, "title": "订餐厅", "requires": [1, 2] }], "done_tasks": [] },
+    "expect": { "allowed": ["unlink"], "unlinked": [[1, 3], [2, 3]], "untouched": [1, 2] }
+  },
+  {
+    "id": "insert-between",
+    "note": "在两步之间插一步",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/官网", "request": "在“出设计稿”和“前端开发”之间加一步“设计评审”", "subfolders": [], "open_tasks": [{ "number": 1, "title": "出设计稿" }, { "number": 2, "title": "前端开发", "requires": [1] }, { "number": 3, "title": "写接口" }], "done_tasks": [] },
+    "expect": { "allowed": ["create", "after", "unlink"], "created": [1, 1], "linked": [[1, "评审"], ["评审", 2]], "untouched": [3] }
+  },
+  {
+    "id": "make-parallel",
+    "note": "去掉先后，两项可以同时做",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/旅行", "request": "“买机票”和“办签证”没有先后，可以同时做", "subfolders": [], "open_tasks": [{ "number": 1, "title": "办签证" }, { "number": 2, "title": "买机票", "requires": [1] }], "done_tasks": [] },
+    "expect": { "allowed": ["unlink"], "unlinked": [[1, 2]], "not_linked": [[1, 2], [2, 1]] }
+  },
+  {
+    "id": "infer-deps",
+    "note": "默认要求：补出明显的先后，方向不能反",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/搬家", "request": "把标题改清楚，描述改成简洁的书面语，补上漏掉的先后关系。", "subfolders": [], "open_tasks": [{ "number": 1, "title": "找房子" }, { "number": 2, "title": "签租房合同" }, { "number": 3, "title": "打包行李" }, { "number": 4, "title": "预约搬家公司" }, { "number": 5, "title": "搬家" }, { "number": 6, "title": "退旧房押金" }, { "number": 7, "title": "办宽带迁移" }], "done_tasks": [] },
+    "expect": { "allowed": ["title", "description", "after", "due"], "linked": [[1, 2], [2, 5], [3, 5], [4, 5]], "not_linked": [[5, 3], [5, 4], [2, 1], [5, 1]] }
+  },
+  {
+    "id": "done-vague",
+    "note": "笼统地说一类事做完了",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/采购", "request": "买东西的都买完了", "subfolders": [], "open_tasks": [{ "number": 1, "title": "买洗衣液" }, { "number": 2, "title": "买猫粮" }, { "number": 3, "title": "修空调" }, { "number": 4, "title": "买电池" }], "done_tasks": [] },
+    "expect": { "allowed": ["done"], "done": [1, 2, 4], "untouched": [3] }
+  },
+  {
+    "id": "done-repeating",
+    "note": "重复的事项标为完成（会顺延），不是改截止时间",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/工作", "request": "这周的周报写完了", "subfolders": [], "open_tasks": [{ "number": 1, "title": "写周报", "due": "2026-11-13 17:00", "repeat": "1w" }, { "number": 2, "title": "写月报", "due": "2026-11-30" }], "done_tasks": [] },
+    "expect": { "allowed": ["done"], "done": [1], "due": [], "untouched": [2] }
+  },
+  {
+    "id": "delete-done",
+    "note": "删除已完成的事项",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/求职", "request": "把已经完成的都删掉", "subfolders": [], "open_tasks": [{ "number": 1, "title": "准备面试" }], "done_tasks": [{ "number": 2, "title": "投简历" }, { "number": 3, "title": "改简历" }] },
+    "expect": { "allowed": ["delete"], "deleted": [2, 3], "untouched": [1] }
+  },
+  {
+    "id": "cancel-exam",
+    "note": "从原因推断哪些不用做了：删除，不是完成",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/期末", "request": "考试取消了，复习相关的都不用做了", "subfolders": [], "open_tasks": [{ "number": 1, "title": "复习线性代数" }, { "number": 2, "title": "复习概率论" }, { "number": 3, "title": "交课程作业" }, { "number": 4, "title": "刷历年真题" }], "done_tasks": [] },
+    "expect": { "allowed": ["delete"], "deleted": [1, 2, 4], "untouched": [3] }
+  },
+  {
+    "id": "merge-three",
+    "note": "三项合并成一项，描述里的信息都并进来，电话号码原样",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/家里", "request": "合并重复的事项", "subfolders": [], "open_tasks": [{ "number": 1, "title": "联系物业修水管" }, { "number": 2, "title": "找物业修水管", "description": "厨房水槽下面漏水，物业电话 6612 3345" }, { "number": 3, "title": "水管漏水报修", "description": "最好周六上午来，我在家" }, { "number": 4, "title": "买拖把" }], "done_tasks": [] },
+    "expect": { "allowed": ["title", "description", "delete"], "deletes": 2, "untouched": [4], "verbatim": ["6612 3345"], "facts": [["厨房"], ["水槽"], ["漏水"], ["周六上午"], ["在家"]] }
+  },
+  {
+    "id": "merge-keeps-order",
+    "note": "合并后，留下的那项仍在后续前面",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/做饭", "request": "合并重复的事项", "subfolders": [], "open_tasks": [{ "number": 1, "title": "买菜" }, { "number": 2, "title": "做饭", "requires": [1] }, { "number": 3, "title": "去超市买菜" }, { "number": 4, "title": "洗碗", "requires": [2] }], "done_tasks": [] },
+    "expect": { "allowed": ["title", "description", "delete", "after"], "deletes": 1, "linked": [["买菜", 2], [2, 4]] }
+  },
+  {
+    "id": "reopen-postpone",
+    "note": "重新打开并给新的截止时间",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/毕业论文", "request": "“交论文初稿”被导师打回来了，重新打开，下周五前再交一次", "subfolders": [], "open_tasks": [{ "number": 1, "title": "改论文格式" }], "done_tasks": [{ "number": 2, "title": "交论文初稿" }] },
+    "expect": { "allowed": ["reopen", "due", "description"], "reopened": [2], "due": [[2, "2026-11-20"]], "untouched": [1] }
+  },
+  {
+    "id": "move-nested",
+    "note": "移进不同层的子文件夹",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/工作", "request": "项目A的事项都放进项目A文件夹，其中写文档的放进它下面的“文档”", "subfolders": ["/工作/项目A", "/工作/项目A/文档", "/工作/项目B"], "open_tasks": [{ "number": 1, "title": "项目A需求评审" }, { "number": 2, "title": "写项目A接口文档" }, { "number": 3, "title": "项目B上线" }, { "number": 4, "title": "报销打车费" }], "done_tasks": [] },
+    "expect": { "allowed": ["folder"], "moved": [[1, "/工作/项目A"], [2, "/工作/项目A/文档"]], "untouched": [3, 4] }
+  },
+  {
+    "id": "move-missing",
+    "note": "要移去的文件夹不存在：不移",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/学习", "request": "把数学相关的挪到“数学”文件夹", "subfolders": ["/学习/英语"], "open_tasks": [{ "number": 1, "title": "做数学作业" }, { "number": 2, "title": "背单词" }], "done_tasks": [] },
+    "expect": { "allowed": [], "moved": [], "untouched": [1, 2] }
+  },
+  {
+    "id": "split",
+    "note": "拆成几步，原事项留作最后一步，描述里的先后也连上",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/婚礼", "request": "把“准备婚礼”拆成几个具体步骤，原来的事项留着当最后一步", "subfolders": [], "open_tasks": [{ "number": 1, "title": "准备婚礼", "description": "要订酒店、拍婚纱照、发请柬，请柬要等酒店定了才能发" }], "done_tasks": [] },
+    "expect": { "allowed": ["create", "after", "title", "description"], "created": [3, 6], "facts": [["酒店"], ["婚纱照"], ["请柬"]], "linked": [["酒店", "请柬"], ["请柬", 1], ["婚纱照", 1]] }
+  },
+  {
+    "id": "new-repeating",
+    "note": "新建带时间、提醒和重复的事项",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/生活", "request": "加一个事项：每月 1 号上午 9 点交房租，提前一天提醒，从下个月开始", "subfolders": [], "open_tasks": [{ "number": 1, "title": "交水费" }], "done_tasks": [] },
+    "expect": { "allowed": ["create"], "created": [1, 1], "new_due": [["房租", "2026-12-01 09:00 !1440 ~1m"]], "untouched": [1] }
+  },
+  {
+    "id": "by-number",
+    "note": "按编号指事项",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/工作", "request": "#3 推迟一周", "subfolders": [], "open_tasks": [{ "number": 1, "title": "写方案" }, { "number": 2, "title": "约客户" }, { "number": 3, "title": "提交预算", "due": "2026-11-12 14:00", "remind": 10 }, { "number": 4, "title": "订会议室" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[3, "2026-11-19 14:00 !10"]], "untouched": [1, 2, 4] }
+  },
+  {
+    "id": "nothing-to-reopen",
+    "note": "要求的事没有对象：什么都不做",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/读书", "request": "把已完成的重新打开", "subfolders": [], "open_tasks": [{ "number": 1, "title": "读《百年孤独》" }], "done_tasks": [] },
+    "expect": { "allowed": [], "untouched": [1] }
+  },
+  {
+    "id": "order-by-due",
+    "note": "按截止时间排顺序",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/学期", "request": "按截止时间从早到晚排一下顺序", "subfolders": [], "open_tasks": [{ "number": 1, "title": "交作业", "due": "2026-11-20" }, { "number": 2, "title": "体检", "due": "2026-11-12" }, { "number": 3, "title": "买参考书" }, { "number": 4, "title": "还图书馆的书", "due": "2026-11-15" }], "done_tasks": [] },
+    "expect": { "allowed": ["order"], "order": [2, 4, 1] }
+  },
+  {
+    "id": "order-vs-deps",
+    "note": "排序要求和先后冲突：不为排序去掉前置",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/发布", "request": "把“上线”排到最前面", "subfolders": [], "open_tasks": [{ "number": 1, "title": "开发" }, { "number": 2, "title": "测试", "requires": [1] }, { "number": 3, "title": "上线", "requires": [2] }, { "number": 4, "title": "写更新日志" }], "done_tasks": [] },
+    "expect": { "allowed": ["order"], "linked": [[1, 2], [2, 3]] }
+  },
+  {
+    "id": "combined",
+    "note": "一条要求里有几件事",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/旅行", "request": "订机票和订酒店都弄好了；签证材料里再加上在职证明；出发日期改成 12 月 20 号", "subfolders": [], "open_tasks": [{ "number": 1, "title": "订机票" }, { "number": 2, "title": "订酒店" }, { "number": 3, "title": "准备签证材料", "description": "护照、照片、银行流水" }, { "number": 4, "title": "出发", "due": "2026-12-18" }], "done_tasks": [] },
+    "expect": { "allowed": ["done", "description", "due", "title"], "done": [1, 2], "due": [[4, "2026-12-20"]], "facts": [["在职证明"], ["护照"], ["照片"], ["银行流水"]] }
+  },
+  {
+    "id": "large-precise",
+    "note": "25 项里只动说了的两项",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/杂事", "request": "把“缴社保”推迟到月底，删掉“旧手机回收”", "subfolders": [], "open_tasks": [{ "number": 1, "title": "写周报" }, { "number": 2, "title": "缴社保", "due": "2026-11-15" }, { "number": 3, "title": "交物业费", "due": "2026-11-20" }, { "number": 4, "title": "旧手机回收" }, { "number": 5, "title": "约体检" }, { "number": 6, "title": "续签合同" }, { "number": 7, "title": "整理发票" }, { "number": 8, "title": "买打印纸" }, { "number": 9, "title": "修自行车" }, { "number": 10, "title": "订年会场地" }, { "number": 11, "title": "更新通讯录" }, { "number": 12, "title": "备份照片" }, { "number": 13, "title": "寄合同原件" }, { "number": 14, "title": "预约洗牙" }, { "number": 15, "title": "换驾照" }, { "number": 16, "title": "办居住证" }, { "number": 17, "title": "交电话费" }, { "number": 18, "title": "清理邮箱" }, { "number": 19, "title": "申请年假" }, { "number": 20, "title": "报名驾校复训" }, { "number": 21, "title": "买生日礼物" }, { "number": 22, "title": "退货运动鞋" }, { "number": 23, "title": "整理衣柜" }, { "number": 24, "title": "还信用卡", "due": "2026-11-25 23:00", "remind": 1440 }, { "number": 25, "title": "预约理发" }], "done_tasks": [] },
+    "expect": { "allowed": ["due", "delete"], "due": [[2, "2026-11-30"]], "deleted": [4], "untouched": [1, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25] }
+  },
+  {
+    "id": "messy-default",
+    "note": "默认要求：口语和改口改成书面语，命令和链接原样，清楚的不动",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/工作", "request": "把标题改清楚，描述改成简洁的书面语，补上漏掉的先后关系。", "subfolders": [], "open_tasks": [{ "number": 1, "title": "那个性能问题", "description": "嗯就是首页加载太慢了，用户反馈说要五六秒，我感觉是图片没压缩，也可能是接口慢，得先查一下到底是哪个" }, { "number": 2, "title": "部署", "description": "部署之前记得先跑一下 pnpm build，然后把 dist 传到服务器上，步骤在 https://example.com/deploy-guide 里写着" }, { "number": 3, "title": "约面试", "description": "约在周三下午，不对，周三我有课，改成周四下午，三点以后都行" }, { "number": 4, "title": "回复王经理邮件" }, { "number": 5, "title": "更新简历" }], "done_tasks": [] },
+    "expect": { "allowed": ["title", "description", "after", "due"], "untouched": [4, 5], "verbatim": ["pnpm build", "https://example.com/deploy-guide"], "absent": ["约在周三"], "facts": [["首页"], ["加载"], ["五六秒", "5-6 秒", "5–6 秒", "5 到 6 秒", "5~6 秒"], ["图片"], ["压缩"], ["接口"], ["dist"], ["周四"], ["三点", "15:00", "3 点"], ["有课"]] }
+  },
+  {
+    "id": "english",
+    "note": "英文：用英文改写，补上先后",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/Work", "request": "Make the titles clear, rewrite descriptions in plain written English, and add missing dependencies.", "subfolders": [], "open_tasks": [{ "number": 1, "title": "deploy", "description": "uh so basically we need to push the new build to staging, but like only after QA signs off on it" }, { "number": 2, "title": "QA sign-off" }], "done_tasks": [] },
+    "expect": { "allowed": ["title", "description", "after"], "linked": [[2, 1]], "facts": [["staging"], ["QA"]] }
   }
 ]

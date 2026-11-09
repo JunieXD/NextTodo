@@ -179,7 +179,7 @@ async fn a_tidying_suggests_and_what_is_taken_goes_with_it_in_one_change() {
 
     fake.answer(Ok(r#"{"suggestions": [
         {"number": 1, "title": "建好官网", "description": "做一个官网。", "reason": "标题以动作开头，描述改成书面语"},
-        {"number": 2, "after": [1], "reason": "文档要等官网建好"}
+        {"number": 2, "requires": [1], "reason": "文档要等官网建好"}
     ]}"#));
     let job = id();
     let mut op = create(&job, "整理一下", Some(&folder));

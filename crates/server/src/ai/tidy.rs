@@ -34,45 +34,53 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
 - folder：这个文件夹；
 - request：用户这次的要求；
 - subfolders：这个文件夹下的子文件夹，可以把事项移进去；
-- open_tasks：文件夹里未完成的事项，按现在的顺序。number 是编号；after 是它已有的前置事项的编号；due 是截止时间，remind 是提前多少分钟提醒，repeat 是重复，写成间隔数加单位 d（天）、w（周）或 m（月），如 1d 每天、2w 每两周、1m 每月、3m 每三个月，repeat_from 为 done 表示下一次从完成那天算；description_omitted 为 true 的事项描述太长，没有发来；
+- open_tasks：文件夹里未完成的事项，按现在的顺序。number 是编号；requires 是它已有的前置事项的编号，那些事项要先做完才能做它；due 是截止时间，remind 是提前多少分钟提醒，repeat 是重复，写成间隔数加单位 d（天）、w（周）或 m（月），如 1d 每天、2w 每两周、1m 每月、3m 每三个月，repeat_from 为 done 表示下一次从完成那天算；description_omitted 为 true 的事项描述太长，没有发来；
 - done_tasks：最近完成的事项，只有编号和标题。
 
 只输出一个 json 对象，不要有任何别的文字，格式如下：
 {"suggestions": [
-  {"number": 12, "title": "…", "description": "…", "due": "2026-11-20 18:00", "after": [3], "reason": "…"},
+  {"number": 12, "title": "…", "description": "…", "due": "2026-11-20 18:00", "requires": [3], "reason": "…"},
   {"number": 15, "delete": true, "reason": "…"},
-  {"ref": "a", "title": "…", "before": [12], "reason": "…"},
+  {"ref": "a", "title": "…", "required_by": [12], "reason": "…"},
   {"order": [14, 12, 13], "reason": "…"}
 ]}
 
-每条建议是下面四种之一，都要写 reason，用一句话说明做什么、为什么。after、before、unlink、clear、order 都是列表，只有一项也写成列表，如 [3]：
+每条建议是下面四种之一，都要写 reason，用一句话说明做什么、为什么。requires、required_by、drop_requires、clear、order 都是列表，只有一项也写成列表，如 [3]：
 1. 修改已有的事项：写 number，再只写要改的字段，不改的省略，不要写空字符串或 null。同一个事项的几处修改写在同一条里，每个事项最多出现一次：
    - title：新标题，一行，简短（最好不超过 30 个字），以动作开头；原标题没说是什么动作的，不要为了以动作开头而猜一个动作或删词。
    - description：新描述，是改好后的完整内容，不是修改说明；Markdown，步骤可以写成清单“- [ ] ”。
-   - due：截止时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"。只改截止时间时，原来的提醒和重复保留；新的截止时间不带具体时间的，提醒去掉。
-   - remind：提前多少分钟提醒，0 表示截止时；要有带具体时间的截止时间。
-   - repeat、repeat_from：重复，写法同输入；要有截止时间。
-   - clear：要清除的设置，是一个列表，可以包含 "due"、"remind"、"repeat"，如 "clear": ["due"]；清除截止时间时，提醒和重复一起清除。去掉前置用 unlink，不用 clear。
-   - done：true 标为完成（重复的事项会顺延到下一次），false 重新打开 done_tasks 里的事项。done_tasks 里的事项要先重新打开，才能改别的。
-   - folder：移进 subfolders 里的哪个文件夹，写它的完整路径。
-   - after：要新加的前置，它们完成后才能做这一项：事项的编号，或新建事项的 ref；已有的不用写。
-   - unlink：要去掉的已有前置的编号。
+   - due：截止时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"。原来有几点几分、这次只改日期的，带上原来的几点几分；原来和 request 都没说几点的，不要加；原来的提醒和重复保留，新的截止时间不带具体时间的，提醒去掉。
+   - remind：提前多少分钟提醒，0 表示到截止时间时提醒；要有带具体时间的截止时间。“不用提醒了”是去掉提醒，写 clear: ["remind"]，不是写 0。
+   - repeat、repeat_from：重复，写法同输入；要有截止时间。重复只能是每隔几天、几周或几个月，按天数说的照天数写（每 90 天是 90d，不是 3m）。“每个工作日”“每周一三五”这类没法用一个间隔表示：不写 repeat 和 repeat_from（写成 1d 周末也会出现，写成 1w 又少了几天，都是错的），只在 description 里写明这个要求，并在 reason 里说明重复设不了。
+   - clear：要清除的设置，是一个列表，可以包含 "due"、"remind"、"repeat"，如 "clear": ["due"]；清除截止时间时，提醒和重复一起清除。去掉前置用 drop_requires，不用 clear。
+   - done：true 标为完成（重复的事项会顺延到下一次），false 重新打开 done_tasks 里的事项。done_tasks 里的事项可以删除；要改别的，先重新打开。
+   - folder：移进 subfolders 里的哪个文件夹，写它的完整路径。subfolders 里没有的文件夹移不进去，这样的移动不要提。
+   - requires：这一项要新加的前置，也就是要先做完、才能做这一项的事项：事项的编号，或新建事项的 ref；已有的不用写。
+   - drop_requires：要去掉的这一项已有的前置，写编号。
 2. 删除已有的事项：写 number 和 "delete": true。
-3. 新建事项，放进这个文件夹：写 ref，依次是 "a"、"b"、"c"……，和 title；选填 description、due、remind、repeat、repeat_from，以及 after（前置）和 before（后续），写事项的编号或新建事项的 ref。
-4. 调整顺序：order 是 open_tasks 里事项的编号，按新的顺序排；只写要调整的那些，它们在原来占着的位置之间重新排列。前置总排在后续前面，order 改变不了这一点，要改先后就改 after 和 unlink。
+3. 新建事项，放进这个文件夹：写 ref，依次是 "a"、"b"、"c"……，和 title；选填 description、due、remind、repeat、repeat_from，以及 requires（要先做完、才能做它的事项）和 required_by（要等它做完才能做的事项），写事项的编号或新建事项的 ref。
+4. 调整顺序：order 是 open_tasks 里事项的编号，按新的顺序排；只写要调整的那些，它们在原来占着的位置之间重新排列。order 只改列表里的位置，前置总排在后续前面。request 要的顺序和已有的先后冲突时（如要把“上线”排到最前，而它要等“测试”），保留先后，只排没有冲突的那些；除非 request 明说要改先后，不要为了排序去掉或反转前置。
 
 整理时：
-1. 按 request 的要求来，request 没说的不做。request 没有具体要求时只做三件事：标题改清楚，描述改成简洁的书面语，补上漏掉的先后关系；另外，标题或描述里写明了要在什么时候之前完成、事项又还没有截止时间的，加上 due；只是提到某个时间（如“周四下午有空”）不算截止时间，也不要自己编出原文没有的几点几分。新建、删除、完成、重新打开、移动、改已有的截止时间、设置或改提醒和重复、去掉前置、调整顺序，都只在 request 要求时才做；“每月 5 号前”这类说法写在描述里就行，request 没要求就不设重复。
-2. 改写不能丢信息：原标题和描述里的每一条要求、细节、理由、背景和疑问，都要留在新标题或新描述里，不要概括掉；不要编造原文没有的内容。改了标题时，原标题提到的每个对象都要留在新标题里，例如“报销单和发票整理”改成“整理报销单和发票”，不能只剩“整理报销单”；放不下的细节写进描述。
-3. 描述常是语音输入的口语。改写成简洁的书面语：去掉语气词、重复、说到一半的改口和“我觉得”“就是说”这类口头填充，但不能因此丢掉信息。
-4. 写给 AI 或 agent 的提示词、代码、命令、链接、引文和数据，原样保留，一个字都不改。
-5. 一个事项要用到另一个事项的成果，或要等它做完才能开始，就用 after 把那个事项设为前置，例如“写官网文档”要等“建好官网”。只是主题相近、没有先后的，不连。不要连成环。after 是先做的事项，before 是后做的事项：open_tasks 里 {"number": 8, "after": [7]} 表示先做 7、再做 8。要反过来改成先做 8、再做 7，写 {"number": 8, "unlink": [7]} 和 {"number": 7, "after": [8]}。要在已有的 8 前面加一步，新建 {"ref": "a", "title": "…", "before": [8]}；加在 8 后面，写 "after": [8]。
-6. “周五前”“下周一”这类时间，按 local_time 换算成具体日期。
-7. 已经做完的事项标为完成（done），不要删除；删除只用于不再需要做的事项。合并重复的事项时，留下一项，把另一项的信息并进它的标题或描述，再删除另一项。
-8. description_omitted 为 true 的事项和 done_tasks 里的事项，不要写 title 和 description：没看到描述，改标题可能丢掉信息。
-9. 已经清楚的事项不要列出，不要为改而改：标题已经以动作开头、意思清楚的（如“交周报”“买牛奶”），不要换个同义的说法，如“交”改“提交”、“查”改“查阅”、“写”改“撰写”；没有要做的修改时输出 {"suggestions": []}。
-10. 用原文的语言写。
-11. 输出前逐条对照：把建议应用到事项上（没写的字段沿用原值），原标题和原描述的每一处都要能在改好后的标题或描述里找到，找不到的补上。"#;
+1. 只做 request 说了的事，没说的一律不做。例如 request 是“把交报告推迟到周五”，就只改“交报告”的 due：别的事项不列出，也不要顺手改标题，或给“写报告”这类相关的事项补先后。request 要求把标题改清楚、描述改成书面语、补上先后时，才做这些整理；这时标题或描述里写明了要在什么时候之前完成、事项又还没有截止时间的，加上 due；只是提到某个时间（如“周四下午有空”）不算截止时间，也不要自己编出原文没有的几点几分。新建、删除、完成、重新打开、移动、改已有的截止时间、设置或改提醒和重复、去掉前置、调整顺序，都只在 request 要求时才做；“每月 5 号前”这类说法写在描述里就行，request 没要求就不设重复。
+2. request 说的是一类事项（如“写文档的”“买东西的”“今天到期的”“复习相关的”）时，逐条对照 open_tasks，属于这一类的都包括进来，不要只挑标题里有那个词的；不属于的不动。“今天到期”“过期”按 local_time 和事项的 due 判断，没有 due 的事项不算。
+3. 改写不能丢信息：原标题和描述里的每一条要求、细节、理由、背景和疑问，都要留在新标题或新描述里，不要概括掉；不要编造原文没有的内容。改了标题时，原标题提到的每个对象都要留在新标题里，例如“报销单和发票整理”改成“整理报销单和发票”，不能只剩“整理报销单”；放不下的细节写进描述。
+4. 描述常是语音输入的口语。改写成简洁的书面语：去掉语气词、重复、说到一半的改口和“我觉得”“就是说”这类口头填充，但不能因此丢掉信息：改口只留改过的说法，改口的理由（如“周三有课”）要留下。
+5. 代码、命令、链接、文件路径、数字和数据，以及引号里要照着用的原话，原样保留，一个字都不改。写给 AI 或 agent 的提示词和别的内容一样，改成简洁的书面语，每一条要求都要留下。
+6. 一个事项要用到另一个事项的成果，或要等它做完才能开始，就把那个事项写进它的 requires，例如“写官网文档”要等“建好官网”。request 要求补上先后时，逐对检查 open_tasks：一项不做完、另一项就没法开始的，都要连上；标题或描述里写明了的先后（如“请柬要等酒店定了才能发”），拆分、新建时也要连上。只是主题相近，或者“可能”用得上的，不连。不要连成环。
+   - requires 写在后做的那一项上，列出先做的：{"number": 8, "requires": [7]} 表示先做 7、再做 8。
+   - request 说的是做事的先后（“按这个顺序做”“先 A、再 B、然后 C”）时，用 requires，相邻的每一对都要连上：B 的 requires 有 A，C 的 requires 有 B。说的是列表里的位置（“把列表顺序调成……”“排一下顺序”）时，用 order。
+   - 要反过来改成先做 8、再做 7，写 {"number": 8, "drop_requires": [7]} 和 {"number": 7, "requires": [8]}。
+   - 要在已有的 8 前面加一步，新建 {"ref": "a", "title": "…", "required_by": [8]}；加在 8 后面，写 "requires": [8]。
+7. “周五前”“下周一”这类时间，按 local_time 换算成具体日期；一周从周一开始，“这周五”是本周的周五，“下周五”是下一周的周五。“周五前”“月底前”这类只说了哪天的，只写日期，不要加几点。
+8. 已经做完的事项标为完成（done），不要删除；删除只用于不再需要做的事项。合并重复的事项时，留下一项，把另一项的信息并进它的标题或描述，再删除另一项；删掉的那项有前置或后续的，转到留下的那项上（后续写在后续自己的 requires 里），先后不能因合并而丢。
+9. description_omitted 为 true 的事项和 done_tasks 里的事项，不要写 title 和 description：没看到描述，改标题可能丢掉信息。
+10. 已经清楚的事项不要列出，不要为改而改：标题已经以动作开头、意思清楚的（如“交周报”“买牛奶”），不要换个同义的说法，如“交”改“提交”、“查”改“查阅”、“写”改“撰写”；没有要做的修改时输出 {"suggestions": []}。
+11. 用原文的语言写。
+12. 输出前逐条检查：
+   - 每条建议都是 request 要求的；不是的删掉。
+   - 把建议应用到事项上（没写的字段沿用原值），原标题和原描述的每一处都要能在改好后的标题或描述里找到，找不到的补上。
+   - requires 写在后做的那一项上，里面是先做的事项；写反的改过来。"#;
 
 /// What the model was shown: the data as it was then, the folder, and which of its tasks.
 pub struct Shown {
@@ -126,7 +134,7 @@ pub fn prompt(job: &AiJob, snap: Snapshot) -> (Prompt, Shown) {
             }
             let after: Vec<i64> = board.before(t).iter().map(|b| b.number).filter(|n| numbers.contains(n)).collect();
             if !after.is_empty() {
-                v["after"] = after.into();
+                v["requires"] = after.into();
             }
             tasks.insert(t.number, Seen::Open { described });
             v
@@ -194,11 +202,11 @@ struct Suggested {
     clear: Vec<Setting>,
     done: Option<bool>,
     folder: Option<String>,
-    #[serde(default)]
+    #[serde(default, rename = "requires")]
     after: Vec<PlanRef>,
-    #[serde(default)]
+    #[serde(default, rename = "required_by")]
     before: Vec<PlanRef>,
-    #[serde(default)]
+    #[serde(default, rename = "drop_requires")]
     unlink: Vec<i64>,
     /// Models leave it out at times.
     #[serde(default)]
@@ -219,6 +227,7 @@ impl Suggested {
             || self.done.is_some()
             || self.folder.is_some()
             || !self.after.is_empty()
+            || !self.before.is_empty()
             || !self.unlink.is_empty()
     }
 
@@ -234,6 +243,19 @@ impl Suggested {
             _ => std::mem::take(&mut self.reason),
         };
         self.delete |= later.delete;
+        // A setting one clears and the other sets is as the later one says.
+        self.clear.retain(|c| match c {
+            Setting::Due => later.due.is_none(),
+            Setting::Remind => later.remind.is_none(),
+            Setting::Repeat => later.repeat.is_none(),
+        });
+        for c in &later.clear {
+            match c {
+                Setting::Due => self.due = None,
+                Setting::Remind => self.remind = None,
+                Setting::Repeat => self.repeat = None,
+            }
+        }
         self.title = later.title.or(self.title.take());
         self.description = later.description.or(self.description.take());
         self.due = later.due.or(self.due.take());
@@ -244,6 +266,7 @@ impl Suggested {
         self.done = later.done.or(self.done);
         self.folder = later.folder.or(self.folder.take());
         self.after.extend(later.after);
+        self.before.extend(later.before);
         self.unlink.extend(later.unlink);
     }
 }
@@ -308,8 +331,6 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
     let edges: Vec<(TaskId, TaskId)> = shown.snap.dependencies.iter().map(|d| (d.before, d.after)).collect();
     let mut out = Vec::new();
     let mut order = None;
-    let mut links = Vec::new();
-    let mut unlinks = HashSet::new();
     let mut deleted = HashSet::new();
     for (s, id) in suggestions.into_iter().zip(ids) {
         if let Some(numbers) = s.order {
@@ -326,7 +347,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             let title = s.title.ok_or("新事项缺少标题")?;
             if s.delete || s.done.is_some() || s.folder.is_some() || !s.clear.is_empty() || !s.unlink.is_empty() {
                 return Err(format!(
-                    "新事项“{}”只能写 title、description、due、remind、repeat、repeat_from、after 和 before",
+                    "新事项“{}”只能写 title、description、due、remind、repeat、repeat_from、requires 和 required_by",
                     title.as_str()
                 ));
             }
@@ -334,13 +355,15 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
                 new_due(s.due, s.remind, s.repeat, s.repeat_from).map_err(|e| format!("新事项“{}”：{}", title.as_str(), e.describe()))?;
             let after = distinct(s.after.iter().map(&resolve))?;
             let before = distinct(s.before.iter().map(&resolve))?;
-            links.extend(after.iter().map(|&b| (b, id)).chain(before.iter().map(|&a| (id, a))));
             new.insert(id, title.clone());
             out.push(Suggestion::Create(NewTask { create: id, title, description: s.description, due, after, before, reason: s.reason }));
             continue;
         };
         if s.name.is_some() {
             return Err(format!("修改事项 #{n} 的建议不能写 ref"));
+        }
+        if !s.before.is_empty() {
+            return Err(format!("修改事项 #{n} 的建议不能写 required_by，后续要写在后续事项自己的 requires 里"));
         }
         let (t, state) = task(n)?;
         let was = Was { title: t.title.clone(), description: t.description.clone(), due: t.due.clone() };
@@ -398,14 +421,37 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             reason: s.reason,
             was,
         };
-        let changes = edit.title.is_some() || edit.description.is_some() || edit.due.is_some() || edit.folder.is_some();
-        if state == Seen::Done && edit.done.is_none() && (changes || !edit.after.is_empty() || !edit.unlink.is_empty()) {
+        if state == Seen::Done && edit.done.is_none() && changes(&edit) {
             return Err(format!("事项 #{n} 已完成，要先重新打开才能修改"));
         }
-        if changes || edit.done.is_some() || !edit.after.is_empty() || !edit.unlink.is_empty() {
-            links.extend(edit.after.iter().map(|&b| (b, t.id)));
-            unlinks.extend(edit.unlink.iter().map(|&b| (b, t.id)));
-            out.push(Suggestion::Edit(edit));
+        out.push(Suggestion::Edit(edit));
+    }
+
+    // A task deleted goes with its dependencies: those suggested for it are of no use.
+    for s in &mut out {
+        match s {
+            Suggestion::Edit(e) => {
+                e.after.retain(|b| !deleted.contains(b));
+                e.unlink.retain(|b| !deleted.contains(b));
+            }
+            Suggestion::Create(c) => {
+                c.after.retain(|b| !deleted.contains(b));
+                c.before.retain(|a| !deleted.contains(a));
+            }
+            Suggestion::Delete(_) | Suggestion::Order(_) => {}
+        }
+    }
+    out.retain(|s| !matches!(s, Suggestion::Edit(e) if !changes(e) && e.done.is_none()));
+    let mut links = Vec::new();
+    let mut unlinks = HashSet::new();
+    for s in &out {
+        match s {
+            Suggestion::Edit(e) => {
+                links.extend(e.after.iter().map(|&b| (b, e.task)));
+                unlinks.extend(e.unlink.iter().map(|&b| (b, e.task)));
+            }
+            Suggestion::Create(c) => links.extend(c.after.iter().map(|&b| (b, c.create)).chain(c.before.iter().map(|&a| (c.create, a)))),
+            Suggestion::Delete(_) | Suggestion::Order(_) => {}
         }
     }
 
@@ -415,9 +461,6 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
     let mut edges: Vec<(TaskId, TaskId)> =
         edges.into_iter().filter(|e| !unlinks.contains(e) && !deleted.contains(&e.0) && !deleted.contains(&e.1)).collect();
     for (b, a) in links {
-        if let Some(&gone) = [b, a].iter().find(|id| deleted.contains(id)) {
-            return Err(format!("建议删除 {}，又给它加了先后", name(gone)));
-        }
         if edges.contains(&(b, a)) {
             continue;
         }
@@ -465,6 +508,11 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
         return Err("建议的修改太多，一次应用不了，请缩小范围后重试".into());
     }
     Ok(out)
+}
+
+/// Whether `e` changes anything but whether the task is done.
+fn changes(e: &TaskEdit) -> bool {
+    e.title.is_some() || e.description.is_some() || e.due.is_some() || e.folder.is_some() || !e.after.is_empty() || !e.unlink.is_empty()
 }
 
 /// The tasks `refs` find, each once.
@@ -544,7 +592,7 @@ mod tests {
         assert_eq!(input["subfolders"], json!(["/官网/文档"]));
         assert_eq!(
             input["open_tasks"][1],
-            json!({ "number": 2, "title": "写官网文档", "due": "2026-11-20 18:00", "remind": 30, "after": [1] })
+            json!({ "number": 2, "title": "写官网文档", "due": "2026-11-20 18:00", "remind": 30, "requires": [1] })
         );
         assert_eq!(input["open_tasks"][2]["description"].as_str().unwrap().len(), 18_000 * 3);
         assert_eq!(
@@ -560,12 +608,12 @@ mod tests {
     fn reads_each_kind() {
         let (_, shown) = prompt(&job(), snap());
         let ok = r#"{"suggestions": [
-            {"number": 1, "title": "建好官网", "description": "做一个官网。", "due": "2026-11-20", "after": ["a"], "reason": "标题以动作开头"},
-            {"number": 2, "due": "2026-11-21 09:00", "folder": "/官网/文档", "after": [1], "unlink": [4], "reason": "推迟一天"},
+            {"number": 1, "title": "建好官网", "description": "做一个官网。", "due": "2026-11-20", "requires": ["a"], "reason": "标题以动作开头"},
+            {"number": 2, "due": "2026-11-21 09:00", "folder": "/官网/文档", "requires": [1], "drop_requires": [4], "reason": "推迟一天"},
             {"number": 4, "title": "短", "done": true, "clear": ["repeat"], "reason": "描述没发来"},
             {"number": 3, "delete": true, "title": "删了", "reason": "重复了"},
-            {"ref": "a", "title": "选域名", "due": "2026-11-15 10:00", "remind": 60, "before": [2], "reason": "要先有域名"},
-            {"number": 5, "done": false, "after": [1], "reason": "还没订"},
+            {"ref": "a", "title": "选域名", "due": "2026-11-15 10:00", "remind": 60, "required_by": [2], "reason": "要先有域名"},
+            {"number": 5, "done": false, "requires": [1], "reason": "还没订"},
             {"order": [2, 1], "reason": "反过来"}
         ]}"#;
         let s = parse(ok, &shown).unwrap();
@@ -599,12 +647,13 @@ mod tests {
         assert_eq!(g.order, [tid(2), tid(1)]);
         // Given twice, a task's suggestion is one, the later's way where they differ.
         let twice = r#"{"suggestions": [
-            {"number": 1, "title": "a", "after": [3], "reason": "一"}, {"number": 1, "unlink": [], "reason": "空"},
-            {"number": 1, "title": "b", "description": "c", "reason": "二"}
+            {"number": 1, "title": "a", "requires": [3], "clear": ["due"], "reason": "一"}, {"number": 1, "drop_requires": [], "reason": "空"},
+            {"number": 1, "title": "b", "description": "c", "due": "2026-12-01", "reason": "二"}
         ]}"#;
         let merged = parse(twice, &shown).unwrap();
         let [Suggestion::Edit(e)] = merged.as_slice() else { panic!("{merged:?}") };
         assert_eq!((e.title.as_ref().unwrap().as_str(), e.description.as_ref().unwrap().as_str()), ("b", "c"));
+        assert_eq!(e.due.clone().flatten().unwrap().date.as_str(), "2026-12-01");
         assert_eq!((e.after.as_slice(), e.reason.as_str()), ([tid(3)].as_slice(), "一；二"));
         // What changes nothing goes.
         let same = r#"{"suggestions": [{"number": 1, "title": "官网", "reason": ""}, {"number": 5, "done": true, "reason": ""}, {"order": [1, 2], "reason": ""}]}"#;
@@ -616,22 +665,31 @@ mod tests {
         let (_, shown) = prompt(&job(), snap());
         let err = |s: &str| parse(&format!(r#"{{"suggestions": [{s}]}}"#), &shown).err().unwrap();
         assert_eq!(err(r#"{"number": 6, "title": "x", "reason": ""}"#), "结果引用了不在这个文件夹里的事项 #6");
-        assert_eq!(err(r#"{"number": 1, "after": [2], "reason": ""}"#), "建议把 #2 设为 #1 的前置，但这样依赖会成环");
+        assert_eq!(err(r#"{"number": 1, "requires": [2], "reason": ""}"#), "建议把 #2 设为 #1 的前置，但这样依赖会成环");
         // Turned round, there is no cycle.
         assert_eq!(
-            parse(r#"{"suggestions": [{"number": 1, "after": [2], "reason": ""}, {"number": 2, "unlink": [1], "reason": ""}]}"#, &shown)
-                .unwrap()
-                .len(),
+            parse(
+                r#"{"suggestions": [{"number": 1, "requires": [2], "reason": ""}, {"number": 2, "drop_requires": [1], "reason": ""}]}"#,
+                &shown
+            )
+            .unwrap()
+            .len(),
             2
         );
         assert_eq!(err(r#"{"number": 1, "folder": "/别处", "reason": ""}"#), "建议把 #1 移到 /别处，但它不是这个文件夹下的子文件夹");
         assert_eq!(err(r#"{"number": 5, "due": "2026-11-20", "reason": ""}"#), "事项 #5 已完成，要先重新打开才能修改");
-        assert_eq!(
-            err(r#"{"number": 2, "delete": true, "reason": ""}, {"number": 3, "after": [2], "reason": ""}"#),
-            "建议删除 #2，又给它加了先后"
+        // A task deleted takes its dependencies with it: none are suggested for it.
+        let deleting = parse(
+            r#"{"suggestions": [{"number": 2, "delete": true, "reason": ""}, {"number": 3, "requires": [2], "reason": ""}]}"#,
+            &shown,
         );
+        assert!(matches!(deleting.unwrap().as_slice(), [Suggestion::Delete(d)] if d.delete == tid(2)));
         assert_eq!(err(r#"{"number": 3, "remind": 10, "reason": ""}"#), "事项 #3：该事项没有具体的截止时间，无法设置提醒（remind）");
-        assert_eq!(err(r#"{"title": "新的", "after": ["b"], "reason": ""}"#), "结果里没有 ref 为“b”的新事项");
+        assert_eq!(err(r#"{"title": "新的", "requires": ["b"], "reason": ""}"#), "结果里没有 ref 为“b”的新事项");
+        assert_eq!(
+            err(r#"{"number": 1, "required_by": [2], "reason": ""}"#),
+            "修改事项 #1 的建议不能写 required_by，后续要写在后续事项自己的 requires 里"
+        );
         assert_eq!(err(r#"{"order": [1, 5], "reason": ""}"#), "调整顺序只能排未完成的事项，#5 已完成");
         assert!(err(r#"{"number": 1, "title": "a", "note": "x"}"#).starts_with("模型返回的结果不符合格式"));
     }
@@ -641,7 +699,7 @@ mod tests {
         let tasks: Vec<Task> = (1..=50).map(|n| task(n, &format!("t{n}"), json!({}))).collect();
         let (_, shown) = prompt(&job(), Snapshot { tasks, folders: snap().folders, ..Default::default() });
         // Each task after every one before it: 1225 links, a DAG still.
-        let all: Vec<Value> = (2..=50).map(|n| json!({ "number": n, "after": (1..n).collect::<Vec<_>>(), "reason": "" })).collect();
+        let all: Vec<Value> = (2..=50).map(|n| json!({ "number": n, "requires": (1..n).collect::<Vec<_>>(), "reason": "" })).collect();
         assert_eq!(
             parse(&json!({ "suggestions": all }).to_string(), &shown).err().unwrap(),
             "建议的修改太多，一次应用不了，请缩小范围后重试"

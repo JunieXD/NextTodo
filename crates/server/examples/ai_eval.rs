@@ -13,9 +13,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use clap::Parser;
 use nexttodo_core::board::{Board, Snapshot};
 use nexttodo_core::dag::find_path;
-use nexttodo_core::model::{AiJob, Due, Suggestion, TaskId};
+use nexttodo_core::model::{AiJob, Due, RepeatFrom, RepeatUnit, Suggestion, TaskId};
 use nexttodo_core::ops::{MAX_OPS, Op};
-use nexttodo_server::ai::llm::{Api, Config, Https, Thinking};
+use nexttodo_server::ai::llm::{Api, Config, Https, Prompt, Thinking};
 use nexttodo_server::ai::{organize, tidy};
 use nexttodo_server::tools;
 use serde::Deserialize;
@@ -155,14 +155,17 @@ struct TidyExpect {
     reopened: Option<Vec<i64>>,
     /// Tasks moved, and where to.
     moved: Option<Vec<(i64, String)>>,
-    /// New due dates, as `2026-11-20 18:00`; empty for one cleared.
+    /// The due dates changed, exactly these, as `due_text` writes them; empty for one cleared.
     due: Option<Vec<(i64, String)>>,
-    /// New repeats, as `1w`.
-    repeat: Option<Vec<(i64, String)>>,
-    /// Tasks before others once everything is taken, through others maybe, and tasks no longer
-    /// right before others: tasks by number, new ones by a word in their titles.
+    /// New tasks' due dates, a word in the title for each.
+    #[serde(default)]
+    new_due: Vec<(String, String)>,
+    /// Tasks before others once everything is taken, through others maybe, and not; and tasks no
+    /// longer right before others. A task is given by its number, or by a word in its title then.
     #[serde(default)]
     linked: Vec<(Who, Who)>,
+    #[serde(default)]
+    not_linked: Vec<(Who, Who)>,
     #[serde(default)]
     unlinked: Vec<(i64, i64)>,
     /// How many new tasks: at least, at most.
@@ -283,11 +286,8 @@ fn ask(config: &Config, system: Option<&str>, case: &Case, index: usize, run: us
     };
     let snap = snapshot(&case.input);
     let shown: HashSet<i64> = snap.tasks.iter().map(|t| t.number).collect();
-    let start = Instant::now();
-    // As in local mode, where any address is called: a proxy here may give every name one of its own.
     let prompt = organize::chat(system.unwrap_or(organize::SYSTEM), &case.input);
-    let answer = Https { public_only: false }.chat(config, &prompt, true, TIMEOUT).map_err(|f| f.message);
-    let seconds = start.elapsed().as_secs_f64();
+    let (answer, seconds) = chat(config, &prompt);
     let facts = e.facts.len();
     let (answer, checked) = match answer {
         Err(e) => (String::new(), Err(format!("出错：{e}"))),
@@ -308,6 +308,26 @@ fn ask(config: &Config, system: Option<&str>, case: &Case, index: usize, run: us
         Err(e) => (vec![e], (0, facts)),
     };
     Outcome { case: index, run, answer, problems, facts, seconds }
+}
+
+/// The model's answer to `prompt`, and how many seconds it took. Turned away for asking too often,
+/// or by a provider down for a moment, it asks again a while later: a set of cases asks many times
+/// in a row, for minutes.
+fn chat(config: &Config, prompt: &Prompt) -> (Result<String, String>, f64) {
+    let mut waits = [20, 40, 60].into_iter();
+    loop {
+        let start = Instant::now();
+        // As in local mode, where any address is called: a proxy here may give every name one of its own.
+        let answer = Https { public_only: false }.chat(config, prompt, true, TIMEOUT);
+        if let Err(f) = &answer
+            && f.status.is_some_and(|s| s == 429 || s >= 500)
+            && let Some(wait) = waits.next()
+        {
+            std::thread::sleep(Duration::from_secs(wait));
+            continue;
+        }
+        return (answer.map_err(|f| f.message), start.elapsed().as_secs_f64());
+    }
 }
 
 /// The case's folder as the server keeps it: its open tasks, and their dependencies.
@@ -451,6 +471,28 @@ fn check(e: &Expect, input: &Value, v: &Value, snap: &Snapshot, ops: &[Op]) -> (
     (problems, found)
 }
 
+/// A due date in full, for comparing: `2026-12-01 09:00 !1440 ~1m`, the reminder after `!` and the
+/// repeat after `~`, `/done` when counted from the day it is done; empty for none.
+fn due_text(d: Option<&Due>) -> String {
+    let Some(d) = d else { return String::new() };
+    let mut s = d.date.as_str().to_owned();
+    if let Some(at) = &d.at {
+        s += &format!(" {}", at.time.as_str());
+        if let Some(m) = at.remind_before {
+            s += &format!(" !{m}");
+        }
+    }
+    if let Some(r) = d.repeat {
+        let unit = match r.unit {
+            RepeatUnit::Day => 'd',
+            RepeatUnit::Week => 'w',
+            RepeatUnit::Month => 'm',
+        };
+        s += &format!(" ~{}{unit}{}", r.every.get(), if r.from == RepeatFrom::Done { "/done" } else { "" });
+    }
+    s
+}
+
 /// The spoken words in `prose`, if any.
 fn spoken(prose: &str) -> Option<String> {
     let ends = |i: usize| prose[i..].chars().nth(1).is_none_or(|c| "，。！？；、,.!?;…~\n".contains(c));
@@ -560,7 +602,7 @@ fn tidy_data(input: &Value) -> (Snapshot, AiJob) {
             "done_at": (i >= open.len()).then(|| 10_000 - i), "due": due, "sort_key": format!("a{i:02}1"),
             "created_at": 0, "updated_at": 0, "created_via": null, "updated_via": null,
         }));
-        for b in t["after"].as_array().into_iter().flatten() {
+        for b in t["requires"].as_array().into_iter().flatten() {
             dependencies.push(json!({ "before": task_id(b.as_i64().expect("numbers")), "after": task_id(n), "created_at": 0 }));
         }
     }
@@ -580,9 +622,7 @@ fn ask_tidy(config: &Config, system: Option<&str>, e: &TidyExpect, data: &(Snaps
     if let Some(s) = system {
         prompt.system = s.to_owned();
     }
-    let start = Instant::now();
-    let answer = Https { public_only: false }.chat(config, &prompt, true, TIMEOUT).map_err(|f| f.message);
-    let seconds = start.elapsed().as_secs_f64();
+    let (answer, seconds) = chat(config, &prompt);
     let facts = e.facts.len();
     let (answer, checked) = match answer {
         Err(e) => (String::new(), Err(format!("出错：{e}"))),
@@ -602,14 +642,9 @@ fn ask_tidy(config: &Config, system: Option<&str>, e: &TidyExpect, data: &(Snaps
 fn check_tidy(e: &TidyExpect, snap: &Snapshot, s: &[Suggestion]) -> (Vec<String>, usize) {
     let b = Board::new(snap);
     let number = |id: &TaskId| b.task(*id).map(|t| t.number);
-    let due_text = |d: &Option<Due>| {
-        d.as_ref().map_or(String::new(), |d| {
-            d.at.as_ref().map_or(d.date.as_str().to_owned(), |at| format!("{} {}", d.date.as_str(), at.time.as_str()))
-        })
-    };
     let mut problems = Vec::new();
     let mut kinds = BTreeSet::new();
-    let (mut deleted, mut done, mut reopened, mut moved, mut due, mut repeat, mut touched) =
+    let (mut deleted, mut done, mut reopened, mut moved, mut due, mut new_due, mut touched) =
         (vec![], vec![], vec![], vec![], vec![], vec![], vec![]);
     let mut texts: HashMap<TaskId, (String, String)> =
         snap.tasks.iter().map(|t| (t.id, (t.title.as_str().into(), t.description.as_str().into()))).collect();
@@ -645,17 +680,7 @@ fn check_tidy(e: &TidyExpect, snap: &Snapshot, s: &[Suggestion]) -> (Vec<String>
                     rewritten.push(x.as_str().to_owned());
                 }
                 if let Some(d) = &t.due {
-                    due.push((n, due_text(d)));
-                    if let Some(r) =
-                        d.as_ref().and_then(|d| d.repeat).filter(|r| Some(*r) != b.task(t.task).and_then(|t| t.due.as_ref()?.repeat))
-                    {
-                        let unit = match r.unit {
-                            nexttodo_core::model::RepeatUnit::Day => 'd',
-                            nexttodo_core::model::RepeatUnit::Week => 'w',
-                            nexttodo_core::model::RepeatUnit::Month => 'm',
-                        };
-                        repeat.push((n, format!("{}{unit}", r.every.get())));
-                    }
+                    due.push((n, due_text(d.as_ref())));
                 }
                 match t.done {
                     Some(true) => done.push(n),
@@ -684,7 +709,10 @@ fn check_tidy(e: &TidyExpect, snap: &Snapshot, s: &[Suggestion]) -> (Vec<String>
                 if let Some(d) = &c.description {
                     rewritten.push(d.as_str().to_owned());
                 }
-                created.push((c.create, squash(c.title.as_str())));
+                created.push(c.create);
+                if let Some(d) = &c.due {
+                    new_due.push((c.title.as_str().to_owned(), due_text(Some(d))));
+                }
                 edges.extend(c.after.iter().map(|a| (*a, c.create)).chain(c.before.iter().map(|x| (c.create, *x))));
             }
             Suggestion::Order(o) => {
@@ -715,25 +743,45 @@ fn check_tidy(e: &TidyExpect, snap: &Snapshot, s: &[Suggestion]) -> (Vec<String>
     {
         problems.push(format!("删除了 {} 项，应为 {n} 项", deleted.len()));
     }
-    for (what, want, got) in [("移动", &e.moved, &moved), ("截止时间", &e.due, &due), ("重复", &e.repeat, &repeat)] {
+    for (what, want, got) in [("移动", &e.moved, &moved), ("截止时间", &e.due, &due)] {
         if let Some(want) = want
             && sorted(want.iter().cloned()) != sorted(got.iter().cloned())
         {
             problems.push(format!("{what} {got:?}，应为 {want:?}"));
         }
     }
-    let who = |w: &Who| match w {
-        Who::Number(n) => b.task_by_number(*n).map(|t| t.id),
-        Who::Words(w) => created.iter().find(|(_, t)| t.contains(&squash(w))).map(|(id, _)| *id),
+    for (word, want) in &e.new_due {
+        match new_due.iter().find(|(t, _)| squash(t).contains(&squash(word))) {
+            Some((_, got)) if got == want => {}
+            got => problems.push(format!("新事项“{word}”的截止时间 {:?}，应为 {want:?}", got.map(|g| &g.1))),
+        }
+    }
+    // The tasks a word names: those there once everything is taken with it in their titles.
+    let who = |w: &Who| -> Vec<TaskId> {
+        match w {
+            Who::Number(n) => b.task_by_number(*n).map(|t| t.id).into_iter().collect(),
+            Who::Words(w) => texts.iter().filter(|(_, (t, _))| squash(t).contains(&squash(w))).map(|(id, _)| *id).collect(),
+        }
     };
     let named = |w: &Who| match w {
         Who::Number(n) => format!("#{n}"),
         Who::Words(w) => format!("“{w}”"),
     };
     let edges: Vec<(TaskId, TaskId)> = edges.into_iter().collect();
-    for (x, y) in &e.linked {
-        if !matches!((who(x), who(y)), (Some(x), Some(y)) if find_path(&edges, x, y).is_some()) {
-            problems.push(format!("{} 没有设为 {} 的前置", named(x), named(y)));
+    // Whether one of `x` comes before another one of `y`.
+    let before = |x: &Who, y: &Who| {
+        let (xs, ys) = (who(x), who(y));
+        xs.iter().any(|a| ys.iter().any(|b| a != b && find_path(&edges, *a, *b).is_some()))
+    };
+    for (want, (x, y)) in e.linked.iter().map(|p| (true, p)).chain(e.not_linked.iter().map(|p| (false, p))) {
+        if who(x).is_empty() || who(y).is_empty() {
+            problems.push(format!("找不到 {} 或 {}", named(x), named(y)));
+        } else if before(x, y) != want {
+            problems.push(if want {
+                format!("{} 没有设为 {} 的前置", named(x), named(y))
+            } else {
+                format!("{} 不该在 {} 之前", named(x), named(y))
+            });
         }
     }
     for (x, y) in &e.unlinked {

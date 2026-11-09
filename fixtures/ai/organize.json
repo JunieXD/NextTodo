@@ -108,9 +108,9 @@
   },
   {
     "id": "prompt-for-agent",
-    "note": "写给 agent 的提示词原样保留",
-    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/项目/后端", "open_tasks": [], "text": "让 agent 重构登录模块，提示词是：请把 auth.rs 里的 session 逻辑拆到单独的模块，对外接口保持不变，并补上单元测试。" },
-    "expect": { "tasks": [1, 1], "facts": [["重构"], ["登录"]], "verbatim": ["请把 auth.rs 里的 session 逻辑拆到单独的模块，对外接口保持不变，并补上单元测试。"] }
+    "note": "语音口述的提示词改成书面语，每条要求都在，文件名原样",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/项目/后端", "open_tasks": [], "text": "让 agent 重构一下登录模块，提示词大概这么写：嗯你把 auth.rs 里面那个 session 的逻辑拆到一个单独的模块里去吧，然后对外的接口别动，保持不变，哦对了，还要补上单元测试" },
+    "expect": { "tasks": [1, 1], "facts": [["重构"], ["登录"], ["session"], ["单独的模块", "独立模块", "单独模块"], ["接口"], ["单元测试"]], "verbatim": ["auth.rs"] }
   },
   {
     "id": "command",

@@ -556,6 +556,12 @@ svg { display: block; flex: none; }
 .time-menu > .menu-item:hover, .time-menu > .menu-item:focus-visible { background: var(--press); }
 
 /* A number, stepped by − and + or typed. */
+.weekdays { display: inline-flex; gap: 4px; }
+.weekdays button { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; background: var(--surface-container); color: var(--on-surface); }
+.weekdays [aria-pressed="true"] { background: var(--primary); color: var(--on-primary); font-weight: 600; }
+.weekdays button:disabled { cursor: default; }
+.weekdays button:not(:disabled):active { filter: brightness(.92); }
+.weekdays :focus-visible { box-shadow: 0 0 0 2px var(--group-bg), 0 0 0 4px var(--primary); outline: none; }
 .stepper { display: inline-flex; align-items: center; padding: 2px; border-radius: 10px; background: var(--surface-container); }
 .stepper button { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--on-surface); }
 .stepper button:disabled { color: var(--outline); opacity: .5; cursor: default; }

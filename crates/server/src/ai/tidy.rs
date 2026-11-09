@@ -34,7 +34,7 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
 - folder：这个文件夹；
 - request：用户这次的要求；
 - subfolders：这个文件夹下的子文件夹，可以把事项移进去；
-- open_tasks：文件夹里未完成的事项，按现在的顺序。number 是编号；requires 是它已有的前置事项的编号，那些事项要先做完才能做它；due 是截止时间，remind 是提前多少分钟提醒，repeat 是重复，写成间隔数加单位 d（天）、w（周）或 m（月），如 1d 每天、2w 每两周、1m 每月、3m 每三个月，repeat_from 为 done 表示下一次从完成那天算；description_omitted 为 true 的事项描述太长，没有发来；
+- open_tasks：文件夹里未完成的事项，按现在的顺序。number 是编号；requires 是它已有的前置事项的编号，那些事项要先做完才能做它；due 是截止时间，remind 是提前多少分钟提醒，repeat 是重复，写成间隔数加单位 d（天）、w（周）或 m（月），如 1d 每天、2w 每两周、1m 每月、3m 每三个月；按周重复在某几天的，冒号后写周几（1 是周一，7 是周日），如 1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五、2w:2,4 每两周的周二和周四；repeat_from 为 done 表示下一次从完成那天算；description_omitted 为 true 的事项描述太长，没有发来；
 - done_tasks：最近完成的事项，只有编号和标题。
 
 只输出一个 json 对象，不要有任何别的文字，格式如下：
@@ -51,7 +51,7 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
    - description：新描述，是改好后的完整内容，不是修改说明；Markdown，步骤可以写成清单“- [ ] ”。
    - due：截止时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"。原来有几点几分、这次只改日期的，带上原来的几点几分；原来和 request 都没说几点的，不要加；原来的提醒和重复保留，新的截止时间不带具体时间的，提醒去掉。
    - remind：提前多少分钟提醒，0 表示到截止时间时提醒；要有带具体时间的截止时间。“不用提醒了”是去掉提醒，写 clear: ["remind"]，不是写 0。
-   - repeat、repeat_from：重复，写法同输入；要有截止时间。重复只能是每隔几天、几周或几个月，按天数说的照天数写（每 90 天是 90d，不是 3m）。“每个工作日”“每周一三五”这类没法用一个间隔表示：不写 repeat 和 repeat_from（写成 1d 周末也会出现，写成 1w 又少了几天，都是错的），只在 description 里写明这个要求，并在 reason 里说明重复设不了。
+   - repeat、repeat_from：重复，写法同输入；要有截止时间。按天数说的照天数写（每 90 天是 90d，不是 3m）；在一周里某几天的写周几，“每个工作日”是 1w:1,2,3,4,5，不是 1d（1d 周末也会出现）。
    - clear：要清除的设置，是一个列表，可以包含 "due"、"remind"、"repeat"，如 "clear": ["due"]；清除截止时间时，提醒和重复一起清除。去掉前置用 drop_requires，不用 clear。
    - done：true 标为完成（重复的事项会顺延到下一次），false 重新打开 done_tasks 里的事项。done_tasks 里的事项可以删除；要改别的，先重新打开。
    - folder：移进 subfolders 里的哪个文件夹，写它的完整路径。subfolders 里没有的文件夹移不进去，这样的移动不要提。
@@ -165,14 +165,15 @@ pub fn prompt(job: &AiJob, snap: Snapshot) -> (Prompt, Shown) {
     (chat(SYSTEM, &input), Shown { snap, folder: job.folder_id, tasks })
 }
 
-/// `1d`, `2w`, `3m`, as the tools take a repeat.
-fn repeat_text(r: Repeat) -> String {
+/// `1d`, `2w`, `3m`, `1w:1,3,5`, as the tools take a repeat.
+pub fn repeat_text(r: Repeat) -> String {
     let unit = match r.unit {
         RepeatUnit::Day => 'd',
         RepeatUnit::Week => 'w',
         RepeatUnit::Month => 'm',
     };
-    format!("{}{unit}", r.every.get())
+    let days = r.days.map(|w| format!(":{}", Vec::from(w).iter().map(u8::to_string).collect::<Vec<_>>().join(",")));
+    format!("{}{unit}{}", r.every.get(), days.unwrap_or_default())
 }
 
 #[derive(Deserialize)]

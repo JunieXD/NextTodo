@@ -48,7 +48,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 // 事项
 { "id": "…", "number": 5, "folder_id": "…", "title": "设计问卷", "description": "…", "done_at": null,
   "due": { "date": "2026-11-02", "time": "18:00", "remind_before": 60, "repeat": { "every": 1, "unit": "week", "from": "due" } },
-  // 没有截止时间时为 null；time、remind_before、repeat 可省略
+  // 没有截止时间时为 null；time、remind_before、repeat 可省略；按周的 repeat 可以带 "days": [1, 3, 5]，在周几（1 是周一，7 是周日）
   "sort_key": "a1", "created_at": …, "updated_at": …, "created_via": "Claude Code", "updated_via": null }
 // 依赖
 { "before": "<前置 id>", "after": "<后续 id>", "created_at": … }

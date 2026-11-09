@@ -97,7 +97,11 @@ enum Command {
         due: Option<String>,
         #[arg(long, help = "提前多少分钟提醒，0 表示截止时")]
         remind: Option<u32>,
-        #[arg(long, value_name = "间隔", help = "重复：1d 每天、2w 每两周、3m 每三个月；要有截止时间")]
+        #[arg(
+            long,
+            value_name = "间隔",
+            help = "重复：1d 每天、2w 每两周、3m 每三个月，1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；要有截止时间"
+        )]
         repeat: Option<String>,
         #[arg(long, requires = "repeat", value_parser = ["due", "done"], help = "下一次从哪天算：due 按截止日期（默认），done 从完成那天")]
         repeat_from: Option<String>,
@@ -133,7 +137,12 @@ enum Command {
         remind: Option<u32>,
         #[arg(long, help = "清除提醒")]
         no_remind: bool,
-        #[arg(long, value_name = "间隔", conflicts_with = "no_repeat", help = "重复：1d 每天、2w 每两周、3m 每三个月")]
+        #[arg(
+            long,
+            value_name = "间隔",
+            conflicts_with = "no_repeat",
+            help = "重复：1d 每天、2w 每两周、3m 每三个月，1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五"
+        )]
         repeat: Option<String>,
         #[arg(long, requires = "repeat", value_parser = ["due", "done"], help = "下一次从哪天算：due 按截止日期（默认），done 从完成那天")]
         repeat_from: Option<String>,

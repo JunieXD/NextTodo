@@ -13,7 +13,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use clap::Parser;
 use nexttodo_core::board::{Board, Snapshot};
 use nexttodo_core::dag::find_path;
-use nexttodo_core::model::{AiJob, Due, RepeatFrom, RepeatUnit, Suggestion, TaskId};
+use nexttodo_core::model::{AiJob, Due, RepeatFrom, Suggestion, TaskId};
 use nexttodo_core::ops::{MAX_OPS, Op};
 use nexttodo_server::ai::llm::{Api, Config, Https, Prompt, Thinking};
 use nexttodo_server::ai::{organize, tidy};
@@ -472,7 +472,8 @@ fn check(e: &Expect, input: &Value, v: &Value, snap: &Snapshot, ops: &[Op]) -> (
 }
 
 /// A due date in full, for comparing: `2026-12-01 09:00 !1440 ~1m`, the reminder after `!` and the
-/// repeat after `~`, `/done` when counted from the day it is done; empty for none.
+/// repeat after `~` as the model writes it (`1w:1,3,5` on some days), `/done` when counted from the day
+/// it is done; empty for none.
 fn due_text(d: Option<&Due>) -> String {
     let Some(d) = d else { return String::new() };
     let mut s = d.date.as_str().to_owned();
@@ -483,12 +484,7 @@ fn due_text(d: Option<&Due>) -> String {
         }
     }
     if let Some(r) = d.repeat {
-        let unit = match r.unit {
-            RepeatUnit::Day => 'd',
-            RepeatUnit::Week => 'w',
-            RepeatUnit::Month => 'm',
-        };
-        s += &format!(" ~{}{unit}{}", r.every.get(), if r.from == RepeatFrom::Done { "/done" } else { "" });
+        s += &format!(" ~{}{}", tidy::repeat_text(r), if r.from == RepeatFrom::Done { "/done" } else { "" });
     }
     s
 }
@@ -582,13 +578,15 @@ fn tidy_data(input: &Value) -> (Snapshot, AiJob) {
         let due = t["due"].as_str().map(|d| {
             let (date, time) = d.split_once(' ').map_or((d, None), |(d, t)| (d, Some(t)));
             let repeat = t["repeat"].as_str().map(|r| {
+                let (r, days) = r.split_once(':').map_or((r, None), |(r, d)| (r, Some(d)));
+                let days: Option<Vec<u8>> = days.map(|d| d.split(',').map(|d| d.parse().expect("days are numbers")).collect());
                 let (every, unit) = r.split_at(r.len() - 1);
                 let unit = match unit {
                     "d" => "day",
                     "w" => "week",
                     _ => "month",
                 };
-                json!({ "every": every.parse::<u32>().expect("a number"), "unit": unit, "from": t["repeat_from"].as_str().unwrap_or("due") })
+                json!({ "every": every.parse::<u32>().expect("a number"), "unit": unit, "from": t["repeat_from"].as_str().unwrap_or("due"), "days": days })
             });
             json!({ "date": date, "time": time, "remind_before": t["remind"], "repeat": repeat })
         });

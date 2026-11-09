@@ -3,12 +3,13 @@
 use nexttodo_core::board::Snapshot;
 use nexttodo_core::model::{
     AiJob, AiJobId, Date, Dependency, Due, DueAt, Every, Folder, FolderId, Repeat, RepeatFrom, RepeatUnit, SortKey, Task, TaskId, Time,
+    Weekdays,
 };
 use rusqlite::{Connection, OptionalExtension, Params, Row, params};
 
 const FOLDER_COLUMNS: &str = "id, parent_id, name, sort_key, created_at, updated_at";
 const JOB_COLUMNS: &str = "id, folder_id, kind, text, local_time, state, error, suggestions, created_at, updated_at";
-const TASK_COLUMNS: &str = "id, number, folder_id, title, description, done_at, due_date, due_time, remind_before, sort_key, created_at, updated_at, created_via, updated_via, repeat_every, repeat_unit, repeat_from";
+const TASK_COLUMNS: &str = "id, number, folder_id, title, description, done_at, due_date, due_time, remind_before, sort_key, created_at, updated_at, created_via, updated_via, repeat_every, repeat_unit, repeat_from, repeat_days";
 
 /// Folder ids in the subtree rooted at `?1`, including the root.
 const SUBTREE: &str = "WITH RECURSIVE sub(id, depth) AS (
@@ -24,7 +25,7 @@ fn task_row(r: &Row) -> rusqlite::Result<Task> {
     let remind_before: Option<u32> = r.get(8)?;
     // Set together or not at all, as the table checks.
     let repeat = match (r.get(14)?, r.get(15)?, r.get(16)?) {
-        (Some(every), Some(unit), Some(from)) => Some(Repeat { every, unit, from }),
+        (Some(every), Some(unit), Some(from)) => Some(Repeat { every, unit, from, days: r.get(17)? }),
         _ => None,
     };
     Ok(Task {
@@ -74,14 +75,16 @@ fn all<T>(c: &Connection, sql: &str, p: impl Params, f: fn(&Row) -> rusqlite::Re
     c.prepare_cached(sql)?.query_map(p, f)?.collect()
 }
 
-/// The due date's columns: date, time, reminder, and the repeat's every, unit and from.
-type DueColumns<'a> = (Option<&'a Date>, Option<&'a Time>, Option<u32>, Option<Every>, Option<RepeatUnit>, Option<RepeatFrom>);
+/// The due date's columns: date, time, reminder, and the repeat's every, unit, from and days.
+type DueColumns<'a> =
+    (Option<&'a Date>, Option<&'a Time>, Option<u32>, Option<Every>, Option<RepeatUnit>, Option<RepeatFrom>, Option<Weekdays>);
 
 fn due_columns(due: &Option<Due>) -> DueColumns<'_> {
-    let Some(d) = due else { return (None, None, None, None, None, None) };
+    let Some(d) = due else { return (None, None, None, None, None, None, None) };
     let at = d.at.as_ref();
     let r = d.repeat;
-    (Some(&d.date), at.map(|at| &at.time), at.and_then(|at| at.remind_before), r.map(|r| r.every), r.map(|r| r.unit), r.map(|r| r.from))
+    let (every, unit, from, days) = (r.map(|r| r.every), r.map(|r| r.unit), r.map(|r| r.from), r.and_then(|r| r.days));
+    (Some(&d.date), at.map(|at| &at.time), at.and_then(|at| at.remind_before), every, unit, from, days)
 }
 
 pub fn load_folder(c: &Connection, owner: &str, id: FolderId) -> rusqlite::Result<Option<Folder>> {
@@ -169,9 +172,11 @@ pub fn task_id_taken(c: &Connection, id: TaskId) -> rusqlite::Result<bool> {
 }
 
 pub fn insert_task(c: &Connection, owner: &str, t: &Task) -> rusqlite::Result<()> {
-    let (date, time, remind, every, unit, from) = due_columns(&t.due);
+    let (date, time, remind, every, unit, from, days) = due_columns(&t.due);
     c.execute(
-        &format!("INSERT INTO tasks (owner_id, {TASK_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)"),
+        &format!(
+            "INSERT INTO tasks (owner_id, {TASK_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)"
+        ),
         params![
             owner,
             t.id,
@@ -190,18 +195,19 @@ pub fn insert_task(c: &Connection, owner: &str, t: &Task) -> rusqlite::Result<()
             t.updated_via,
             every,
             unit,
-            from
+            from,
+            days
         ],
     )?;
     Ok(())
 }
 
 pub fn update_task(c: &Connection, t: &Task) -> rusqlite::Result<()> {
-    let (date, time, remind, every, unit, from) = due_columns(&t.due);
+    let (date, time, remind, every, unit, from, days) = due_columns(&t.due);
     c.execute(
         "UPDATE tasks SET folder_id = ?2, title = ?3, description = ?4, done_at = ?5, due_date = ?6, due_time = ?7,
          remind_before = ?8, sort_key = ?9, updated_at = ?10, updated_via = ?11, repeat_every = ?12, repeat_unit = ?13,
-         repeat_from = ?14 WHERE id = ?1",
+         repeat_from = ?14, repeat_days = ?15 WHERE id = ?1",
         params![
             t.id,
             t.folder_id,
@@ -216,7 +222,8 @@ pub fn update_task(c: &Connection, t: &Task) -> rusqlite::Result<()> {
             t.updated_via,
             every,
             unit,
-            from
+            from,
+            days
         ],
     )?;
     Ok(())

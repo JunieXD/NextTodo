@@ -254,6 +254,10 @@ pub struct Repeat {
     pub every: Every,
     pub unit: RepeatUnit,
     pub from: RepeatFrom,
+    /// A weekly one's days, when not just the due date's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub days: Option<Weekdays>,
 }
 
 /// How many units apart the due dates of a repeating task are: 1–365.
@@ -291,6 +295,39 @@ pub enum RepeatUnit {
     Month,
 }
 
+/// The days of the week a weekly repeat falls on, at least one: in JSON Monday is 1 and Sunday 7.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(try_from = "Vec<u8>", into = "Vec<u8>")]
+#[ts(export, type = "Array<number>")]
+pub struct Weekdays(u8);
+
+impl Weekdays {
+    /// Monday to Friday.
+    pub const WORKDAYS: Weekdays = Weekdays(0b001_1111);
+
+    /// Whether it has the day `i` days after Monday.
+    pub fn has(self, i: u32) -> bool {
+        self.0 & 1 << i != 0
+    }
+}
+
+impl TryFrom<Vec<u8>> for Weekdays {
+    type Error = &'static str;
+
+    fn try_from(days: Vec<u8>) -> Result<Self, Self::Error> {
+        if days.is_empty() || days.iter().any(|d| !(1..=7).contains(d)) {
+            return Err("重复的周几应为 1–7（周一到周日），至少一天");
+        }
+        Ok(Weekdays(days.iter().fold(0, |bits, d| bits | 1 << (d - 1))))
+    }
+}
+
+impl From<Weekdays> for Vec<u8> {
+    fn from(w: Weekdays) -> Vec<u8> {
+        (1..=7).filter(|&d| w.has(u32::from(d) - 1)).collect()
+    }
+}
+
 /// What the next due date counts from: the one before, keeping to the schedule, or the day it is
 /// done.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -303,6 +340,24 @@ pub enum RepeatFrom {
 
 sql_text_enum!(RepeatUnit { Day = "day", Week = "week", Month = "month" });
 sql_text_enum!(RepeatFrom { Due = "due", Done = "done" });
+
+/// Stored as bits, Monday the lowest.
+#[cfg(feature = "sql")]
+impl rusqlite::types::FromSql for Weekdays {
+    fn column_result(v: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        match u8::column_result(v)? {
+            bits @ 1..=0b111_1111 => Ok(Weekdays(bits)),
+            bits => Err(rusqlite::types::FromSqlError::OutOfRange(bits.into())),
+        }
+    }
+}
+
+#[cfg(feature = "sql")]
+impl rusqlite::ToSql for Weekdays {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        Ok(self.0.into())
+    }
+}
 
 #[cfg(feature = "sql")]
 impl rusqlite::types::FromSql for Every {
@@ -339,6 +394,9 @@ impl Due {
     pub fn new(date: Date, time: Option<Time>, remind_before: Option<u32>, repeat: Option<Repeat>) -> Result<Due, String> {
         if remind_before.is_some_and(|m| m > MAX_REMIND_BEFORE) {
             return Err("提醒最多提前 30 天".into());
+        }
+        if repeat.is_some_and(|r| r.days.is_some() && r.unit != RepeatUnit::Week) {
+            return Err("只有按周重复才能选周几".into());
         }
         let at = match (time, remind_before) {
             (Some(time), remind_before) => Some(DueAt { time, remind_before }),
@@ -687,10 +745,16 @@ mod tests {
         assert!(from_value::<Due>(json!({ "date": "2026-11-20", "when": "soon" })).is_err());
         let repeating = json!({ "date": "2026-11-20", "repeat": { "every": 2, "unit": "week", "from": "done" } });
         assert_eq!(to_value(from_value::<Due>(repeating.clone()).unwrap()).unwrap(), repeating);
+        let days = json!({ "date": "2026-11-20", "repeat": { "every": 1, "unit": "week", "from": "due", "days": [5, 1, 3] } });
+        assert_eq!(to_value(from_value::<Due>(days).unwrap()).unwrap()["repeat"]["days"], json!([1, 3, 5]));
         for bad in [
             json!({ "every": 0, "unit": "day", "from": "due" }),
             json!({ "every": 366, "unit": "day", "from": "due" }),
             json!({ "every": 1, "unit": "year", "from": "due" }),
+            json!({ "every": 1, "unit": "week", "from": "due", "days": [] }),
+            json!({ "every": 1, "unit": "week", "from": "due", "days": [0, 1] }),
+            json!({ "every": 1, "unit": "week", "from": "due", "days": [8] }),
+            json!({ "every": 1, "unit": "day", "from": "due", "days": [1] }),
         ] {
             assert!(from_value::<Due>(json!({ "date": "2026-11-20", "repeat": bad })).is_err(), "{bad}");
         }

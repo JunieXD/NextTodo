@@ -9,16 +9,17 @@ import type { Repeat } from "../api/types/Repeat";
 import type { RepeatFrom } from "../api/types/RepeatFrom";
 import type { RepeatUnit } from "../api/types/RepeatUnit";
 import { REMINDERS, day, isoDate, remindLabel } from "../domain/dates";
+import { WORKDAYS, repeatLabel } from "../domain/repeat";
 import { useBack } from "../ui/back";
 import { Seg, Select } from "../ui/controls";
 import { Modal, RootContext, Tip } from "../ui/feedback";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 
-const UNITS: [RepeatUnit, string, string][] = [
-  ["day", "每天", "天"],
-  ["week", "每周", "周"],
-  ["month", "每月", "个月"],
+const UNITS: [RepeatUnit, string][] = [
+  ["day", "天"],
+  ["week", "周"],
+  ["month", "个月"],
 ];
 
 /** Sets or clears the due date, its time, the reminder and how it repeats; a task `done` doesn't
@@ -33,7 +34,18 @@ export function DueEditor({ due, done, onSave, onClose }: { due: Due | null; don
   const [every, setEvery] = useState(was?.every ?? 2);
   const [unit, setUnit] = useState<RepeatUnit>(was?.unit ?? "day");
   const [from, setFrom] = useState<RepeatFrom>(was?.from ?? "due");
-  const repeat: Repeat | null = kind === "off" ? null : kind === "custom" ? { every, unit, from } : { every: 1, unit: kind, from };
+  // A weekly repeat's days; null for a plain weekly one, on the due date's day whichever it is moved to.
+  const [days, setDays] = useState(was?.days ?? null);
+  const weekly = kind === "week" || (kind === "custom" && unit === "week");
+  const shownDays = days ?? [((day(date).getDay() + 6) % 7) + 1];
+  const picked = weekly && days ? days : undefined;
+  const repeat: Repeat | null =
+    kind === "off" ? null : { ...(kind === "custom" ? { every, unit } : { every: 1, unit: kind }), from, ...(picked && { days: picked }) };
+  // Days picked are a menu item of their own, named by them as 每个工作日 is: picking any other item is
+  // then a change, all the menu reports, and starts over without them.
+  const workdays = repeat?.every === 1 && repeat.days?.join() === WORKDAYS.join();
+  const named = repeat?.days && !workdays ? repeatLabel(repeat) : null;
+  const menu = workdays ? "workdays" : named ? "days" : kind;
   // A reminder set elsewhere (say, by an agent) may not be one of the usual choices.
   const choices = [...new Set([...REMINDERS, ...(due?.remind_before === undefined ? [] : [due.remind_before])])].sort((a, b) => a - b);
   const save = () => {
@@ -53,13 +65,26 @@ export function DueEditor({ due, done, onSave, onClose }: { due: Due | null; don
           disabled={!time}
           onChange={setRemind}
         />
-        <Select<typeof kind>
+        <Select<typeof menu>
           label="重复"
           row
-          items={[["off", done ? "已完成的事项不能重复" : "不重复"], ...UNITS.map(([u, label]): [RepeatUnit, string] => [u, label]), ["custom", "自定义"]]}
-          value={kind}
+          items={[
+            ["off", done ? "已完成的事项不能重复" : "不重复"],
+            ["day", "每天"],
+            ["workdays", "每个工作日"],
+            ["week", "每周"],
+            ...(named ? [["days", named] satisfies [typeof menu, string]] : []),
+            ["month", "每月"],
+            ["custom", "自定义"],
+          ]}
+          value={menu}
           disabled={done}
-          onChange={setKind}
+          onChange={(k) => {
+            // For the type: "days" is listed only while it is the value, which isn't picked anew.
+            if (k === "days") return;
+            setKind(k === "workdays" ? "week" : k);
+            setDays(k === "workdays" ? WORKDAYS : null);
+          }}
         />
         {kind === "custom" && (
           <div className="row">
@@ -67,7 +92,17 @@ export function DueEditor({ due, done, onSave, onClose }: { due: Due | null; don
               间隔
               <span className="row-value">
                 <Stepper value={every} onChange={setEvery} />
-                <Seg<RepeatUnit> label="间隔单位" small items={UNITS.map(([u, , name]) => [u, name])} value={unit} onChange={setUnit} />
+                <Seg<RepeatUnit> label="间隔单位" small items={UNITS} value={unit} onChange={setUnit} />
+              </span>
+            </div>
+          </div>
+        )}
+        {weekly && (
+          <div className="row">
+            <div className="row-inner">
+              周几
+              <span className="row-value">
+                <Weekdays value={shownDays} onChange={setDays} />
               </span>
             </div>
           </div>
@@ -249,6 +284,28 @@ function TimeRow({ value, extra, onChange }: { value: string; extra?: string; on
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+  );
+}
+
+/** The days of the week a weekly repeat falls on, Monday 1 first; the last one picked stays. */
+function Weekdays({ value, onChange }: { value: number[]; onChange(days: number[]): void }) {
+  return (
+    <span className="weekdays" role="group" aria-label="周几">
+      {[...WEEKDAYS].map((name, i) => {
+        const on = value.includes(i + 1);
+        return (
+          <button
+            key={name}
+            aria-pressed={on}
+            aria-label={`周${name}`}
+            disabled={on && value.length === 1}
+            onClick={() => onChange(on ? value.filter((d) => d !== i + 1) : [...value, i + 1].sort((a, b) => a - b))}
+          >
+            {name}
+          </button>
+        );
+      })}
+    </span>
   );
 }
 

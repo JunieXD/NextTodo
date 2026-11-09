@@ -3,7 +3,9 @@
 use std::collections::{BTreeMap, HashMap};
 
 use nexttodo_core::board::{Board, Snapshot, Status};
-use nexttodo_core::model::{AiJob, Change, Date, Due, Effect, FolderId, JobState, Link, Repeat, RepeatFrom, RepeatUnit, Task, TaskId};
+use nexttodo_core::model::{
+    AiJob, Change, Date, Due, Effect, FolderId, JobState, Link, Repeat, RepeatFrom, RepeatUnit, Task, TaskId, Weekdays,
+};
 use serde_json::{Value, json};
 
 /// How much of a title is shown where a task is only mentioned, not listed.
@@ -29,17 +31,24 @@ pub fn due(d: &Due) -> String {
     s
 }
 
-/// `每天`, `每 2 周`, `每 3 个月，从完成那天算`.
+/// `每天`, `每 2 周`, `每个工作日`, `每 2 周的周二、四`, `每 3 个月，从完成那天算`.
 pub fn repeat(r: Repeat) -> String {
     let unit = match r.unit {
         RepeatUnit::Day => "天",
         RepeatUnit::Week => "周",
         RepeatUnit::Month => "个月",
     };
-    let every = match (r.every.get(), r.unit) {
-        (1, RepeatUnit::Month) => "每月".to_owned(),
-        (1, _) => format!("每{unit}"),
-        (n, _) => format!("每 {n} {unit}"),
+    let every = match (r.every.get(), r.unit, r.days) {
+        (1, _, Some(Weekdays::WORKDAYS)) => "每个工作日".to_owned(),
+        (n, _, Some(days)) => {
+            let names: Vec<&str> =
+                (0..7).filter(|&i| days.has(i)).map(|i| ["一", "二", "三", "四", "五", "六", "日"][i as usize]).collect();
+            let names = names.join("、");
+            if n == 1 { format!("每周{names}") } else { format!("每 {n} 周的周{names}") }
+        }
+        (1, RepeatUnit::Month, None) => "每月".to_owned(),
+        (1, _, None) => format!("每{unit}"),
+        (n, _, None) => format!("每 {n} {unit}"),
     };
     match r.from {
         RepeatFrom::Due => every,

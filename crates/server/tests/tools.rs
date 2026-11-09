@@ -276,6 +276,8 @@ async fn a_repeating_task_moves_on_when_done() {
         (json!({ "title": "x", "repeat": "1d" }), "repeat"),
         (json!({ "title": "x", "due": "2026-11-20", "repeat": "2周" }), "repeat"),
         (json!({ "title": "x", "due": "2026-11-20", "repeat": "0d" }), "repeat"),
+        (json!({ "title": "x", "due": "2026-11-20", "repeat": "1w:8" }), "repeat"),
+        (json!({ "title": "x", "due": "2026-11-20", "repeat": "1d:1" }), "due"),
         (json!({ "title": "x", "due": "2026-11-20", "repeat_from": "done" }), "repeat_from"),
     ] {
         let r = t.tool(&s, "add", args.clone()).await;
@@ -287,6 +289,16 @@ async fn a_repeating_task_moves_on_when_done() {
     t.ok(&s, "edit", json!({ "task": 3, "due": null })).await;
     assert_eq!(t.ok(&s, "show", json!({ "task": 3 })).await["data"]["due"], Value::Null, "the repeat goes with the due date");
     assert_eq!(t.tool(&s, "edit", json!({ "task": 3, "repeat": "1m" })).await.status, StatusCode::BAD_REQUEST, "no due date to repeat");
+
+    // Weekly on some days, it moves on to the next of them.
+    t.ok(&s, "add", json!({ "title": "写日报", "due": "2026-11-13 18:00", "repeat": "1w:1,2,3,4,5" })).await;
+    let done = t.ok(&s, "done", json!({ "tasks": [4], "today": "2026-11-13" })).await;
+    assert!(text(&done).starts_with("顺延 #4 写日报 → 2026-11-16"), "{}", text(&done));
+    let shown = t.ok(&s, "show", json!({ "task": 4 })).await;
+    assert_eq!(shown["data"]["due"]["repeat"]["days"], json!([1, 2, 3, 4, 5]));
+    assert!(text(&shown).contains("截止：2026-11-16 18:00，每个工作日"), "{}", text(&shown));
+    t.ok(&s, "edit", json!({ "task": 4, "repeat": "2w:4,2" })).await;
+    assert!(text(&t.ok(&s, "show", json!({ "task": 4 })).await).contains("截止：2026-11-16 18:00，每 2 周的周二、四"));
 }
 
 #[tokio::test]

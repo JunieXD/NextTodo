@@ -37,7 +37,8 @@ const sameDue = (a: Due | null, b: Due | null) =>
   a?.remind_before === b?.remind_before &&
   a?.repeat?.every === b?.repeat?.every &&
   a?.repeat?.unit === b?.repeat?.unit &&
-  a?.repeat?.from === b?.repeat?.from;
+  a?.repeat?.from === b?.repeat?.from &&
+  a?.repeat?.days?.join() === b?.repeat?.days?.join();
 
 /** `11月20日 18:00 · 提前 30 分钟 · 每周`, or `无`. */
 const dueText = (d: Due | null, now: Date) =>

@@ -5,7 +5,7 @@ use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
 use nexttodo_core::board::{Board, Snapshot, Status};
-use nexttodo_core::model::{Change, Date, Description, Due, Effect, FolderId, MutationId, Name, Repeat, RepeatFrom, Task, TaskId};
+use nexttodo_core::model::{Change, Date, Description, Due, Effect, FolderId, MutationId, Name, Repeat, RepeatFrom, Task, TaskId, Title};
 use nexttodo_core::ops::Op;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::json;
@@ -154,6 +154,16 @@ fn due(due: Option<super::args::DueText>, remind: Option<u32>, repeat: Option<Re
     }
 }
 
+/// A new task's due date, as a plan gives it.
+pub(crate) fn new_due(
+    due_text: Option<super::args::DueText>,
+    remind: Option<u32>,
+    repeat_text: Option<RepeatText>,
+    from: Option<RepeatFrom>,
+) -> Result<Option<Due>, ApiError> {
+    due(due_text, remind, repeat(repeat_text, from)?)
+}
+
 /// The repeat given, from the due date unless said.
 fn repeat(repeat: Option<RepeatText>, from: Option<RepeatFrom>) -> Result<Option<Repeat>, ApiError> {
     match (repeat, from) {
@@ -209,7 +219,7 @@ fn plan_ops(b: &Board, plan: Plan) -> Result<Vec<Op>, ApiError> {
             title,
             folder_id,
             description: description.unwrap_or_default(),
-            due: due(due_text, remind, repeat(repeat_text, repeat_from)?)?,
+            due: new_due(due_text, remind, repeat_text, repeat_from)?,
             sort_key: None,
             done: false,
         });
@@ -251,7 +261,20 @@ pub fn apply(w: &WriteCx, a: ApplyArgs) -> Result<Write, ApiError> {
 }
 
 pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
-    let b = w.board;
+    let Edit { id, title, description, due } = edit_fields(w.board, a)?;
+    Ok(vec![Op::TaskUpdate { id, folder_id: None, title, description, due, sort_key: None, done: None, today: None }].into())
+}
+
+/// The fields `edit` sets on a task, the due date in full; `None` where it leaves one as it is.
+pub(crate) struct Edit {
+    pub id: TaskId,
+    pub title: Option<Title>,
+    pub description: Option<Description>,
+    pub due: Option<Option<Due>>,
+}
+
+/// What `edit` changes: also what AI tidying suggests changing in a task.
+pub(crate) fn edit_fields(b: &Board, a: EditArgs) -> Result<Edit, ApiError> {
     let revising = !a.replace.is_empty() || a.append.is_some();
     let changes_repeat = a.repeat.is_some() || a.repeat_from.is_some();
     if a.title.is_none() && a.description.is_none() && !revising && a.due.is_none() && a.remind.is_none() && !changes_repeat {
@@ -303,17 +326,7 @@ pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
             None => None,
         },
     };
-    Ok(vec![Op::TaskUpdate {
-        id: t.id,
-        folder_id: None,
-        title: a.title,
-        description,
-        due: new_due,
-        sort_key: None,
-        done: None,
-        today: None,
-    }]
-    .into())
+    Ok(Edit { id: t.id, title: a.title, description, due: new_due })
 }
 
 /// The description as it is now with each `old` replaced by its `new` in turn, then `append` on a

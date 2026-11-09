@@ -3,7 +3,7 @@
 
 import { Dialog, Tooltip } from "radix-ui";
 import { X } from "lucide-react";
-import { type ReactElement, type ReactNode, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ReactElement, type ReactNode, type RefObject, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/http";
 import type { Checked } from "../domain/text";
 import { useBack } from "./back";
@@ -202,8 +202,22 @@ function PromptDialog({ title, label, value = "", placeholder, ok, check, close 
 let modals = 0;
 
 /** A panel for choosing or settings: a bottom sheet on phones, a centred card on desktops. Back goes
- * to `onBack` when given, such as the page the panel came from, otherwise closes it. */
-export function Modal({ title, onClose, onBack, children }: { title: string; onClose(): void; onBack?: () => void; children: ReactNode }) {
+ * to `onBack` when given, such as the page the panel came from, otherwise closes it. `focus` is what
+ * takes the focus as it opens, rather than its first button: also when a menu opened the panel, where
+ * a field's `autoFocus` loses it. */
+export function Modal({
+  title,
+  onClose,
+  onBack,
+  focus,
+  children,
+}: {
+  title: string;
+  onClose(): void;
+  onBack?: () => void;
+  focus?: RefObject<HTMLElement | null>;
+  children: ReactNode;
+}) {
   const root = useContext(RootContext);
   const scrim = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -220,7 +234,13 @@ export function Modal({ title, onClose, onBack, children }: { title: string; onC
     <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal container={root}>
         <Dialog.Overlay ref={scrim} className={`modal-scrim${replacing ? "" : " enter"}`} />
-        <Dialog.Content ref={panel} className={`modal ${replacing ? (onBack ? "forth" : "back") : "enter"}`} aria-describedby={undefined}>
+        <Dialog.Content
+          ref={panel}
+          className={`modal ${replacing ? (onBack ? "forth" : "back") : "enter"}`}
+          aria-describedby={undefined}
+          // Without scrolling: the panel is still sliding in, and the app would scroll to where it is now.
+          onOpenAutoFocus={focus && ((e) => (e.preventDefault(), focus.current!.focus({ preventScroll: true })))}
+        >
           <div className="modal-head">
             <Dialog.Title asChild>
               <h3>{title}</h3>

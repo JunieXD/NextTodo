@@ -4,7 +4,7 @@
 pub mod llm;
 pub mod organize;
 pub mod secret;
-mod tidy;
+pub mod tidy;
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -270,7 +270,7 @@ async fn organize(st: AppState, turn: Turn, job: AiJobId, config: Config) {
                     (prompt, Shown::Organize(shown))
                 }
                 JobKind::Tidy => {
-                    let (prompt, shown) = tidy::prompt(&j, &snap);
+                    let (prompt, shown) = tidy::prompt(&j, snap);
                     (prompt, Shown::Tidy(shown))
                 }
             }))

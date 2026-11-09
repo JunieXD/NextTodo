@@ -1,9 +1,11 @@
 //! Mutations: what clients submit to change data. See `docs/api.md`.
 
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::model::{AiJobId, Date, Description, Due, FolderId, JobKind, JobText, LocalTime, MutationId, Name, SortKey, TaskId, Title};
+use crate::model::{
+    AiJobId, Date, Description, Due, FolderId, JobKind, JobText, LocalTime, MutationId, Name, SortKey, TaskId, Title, nullable,
+};
 
 pub const MAX_OPS: usize = 1000;
 
@@ -151,11 +153,6 @@ pub enum Op {
     AiJobDelete { id: AiJobId },
     #[serde(rename = "undo")]
     Undo { mutation: MutationId },
-}
-
-/// Tells a missing field (`None`) from an explicit `null` (`Some(None)`).
-fn nullable<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<Option<T>>, D::Error> {
-    Option::<T>::deserialize(d).map(Some)
 }
 
 fn is_empty(d: &Description) -> bool {

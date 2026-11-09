@@ -1,10 +1,10 @@
-//! Tries the instructions for AI organizing on a set of cases with a real model, and checks each
-//! answer against what its case expects. The model and its key are given in the environment; how,
-//! and what is checked, in docs/ai.md#评测.
+//! Tries the instructions for AI organizing, or for tidying a folder, on a set of cases with a real
+//! model, and checks each answer against what its case expects. The model and its key are given in
+//! the environment; how, and what is checked, in docs/ai.md#评测.
 //!
 //! The answers go to target/ai-eval, for reading them through.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -13,10 +13,10 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use clap::Parser;
 use nexttodo_core::board::{Board, Snapshot};
 use nexttodo_core::dag::find_path;
-use nexttodo_core::model::TaskId;
+use nexttodo_core::model::{AiJob, Due, Suggestion, TaskId};
 use nexttodo_core::ops::{MAX_OPS, Op};
 use nexttodo_server::ai::llm::{Api, Config, Https, Thinking};
-use nexttodo_server::ai::organize;
+use nexttodo_server::ai::{organize, tidy};
 use nexttodo_server::tools;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -51,15 +51,28 @@ struct Args {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Case {
+struct RawCase {
     id: String,
     /// What it tries, for people.
     #[serde(default)]
     #[allow(dead_code)]
     note: String,
-    /// What the server gives the model: local_time, folder, open_tasks and text.
+    /// What the server gives the model: for organizing, local_time, folder, open_tasks and text; for
+    /// tidying, what `tidy::prompt` sends, with `request`.
     input: Value,
-    expect: Expect,
+    expect: Value,
+}
+
+struct Case {
+    id: String,
+    input: Value,
+    expect: Kind,
+}
+
+enum Kind {
+    Organize(Expect),
+    /// The folder the input shows, and the job tidying it.
+    Tidy(TidyExpect, Box<(Snapshot, AiJob)>),
 }
 
 /// What a good answer does. Whatever is left out is not checked.
@@ -127,6 +140,55 @@ const COPIED: f64 = 0.5;
 const REPEATED: f64 = 0.7;
 const TIMEOUT: Duration = Duration::from_secs(300);
 
+/// What a good tidying suggests. Whatever is left out is not checked.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TidyExpect {
+    /// What may be done at all, of `title`, `description`, `due`, `done`, `reopen`, `folder`,
+    /// `after`, `unlink`, `delete`, `create` and `order`.
+    allowed: Option<Vec<String>>,
+    /// The tasks deleted, done and opened again: exactly these.
+    deleted: Option<Vec<i64>>,
+    /// How many are deleted, whichever they are.
+    deletes: Option<usize>,
+    done: Option<Vec<i64>>,
+    reopened: Option<Vec<i64>>,
+    /// Tasks moved, and where to.
+    moved: Option<Vec<(i64, String)>>,
+    /// New due dates, as `2026-11-20 18:00`; empty for one cleared.
+    due: Option<Vec<(i64, String)>>,
+    /// New repeats, as `1w`.
+    repeat: Option<Vec<(i64, String)>>,
+    /// Tasks before others once everything is taken, through others maybe, and tasks no longer
+    /// right before others: tasks by number, new ones by a word in their titles.
+    #[serde(default)]
+    linked: Vec<(Who, Who)>,
+    #[serde(default)]
+    unlinked: Vec<(i64, i64)>,
+    /// How many new tasks: at least, at most.
+    created: Option<(usize, usize)>,
+    /// Tasks nothing is suggested for.
+    #[serde(default)]
+    untouched: Vec<i64>,
+    /// Each in some title or description once everything is taken, in one of its wordings.
+    #[serde(default)]
+    facts: Vec<Vec<String>>,
+    #[serde(default)]
+    verbatim: Vec<String>,
+    #[serde(default)]
+    absent: Vec<String>,
+    /// Tasks in the order a reordering is to put them.
+    #[serde(default)]
+    order: Vec<i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Who {
+    Number(i64),
+    Words(String),
+}
+
 struct Outcome {
     case: usize,
     run: usize,
@@ -142,15 +204,23 @@ fn main() -> anyhow::Result<()> {
     let thinking = Thinking::parse(&args.thinking).ok_or_else(|| anyhow::anyhow!("思考程度是 off、low 或 high"))?;
     let config = Config { provider: args.provider, base_url: args.url, model: args.model, thinking, api_key: key };
     config.check().map_err(anyhow::Error::msg)?;
-    let system = match &args.system {
-        Some(path) => std::fs::read_to_string(path)?,
-        None => organize::SYSTEM.to_owned(),
-    };
+    let system = args.system.as_ref().map(std::fs::read_to_string).transpose()?;
     let mut cases = Vec::new();
     for path in &args.cases {
-        let read: Vec<Case> =
+        let read: Vec<RawCase> =
             serde_json::from_str(&std::fs::read_to_string(path)?).map_err(|e| anyhow::anyhow!("{}：{e}", path.display()))?;
-        cases.extend(read);
+        for c in read {
+            let expect = if c.input.get("request").is_some() {
+                let data = tidy_data(&c.input);
+                // So that the case is what the server would send.
+                let sent: Value = serde_json::from_str(&tidy::prompt(&data.1, data.0.clone()).0.user)?;
+                anyhow::ensure!(sent == c.input, "{}：服务端发给模型的会是\n{}", c.id, serde_json::to_string_pretty(&sent)?);
+                Kind::Tidy(serde_json::from_value(c.expect).map_err(|e| anyhow::anyhow!("{}：{e}", c.id))?, Box::new(data))
+            } else {
+                Kind::Organize(serde_json::from_value(c.expect).map_err(|e| anyhow::anyhow!("{}：{e}", c.id))?)
+            };
+            cases.push(Case { id: c.id, input: c.input, expect });
+        }
     }
     cases.retain(|c| args.only.as_ref().is_none_or(|only| c.id.contains(only.as_str())));
 
@@ -161,7 +231,7 @@ fn main() -> anyhow::Result<()> {
         for _ in 0..args.jobs.max(1) {
             s.spawn(|| {
                 while let Some(&(case, run)) = work.get(next.fetch_add(1, Ordering::Relaxed)) {
-                    let outcome = ask(&config, &system, &cases[case], case, run);
+                    let outcome = ask(&config, system.as_deref(), &cases[case], case, run);
                     outcomes.lock().unwrap().push(outcome);
                 }
             });
@@ -206,14 +276,19 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn ask(config: &Config, system: &str, case: &Case, index: usize, run: usize) -> Outcome {
+fn ask(config: &Config, system: Option<&str>, case: &Case, index: usize, run: usize) -> Outcome {
+    let e = match &case.expect {
+        Kind::Organize(e) => e,
+        Kind::Tidy(e, data) => return ask_tidy(config, system, e, data, index, run),
+    };
     let snap = snapshot(&case.input);
     let shown: HashSet<i64> = snap.tasks.iter().map(|t| t.number).collect();
     let start = Instant::now();
     // As in local mode, where any address is called: a proxy here may give every name one of its own.
-    let answer = Https { public_only: false }.chat(config, &organize::chat(system, &case.input), true, TIMEOUT).map_err(|f| f.message);
+    let prompt = organize::chat(system.unwrap_or(organize::SYSTEM), &case.input);
+    let answer = Https { public_only: false }.chat(config, &prompt, true, TIMEOUT).map_err(|f| f.message);
     let seconds = start.elapsed().as_secs_f64();
-    let facts = case.expect.facts.len();
+    let facts = e.facts.len();
     let (answer, checked) = match answer {
         Err(e) => (String::new(), Err(format!("出错：{e}"))),
         Ok(text) => {
@@ -223,7 +298,7 @@ fn ask(config: &Config, system: &str, case: &Case, index: usize, run: usize) -> 
                 .and_then(|ops| accepted(&snap, &ops).map(|()| ops));
             let checked = match planned {
                 Err(e) => Err(format!("出错：{e}")),
-                Ok(ops) => Ok(check(case, &serde_json::from_str(organize::unwrap(&text)).expect("parsed above"), &snap, &ops)),
+                Ok(ops) => Ok(check(e, &case.input, &serde_json::from_str(organize::unwrap(&text)).expect("parsed above"), &snap, &ops)),
             };
             (text, checked)
         }
@@ -274,8 +349,7 @@ fn accepted(snap: &Snapshot, ops: &[Op]) -> Result<(), String> {
 
 /// What is wrong with the answer `v`, which the server would add as `ops`, and how many of the
 /// facts it keeps.
-fn check(case: &Case, v: &Value, snap: &Snapshot, ops: &[Op]) -> (Vec<String>, usize) {
-    let e = &case.expect;
+fn check(e: &Expect, input: &Value, v: &Value, snap: &Snapshot, ops: &[Op]) -> (Vec<String>, usize) {
     let tasks: Vec<&Value> = v["tasks"].as_array().into_iter().flatten().collect();
     let field = |t: &Value, k: &str| t[k].as_str().map(str::trim).unwrap_or_default().to_owned();
     let all: String = tasks.iter().map(|t| format!("{}\n{}\n", field(t, "title"), field(t, "description"))).collect();
@@ -299,7 +373,7 @@ fn check(case: &Case, v: &Value, snap: &Snapshot, ops: &[Op]) -> (Vec<String>, u
         problems.push(format!("不该出现：{s}"));
     }
 
-    let text = case.input["text"].as_str().unwrap_or_default();
+    let text = input["text"].as_str().unwrap_or_default();
     for t in &tasks {
         let description = field(t, "description");
         if description.is_empty() {
@@ -310,15 +384,8 @@ fn check(case: &Case, v: &Value, snap: &Snapshot, ops: &[Op]) -> (Vec<String>, u
             continue;
         }
         let prose = prose(&description, &e.verbatim);
-        let ends = |i: usize| prose[i..].chars().nth(1).is_none_or(|c| "，。！？；、,.!?;…~\n".contains(c));
-        let fillers: Vec<&str> = SPOKEN
-            .iter()
-            .copied()
-            .filter(|w| prose.contains(w))
-            .chain(PARTICLES.iter().copied().filter(|p| prose.match_indices(p).any(|(i, _)| ends(i))))
-            .collect();
-        if !fillers.is_empty() {
-            problems.push(format!("口语：{}", fillers.join("、")));
+        if let Some(p) = spoken(&prose) {
+            problems.push(p);
         }
         let share = copied(&prose, &prose_of_text(text, &e.verbatim), RUN);
         if !e.written && share >= COPIED && prose.chars().count() >= 2 * RUN {
@@ -384,6 +451,18 @@ fn check(case: &Case, v: &Value, snap: &Snapshot, ops: &[Op]) -> (Vec<String>, u
     (problems, found)
 }
 
+/// The spoken words in `prose`, if any.
+fn spoken(prose: &str) -> Option<String> {
+    let ends = |i: usize| prose[i..].chars().nth(1).is_none_or(|c| "，。！？；、,.!?;…~\n".contains(c));
+    let fillers: Vec<&str> = SPOKEN
+        .iter()
+        .copied()
+        .filter(|w| prose.contains(w))
+        .chain(PARTICLES.iter().copied().filter(|p| prose.match_indices(p).any(|(i, _)| ends(i))))
+        .collect();
+    (!fillers.is_empty()).then(|| format!("口语：{}", fillers.join("、")))
+}
+
 fn sorted<T: Ord>(items: impl Iterator<Item = T>) -> Vec<T> {
     let mut v: Vec<T> = items.collect();
     v.sort();
@@ -423,4 +502,273 @@ fn copied(prose: &str, text: &str, run: usize) -> f64 {
         }
     }
     covered.iter().filter(|&&c| c).count() as f64 / p.len().max(1) as f64
+}
+
+/// The data a tidying case shows: its folder and subfolders, their tasks in the order listed, done
+/// ones done in it, and the job.
+fn tidy_data(input: &Value) -> (Snapshot, AiJob) {
+    let id = |n: usize| format!("00000000-0000-7000-8000-{n:012}");
+    let mut folders = Vec::new();
+    let mut paths: HashMap<String, String> = HashMap::new();
+    let list = |k: &str| input[k].as_array().cloned().unwrap_or_default();
+    let mut folder_of = |path: &str, folders: &mut Vec<Value>| -> Option<String> {
+        let mut parent: Option<String> = None;
+        let mut full = String::new();
+        for name in path.split('/').filter(|s| !s.is_empty()) {
+            full = format!("{full}/{name}");
+            let next = paths.len() + 1000;
+            let f = paths.entry(full.clone()).or_insert_with(|| {
+                folders
+                    .push(json!({ "id": id(next), "parent_id": parent, "name": name, "sort_key": "a0", "created_at": 0, "updated_at": 0 }));
+                id(next)
+            });
+            parent = Some(f.clone());
+        }
+        parent
+    };
+    let folder = folder_of(input["folder"].as_str().expect("a folder"), &mut folders);
+    for p in list("subfolders") {
+        folder_of(p.as_str().expect("folder paths"), &mut folders);
+    }
+    let task_id = |n: i64| id(n as usize);
+    let mut tasks = Vec::new();
+    let mut dependencies = Vec::new();
+    let open = list("open_tasks");
+    let done = list("done_tasks");
+    for (i, t) in open.iter().chain(&done).enumerate() {
+        let n = t["number"].as_i64().expect("tasks have numbers");
+        let due = t["due"].as_str().map(|d| {
+            let (date, time) = d.split_once(' ').map_or((d, None), |(d, t)| (d, Some(t)));
+            let repeat = t["repeat"].as_str().map(|r| {
+                let (every, unit) = r.split_at(r.len() - 1);
+                let unit = match unit {
+                    "d" => "day",
+                    "w" => "week",
+                    _ => "month",
+                };
+                json!({ "every": every.parse::<u32>().expect("a number"), "unit": unit, "from": t["repeat_from"].as_str().unwrap_or("due") })
+            });
+            json!({ "date": date, "time": time, "remind_before": t["remind"], "repeat": repeat })
+        });
+        let due = due.map(|mut d| {
+            d.as_object_mut().unwrap().retain(|_, v| !v.is_null());
+            d
+        });
+        tasks.push(json!({
+            "id": task_id(n), "number": n, "folder_id": folder, "title": t["title"], "description": t["description"].as_str().unwrap_or_default(),
+            // Listed latest first.
+            "done_at": (i >= open.len()).then(|| 10_000 - i), "due": due, "sort_key": format!("a{i:02}1"),
+            "created_at": 0, "updated_at": 0, "created_via": null, "updated_via": null,
+        }));
+        for b in t["after"].as_array().into_iter().flatten() {
+            dependencies.push(json!({ "before": task_id(b.as_i64().expect("numbers")), "after": task_id(n), "created_at": 0 }));
+        }
+    }
+    let snap = serde_json::from_value(json!({ "folders": folders, "tasks": tasks, "dependencies": dependencies, "ai_jobs": [] }))
+        .expect("a snapshot");
+    let job = serde_json::from_value(json!({
+        "id": id(999), "folder_id": folder, "kind": "tidy", "text": input["request"], "local_time": input["local_time"],
+        "state": "running", "error": null, "created_at": 0, "updated_at": 0,
+    }))
+    .expect("a job");
+    (snap, job)
+}
+
+fn ask_tidy(config: &Config, system: Option<&str>, e: &TidyExpect, data: &(Snapshot, AiJob), index: usize, run: usize) -> Outcome {
+    let (snap, job) = data;
+    let (mut prompt, shown) = tidy::prompt(job, snap.clone());
+    if let Some(s) = system {
+        prompt.system = s.to_owned();
+    }
+    let start = Instant::now();
+    let answer = Https { public_only: false }.chat(config, &prompt, true, TIMEOUT).map_err(|f| f.message);
+    let seconds = start.elapsed().as_secs_f64();
+    let facts = e.facts.len();
+    let (answer, checked) = match answer {
+        Err(e) => (String::new(), Err(format!("出错：{e}"))),
+        Ok(text) => {
+            let checked = tidy::parse(&text, &shown).map_err(|e| format!("出错：{e}")).map(|s| check_tidy(e, snap, &s));
+            (text, checked)
+        }
+    };
+    let (problems, facts) = match checked {
+        Ok((problems, found)) => (problems, (found, facts)),
+        Err(e) => (vec![e], (0, facts)),
+    };
+    Outcome { case: index, run, answer, problems, facts, seconds }
+}
+
+/// What is wrong with the suggestions `s` for `snap`, and how many of the facts all of them taken keep.
+fn check_tidy(e: &TidyExpect, snap: &Snapshot, s: &[Suggestion]) -> (Vec<String>, usize) {
+    let b = Board::new(snap);
+    let number = |id: &TaskId| b.task(*id).map(|t| t.number);
+    let due_text = |d: &Option<Due>| {
+        d.as_ref().map_or(String::new(), |d| {
+            d.at.as_ref().map_or(d.date.as_str().to_owned(), |at| format!("{} {}", d.date.as_str(), at.time.as_str()))
+        })
+    };
+    let mut problems = Vec::new();
+    let mut kinds = BTreeSet::new();
+    let (mut deleted, mut done, mut reopened, mut moved, mut due, mut repeat, mut touched) =
+        (vec![], vec![], vec![], vec![], vec![], vec![], vec![]);
+    let mut texts: HashMap<TaskId, (String, String)> =
+        snap.tasks.iter().map(|t| (t.id, (t.title.as_str().into(), t.description.as_str().into()))).collect();
+    let mut edges: HashSet<(TaskId, TaskId)> = snap.dependencies.iter().map(|d| (d.before, d.after)).collect();
+    let mut created = Vec::new();
+    let mut rewritten = Vec::new();
+    let mut order = Vec::new();
+    for x in s {
+        match x {
+            Suggestion::Edit(t) => {
+                let n = number(&t.task).expect("edits are of tasks there");
+                touched.push(n);
+                let text = texts.get_mut(&t.task).expect("tasks there have texts");
+                for (kind, on) in [
+                    ("title", t.title.is_some()),
+                    ("description", t.description.is_some()),
+                    ("due", t.due.is_some()),
+                    ("done", t.done == Some(true)),
+                    ("reopen", t.done == Some(false)),
+                    ("folder", t.folder.is_some()),
+                    ("after", !t.after.is_empty()),
+                    ("unlink", !t.unlink.is_empty()),
+                ] {
+                    if on {
+                        kinds.insert(kind);
+                    }
+                }
+                if let Some(x) = &t.title {
+                    text.0 = x.as_str().into();
+                }
+                if let Some(x) = &t.description {
+                    text.1 = x.as_str().into();
+                    rewritten.push(x.as_str().to_owned());
+                }
+                if let Some(d) = &t.due {
+                    due.push((n, due_text(d)));
+                    if let Some(r) =
+                        d.as_ref().and_then(|d| d.repeat).filter(|r| Some(*r) != b.task(t.task).and_then(|t| t.due.as_ref()?.repeat))
+                    {
+                        let unit = match r.unit {
+                            nexttodo_core::model::RepeatUnit::Day => 'd',
+                            nexttodo_core::model::RepeatUnit::Week => 'w',
+                            nexttodo_core::model::RepeatUnit::Month => 'm',
+                        };
+                        repeat.push((n, format!("{}{unit}", r.every.get())));
+                    }
+                }
+                match t.done {
+                    Some(true) => done.push(n),
+                    Some(false) => reopened.push(n),
+                    None => {}
+                }
+                if let Some(f) = t.folder {
+                    moved.push((n, b.path(Some(f))));
+                }
+                edges.extend(t.after.iter().map(|a| (*a, t.task)));
+                for u in &t.unlink {
+                    edges.remove(&(*u, t.task));
+                }
+            }
+            Suggestion::Delete(d) => {
+                kinds.insert("delete");
+                let n = number(&d.delete).expect("deletions are of tasks there");
+                touched.push(n);
+                deleted.push(n);
+                texts.remove(&d.delete);
+                edges.retain(|(x, y)| *x != d.delete && *y != d.delete);
+            }
+            Suggestion::Create(c) => {
+                kinds.insert("create");
+                texts.insert(c.create, (c.title.as_str().into(), c.description.as_ref().map_or("", |d| d.as_str()).into()));
+                if let Some(d) = &c.description {
+                    rewritten.push(d.as_str().to_owned());
+                }
+                created.push((c.create, squash(c.title.as_str())));
+                edges.extend(c.after.iter().map(|a| (*a, c.create)).chain(c.before.iter().map(|x| (c.create, *x))));
+            }
+            Suggestion::Order(o) => {
+                kinds.insert("order");
+                order = o.order.iter().filter_map(number).collect();
+                // Those that change places among themselves.
+                let listed: Vec<i64> = b.tasks_in(snap.tasks[0].folder_id).iter().map(|t| t.number).filter(|n| order.contains(n)).collect();
+                touched.extend(order.iter().zip(&listed).filter(|(a, b)| a != b).map(|(a, _)| *a));
+            }
+        }
+    }
+
+    if let Some(allowed) = &e.allowed {
+        let wrong: Vec<&str> = kinds.iter().copied().filter(|k| !allowed.iter().any(|a| a == k)).collect();
+        if !wrong.is_empty() {
+            problems.push(format!("不该做：{}", wrong.join("、")));
+        }
+    }
+    for (what, want, got) in [("删除", &e.deleted, &deleted), ("完成", &e.done, &done), ("重新打开", &e.reopened, &reopened)] {
+        if let Some(want) = want
+            && sorted(want.iter().copied()) != sorted(got.iter().copied())
+        {
+            problems.push(format!("{what} {got:?}，应为 {want:?}"));
+        }
+    }
+    if let Some(n) = e.deletes
+        && deleted.len() != n
+    {
+        problems.push(format!("删除了 {} 项，应为 {n} 项", deleted.len()));
+    }
+    for (what, want, got) in [("移动", &e.moved, &moved), ("截止时间", &e.due, &due), ("重复", &e.repeat, &repeat)] {
+        if let Some(want) = want
+            && sorted(want.iter().cloned()) != sorted(got.iter().cloned())
+        {
+            problems.push(format!("{what} {got:?}，应为 {want:?}"));
+        }
+    }
+    let who = |w: &Who| match w {
+        Who::Number(n) => b.task_by_number(*n).map(|t| t.id),
+        Who::Words(w) => created.iter().find(|(_, t)| t.contains(&squash(w))).map(|(id, _)| *id),
+    };
+    let named = |w: &Who| match w {
+        Who::Number(n) => format!("#{n}"),
+        Who::Words(w) => format!("“{w}”"),
+    };
+    let edges: Vec<(TaskId, TaskId)> = edges.into_iter().collect();
+    for (x, y) in &e.linked {
+        if !matches!((who(x), who(y)), (Some(x), Some(y)) if find_path(&edges, x, y).is_some()) {
+            problems.push(format!("{} 没有设为 {} 的前置", named(x), named(y)));
+        }
+    }
+    for (x, y) in &e.unlinked {
+        if matches!((b.task_by_number(*x), b.task_by_number(*y)), (Some(x), Some(y)) if edges.contains(&(x.id, y.id))) {
+            problems.push(format!("#{x} 仍是 #{y} 的前置"));
+        }
+    }
+    if let Some((least, most)) = e.created
+        && !(least..=most).contains(&created.len())
+    {
+        problems.push(format!("新建 {} 项，应为 {least}–{most}", created.len()));
+    }
+    let busy: Vec<i64> = e.untouched.iter().copied().filter(|n| touched.contains(n)).collect();
+    if !busy.is_empty() {
+        problems.push(format!("不该动：{busy:?}"));
+    }
+    if !e.order.is_empty() {
+        let got: Vec<i64> = order.iter().copied().filter(|n| e.order.contains(n)).collect();
+        if got != e.order {
+            problems.push(format!("顺序 {got:?}，应为 {:?}", e.order));
+        }
+    }
+    let all: String = texts.values().map(|(t, d)| format!("{t}\n{d}\n")).collect();
+    let flat = squash(&all);
+    let missing: Vec<&str> =
+        e.facts.iter().filter(|alts| !alts.iter().any(|a| flat.contains(&squash(a)))).map(|alts| alts[0].as_str()).collect();
+    if !missing.is_empty() {
+        problems.push(format!("缺少：{}", missing.join("、")));
+    }
+    for v in e.verbatim.iter().filter(|v| !all.contains(v.as_str())) {
+        problems.push(format!("没有原样保留：{v}"));
+    }
+    for a in e.absent.iter().filter(|a| flat.contains(&squash(a))) {
+        problems.push(format!("不该出现：{a}"));
+    }
+    problems.extend(rewritten.iter().filter_map(|d| spoken(&prose(d, &e.verbatim))));
+    (problems, e.facts.len() - missing.len())
 }

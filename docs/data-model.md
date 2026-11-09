@@ -109,7 +109,7 @@
 | local_time | TEXT | 提交时的本地时间，如 `2026-11-04 16:30 星期三`，单行，最长 40 字 |
 | state | TEXT | `waiting`（等待）、`running`（整理中）、`failed`（失败）或 `ready`（整理文件夹的建议待确认） |
 | error | TEXT，可空 | 失败的原因，只在 `failed` 时有 |
-| suggestions | TEXT，可空 | 建议，JSON：`[{task, title?, description?, due?, after, reason, was}]`，`was` 是整理时事项的 `{title, description, due}`；只在 `ready` 时有 |
+| suggestions | TEXT，可空 | 建议，JSON 数组，每条按独有的字段区分：修改 `{task, title?, description?, due?, done?, folder?, after, unlink?, reason, was}`（`due` 为 `null` 是清除）、删除 `{delete, reason, was}`、新建 `{create, title, description?, due?, after, before, reason}`（`create` 是新事项的 ID）、调整顺序 `{order, reason}`；`was` 是整理时事项的 `{title, description, due}`。只在 `ready` 时有 |
 | created_at / updated_at | INTEGER | |
 
 ### ai_settings

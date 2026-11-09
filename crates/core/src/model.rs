@@ -1,6 +1,6 @@
 //! Entities and the validated values they are made of.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use ts_rs::TS;
 use uuid::Uuid;
 
@@ -427,10 +427,23 @@ pub enum JobKind {
 sql_text_enum!(JobState { Waiting = "waiting", Running = "running", Failed = "failed", Ready = "ready" });
 sql_text_enum!(JobKind { Organize = "organize", Tidy = "tidy" });
 
-/// A change AI suggests to one of the folder's open tasks, for the user to take or leave.
+/// What AI suggests doing in the folder it tidies, for the user to take or leave part by part. Each
+/// kind is told by a field only it has (`task`, `delete`, `create`, `order`), with no tag: changes
+/// to a task came first, and are kept as they were then.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(untagged)]
+#[ts(export)]
+pub enum Suggestion {
+    Edit(TaskEdit),
+    Delete(TaskDeletion),
+    Create(NewTask),
+    Order(Reorder),
+}
+
+/// Changes to a task, the fields given set and the dependencies given added or removed.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct Suggestion {
+pub struct TaskEdit {
     pub task: TaskId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -438,11 +451,22 @@ pub struct Suggestion {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub description: Option<Description>,
+    /// `null` clears the due date.
+    #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub due: Option<Option<Due>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub due: Option<Due>,
+    pub done: Option<bool>,
+    /// A folder inside the one tidied, to move it into.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub folder: Option<FolderId>,
     /// Tasks to put before it.
     pub after: Vec<TaskId>,
+    /// Tasks before it now, to be so no more; none in suggestions made before there were these.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unlink: Vec<TaskId>,
     /// What changes and why, in a sentence.
     pub reason: String,
     /// The task as the model saw it: a field changed since is the user's newer word, not to be
@@ -452,10 +476,50 @@ pub struct Suggestion {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
+pub struct TaskDeletion {
+    pub delete: TaskId,
+    pub reason: String,
+    pub was: Was,
+}
+
+/// A task to add to the folder tidied, under the id it is to have.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct NewTask {
+    pub create: TaskId,
+    pub title: Title,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub description: Option<Description>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub due: Option<Due>,
+    /// Tasks to put before it, new ones among them.
+    pub after: Vec<TaskId>,
+    /// Tasks already there to put after it.
+    pub before: Vec<TaskId>,
+    pub reason: String,
+}
+
+/// Some of the folder's open tasks in a new order among themselves, in the places they hold.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Reorder {
+    pub order: Vec<TaskId>,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct Was {
     pub title: Title,
     pub description: Description,
     pub due: Option<Due>,
+}
+
+/// Tells a missing field (`None`) from an explicit `null` (`Some(None)`).
+pub(crate) fn nullable<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<Option<T>>, D::Error> {
+    Option::<T>::deserialize(d).map(Some)
 }
 
 /// Text submitted for AI to organize into tasks in a folder, which goes once done, as the tasks come;
@@ -629,6 +693,26 @@ mod tests {
             json!({ "every": 1, "unit": "year", "from": "due" }),
         ] {
             assert!(from_value::<Due>(json!({ "date": "2026-11-20", "repeat": bad })).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn suggestions_are_told_by_their_fields_and_read_as_kept_before() {
+        let id = "019a4b2c-0000-7000-8000-000000000001";
+        let was = json!({ "title": "官网", "description": "", "due": null });
+        // As tidyings kept them before there were other kinds.
+        let edit = json!({ "task": id, "title": "建好官网", "due": { "date": "2026-11-20" }, "after": [], "reason": "", "was": was });
+        assert!(matches!(from_value::<Suggestion>(edit.clone()).unwrap(), Suggestion::Edit(e) if e.due.is_some() && e.unlink.is_empty()));
+        assert_eq!(to_value(from_value::<Suggestion>(edit.clone()).unwrap()).unwrap(), edit);
+        let cleared = json!({ "task": id, "due": null, "after": [], "reason": "", "was": was });
+        assert!(matches!(from_value::<Suggestion>(cleared).unwrap(), Suggestion::Edit(e) if e.due == Some(None)));
+        let kinds = [
+            json!({ "delete": id, "reason": "", "was": was }),
+            json!({ "create": id, "title": "新的", "after": [], "before": [id], "reason": "" }),
+            json!({ "order": [id], "reason": "" }),
+        ];
+        for k in kinds {
+            assert_eq!(to_value(from_value::<Suggestion>(k.clone()).unwrap()).unwrap(), k);
         }
     }
 }

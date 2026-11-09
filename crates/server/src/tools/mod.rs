@@ -6,8 +6,8 @@ mod read;
 mod text;
 mod write;
 
-pub(crate) use write::number;
 pub use write::plan_into;
+pub(crate) use write::{Edit, edit_fields, new_due, number};
 
 use std::sync::Arc;
 

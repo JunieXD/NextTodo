@@ -121,3 +121,7 @@ Android 和桌面 App 的构建见 [Android](docs/android.md#构建和签名) �
 ## 许可证
 
 [MIT](LICENSE)
+
+## 友情链接
+
+<a href="https://linux.do"><img src="https://ld.xh.do/ld-badge.svg" width="300" alt="LINUX DO"></a>

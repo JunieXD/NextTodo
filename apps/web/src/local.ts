@@ -129,10 +129,11 @@ export async function forgetMode() {
 }
 
 /** Leaves local mode, keeping the local user's data on the device for coming back, and restarts the
- * app, at the sign-in page. */
-export async function leave(session: Session) {
+ * app, at the sign-in page: the app's server, running maybe even when the data would not open, stops
+ * only with the app. `session`, when one is open, ends first. */
+export async function leave(session?: Session) {
   await forgetMode();
-  await session.close(true);
+  await session?.close(true);
   await shell.restart();
 }
 

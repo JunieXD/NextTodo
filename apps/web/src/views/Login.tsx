@@ -171,8 +171,9 @@ function Brand() {
   );
 }
 
-/** Local mode did not start: why, and what can be done. */
-export function StartFailedPage({ error, onRetry, onServer }: { error: local.StartFailed; onRetry(): Promise<void>; onServer(): Promise<void> }) {
+/** Local mode would not open, its server or its data: why, and what can be done. `retry` when trying
+ * again may help. */
+export function StartFailedPage({ message, retry, onRetry }: { message: string; retry: boolean; onRetry(): Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState("");
   const { confirm } = useFeedback();
@@ -188,9 +189,9 @@ export function StartFailedPage({ error, onRetry, onServer }: { error: local.Sta
     <div className="login" data-tauri-drag-region="deep">
       <div className="login-card">
         <Brand />
-        <p className="form-error">{error.message}</p>
+        <p className="form-error">{message}</p>
         {failed && <p className="form-error">{failed}</p>}
-        {error.locked && (
+        {retry && (
           <button className="filled-btn" disabled={busy} onClick={act("启动本机模式", onRetry)}>
             重试
           </button>
@@ -199,7 +200,7 @@ export function StartFailedPage({ error, onRetry, onServer }: { error: local.Sta
           <button className="text-btn" disabled={busy} onClick={act("恢复备份", restore)}>
             恢复备份
           </button>
-          <button className="text-btn" disabled={busy} onClick={act("改用服务器", onServer)}>
+          <button className="text-btn" disabled={busy} onClick={act("改用服务器", () => local.leave())}>
             改用服务器
           </button>
         </div>

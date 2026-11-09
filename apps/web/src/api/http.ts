@@ -118,7 +118,8 @@ export async function api<T>(method: string, path: string, body?: unknown, timeo
     });
     text = await res.text();
   } catch {
-    throw new ApiError(0, OFFLINE, "无法连接服务器，请检查网络后重试");
+    // The app's own server is on this device: the network has nothing to do with it.
+    throw new ApiError(0, OFFLINE, server.local ? "无法连接 App 内置的服务端，请重试" : "无法连接服务器，请检查网络后重试");
   }
   // 202 and 204 come without a body.
   if (res.ok) return (text ? JSON.parse(text) : undefined) as T;

@@ -47,3 +47,9 @@ features:
 
 <img class="light-only" src="../../docs/images/phones-light.webp" alt="手机上的“接下来”、文件夹和关系图">
 <img class="dark-only" src="../../docs/images/phones-dark.webp" alt="手机上的“接下来”、文件夹和关系图">
+
+## 交流群
+
+QQ 群 1135479637，[点击加入](https://qm.qq.com/q/yz6W1Q9NFS)或用 QQ 扫码：
+
+<img src="../../docs/images/qq-group.png" width="200" alt="QQ 群二维码">

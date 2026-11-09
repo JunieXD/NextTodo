@@ -16,6 +16,7 @@ export default defineConfig({
     nav: [
       { text: "快速上手", link: "/guide/" },
       { text: "下载", link: releases },
+      { text: "QQ 群", link: "https://qm.qq.com/q/yz6W1Q9NFS" },
     ],
     sidebar: [
       {

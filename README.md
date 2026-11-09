@@ -3,7 +3,7 @@
   <h1>NextTodo</h1>
   <p><strong>理清先后，专注当下</strong></p>
   <p>以先后关系为核心的待办应用，可在本机使用，也可自行部署、多端同步</p>
-  <p><a href="https://juniexd.github.io/NextTodo/">官网</a> · <a href="https://juniexd.github.io/NextTodo/guide/">快速上手</a> · <a href="https://github.com/JunieXD/NextTodo/releases/latest">下载</a></p>
+  <p><a href="https://juniexd.github.io/NextTodo/">官网</a> · <a href="https://juniexd.github.io/NextTodo/guide/">快速上手</a> · <a href="https://github.com/JunieXD/NextTodo/releases/latest">下载</a> · <a href="https://qm.qq.com/q/yz6W1Q9NFS">QQ 群</a></p>
   <p>
     <a href="https://github.com/JunieXD/NextTodo/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/JunieXD/NextTodo?label=%E7%89%88%E6%9C%AC&color=2E8E6C"></a>
     <a href="LICENSE"><img alt="MIT 许可证" src="https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-2E8E6C"></a>
@@ -125,6 +125,12 @@ Android 和桌面 App 的构建见 [Android](docs/android.md#构建和签名) �
 | [Android](docs/android.md) | Android App 和小组件 |
 | [桌面 App](docs/desktop.md) | macOS 和 Windows App |
 | [部署](docs/deploy.md) | 自己部署、升级、备份、构建发布和官网 |
+
+## 交流
+
+QQ 群 1135479637，[点击加入](https://qm.qq.com/q/yz6W1Q9NFS)或用 QQ 扫码：
+
+<img src="docs/images/qq-group.png" width="200" alt="QQ 群二维码">
 
 ## 许可证
 

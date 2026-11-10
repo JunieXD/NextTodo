@@ -11,11 +11,16 @@ import type { Started } from "./local";
 import type { Store } from "./sync/store";
 import { back } from "./ui/back";
 
+export type WidgetTextSize = "small" | "standard" | "large";
+
 /** The app's own plugin, in `apps/android`. */
 interface NextTodoPlugin {
   /** Hands the widget its list, as JSON in the shape of the `next` tool's `tasks`, as of the change
    * `seq`; without one, as when signing out, it replaces whatever the widget has. */
   updateWidget(o: { tasks: string; seq?: number }): Promise<void>;
+  /** How large the widget's text is, which it keeps. */
+  widgetTextSize(): Promise<{ size: WidgetTextSize }>;
+  setWidgetTextSize(o: { size: WidgetTextSize }): Promise<void>;
   /** The system settings page of this app, where autostart and battery use are allowed. */
   openAppSettings(): Promise<void>;
   /** The APK's version, and its native version, which builds of the web app may need. */

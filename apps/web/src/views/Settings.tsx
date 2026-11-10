@@ -12,6 +12,7 @@ import type { User } from "../api/types/User";
 import { ago } from "../domain/dates";
 import { type CliStatus, cli } from "../desktop";
 import { checkDisplayName, checkTokenName } from "../domain/text";
+import { NextTodo, type WidgetTextSize } from "../android";
 import * as local from "../local";
 import { newer, useServerVersions } from "../server-update";
 import { useSession } from "../session";
@@ -314,6 +315,42 @@ function Appearance() {
       <h2 className="group-title">主题</h2>
       <div style={{ margin: "0 16px" }}>
         <Seg<Theme> label="主题" items={THEMES} value={theme} onChange={setTheme} />
+      </div>
+      {app === "android" && <WidgetText />}
+    </>
+  );
+}
+
+/** How large the widget's text is: kept by the widget, which reads it. */
+function WidgetText() {
+  const { snack } = useFeedback();
+  const [size, setSize] = useState<WidgetTextSize | null>(null);
+  useEffect(() => {
+    NextTodo.widgetTextSize().then(
+      (r) => setSize(r.size),
+      (e) => snack(forUser("读取小组件的文字大小", e)),
+    );
+  }, [snack]);
+  if (!size) return null;
+  const change = (to: WidgetTextSize) =>
+    NextTodo.setWidgetTextSize({ size: to }).then(
+      () => setSize(to),
+      (e) => snack(forUser("设置小组件的文字大小", e)),
+    );
+  return (
+    <>
+      <h2 className="group-title">小组件文字</h2>
+      <div style={{ margin: "0 16px" }}>
+        <Seg<WidgetTextSize>
+          label="小组件文字"
+          items={[
+            ["small", "小"],
+            ["standard", "标准"],
+            ["large", "大"],
+          ]}
+          value={size}
+          onChange={change}
+        />
       </div>
     </>
   );

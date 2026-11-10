@@ -14,11 +14,13 @@ import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
+import androidx.glance.LocalSize
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
@@ -71,6 +73,9 @@ private fun open(context: Context, url: String) =
 
 /** The home-screen widget: what can be done now. See docs/android.md#小组件. */
 class NextWidget : GlanceAppWidget() {
+    /** Laid out for the size it is, to fit more tasks in a low one. */
+    override val sizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val changes = Widget.changes(context)
         // Glance keeps a session going for a while after an update or a tap, and updates during it
@@ -82,14 +87,19 @@ class NextWidget : GlanceAppWidget() {
     }
 }
 
+/** Lower than this, a task takes a line, its folder left out: on most home screens, under three rows,
+ * which the 4×2 the widget starts as is. */
+private val COMPACT_BELOW = 260.dp
+
 @Composable
 private fun Content(context: Context, shown: Shown, now: LocalDateTime) {
+    val compact = LocalSize.current.height < COMPACT_BELOW
     Column(GlanceModifier.fillMaxSize().background(Colors.background).cornerRadius(20.dp).padding(horizontal = 14.dp, vertical = 10.dp)) {
         Row(GlanceModifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "接下来",
                 GlanceModifier.defaultWeight().clickable(open(context, "nexttodo://home")),
-                style = TextStyle(color = Colors.text, fontSize = 17.sp, fontWeight = FontWeight.Bold),
+                style = TextStyle(color = Colors.text, fontSize = 17.sp * shown.scale, fontWeight = FontWeight.Bold),
             )
             Icon(R.drawable.ic_widget_refresh, "刷新", actionRunCallback<RefreshAction>())
             Spacer(GlanceModifier.width(4.dp))
@@ -99,7 +109,7 @@ private fun Content(context: Context, shown: Shown, now: LocalDateTime) {
             !shown.signedIn -> Note("打开 NextTodo 登录", GlanceModifier.clickable(open(context, "nexttodo://home")))
             shown.items.isEmpty() -> Note("暂无可做的事项")
             else -> LazyColumn {
-                itemsIndexed(shown.items) { i, item -> TaskItem(context, item, i == 0, item.id in shown.ticked, now) }
+                itemsIndexed(shown.items) { i, item -> TaskItem(context, item, i == 0, item.id in shown.ticked, now, compact, shown.scale) }
             }
         }
     }
@@ -119,22 +129,33 @@ private fun Divider() {
  * tap on a clickable with another inside as a tap on the inner one, and a tap on none as a tap on
  * the first in the item. */
 @Composable
-private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boolean, now: LocalDateTime) {
+private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boolean, now: LocalDateTime, compact: Boolean, scale: Float) {
     Box(GlanceModifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
         Column(GlanceModifier.fillMaxWidth().clickable(open(context, "nexttodo://task/${item.id}"))) {
             if (!first) Divider()
-            Column(GlanceModifier.fillMaxWidth().padding(start = CIRCLE, top = 8.dp, bottom = 8.dp)) {
-                val title = if (ticked) TextStyle(color = Colors.done, fontSize = 15.sp, textDecoration = TextDecoration.LineThrough) else TextStyle(color = Colors.text, fontSize = 15.sp)
-                Text(item.title, style = title, maxLines = 1)
-                val doneToday = "今天已完成".takeIf { item.lastDone == now.toLocalDate() }
-                val meta = listOfNotNull(item.folder.takeIf { it.isNotEmpty() }, doneToday, item.due?.label(now)).joinToString(" · ")
-                if (meta.isNotEmpty()) {
-                    val color = when {
-                        item.due?.overdue(now) == true -> Colors.overdue
-                        item.due?.today(now) == true -> Colors.today
-                        else -> Colors.secondary
-                    }
-                    Text(meta, style = TextStyle(color = color, fontSize = 12.sp), maxLines = 1)
+            val title = TextStyle(
+                color = if (ticked) Colors.done else Colors.text,
+                fontSize = 15.sp * scale,
+                textDecoration = if (ticked) TextDecoration.LineThrough else null,
+            )
+            val doneToday = "今天已完成".takeIf { item.lastDone == now.toLocalDate() }
+            // In a line, the folder gives way to the title.
+            val meta = listOfNotNull(item.folder.takeIf { it.isNotEmpty() && !compact }, doneToday, item.due?.label(now)).joinToString(" · ")
+            val color = when {
+                item.due?.overdue(now) == true -> Colors.overdue
+                item.due?.today(now) == true -> Colors.today
+                else -> Colors.secondary
+            }
+            val metaStyle = TextStyle(color = color, fontSize = 12.sp * scale)
+            if (compact) {
+                Row(GlanceModifier.fillMaxWidth().padding(start = CIRCLE, top = 7.dp * scale, bottom = 7.dp * scale), verticalAlignment = Alignment.CenterVertically) {
+                    Text(item.title, GlanceModifier.defaultWeight(), style = title, maxLines = 1)
+                    if (meta.isNotEmpty()) Text(meta, GlanceModifier.padding(start = 8.dp), style = metaStyle, maxLines = 1)
+                }
+            } else {
+                Column(GlanceModifier.fillMaxWidth().padding(start = CIRCLE, top = 8.dp * scale, bottom = 8.dp * scale)) {
+                    Text(item.title, style = title, maxLines = 1)
+                    if (meta.isNotEmpty()) Text(meta, style = metaStyle, maxLines = 1)
                 }
             }
         }

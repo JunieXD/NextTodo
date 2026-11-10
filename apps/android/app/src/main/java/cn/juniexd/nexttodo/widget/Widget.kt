@@ -38,12 +38,13 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** A task as the widget shows it. Its number is the id of its reminder. */
-/** `lastDone`: the last day a repeating task was done. */
+/** A task as the widget shows it. Its number is the id of its reminder; `lastDone` is the last day a
+ * repeating one was done. */
 data class Item(val id: String, val number: Int, val title: String, val folder: String, val due: Due?, val lastDone: LocalDate?)
 
-/** What the widget shows: the list with the tasks just ticked off in it, or that the app is signed out. */
-data class Shown(val signedIn: Boolean, val items: List<Item>, val ticked: Set<String>)
+/** What the widget shows: the list with the tasks just ticked off in it, or that the app is signed out;
+ * its text `scale`d as the user chose. */
+data class Shown(val signedIn: Boolean, val items: List<Item>, val ticked: Set<String>, val scale: Float)
 
 /** The widget's list, kept in its own preferences: written by the app, or fetched from the server. */
 object Widget {
@@ -60,6 +61,17 @@ object Widget {
      * hidden from it until a list as of that change comes. Kept apart from the list, which stays
      * what it was as of its change. */
     private const val DONE = "done"
+
+    /** How large the text is, chosen in the app's settings (docs/android.md#小组件), and the scale of each. */
+    private const val TEXT_SIZE = "text_size"
+    private val SCALES = mapOf("small" to 0.88f, "standard" to 1f, "large" to 1.15f)
+
+    fun textSize(context: Context): String = prefs(context).getString(TEXT_SIZE, "standard")!!
+
+    suspend fun setTextSize(context: Context, size: String) = update(context) {
+        it.edit().putString(TEXT_SIZE, size).apply()
+        true
+    }
 
     /** Changes go one at a time, each checking, the session too, on what the one before left. */
     private val writing = Mutex()
@@ -118,7 +130,7 @@ object Widget {
         for ((i, item) in ticked.values.map { it.row }.sortedBy { it.index }) {
             if (items.none { it.id == item.id }) items.add(minOf(i, items.size), item)
         }
-        return Shown(token != null, items, ticked.keys)
+        return Shown(token != null, items, ticked.keys, SCALES.getValue(textSize(context)))
     }
 
     /** Hides a task done on the server in session `token` by the change `seq` while the list kept

@@ -52,6 +52,21 @@ class NextTodoPlugin : Plugin() {
         }
     }
 
+    /** The widget's text size: `small`, `standard` or `large`. */
+    @PluginMethod
+    fun widgetTextSize(call: PluginCall) {
+        call.resolve(JSObject().put("size", Widget.textSize(context)))
+    }
+
+    @PluginMethod
+    fun setWidgetTextSize(call: PluginCall) {
+        val size = call.getString("size")!!
+        work(call, "设置小组件的文字大小") {
+            Widget.setTextSize(context, size)
+            JSObject()
+        }
+    }
+
     @PluginMethod
     fun openAppSettings(call: PluginCall) {
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))

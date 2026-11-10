@@ -22,7 +22,7 @@ docker compose exec nexttodo /nexttodo-server create-admin <用户名>
 
 ## 反向代理
 
-反向代理负责 HTTPS，要开启 WebSocket，并把原来的 `Host` 传给服务端（或设 `X-Forwarded-Host`），网页的同步连接靠它确认是同源页面。
+反向代理负责 HTTPS，要开启 WebSocket，并把原来的 `Host` 传给服务端（或设 `X-Forwarded-Host`），网页的同步连接靠它确认是同源页面。整个域名都要转给 NextTodo：网页的资源和接口都从根路径开始，不能放在某个路径下。面板、NAS 和反向代理在容器里时的做法和排错，见官网的[部署服务器](https://juniexd.github.io/NextTodo/guide/server#proxy)。
 
 Caddy 默认就满足这些要求，还会自动申请证书：
 

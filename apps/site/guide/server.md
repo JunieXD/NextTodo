@@ -6,14 +6,17 @@
 
 ## 需要准备
 
-- **一台 Linux 服务器**：云服务商的云服务器（VPS）即可，amd64 或 arm64 都行。NextTodo 占用很少，配置要求不高。
-- **一个域名**：在域名服务商那里添加一条 A 记录，把一个域名（比如 `todo.example.com`）指向服务器的公网 IP。在中国大陆的服务器上用域名提供网站，需要先完成备案。
-- **放行端口**：在云服务商的安全组或防火墙里放行 80 和 443 端口，申请 HTTPS 证书和访问网页都要用到。
-- **Docker**：按 [Docker 官方文档](https://docs.docker.com/engine/install/)在服务器上安装 Docker Engine，它自带 Docker Compose。
+- **一台 Linux 服务器**：云服务器（VPS）、家里的 NAS 或小主机都可以，amd64 或 arm64。NextTodo 占用很少，配置要求不高。
+- **Docker**：按 [Docker 官方文档](https://docs.docker.com/engine/install/)安装 Docker Engine，它自带 Docker Compose。NAS 的系统里一般叫 Container Manager 或“容器”。
+- **一个域名和它的 HTTPS 证书**：Android App 和网页版只能通过 HTTPS 连接服务器，证书要是手机和浏览器默认信任的，比如 Let's Encrypt 签发的；自己签发的证书手机不认。所以单用 IP 地址、或者没有受信任证书的局域网地址都连不上。
+  - 服务器在公网上：在域名服务商那里添加一条 A 记录，把域名（比如 `todo.example.com`）指向服务器的公网 IP。在中国大陆的服务器上用域名提供网站，需要先完成备案。
+  - 只在家里的局域网里用：同样需要一个域名和受信任的证书，比如用 DNS 验证的方式申请证书，再在路由器或局域网 DNS 里把域名指向这台机器。
+- **一个反向代理**：负责 HTTPS，把请求转给 NextTodo。Caddy、Nginx、OpenResty、1Panel 或宝塔面板里的网站、NAS 自带的反向代理都可以，服务器上已经有的就直接用它，要求见[第 2 步](#proxy)。
+- **放行端口**：在防火墙（云服务器还有安全组）里放行反向代理用的端口，通常是 443；用 HTTP 验证的方式自动申请证书（Caddy 默认就是）还要放行 80。
 
 下面的命令都在服务器的终端里运行（用 SSH 登录服务器）。
 
-## 1. 启动 NextTodo
+## 1. 启动 NextTodo {#start}
 
 ```sh
 mkdir nexttodo && cd nexttodo
@@ -22,26 +25,76 @@ mkdir data && sudo chown 65534:65534 data
 docker compose up -d
 ```
 
-这几行依次：建一个目录，下载配置文件，建好存放数据的 `data` 目录，启动 NextTodo。数据库和每日快照都在 `data` 里。
+这几行依次：建一个目录，下载配置文件，建好存放数据的 `data` 目录（NextTodo 在容器里以 65534 号用户运行，目录要归它），启动 NextTodo。数据库和每日快照都在 `data` 里。
 
-NextTodo 现在只在服务器内部的 8080 端口上运行，外面还访问不到，下一步给它配上 HTTPS。
+检查它是否在运行：
 
-## 2. 配置 HTTPS
+```sh
+curl http://127.0.0.1:8080/api/v1/me
+```
 
-用 Caddy 最省事，它会自动申请和续期 HTTPS 证书。
+返回 `{"code":"unauthenticated","message":"请先登录"}` 就说明 NextTodo 已经启动，只是还没登录。
 
-1. 按 [Caddy 官方文档](https://caddyserver.com/docs/install)在服务器上安装 Caddy。
-2. 把 `/etc/caddy/Caddyfile` 的内容换成下面三行，域名换成自己的：
+NextTodo 默认只在这台机器内部的 `127.0.0.1:8080` 上运行，外面访问不到，由同一台机器上的反向代理转给它：
 
-   ```
-   todo.example.com {
-   	reverse_proxy 127.0.0.1:8080
-   }
-   ```
+- **换端口**：8080 被占用时，在 `nexttodo` 目录里建一个 `.env` 文件，写上 `NEXTTODO_PORT=8790`，再运行 `docker compose up -d`。下面的 8080 都换成新端口。
+- **反向代理连不到 `127.0.0.1`**：反向代理在另一台机器上，或者它自己也跑在 Docker 容器里（且不是 host 网络）时，它那边的 `127.0.0.1` 指的不是这台机器。这时把 `compose.yaml` 里 `ports` 一行开头的 `127.0.0.1` 换成反向代理能访问到的地址（比如这台机器的局域网 IP），再运行 `docker compose up -d`。这个端口是不加密的 HTTP，不要对公网开放。
 
-3. 运行 `sudo systemctl reload caddy` 让配置生效。
+## 2. 配置反向代理和 HTTPS {#proxy}
 
-稍等片刻，用浏览器打开 `https://todo.example.com`，能看到 NextTodo 的登录页就成功了。已经在用 Nginx 的，配置见[部署文档](https://github.com/JunieXD/NextTodo/blob/main/docs/deploy.md#反向代理)。
+不管用哪个反向代理，NextTodo 只要求这几点：
+
+| 要求 | 说明 |
+|---|---|
+| 用 HTTPS 提供，证书受信任 | 浏览器打开 `https://你的域名` 时，地址栏没有证书警告 |
+| 整个域名转发到 `http://127.0.0.1:8080` | 要单独占一个域名或子域名，不能放在某个路径下（如 `example.com/todo`） |
+| 支持 WebSocket | 各设备靠 `/api/v1/sync` 上的 WebSocket 实时同步。NextTodo 每 30 秒发一次心跳，反向代理的空闲超时不能短于 30 秒（Nginx 默认的 60 秒就够） |
+| 把原来的 `Host` 传过去 | 或者设置 `X-Forwarded-Host`。网页版的同步连接靠它确认是同一个网站 |
+
+下面是常见的几种写法，域名都换成自己的。
+
+### Caddy
+
+Caddy 会自动申请和续期证书，上面的要求默认都满足。按 [Caddy 官方文档](https://caddyserver.com/docs/install)安装后，在 `/etc/caddy/Caddyfile` 里加上：
+
+```
+todo.example.com {
+	reverse_proxy 127.0.0.1:8080
+}
+```
+
+运行 `sudo systemctl reload caddy` 让配置生效。
+
+### Nginx 或 OpenResty
+
+OpenResty 基于 Nginx，写法相同。证书用 certbot 等工具申请，或者用已有的：
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name todo.example.com;
+    ssl_certificate     /path/to/fullchain.pem;
+    ssl_certificate_key /path/to/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
+
+`proxy_set_header Host` 传原来的 `Host`，后三行开启 WebSocket。改完运行 `sudo nginx -s reload`（OpenResty 是 `sudo openresty -s reload`）。
+
+### 面板和 NAS 自带的反向代理
+
+1Panel、宝塔、群晖这类面板通常有“反向代理”或“网站”功能。新建一个，按上面的表格填写：目标（后端）地址填 `http://127.0.0.1:8080`，打开 WebSocket 支持，申请或上传证书。有的面板没有 WebSocket 开关，要在自定义配置里加上和上面 Nginx 一样的 `Upgrade`、`Connection` 两行。具体在哪里设置，见面板自己的文档。
+
+### 检查
+
+用浏览器打开 `https://todo.example.com`，能看到 NextTodo 的登录页、地址栏没有证书警告，就成功了。WebSocket 是否正常，要在下一步登录以后才看得出来，见[遇到问题](#troubleshooting)。
 
 ## 3. 创建账号并登录
 
@@ -68,13 +121,13 @@ docker compose exec nexttodo /nexttodo-server create-admin admin
    ```
 
 2. 运行 `docker compose up -d` 让它生效。
-3. 在 App 的 AI 整理设置里，保存位置选“同步到服务器”。
+3. 在 App 的“设置 → AI 整理”里，保存位置选“同步到服务器”。
 
 服务器用这个密钥加密保存大家的 API 密钥。`.env` 文件要保管好；换掉或丢了它，已保存的 API 密钥就解不开，要重新填写。
 
 ## 升级
 
-出了新版本时，管理员打开 NextTodo 会看到提示条“服务器可升级到 0.1.N”，设置的“关于”里也写着。想第一时间知道，可以在 [GitHub 仓库](https://github.com/JunieXD/NextTodo)右上角点 **Watch** → **Custom**，勾选 **Releases** 后点 **Apply**，发布新版本时 GitHub 会发邮件通知。
+出了新版本时，管理员打开 NextTodo 会看到提示条“服务器可升级到 0.1.N”，“设置 → 关于”里也写着。想第一时间知道，可以在 [GitHub 仓库](https://github.com/JunieXD/NextTodo)右上角点 **Watch** → **Custom**，勾选 **Releases** 后点 **Apply**，发布新版本时 GitHub 会发邮件通知。
 
 在服务器上的 `nexttodo` 目录里运行：
 
@@ -90,7 +143,14 @@ App 不用手动升级：服务器升级后，各设备的 App 会自动获取�
 
 服务器每天在 `data/snapshots/` 里保存一份数据库快照，保留最近 7 份。把这些快照定期复制到别处，就是备份。从快照恢复的步骤见[部署文档](https://github.com/JunieXD/NextTodo/blob/main/docs/deploy.md#备份和恢复)。
 
-## 遇到问题
+## 遇到问题 {#troubleshooting}
 
-- 查看 NextTodo 的日志：在 `nexttodo` 目录里运行 `docker compose logs --tail 100`。
-- 网页打不开：检查域名是否已经指向服务器，80 和 443 端口是否放行，Caddy 是否在运行（`systemctl status caddy`）。
+先看 NextTodo 的日志：在 `nexttodo` 目录里运行 `docker compose logs --tail 100`。
+
+| 现象 | 多半是 | 检查 |
+|---|---|---|
+| 网页打不开 | 域名、端口或反向代理 | 域名是否指向这台服务器，端口是否放行，反向代理是否在运行，它的错误日志 |
+| 502 Bad Gateway | 反向代理连不到 NextTodo | NextTodo 是否在运行（[第 1 步](#start)的 `curl`），反向代理转发的地址和端口对不对；反向代理在容器里时见第 1 步最后一条 |
+| 浏览器提示证书不安全，App 连接失败 | 证书不受信任或过期 | 换成受信任的证书，比如 Let's Encrypt |
+| 能登录，但一直显示“离线”，别的设备的改动要刷新才出现 | WebSocket 没打通 | 反向代理是否开了 WebSocket；网页版还要检查是否传了原来的 `Host` |
+| App 里填服务器地址后连接失败，浏览器能打开 | 地址写错 | 只填域名（如 `todo.example.com`），不写路径；不写协议时按 `https://` |

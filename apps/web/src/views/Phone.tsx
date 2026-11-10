@@ -16,21 +16,24 @@ import { BackgroundTip } from "./Background";
 import { Detail } from "./Detail";
 import { FolderMenu } from "./FolderMenu";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, SearchResults } from "./lists";
-import { folderUrl, useFolderView, useSelection } from "./nav";
+import { folderUrl, type SettingsSection, settingsUrl, useFolderView, useSelection } from "./nav";
+import { SettingsHome, SettingsPage, settingsTitle, useSectionAt } from "./Settings";
 import { ConnectionNote } from "./status";
 
-export function Phone({ onSettings }: { onSettings(): void }) {
+export function Phone({ onSignOut }: { onSignOut(): void }) {
   const [location, navigate] = useLocation();
   const { board } = useView();
   const { user } = useSession();
   const { selected, close } = useSelection();
   const now = useNow();
   const folder = location.match(/^\/folders\/([^/]+)$/)?.[1] ?? null;
-  const tab = location.startsWith("/folders") ? "folders" : "next";
+  const section = useSectionAt(location);
+  const tab = location.startsWith("/folders") ? "folders" : location.startsWith("/settings") ? "settings" : "next";
 
-  // Going deeper in a tab (into a folder, to what is done) slides the new page in from the right;
-  // going back, the other way.
-  const depth = tab === "next" ? Number(location === "/done") : folder && board.folder(folder) ? board.depth(folder) : 0;
+  // Going deeper in a tab (into a folder, to what is done, to a section of the settings) slides the
+  // new page in from the right; going back, the other way.
+  const depth =
+    tab === "next" ? Number(location === "/done") : tab === "settings" ? Number(!!section) : folder && board.folder(folder) ? board.depth(folder) : 0;
   const [page, setPage] = useState({ tab, depth, anim: "" });
   if (page.tab !== tab || page.depth !== depth) {
     const anim = tab === page.tab ? (depth > page.depth ? " anim-push" : " anim-pop") : "";
@@ -40,7 +43,9 @@ export function Phone({ onSettings }: { onSettings(): void }) {
 
   let screen: ReactNode;
   if (location === "/done") screen = <DoneScreen key="done" anim={anim} now={now} />;
-  else if (tab === "next") screen = <NextScreen key="next" anim={anim} now={now} />;
+  else if (tab === "settings") {
+    screen = section === undefined ? <Redirect to={settingsUrl()} replace /> : <SettingsScreen key={section ?? "home"} section={section} anim={anim} onSignOut={onSignOut} />;
+  } else if (tab === "next") screen = <NextScreen key="next" anim={anim} now={now} />;
   else if (folder && !board.folder(folder)) screen = <Redirect to="/folders" replace />;
   else screen = <FolderScreen key={folder ?? "root"} anim={anim} folder={folder} now={now} />;
 
@@ -58,7 +63,7 @@ export function Phone({ onSettings }: { onSettings(): void }) {
       <nav className="tabbar">
         {tabButton("next", "接下来", CircleCheck, "/")}
         {tabButton("folders", "文件夹", FolderIcon, "/folders")}
-        <button className="tab" onClick={onSettings}>
+        <button className={`tab${tab === "settings" ? " on" : ""}`} onClick={() => navigate(settingsUrl())}>
           <span className="tab-ic">
             <span className="avatar">{[...user.display_name][0]}</span>
           </span>
@@ -126,6 +131,19 @@ function NextScreen({ anim, now }: { anim: string; now: Date }) {
       <ConnectionNote connection={connection} />
       {app === "android" && <BackgroundTip />}
       <NextBody now={now} />
+    </Screen>
+  );
+}
+
+/** The settings' home page, or a section of them. */
+function SettingsScreen({ section, anim, onSignOut }: { section: SettingsSection | null; anim: string; onSignOut(): void }) {
+  const title = section ? settingsTitle(section) : "设置";
+  return (
+    <Screen title={title} nav={section && <Back to={settingsUrl()} label="设置" />} anim={anim}>
+      <div className="hero">
+        <h1 className="large-title">{title}</h1>
+      </div>
+      {section ? <SettingsPage section={section} onSignOut={onSignOut} /> : <SettingsHome />}
     </Screen>
   );
 }

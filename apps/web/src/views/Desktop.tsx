@@ -3,7 +3,7 @@
 
 import { ChevronRight, CircleCheck, Folder as FolderIcon, FolderRoot, History, PanelLeft, Search } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
-import { Redirect, useLocation, useSearchParams } from "wouter";
+import { Link, Redirect, useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
 import { formatToday } from "../domain/dates";
 import { useConnection, useSession, useView } from "../session";
@@ -14,9 +14,10 @@ import { Icon } from "../ui/icons";
 import { Detail } from "./Detail";
 import { FolderContextMenu, FolderMenu } from "./FolderMenu";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, SearchResults } from "./lists";
-import { folderUrl, useFolderView, useSelection } from "./nav";
+import { folderUrl, settingsUrl, useFolderView, useSelection } from "./nav";
+import { SettingsHome, SettingsPage, settingsTitle, useSectionAt } from "./Settings";
 
-export function Desktop({ onSettings }: { onSettings(): void }) {
+export function Desktop({ onSignOut }: { onSignOut(): void }) {
   const [location] = useLocation();
   const { board } = useView();
   const [sideOpen, setSideOpen] = useState(true);
@@ -34,7 +35,8 @@ export function Desktop({ onSettings }: { onSettings(): void }) {
   if (params.has("add") && query) setQuery("");
   const [view] = useFolderView();
   const folder = location.match(/^\/folders\/([^/]+)$/)?.[1] ?? null;
-  const at = location === "/done" ? "done" : location.startsWith("/folders") ? (folder ?? "root") : "next";
+  const section = useSectionAt(location);
+  const at = location === "/done" ? "done" : location.startsWith("/folders") ? (folder ?? "root") : location.startsWith("/settings") ? "settings" : "next";
 
   let main: ReactNode;
   if (query.trim()) {
@@ -49,6 +51,15 @@ export function Desktop({ onSettings }: { onSettings(): void }) {
         <NextBody now={now} />
       </Page>
     );
+  } else if (at === "settings") {
+    main =
+      section === undefined ? (
+        <Redirect to={settingsUrl()} replace />
+      ) : (
+        <Page title={section ? settingsTitle(section) : "设置"} crumbs={section && <Link to={settingsUrl()}>设置</Link>}>
+          {section ? <SettingsPage section={section} onSignOut={onSignOut} /> : <SettingsHome />}
+        </Page>
+      );
   } else if (at === "done") {
     main = (
       <Page title="已完成">
@@ -86,7 +97,7 @@ export function Desktop({ onSettings }: { onSettings(): void }) {
       className={`desk-cols${sideOpen ? "" : " side-closed"}${open ? "" : " pane-closed"}`}
       onTransitionEnd={(e) => e.target === e.currentTarget && !open && setShown(null)}
     >
-      <Sidebar at={query.trim() ? null : at} query={query} setQuery={setQuery} onSettings={onSettings} />
+      <Sidebar at={query.trim() ? null : at} query={query} setQuery={setQuery} />
       <main className="main">
         <div className="main-tools" data-tauri-drag-region="deep">
           <Tip label={label}>
@@ -96,7 +107,7 @@ export function Desktop({ onSettings }: { onSettings(): void }) {
           </Tip>
         </div>
         {/* Each place a page of its own, which fades in. */}
-        <Fragment key={query.trim() ? "search" : `${at} ${view}`}>{main}</Fragment>
+        <Fragment key={query.trim() ? "search" : `${at} ${section} ${view}`}>{main}</Fragment>
       </main>
       <aside className="detail-pane" inert={!open}>
         <div className="pane-inner">{shown && <Detail key={shown} id={shown} now={now} closing={!open} onClose={close} />}</div>
@@ -105,7 +116,7 @@ export function Desktop({ onSettings }: { onSettings(): void }) {
   );
 }
 
-function Page({ title, crumbs = "", actions, add, scroll = true, children }: { title: string; crumbs?: string; actions?: ReactNode; add?: ReactNode; scroll?: boolean; children: ReactNode }) {
+function Page({ title, crumbs, actions, add, scroll = true, children }: { title: string; crumbs?: ReactNode; actions?: ReactNode; add?: ReactNode; scroll?: boolean; children: ReactNode }) {
   return (
     <>
       <header className="main-head" data-tauri-drag-region="deep">
@@ -121,7 +132,7 @@ function Page({ title, crumbs = "", actions, add, scroll = true, children }: { t
   );
 }
 
-function Sidebar({ at, query, setQuery, onSettings }: { at: FolderId | "next" | "done" | "root" | null; query: string; setQuery(q: string): void; onSettings(): void }) {
+function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "root" | "settings" | null; query: string; setQuery(q: string): void }) {
   const { board, pending } = useView();
   const { user } = useSession();
   const connection = useConnection();
@@ -194,7 +205,7 @@ function Sidebar({ at, query, setQuery, onSettings }: { at: FolderId | "next" | 
           {tree(null, 0)}
         </div>
         <div className="sb-foot">
-          <button className="sb-user" onClick={onSettings}>
+          <button className={`sb-user${at === "settings" ? " on" : ""}`} onClick={() => go(settingsUrl())}>
             <span className="avatar">{[...user.display_name][0]}</span>
             <span className="folder-main">
               <span>{user.display_name}</span>

@@ -29,7 +29,7 @@ import { useTaskActions } from "./actions";
 import { useRowDrag } from "./drag";
 import { useNewFolder } from "./FolderMenu";
 import { useMarks } from "./marks";
-import { OpenSettings, folderUrl, useFolderView, useSelection } from "./nav";
+import { folderUrl, settingsUrl, useFolderView, useSelection } from "./nav";
 import { JobRows } from "./jobs";
 import { FolderPicker } from "./pickers";
 import { FolderRow, RailList, TaskRow } from "./rows";
@@ -252,7 +252,6 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   const commit = useCommit();
   const { snack } = useFeedback();
   const { user } = useSession();
-  const openSettings = useContext(OpenSettings);
   const place = folder === undefined ? "next" : (folder ?? "root");
   const [title, setTitle] = useState(() => draft(user.id, place));
   const edit = (text: string) => {
@@ -302,7 +301,7 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   const switchMode = async () => {
     if (!ai && !(await aiReady(user.id))) {
       snack("先选好 AI 整理用的模型");
-      return openSettings("ai");
+      return navigate(settingsUrl("ai"));
     }
     localStorage.setItem(AI_MODE, ai ? "off" : "on");
     setAi(!ai);

@@ -389,6 +389,7 @@ svg { display: block; flex: none; }
 .sb-foot { padding: 8px; border-top: 1px solid var(--outline-variant); }
 .sb-user { width: 100%; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 12px; }
 .sb-user:hover { background: var(--press); }
+.sb-user.on { background: var(--secondary-container); }
 .sb-user .avatar { width: 32px; height: 32px; margin: 0; font-size: 14px; }
 .sb-user .folder-main > span:first-child { font-size: 14px; font-weight: 600; }
 .sb-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 16px 12px 20px; }
@@ -407,6 +408,8 @@ svg { display: block; flex: none; }
 .main-tools { display: flex; justify-content: space-between; padding: 10px 14px 0; flex: none; }
 .main-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 2px 28px 14px; flex: none; }
 .crumbs { font-size: 13px; color: var(--on-surface-variant); margin-bottom: 2px; min-height: 18px; }
+.crumbs a { color: inherit; }
+.crumbs a:hover { color: var(--primary); }
 .main-title { margin: 0; font-size: 28px; font-weight: 700; line-height: 1.2; }
 .main-head .seg { width: 200px; }
 .head-actions { display: flex; align-items: center; gap: 8px; }
@@ -491,6 +494,10 @@ svg { display: block; flex: none; }
 .help { color: var(--primary); }
 /* A link to the guide on a line of its own, under what it explains. */
 .help-line { margin: 12px 16px 0; text-align: center; font-size: 14px; }
+.settings-page { padding-bottom: 24px; }
+.settings-page > :first-child { margin-top: 12px; }
+.settings-page > .group + .group { margin-top: 22px; }
+.desk .settings-page { max-width: 600px; }
 .secret { margin: 0 16px 12px; padding: 6px 6px 6px 14px; border-radius: 12px; background: var(--surface-container); font: 13px/1.5 ui-monospace, Menlo, monospace; display: flex; align-items: center; gap: 8px; }
 .secret span { flex: 1; padding: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
 .field .secret { margin: 0; font-weight: 400; color: var(--on-surface); }

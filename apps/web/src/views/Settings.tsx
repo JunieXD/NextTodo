@@ -1,7 +1,8 @@
-// Account, devices and tokens, invites, appearance, versions.
+// The settings: a home page that lists the sections, each a page of its own (docs/ui.md#设置).
 
-import { ChevronRight, Copy, HardDrive, KeyRound, Mail, Monitor, Plus, Sparkles, SquareTerminal } from "lucide-react";
+import { Bell, ChevronRight, Copy, HardDrive, Info, KeyRound, type LucideIcon, Mail, Monitor, Palette, Plus, Sparkles, SquareTerminal } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { useLocation } from "wouter";
 import { ApiError, api, app, desktopOs, serverUrl } from "../api/http";
 import type { CreatedToken } from "../api/types/CreatedToken";
 import type { Invite } from "../api/types/Invite";
@@ -12,48 +13,196 @@ import { ago } from "../domain/dates";
 import { type CliStatus, cli } from "../desktop";
 import { checkDisplayName, checkTokenName } from "../domain/text";
 import * as local from "../local";
+import { newer, useServerVersions } from "../server-update";
 import { useSession } from "../session";
 import { type Theme, setTheme, useTheme } from "../theme";
 import { Seg } from "../ui/controls";
 import { Modal, Tip, forUser, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
 import { Icon } from "../ui/icons";
+import { usePending } from "../updates";
 import { About } from "./About";
 import { AiPage, useAiSummary } from "./AiSettings";
-import type { SettingsPage } from "./nav";
 import { BackgroundSettings } from "./Background";
+import { type SettingsSection, settingsUrl } from "./nav";
 import { StartAtLogin } from "./StartAtLogin";
 
 /** The link that opens registration with an invite code: on the server, which in the app is not
  * where the page comes from. */
 const inviteLink = (code: string) => `${serverUrl() || location.origin}/?invite=${code}`;
 
-type Page = SettingsPage;
+const TITLES: Record<SettingsSection, string> = {
+  account: "账号",
+  local: "本机模式",
+  appearance: "外观",
+  background: "提醒和后台",
+  ai: "AI 整理",
+  agent: "agent 接入",
+  invites: "邀请注册",
+  about: "关于",
+};
 
-export function Settings({ start = "main", onClose, onSignOut }: { start?: Page; onClose(): void; onSignOut(): void }) {
-  const session = useSession();
-  const [user, setUser] = useState(session.user);
-  const [page, setPage] = useState<Page>(start);
-  const [tokens, setTokens] = useState<TokenInfo[] | null>(null);
-  const [invites, setInvites] = useState<Invite[] | null>(null);
-  const [error, setError] = useState("");
-  const { prompt, confirm, snack } = useFeedback();
-  const theme = useTheme();
+export const settingsTitle = (section: SettingsSection) => TITLES[section];
+
+const ICONS: Record<Exclude<SettingsSection, "account">, LucideIcon> = {
+  local: HardDrive,
+  appearance: Palette,
+  background: Bell,
+  ai: Sparkles,
+  agent: KeyRound,
+  invites: Mail,
+  about: Info,
+};
+
+const THEMES: [Theme, string][] = [
+  ["system", "跟随系统"],
+  ["light", "浅色"],
+  ["dark", "深色"],
+];
+
+/** The sections here, in the home page's groups. Agents reach no phone in local mode: its server
+ * listens on the phone alone, which has no command line. */
+function useSections(): SettingsSection[][] {
+  const { user } = useSession();
   const inLocal = local.inLocalMode();
-  // Agents reach no phone: its server listens on the phone alone, which has no command line.
-  const withTokens = !inLocal || app === "desktop";
+  const groups: SettingsSection[][] = [[inLocal ? "local" : "account"], app ? ["appearance", "background"] : ["appearance"]];
+  groups.push(!inLocal || app === "desktop" ? ["ai", "agent"] : ["ai"]);
+  if (user.is_admin && !inLocal) groups.push(["invites"]);
+  groups.push(["about"]);
+  return groups;
+}
 
-  const failed = (e: unknown) => {
-    if (!(e instanceof ApiError)) throw e;
-    setError(e.message);
+/** The section at `location`: null on the home page, undefined for one not here, such as the
+ * invites for someone not an admin. */
+export function useSectionAt(location: string): SettingsSection | null | undefined {
+  const sections = useSections().flat();
+  return location === settingsUrl() ? null : sections.find((s) => location === settingsUrl(s));
+}
+
+export function SettingsHome() {
+  const [, navigate] = useLocation();
+  const { user } = useSession();
+  const theme = useTheme();
+  const ai = useAiSummary();
+  const pending = usePending();
+  const server = useServerVersions();
+  const upgradable = user.is_admin && !local.inLocalMode() && server?.latest && newer(server.latest, server.server);
+  const values: Partial<Record<SettingsSection, string>> = {
+    appearance: THEMES.find(([t]) => t === theme)![1],
+    ai,
+    about: pending ? "有新版本" : upgradable ? "服务器可升级" : undefined,
   };
-  const loadTokens = () => api<TokenInfo[]>("GET", "/tokens").then(setTokens, failed);
+  const open = (s: SettingsSection) => () => navigate(settingsUrl(s));
+  return (
+    <div className="settings-page">
+      {useSections().map((group) => (
+        <div key={group[0]} className="group">
+          {group.map((s) => {
+            if (s === "account") {
+              return (
+                <Entry key={s} onClick={open(s)}>
+                  <span className="avatar" style={{ margin: 0 }}>
+                    {[...user.display_name][0]}
+                  </span>
+                  <span className="folder-main">
+                    <span>{user.display_name}</span>
+                    <span className="folder-sub">用户名 {user.username}</span>
+                  </span>
+                </Entry>
+              );
+            }
+            return (
+              <Entry key={s} onClick={open(s)}>
+                <span className="token-ic">
+                  <Icon of={ICONS[s]} size={18} />
+                </span>
+                {s === "local" ? (
+                  <span className="folder-main">
+                    <span>本机模式</span>
+                    <span className="folder-sub">数据只存在这台设备上，不同步</span>
+                  </span>
+                ) : (
+                  <>
+                    <span>{TITLES[s]}</span>
+                    <span className="row-value">{values[s]}</span>
+                  </>
+                )}
+              </Entry>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** A row on the home page that leads to a section. */
+function Entry({ onClick, children }: { onClick(): void; children: ReactNode }) {
+  return (
+    <button className="row" onClick={onClick}>
+      <div className="row-inner">
+        {children}
+        <span className="chev">
+          <Icon of={ChevronRight} size={18} />
+        </span>
+      </div>
+    </button>
+  );
+}
+
+export function SettingsPage({ section, onSignOut }: { section: SettingsSection; onSignOut(): void }) {
+  const pages: Record<SettingsSection, () => ReactNode> = {
+    account: () => <Account onSignOut={onSignOut} />,
+    local: () => <LocalMode />,
+    appearance: () => <Appearance />,
+    background: () => (app === "android" ? <BackgroundSettings /> : <StartAtLogin />),
+    ai: () => <AiPage />,
+    agent: () => <Agent />,
+    invites: () => <Invites />,
+    about: () => <About />,
+  };
+  return <div className="settings-page">{pages[section]()}</div>;
+}
+
+/** What went wrong talking to the server, shown at the top of the page. */
+function useFailure(): [string, (e: unknown) => void] {
+  const [error, setError] = useState("");
+  return [
+    error,
+    (e: unknown) => {
+      if (!(e instanceof ApiError)) throw e;
+      setError(e.message);
+    },
+  ];
+}
+
+/** The tokens of a kind, loaded once the page opens, and taking one away. */
+function useTokens(kind: TokenInfo["kind"], failed: (e: unknown) => void) {
+  const { confirm } = useFeedback();
+  const [tokens, setTokens] = useState<TokenInfo[] | null>(null);
+  const load = () => api<TokenInfo[]>("GET", "/tokens").then((all) => setTokens(all.filter((t) => t.kind === kind)), failed);
   useEffect(() => {
-    if (withTokens) loadTokens();
-    if (user.is_admin) api<Invite[]>("GET", "/invites").then(setInvites, failed);
+    void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loads once when opened
   }, []);
+  const revoke = async (t: TokenInfo) => {
+    const what = t.kind === "session" ? "退出该设备" : `删除令牌“${t.name}”`;
+    const body = t.kind === "session" ? `“${t.name}”将需要重新登录。` : "使用此令牌的 agent 和命令行将立即失去访问权限。";
+    if (!(await confirm({ title: `${what}？`, body, ok: t.kind === "session" ? "退出" : "删除", danger: true }))) return;
+    await api("DELETE", `/tokens/${t.id}`).then(load, failed);
+  };
+  return { tokens, load, revoke };
+}
 
+const used = (t: TokenInfo, now: Date) => (t.last_used_at ? `${ago(t.last_used_at, now)}使用` : "未使用");
+
+function Account({ onSignOut }: { onSignOut(): void }) {
+  const session = useSession();
+  const [user, setUser] = useState(session.user);
+  const [error, failed] = useFailure();
+  const { tokens: sessions, revoke } = useTokens("session", failed);
+  const [password, setPassword] = useState(false);
+  const { prompt } = useFeedback();
   const rename = async () => {
     const name = await prompt({ title: "修改显示名", label: "显示名", value: user.display_name, ok: "保存", check: checkDisplayName });
     if (name === null) return;
@@ -65,165 +214,47 @@ export function Settings({ start = "main", onClose, onSignOut }: { start?: Page;
       failed(e);
     }
   };
-  const revoke = async (t: TokenInfo) => {
-    const what = t.kind === "session" ? "退出该设备" : `删除令牌“${t.name}”`;
-    const body = t.kind === "session" ? `“${t.name}”将需要重新登录。` : "使用此令牌的 agent 和命令行将立即失去访问权限。";
-    if (!(await confirm({ title: `${what}？`, body, ok: t.kind === "session" ? "退出" : "删除", danger: true }))) return;
-    await api("DELETE", `/tokens/${t.id}`).then(loadTokens, failed);
-  };
-  const invite = async () => {
-    try {
-      const made = await api<Invite>("POST", "/invites");
-      setInvites((list) => [made, ...(list ?? [])]);
-      await copy(inviteLink(made.code));
-      snack("已复制邀请链接");
-    } catch (e) {
-      failed(e);
-    }
-  };
-
-  if (page === "password") return <PasswordPage onDone={() => setPage("main")} onClose={onClose} />;
-  if (page === "ai") return <AiPage onBack={() => setPage("main")} onClose={onClose} />;
-  if (page === "token") {
-    return <TokenPage onCreated={(c) => (loadTokens(), setPage({ secret: c.secret, name: c.token.name }))} onBack={() => setPage("main")} onClose={onClose} />;
-  }
-  if (typeof page === "object") return <TokenCreated {...page} onDone={() => setPage("main")} onClose={onClose} />;
-
-  const sessions = tokens?.filter((t) => t.kind === "session") ?? [];
-  const apiTokens = tokens?.filter((t) => t.kind === "api") ?? [];
   const now = new Date();
-  const used = (t: TokenInfo) => (t.last_used_at ? `${ago(t.last_used_at, now)}使用` : "未使用");
   return (
-    <Modal title="设置" onClose={onClose}>
+    <>
       {error && <p className="form-error">{error}</p>}
-      {inLocal ? (
-        <LocalMode />
-      ) : (
-        <div className="group">
-          <button className="row" onClick={rename}>
-            <div className="row-inner">
-              <span className="avatar" style={{ margin: 0 }}>
-                {[...user.display_name][0]}
-              </span>
-              <span className="folder-main">
-                <span>{user.display_name}</span>
-                <span className="folder-sub">用户名 {user.username}</span>
-              </span>
-              <span className="chev">
-                <Icon of={ChevronRight} size={18} />
-              </span>
-            </div>
-          </button>
-          <button className="row" onClick={() => setPage("password")}>
-            <div className="row-inner">
-              <span>修改密码</span>
-              <span className="chev" style={{ marginLeft: "auto" }}>
-                <Icon of={ChevronRight} size={18} />
-              </span>
-            </div>
-          </button>
-        </div>
-      )}
-
-      <h2 className="group-title">AI 整理</h2>
       <div className="group">
-        <AiRow onOpen={() => setPage("ai")} />
+        <button className="row" onClick={rename}>
+          <div className="row-inner">
+            <span className="avatar" style={{ margin: 0 }}>
+              {[...user.display_name][0]}
+            </span>
+            <span className="folder-main">
+              <span>{user.display_name}</span>
+              <span className="folder-sub">用户名 {user.username}</span>
+            </span>
+            <span className="chev">
+              <Icon of={ChevronRight} size={18} />
+            </span>
+          </div>
+        </button>
+        <button className="row" onClick={() => setPassword(true)}>
+          <div className="row-inner">
+            <span>修改密码</span>
+            <span className="chev" style={{ marginLeft: "auto" }}>
+              <Icon of={ChevronRight} size={18} />
+            </span>
+          </div>
+        </button>
       </div>
-
-      {withTokens && (
-        <>
-          <h2 className="group-title">
-            <span>令牌</span>
-            <span>供 agent 和命令行使用</span>
-          </h2>
-          <div className="group">
-            {apiTokens.map((t) => (
-              <TokenRow key={t.id} icon={KeyRound} title={t.name} sub={`${t.scope === "write" ? "读写" : "只读"}，${used(t)}`} action={["删除", () => revoke(t)]} />
-            ))}
-            <button className="row add-row" onClick={() => setPage("token")}>
-              <div className="row-inner">
-                <Icon of={Plus} />
-                生成令牌
-              </div>
-            </button>
-          </div>
-          {app === "desktop" && <CommandLine />}
-        </>
-      )}
-
-      {!inLocal && (
-        <>
-          <h2 className="group-title">已登录的设备</h2>
-          <div className="group">
-            {sessions.map((t) => (
-              <TokenRow key={t.id} icon={Monitor} title={t.name} sub={t.current ? "本机" : used(t)} action={t.current ? undefined : ["退出", () => revoke(t)]} />
-            ))}
-          </div>
-        </>
-      )}
-
-      {invites && (
-        <>
-          <h2 className="group-title">
-            <span>邀请注册</span>
-            <span>每个邀请码仅可注册一个账号</span>
-          </h2>
-          <div className="group">
-            {invites.map((i) => (
-              <div key={i.code} className="row">
-                <div className="row-inner">
-                  <span className="token-ic">
-                    <Icon of={Mail} size={18} />
-                  </span>
-                  <span className="folder-main">
-                    <span className="tabular-nums">{i.code}</span>
-                    <span className="folder-sub">{i.used_by ? `${i.used_by} 已注册` : `未使用，${ago(i.created_at, now)}生成`}</span>
-                  </span>
-                  {!i.used_by && (
-                    <Tip label="复制邀请链接">
-                      <button className="icon-btn sm" onClick={() => copy(inviteLink(i.code)).then(() => snack("已复制邀请链接"))}>
-                        <Icon of={Copy} size={16} />
-                      </button>
-                    </Tip>
-                  )}
-                </div>
-              </div>
-            ))}
-            <button className="row add-row" onClick={invite}>
-              <div className="row-inner">
-                <Icon of={Mail} />
-                生成邀请码
-              </div>
-            </button>
-          </div>
-        </>
-      )}
-
-      {app === "android" && <BackgroundSettings />}
-      {app === "desktop" && <StartAtLogin />}
-
-      <h2 className="group-title">外观</h2>
-      <div style={{ margin: "0 16px" }}>
-        <Seg<Theme>
-          label="外观"
-          items={[
-            ["system", "跟随系统"],
-            ["light", "浅色"],
-            ["dark", "深色"],
-          ]}
-          value={theme}
-          onChange={setTheme}
-        />
+      <h2 className="group-title">已登录的设备</h2>
+      <div className="group">
+        {sessions?.map((t) => (
+          <TokenRow key={t.id} icon={Monitor} title={t.name} sub={t.current ? "本机" : used(t, now)} action={t.current ? undefined : ["退出", () => revoke(t)]} />
+        ))}
       </div>
-      <About />
-      {!inLocal && (
-        <div className="group danger" style={{ marginTop: 24 }}>
-          <button className="row" onClick={onSignOut}>
-            <div className="row-inner">退出登录</div>
-          </button>
-        </div>
-      )}
-    </Modal>
+      <div className="group danger" style={{ marginTop: 24 }}>
+        <button className="row" onClick={onSignOut}>
+          <div className="row-inner">退出登录</div>
+        </button>
+      </div>
+      {password && <PasswordDialog onClose={() => setPassword(false)} />}
+    </>
   );
 }
 
@@ -250,62 +281,126 @@ function LocalMode() {
     await local.leave(session).catch((e) => snack(forUser("改用服务器", e)));
   };
   return (
-    <div className="group">
-      <div className="row">
-        <div className="row-inner">
-          <span className="token-ic">
-            <Icon of={HardDrive} size={18} />
-          </span>
-          <span className="folder-main">
-            <span>本机模式</span>
-            <span className="folder-sub">数据只存在这台设备上，不同步</span>
-          </span>
-          <Help to="local">说明</Help>
-        </div>
+    <>
+      <p className="empty">
+        数据只存在这台设备上，不同步。定期备份，换设备时用备份恢复。<Help to="local">说明</Help>
+      </p>
+      <div className="group">
+        <Action label="备份" onClick={backup} />
+        <Action label="恢复" onClick={restore} />
+        <Action label="改用服务器" onClick={leave} />
       </div>
-      <button className="row" onClick={backup}>
-        <div className="row-inner">
-          <span>备份</span>
-          <span className="chev" style={{ marginLeft: "auto" }}>
-            <Icon of={ChevronRight} size={18} />
-          </span>
-        </div>
-      </button>
-      <button className="row" onClick={restore}>
-        <div className="row-inner">
-          <span>恢复</span>
-          <span className="chev" style={{ marginLeft: "auto" }}>
-            <Icon of={ChevronRight} size={18} />
-          </span>
-        </div>
-      </button>
-      <button className="row" onClick={leave}>
-        <div className="row-inner">
-          <span>改用服务器</span>
-          <span className="chev" style={{ marginLeft: "auto" }}>
-            <Icon of={ChevronRight} size={18} />
-          </span>
-        </div>
-      </button>
-    </div>
+    </>
   );
 }
 
-function AiRow({ onOpen }: { onOpen(): void }) {
-  const summary = useAiSummary();
+function Action({ label, onClick }: { label: string; onClick(): void }) {
   return (
-    <button className="row" onClick={onOpen}>
+    <button className="row" onClick={onClick}>
       <div className="row-inner">
-        <span className="token-ic">
-          <Icon of={Sparkles} size={18} />
-        </span>
-        <span>模型</span>
-        <span className="row-value">{summary}</span>
-        <span className="chev">
+        <span>{label}</span>
+        <span className="chev" style={{ marginLeft: "auto" }}>
           <Icon of={ChevronRight} size={18} />
         </span>
       </div>
     </button>
+  );
+}
+
+function Appearance() {
+  const theme = useTheme();
+  return (
+    <>
+      <h2 className="group-title">主题</h2>
+      <div style={{ margin: "0 16px" }}>
+        <Seg<Theme> label="主题" items={THEMES} value={theme} onChange={setTheme} />
+      </div>
+    </>
+  );
+}
+
+function Agent() {
+  const [error, failed] = useFailure();
+  const { tokens, load, revoke } = useTokens("api", failed);
+  const [dialog, setDialog] = useState<"new" | { secret: string; name: string } | null>(null);
+  const now = new Date();
+  return (
+    <>
+      {error && <p className="form-error">{error}</p>}
+      <h2 className="group-title">
+        <span>令牌</span>
+        <span>供 agent 和命令行使用</span>
+      </h2>
+      <div className="group">
+        {tokens?.map((t) => (
+          <TokenRow key={t.id} icon={KeyRound} title={t.name} sub={`${t.scope === "write" ? "读写" : "只读"}，${used(t, now)}`} action={["删除", () => revoke(t)]} />
+        ))}
+        <button className="row add-row" onClick={() => setDialog("new")}>
+          <div className="row-inner">
+            <Icon of={Plus} />
+            生成令牌
+          </div>
+        </button>
+      </div>
+      {app === "desktop" && <CommandLine />}
+      {dialog === "new" && <TokenPage onCreated={(c) => (void load(), setDialog({ secret: c.secret, name: c.token.name }))} onClose={() => setDialog(null)} />}
+      {dialog && dialog !== "new" && <TokenCreated {...dialog} onDone={() => setDialog(null)} />}
+    </>
+  );
+}
+
+function Invites() {
+  const [invites, setInvites] = useState<Invite[] | null>(null);
+  const [error, failed] = useFailure();
+  const { snack } = useFeedback();
+  useEffect(() => {
+    api<Invite[]>("GET", "/invites").then(setInvites, failed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loads once when opened
+  }, []);
+  const invite = async () => {
+    try {
+      const made = await api<Invite>("POST", "/invites");
+      setInvites((list) => [made, ...(list ?? [])]);
+      await copy(inviteLink(made.code));
+      snack("已复制邀请链接");
+    } catch (e) {
+      failed(e);
+    }
+  };
+  const now = new Date();
+  return (
+    <>
+      {error && <p className="form-error">{error}</p>}
+      <p className="empty">每人一个账号，数据彼此独立。每个邀请码只能注册一个账号。</p>
+      <div className="group">
+        {invites?.map((i) => (
+          <div key={i.code} className="row">
+            <div className="row-inner">
+              <span className="token-ic">
+                <Icon of={Mail} size={18} />
+              </span>
+              <span className="folder-main">
+                <span className="tabular-nums">{i.code}</span>
+                <span className="folder-sub">{i.used_by ? `${i.used_by} 已注册` : `未使用，${ago(i.created_at, now)}生成`}</span>
+              </span>
+              {!i.used_by && (
+                <Tip label="复制邀请链接">
+                  <button className="icon-btn sm" onClick={() => copy(inviteLink(i.code)).then(() => snack("已复制邀请链接"))}>
+                    <Icon of={Copy} size={16} />
+                  </button>
+                </Tip>
+              )}
+            </div>
+          </div>
+        ))}
+        <button className="row add-row" onClick={invite}>
+          <div className="row-inner">
+            <Icon of={Mail} />
+            生成邀请码
+          </div>
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -375,7 +470,7 @@ function TokenRow({ icon, title, sub, action }: { icon: typeof KeyRound; title: 
   );
 }
 
-function PasswordPage({ onDone, onClose }: { onDone(): void; onClose(): void }) {
+function PasswordDialog({ onClose }: { onClose(): void }) {
   const [old, setOld] = useState("");
   const [fresh, setFresh] = useState("");
   const [error, setError] = useState<{ message: string; field?: string } | null>(null);
@@ -387,7 +482,7 @@ function PasswordPage({ onDone, onClose }: { onDone(): void; onClose(): void }) 
     try {
       await api("POST", "/auth/password", { old_password: old, new_password: fresh });
       snack("密码已修改，其他设备需重新登录");
-      onDone();
+      onClose();
     } catch (e) {
       if (!(e instanceof ApiError)) throw e;
       setError({ message: e.message, field: e.field });
@@ -395,7 +490,7 @@ function PasswordPage({ onDone, onClose }: { onDone(): void; onClose(): void }) 
   };
   const wrong = (field: string) => error?.field === field;
   return (
-    <Modal title="修改密码" onClose={onClose} onBack={onDone}>
+    <Modal title="修改密码" onClose={onClose}>
       <form onSubmit={submit}>
         <label className={`field${wrong("old_password") ? " error" : ""}`}>
           当前密码
@@ -425,7 +520,7 @@ function PasswordPage({ onDone, onClose }: { onDone(): void; onClose(): void }) 
           </p>
         )}
         <div className="actions">
-          <button type="button" className="text-btn" onClick={onDone}>
+          <button type="button" className="text-btn" onClick={onClose}>
             取消
           </button>
           <button className="filled-btn">修改</button>
@@ -435,7 +530,7 @@ function PasswordPage({ onDone, onClose }: { onDone(): void; onClose(): void }) 
   );
 }
 
-function TokenPage({ onCreated, onBack, onClose }: { onCreated(c: CreatedToken): void; onBack(): void; onClose(): void }) {
+function TokenPage({ onCreated, onClose }: { onCreated(c: CreatedToken): void; onClose(): void }) {
   const [name, setName] = useState("");
   const [scope, setScope] = useState<Scope>("write");
   const [error, setError] = useState("");
@@ -451,7 +546,7 @@ function TokenPage({ onCreated, onBack, onClose }: { onCreated(c: CreatedToken):
     }
   };
   return (
-    <Modal title="生成令牌" onClose={onClose} onBack={onBack}>
+    <Modal title="生成令牌" onClose={onClose}>
       <form onSubmit={submit}>
         <label className="field">
           <span>
@@ -472,7 +567,7 @@ function TokenPage({ onCreated, onBack, onClose }: { onCreated(c: CreatedToken):
         </div>
         {error && <p className="form-error">{error}</p>}
         <div className="actions">
-          <button type="button" className="text-btn" onClick={onBack}>
+          <button type="button" className="text-btn" onClick={onClose}>
             取消
           </button>
           <button className="filled-btn">生成</button>
@@ -489,15 +584,16 @@ async function copy(text: string) {
 /** A new token, shown this once, and the ways to connect an agent with it, filled in. In local mode
  * the app's address changes each time it starts: agents go through the command line, which finds
  * it (docs/local.md#agent-接入). */
-function TokenCreated({ name, secret, onDone, onClose }: { name: string; secret: string; onDone(): void; onClose(): void }) {
+/** In place of the form it was made with, as its next page. */
+function TokenCreated({ name, secret, onDone }: { name: string; secret: string; onDone(): void }) {
   const inLocal = local.inLocalMode();
   const url = inLocal ? "local" : serverUrl() || location.origin;
   const viaCli = (agent: string) => `${agent} mcp add nexttodo --env NEXTTODO_URL=local --env NEXTTODO_TOKEN=${secret} -- nexttodo mcp`;
   return (
-    <Modal title="令牌已生成" onClose={onClose} onBack={onDone}>
+    <Modal title="令牌已生成" onClose={onDone} onBack={onDone}>
       <p className="empty">
         “{name}”的令牌只显示这一次。下面的写法已经填好{inLocal ? "令牌，都要先装命令行" : "服务器地址和令牌"}，复制即可。
-        {app === "desktop" ? "命令行在设置的“命令行”一组安装。" : <Help to="agent#cli">如何安装命令行</Help>}
+        {app === "desktop" ? "命令行在本页下方的“命令行”一组安装。" : <Help to="agent#cli">如何安装命令行</Help>}
       </p>
       <Copyable label="令牌" text={secret} />
       {inLocal ? (

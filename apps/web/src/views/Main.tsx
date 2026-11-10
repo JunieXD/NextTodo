@@ -1,6 +1,6 @@
-// The signed-in app: the layout for the screen size, settings, and what the session reports.
+// The signed-in app: the layout for the screen size, and what the session reports.
 
-import { useContext, useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useLocalRunner } from "../ai";
 import { useLocation, useSearchParams } from "wouter";
 import { app } from "../api/http";
@@ -16,19 +16,17 @@ import { EVERY_MS, check, install, restart, usePending } from "../updates";
 import { Desktop } from "./Desktop";
 import { MarksProvider } from "./marks";
 import { Phone } from "./Phone";
-import { OpenSettings, type SettingsPage } from "./nav";
-import { Settings } from "./Settings";
+import { settingsUrl } from "./nav";
 
 export function Main({ session, onSignedOut }: { session: Session; onSignedOut(notice?: string): void }) {
   const wide = useWide();
-  const [settings, setSettings] = useState<SettingsPage | null>(null);
   // Opened from outside the app: quick add from the widget, the menu bar or the shortcut (`/?add`), a
-  // task from the widget or a reminder (`/?open=<task>`). Settings and dialogs make way.
+  // task from the widget or a reminder (`/?open=<task>`), on the page of what to do next. Dialogs make
+  // way.
   const [params] = useSearchParams();
   const [, navigate] = useLocation();
   const open = params.get("open");
   const outside = !!open || params.has("add");
-  if (outside && settings) setSettings(null);
   // On top of a page without details, which closing them goes back to: there may be no page before.
   useEffect(() => {
     if (!open) return;
@@ -44,13 +42,10 @@ export function Main({ session, onSignedOut }: { session: Session; onSignedOut(n
     <SessionContext value={session}>
       <MarksProvider>
         <Root className={className} outside={outside}>
-          <OpenSettings value={(page = "main") => setSettings(page)}>
-            <Events onSignedOut={onSignedOut} />
-            <Updates />
-            {session.user.is_admin && !inLocalMode() && <ServerUpdates />}
-            {wide ? <Desktop onSettings={() => setSettings("main")} /> : <Phone onSettings={() => setSettings("main")} />}
-            {settings && <Settings start={settings} onClose={() => setSettings(null)} onSignOut={signOut} />}
-          </OpenSettings>
+          <Events onSignedOut={onSignedOut} />
+          <Updates />
+          {session.user.is_admin && !inLocalMode() && <ServerUpdates />}
+          {wide ? <Desktop onSignOut={signOut} /> : <Phone onSignOut={signOut} />}
         </Root>
       </MarksProvider>
     </SessionContext>
@@ -120,7 +115,7 @@ const SERVER_TOLD = "nexttodo.serverUpdateTold:";
  * runs, and tells once about each (docs/design.md#部署). */
 function ServerUpdates() {
   const { snack } = useFeedback();
-  const openSettings = useContext(OpenSettings);
+  const [, navigate] = useLocation();
   const versions = useServerVersions();
   useEffect(() => {
     const shown = () => document.visibilityState === "visible" && void checkServer();
@@ -138,8 +133,8 @@ function ServerUpdates() {
     const told = SERVER_TOLD + versions.of;
     if (localStorage.getItem(told) === latest) return;
     localStorage.setItem(told, latest);
-    snack({ text: `服务器可升级到 ${latest}`, action: "查看", onAction: () => openSettings("main"), ms: 8000 });
-  }, [versions, snack, openSettings]);
+    snack({ text: `服务器可升级到 ${latest}`, action: "查看", onAction: () => navigate(settingsUrl("about")), ms: 8000 });
+  }, [versions, snack, navigate]);
   return null;
 }
 

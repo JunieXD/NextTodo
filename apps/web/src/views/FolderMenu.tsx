@@ -17,7 +17,7 @@ import { Modal, RootContext, Tip, useFeedback } from "../ui/feedback";
 import { composing } from "../ui/keys";
 import { Icon } from "../ui/icons";
 import { ContextMenu, type MenuItem, itemClass } from "../ui/menu";
-import { OpenSettings, folderUrl } from "./nav";
+import { folderUrl, settingsUrl } from "./nav";
 import { FolderPicker } from "./pickers";
 
 /** Asks for a name and makes a folder inside `parent`. */
@@ -42,13 +42,13 @@ function useTidy(folder: FolderId | null): { start(): void; panel: ReactNode } {
   const { snack } = useFeedback();
   const commit = useCommit();
   const { user, store } = useSession();
-  const openSettings = useContext(OpenSettings);
+  const [, navigate] = useLocation();
   const [asking, setAsking] = useState(false);
   const start = async () => {
     if (!store.getView().board.contents(folder).length) return snack("这里没有事项");
     if (!(await aiReady(user.id))) {
       snack("先选好 AI 整理用的模型");
-      return openSettings("ai");
+      return navigate(settingsUrl("ai"));
     }
     setAsking(true);
   };

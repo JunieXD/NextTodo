@@ -24,7 +24,6 @@ export function StartAtLogin() {
   };
   return (
     <>
-      <h2 className="group-title">开机自启</h2>
       <div className="group">
         <div className="row">
           <div className="row-inner">

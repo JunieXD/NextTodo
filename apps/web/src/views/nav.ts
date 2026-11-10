@@ -1,15 +1,14 @@
 // Where the user is. The selected task is `?t=<id>` on top of the page's address, so that the back
 // button (Android's too) closes its details.
 
-import { createContext, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import { useLocation, useSearchParams } from "wouter";
 import type { TaskId } from "../api/types/TaskId";
 
-/** A page of the settings (views/Settings.tsx). */
-export type SettingsPage = "main" | "password" | "token" | "ai" | { secret: string; name: string };
+/** A section of the settings, a page of its own (views/Settings.tsx). */
+export type SettingsSection = "account" | "local" | "appearance" | "background" | "ai" | "agent" | "invites" | "about";
 
-/** Opens the settings, at a page of them if given. */
-export const OpenSettings = createContext<(page?: SettingsPage) => void>(() => {});
+export const settingsUrl = (section?: SettingsSection) => (section ? `/settings/${section}` : "/settings");
 
 export function useSelection(): { selected: TaskId | null; select(id: TaskId): void; close(): void } {
   const [params] = useSearchParams();

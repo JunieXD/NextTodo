@@ -16,7 +16,7 @@ import { inLocalMode } from "../local";
 import { useSession } from "../session";
 import { useBack } from "../ui/back";
 import { Seg, Select } from "../ui/controls";
-import { Modal, useFeedback } from "../ui/feedback";
+import { useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
 
 type Place = "local" | "server";
@@ -35,7 +35,8 @@ export function useAiSummary(): string {
   return server === null ? "未配置" : "";
 }
 
-export function AiPage({ onBack, onClose }: { onBack(): void; onClose(): void }) {
+/** The model AI organizing uses; saved or cleared, back to where it was opened from. */
+export function AiPage() {
   const { user } = useSession();
   const { snack, confirm } = useFeedback();
   const [providers, setProviders] = useState<AiProviders | null>(null);
@@ -73,13 +74,7 @@ export function AiPage({ onBack, onClose }: { onBack(): void; onClose(): void })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loads once when opened
   }, []);
 
-  if (!providers || !form) {
-    return (
-      <Modal title="AI 整理" onClose={onClose} onBack={onBack}>
-        {error ? <p className="form-error">{error}</p> : <p className="empty">正在读取…</p>}
-      </Modal>
-    );
-  }
+  if (!providers || !form) return error ? <p className="form-error">{error}</p> : <p className="empty">正在读取…</p>;
   const provider = providers.providers.find((p) => p.id === form.provider) ?? providers.providers[0];
   const set = (change: Partial<AiSettingsInput>) => {
     setForm({ ...form, ...change });
@@ -128,7 +123,7 @@ export function AiPage({ onBack, onClose }: { onBack(): void; onClose(): void })
         keepAiConfig(user.id, null);
       }
       snack(place === "local" ? "已保存在本机" : "已同步到服务器");
-      onBack();
+      history.back();
     });
   const clear = async () => {
     const body = `${inLocalMode() ? "" : "本机和服务器上保存的都会删除，"}等待中的请求要配置后才会整理。`;
@@ -136,14 +131,14 @@ export function AiPage({ onBack, onClose }: { onBack(): void; onClose(): void })
     await run(async () => {
       keepAiConfig(user.id, null);
       if (kept) await api("DELETE", "/ai/settings");
-      onBack();
+      history.back();
     });
   };
   const keyHint =
     place === "server" && kept ? (kept.key_end ? `已保存，末 4 位 ${kept.key_end}；不改就留空` : "服务器解不开保存的密钥，请重新填写") : "只发给所选的服务商";
 
   return (
-    <Modal title="AI 整理" onClose={onClose} onBack={onBack}>
+    <>
       <p className="empty">
         在添加框点 ✦ 切到 AI 整理，写下一段话，由所选的模型整理成事项。原文、文件夹名和其中未完成的事项会发给这个服务商。<Help to="ai#key">如何获取 API 密钥</Help>
       </p>
@@ -220,7 +215,7 @@ export function AiPage({ onBack, onClose }: { onBack(): void; onClose(): void })
           保存
         </button>
       </div>
-    </Modal>
+    </>
   );
 }
 

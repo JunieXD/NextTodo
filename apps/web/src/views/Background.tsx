@@ -50,7 +50,6 @@ export function BackgroundSettings() {
   );
   return (
     <>
-      <h2 className="group-title">提醒和后台</h2>
       <div className="group">
         {row("通知", state.notify ? "已允许" : "未允许时不会弹出截止提醒", state.notify ? undefined : ["允许", () => allowNotifications().then(allowed).then(setState)])}
         {row("准时提醒", state.exact ? "已允许" : "未允许时提醒可能延迟几分钟", state.exact ? undefined : ["前往设置", () => LocalNotifications.changeExactNotificationSetting()])}

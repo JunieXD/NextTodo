@@ -23,7 +23,6 @@ export function About() {
   }, [snack]);
   return (
     <>
-      <h2 className="group-title">关于</h2>
       <div className="group">
         <Row label="网页版本" value={import.meta.env.WEB_VERSION} />
         {app && (

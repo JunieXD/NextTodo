@@ -92,7 +92,7 @@ curl -fsSL https://juniexd.github.io/NextTodo/install.sh | sh
 
 - **iOS App（不上架 App Store）**：和 Android 一样用 Capacitor 外壳加载网页端，支持本机模式和截止提醒，先不做小组件。发布不签名的 IPA，用户用 SideStore 和自己的 Apple ID 安装，不用花钱，但每 7 天要在手机上续签一次。
 - **鸿蒙版**：在纯血鸿蒙（HarmonyOS NEXT）上运行的 App。
-- **借 S3 同步**：不部署服务器，用 S3 兼容的对象存储在设备之间同步。
+- **借 S3 或 WebDAV 同步**：不部署服务器，用 S3 兼容的对象存储或 WebDAV 网盘（如坚果云）在设备之间同步，数据也就有了一份云端的副本。
 
 ## 开发
 

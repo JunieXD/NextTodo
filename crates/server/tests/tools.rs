@@ -224,6 +224,37 @@ async fn editing_a_task() {
 }
 
 #[tokio::test]
+async fn a_repeating_task_counts_its_completions_and_can_end_done() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "读《三体》", "due": "2026-11-10", "repeat": "1d" })).await;
+    t.ok(&s, "add", json!({ "title": "写读后感", "after": [1] })).await;
+    t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-10" })).await;
+    let second = t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-11" })).await;
+    let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
+    assert_eq!(shown["data"]["completions"], json!({ "count": 2, "last": "2026-11-11" }));
+    assert!(text(&shown).contains("完成次数：2，最近 2026-11-11"), "{}", text(&shown));
+    // Undone, the count goes back with the due date.
+    t.ok(&s, "undo", json!({ "batch": second["data"]["batch"] })).await;
+    let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
+    assert_eq!(shown["data"]["completions"], json!({ "count": 1, "last": "2026-11-10" }));
+    assert_eq!(shown["data"]["due"]["date"], "2026-11-11");
+
+    // Ending the repeat, it is done at once, which isn't one more time, and what waits on it starts.
+    let done = t.ok(&s, "done", json!({ "tasks": [1], "end_repeat": true })).await;
+    assert!(text(&done).contains("完成 #1 读《三体》") && text(&done).contains("解锁 #2 写读后感"), "{}", text(&done));
+    let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
+    assert_eq!(shown["data"]["status"], "done");
+    assert_eq!(shown["data"]["due"], json!({ "date": "2026-11-11" }));
+    assert_eq!(shown["data"]["completions"], json!({ "count": 1, "last": "2026-11-10" }));
+    // Undone, it repeats again.
+    t.ok(&s, "undo", json!({ "batch": done["data"]["batch"] })).await;
+    let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
+    assert_eq!(shown["data"]["status"], "ready");
+    assert_eq!(shown["data"]["due"], json!({ "date": "2026-11-11", "repeat": { "every": 1, "unit": "day", "from": "due" } }));
+}
+
+#[tokio::test]
 async fn a_repeating_task_moves_on_when_done() {
     let t = TestApp::new();
     let s = t.admin().await;

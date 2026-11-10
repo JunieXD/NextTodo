@@ -93,16 +93,23 @@ test("a repeating task moves on rather than being done, and is never done while 
   run(d, 120, [{ op: "task.create", id: id(1), title: "开例会", due: { date: "2026-11-09", time: "10:00", repeat: weekly } }]);
   expect(() => apply(d, [{ op: "task.update", id: id(1), done: true }], cx)).toThrow("完成重复的事项需要给出今天的日期");
   run(d, 121, [{ op: "task.update", id: id(1), done: true, today: "2026-11-11" }]);
-  expect(d.tasks.get(id(1))).toMatchObject({ done_at: null, due: { date: "2026-11-16", time: "10:00", repeat: weekly } });
-  // Undone after the reminder changed, it moves back and the reminder stays as changed.
+  expect(d.tasks.get(id(1))).toMatchObject({ done_at: null, due: { date: "2026-11-16", time: "10:00", repeat: weekly }, completions: { count: 1, last: "2026-11-11" } });
+  // Undone after the reminder changed, it moves back and the reminder stays as changed; it was never done.
   run(d, 122, [{ op: "task.update", id: id(1), due: { date: "2026-11-16", time: "10:00", remind_before: 30, repeat: weekly } }]);
   run(d, 123, [{ op: "undo", mutation: id(121) }]);
   expect(d.tasks.get(id(1))!.due).toEqual({ date: "2026-11-09", time: "10:00", remind_before: 30, repeat: weekly });
+  expect(d.tasks.get(id(1))!.completions).toBeUndefined();
   // Undone after the due date was cleared, only the date comes back: the rest stays cleared.
   run(d, 124, [{ op: "task.update", id: id(1), done: true, today: "2026-11-11" }]);
   run(d, 125, [{ op: "task.update", id: id(1), due: null }]);
   run(d, 126, [{ op: "undo", mutation: id(124) }]);
   expect(d.tasks.get(id(1))!.due).toEqual({ date: "2026-11-09" });
+  // Repeating no more as it is done, it is done, which isn't one more time.
+  run(d, 127, [{ op: "task.update", id: id(1), due: { date: "2026-11-09", repeat: weekly } }]);
+  run(d, 128, [{ op: "task.update", id: id(1), done: true, today: "2026-11-11" }]);
+  run(d, 129, [{ op: "task.update", id: id(1), due: { date: "2026-11-16" }, done: true }]);
+  expect(d.tasks.get(id(1))).toMatchObject({ due: { date: "2026-11-16" }, completions: { count: 1, last: "2026-11-11" } });
+  expect(d.tasks.get(id(1))!.done_at).not.toBeNull();
   const doneRepeating: Op = { op: "task.create", id: id(2), title: "交房租", done: true, due: { date: "2026-11-30", repeat: weekly } };
   expect(() => apply(d, [doneRepeating], cx)).toThrow("“交房租”已完成，不能设置重复，请先重新打开");
 });

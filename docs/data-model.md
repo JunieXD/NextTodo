@@ -79,11 +79,13 @@
 | repeat_unit | TEXT，可空 | `day`、`week` 或 `month` |
 | repeat_from | TEXT，可空 | 下一次从哪天算：`due`（截止日期）或 `done`（完成那天） |
 | repeat_days | INTEGER，可空 | 按周重复在周几，按位存：周一是 1，周二是 2，……，周日是 64；只能在 `repeat_unit` 为 `week` 时设置，空表示截止日期那天 |
+| completion_count | INTEGER，可空 | 重复的事项[完成过几次](design.md#重复)，至少 1；从没完成过时为空。结束重复并完成不算 |
+| last_completed | TEXT，可空 | 最近一次完成的日期（完成那台设备上的当天） |
 | sort_key | TEXT | 文件夹内的手动顺序 |
 | created_at / updated_at | INTEGER | |
 | created_via / updated_via | TEXT，可空 | 用 API 令牌改动时记令牌名，AI 整理添加的记“AI 整理”；本人在设备上改动时为空 |
 
-`(owner_id, number)` 唯一。重复的三列同时有值或同时为空，已完成的事项（`done_at` 有值）不能有。截止、提醒和重复的约束同时用 `CHECK` 写在表上。
+`(owner_id, number)` 唯一。重复的三列同时有值或同时为空，已完成的事项（`done_at` 有值）不能有。截止、提醒和重复的约束同时用 `CHECK` 写在表上，`completion_count` 和 `last_completed` 也一样同时有值或同时为空。
 
 ### dependencies
 

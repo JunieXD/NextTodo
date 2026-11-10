@@ -362,22 +362,24 @@ fn revise(current: &str, replace: Vec<Replace>, append: Option<String>) -> Resul
     Description::try_from(revised).map_err(|m| ApiError::invalid(m, Some("description".into())))
 }
 
-/// Marks `tasks` done or open again; a repeating task done is due next time, counted from `today`.
-fn set_done(b: &Board, tasks: Vec<i64>, done: bool, today: Option<Date>) -> Result<Write, ApiError> {
+/// Marks `tasks` done or open again; a repeating task done is due next time, counted from `today`,
+/// unless `end_repeat`, which stops it repeating so that it is done.
+fn set_done(b: &Board, tasks: Vec<i64>, done: bool, today: Option<Date>, end_repeat: bool) -> Result<Write, ApiError> {
     if tasks.is_empty() {
         return Err(ApiError::invalid("至少需要指定一个事项", Some("tasks".into())));
     }
     let mut seen = HashSet::new();
     let mut ops = Vec::new();
     for n in tasks {
-        let id = find_task(b, n)?.id;
-        if seen.insert(id) {
+        let t = find_task(b, n)?;
+        if seen.insert(t.id) {
+            let due = t.due.as_ref().filter(|d| end_repeat && d.repeat.is_some()).map(|d| Some(Due { repeat: None, ..d.clone() }));
             ops.push(Op::TaskUpdate {
-                id,
+                id: t.id,
                 folder_id: None,
                 title: None,
                 description: None,
-                due: None,
+                due,
                 sort_key: None,
                 done: Some(done),
                 today: today.clone(),
@@ -389,12 +391,12 @@ fn set_done(b: &Board, tasks: Vec<i64>, done: bool, today: Option<Date>) -> Resu
 
 pub fn done(w: &WriteCx, a: DoneArgs) -> Result<Write, ApiError> {
     let b = w.board;
-    set_done(b, a.tasks, true, a.today)
+    set_done(b, a.tasks, true, a.today, a.end_repeat)
 }
 
 pub fn reopen(w: &WriteCx, a: TasksArgs) -> Result<Write, ApiError> {
     let b = w.board;
-    set_done(b, a.tasks, false, None)
+    set_done(b, a.tasks, false, None, false)
 }
 
 pub fn mkdir(w: &WriteCx, a: MkdirArgs) -> Result<Write, ApiError> {

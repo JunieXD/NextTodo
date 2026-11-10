@@ -66,7 +66,7 @@ function inTurn(f: () => Promise<void>) {
 
 /** What the widget lists: the ready tasks, as the `next` tool gives them. */
 export const widgetTasks = (board: Board) =>
-  board.next().map((t) => ({ id: t.id, number: t.number, title: t.title, folder: board.folderPath(t.folder_id), due: t.due }));
+  board.next().map((t) => ({ id: t.id, number: t.number, title: t.title, folder: board.folderPath(t.folder_id), due: t.due, completions: t.completions }));
 
 /** Keeps the reminders and the widget in step with the local copy, also when the app comes back to
  * the front: the time has moved on, and the permissions may have changed. An update that fails is

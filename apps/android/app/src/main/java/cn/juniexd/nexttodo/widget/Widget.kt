@@ -39,7 +39,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** A task as the widget shows it. Its number is the id of its reminder. */
-data class Item(val id: String, val number: Int, val title: String, val folder: String, val due: Due?)
+/** `lastDone`: the last day a repeating task was done. */
+data class Item(val id: String, val number: Int, val title: String, val folder: String, val due: Due?, val lastDone: LocalDate?)
 
 /** What the widget shows: the list with the tasks just ticked off in it, or that the app is signed out. */
 data class Shown(val signedIn: Boolean, val items: List<Item>, val ticked: Set<String>)
@@ -96,7 +97,8 @@ object Widget {
         return (0 until list.length()).map(list::getJSONObject).filter { !done.has(it.getString("id")) }.map { t ->
             val due = t.optJSONObject("due")?.let { d -> Due(LocalDate.parse(d.getString("date")), d.optString("time").takeIf { it.isNotEmpty() }?.let(LocalTime::parse)) }
             // `/学习/毕业论文` reads `学习 / 毕业论文`; the root shows nothing.
-            Item(t.getString("id"), t.getInt("number"), t.getString("title"), t.getString("folder").removePrefix("/").replace("/", " / "), due)
+            val lastDone = t.optJSONObject("completions")?.let { LocalDate.parse(it.getString("last")) }
+            Item(t.getString("id"), t.getInt("number"), t.getString("title"), t.getString("folder").removePrefix("/").replace("/", " / "), due, lastDone)
         }
     }
 

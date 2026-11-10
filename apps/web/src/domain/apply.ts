@@ -183,6 +183,7 @@ class Applier {
             const date = nextDue(repeat, t.due.date, op.today);
             if (!date) throw new Rejected("invalid", "下一次的截止日期超出范围");
             t.due = { ...t.due, date };
+            t.completions = { count: (t.completions?.count ?? 0) + 1, last: op.today };
           } else t.done_at = op.done ? now : null;
         }
         this.updateTask(before, t);
@@ -416,7 +417,7 @@ class Applier {
           this.createTask({ ...t, updated_at: now, updated_via: null });
         } else {
           const cur = this.d.tasks.get(e.before.id);
-          const fields = ["folder_id", "title", "description", "done_at", "sort_key"] as const;
+          const fields = ["folder_id", "title", "description", "done_at", "completions", "sort_key"] as const;
           if (cur) this.updateTask(cur, { ...restore(cur, e.before, e.after, fields), due: restoreDue(cur.due, e.before.due, e.after.due) });
         }
       } else if (e.kind === "ai_job") {

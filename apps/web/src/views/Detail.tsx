@@ -1,13 +1,13 @@
 // A task's details: title, folder, due date, description, what it waits for and what waits for it.
 
-import { Bell, Calendar, Folder as FolderIcon, KeyRound, type LucideIcon, Plus, User, X } from "lucide-react";
+import { Bell, Calendar, CalendarCheck, Folder as FolderIcon, KeyRound, type LucideIcon, Plus, User, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
-import { formatDue, formatMoment, remindLabel } from "../domain/dates";
+import { day, formatDay, formatDue, formatMoment, isoDate, remindLabel } from "../domain/dates";
 import { repeatLabel } from "../domain/repeat";
 import { checkDescription, checkTitle } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
@@ -126,6 +126,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
         {t.due?.time && (
           <Prop icon={Bell} label="提醒" value={remindLabel(t.due.remind_before)} cls={t.due.remind_before === undefined ? "muted" : ""} onClick={() => setPanel("due")} />
         )}
+        {(t.due?.repeat || t.completions) && <Prop icon={CalendarCheck} label="已完成" value={completionsLabel(t, now)} cls={t.completions ? "" : "muted"} />}
       </div>
 
       <DescriptionSection key={t.id} task={t} onSave={(description) => update({ description })} />
@@ -150,8 +151,13 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
         {who(t.created_via)}创建于 {formatMoment(t.created_at, now)}
         {t.updated_at !== t.created_at && `，${who(t.updated_via)}修改于 ${formatMoment(t.updated_at, now)}`}
       </p>
-      <div className="group danger detail-actions">
-        <button className="row" onClick={() => actions.remove(t)}>
+      <div className="group detail-actions">
+        {t.due?.repeat && (
+          <button className="row end-repeat" onClick={() => actions.endRepeat(t)}>
+            <div className="row-inner">结束重复并完成</div>
+          </button>
+        )}
+        <button className="row danger" onClick={() => actions.remove(t)}>
           <div className="row-inner">删除事项</div>
         </button>
       </div>
@@ -177,16 +183,29 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
   );
 }
 
-function Prop({ icon, label, value, cls = "", onClick }: { icon: LucideIcon; label: string; value: string; cls?: string; onClick(): void }) {
-  return (
-    <button className="row prop" onClick={onClick}>
-      <div className="row-inner">
-        <Icon of={icon} />
-        <span>{label}</span>
-        <span className={`value ${cls}`}>{value}</span>
-      </div>
-    </button>
+/** A property of the task; one without `onClick` is only shown. */
+function Prop({ icon, label, value, cls = "", onClick }: { icon: LucideIcon; label: string; value: string; cls?: string; onClick?(): void }) {
+  const inner = (
+    <div className="row-inner">
+      <Icon of={icon} />
+      <span>{label}</span>
+      <span className={`value ${cls}`}>{value}</span>
+    </div>
   );
+  return onClick ? (
+    <button className="row prop" onClick={onClick}>
+      {inner}
+    </button>
+  ) : (
+    <div className="row prop">{inner}</div>
+  );
+}
+
+/** `共 12 次，上次是昨天`, `共 12 次，今天已完成`. */
+function completionsLabel(t: Task, now: Date): string {
+  if (!t.completions) return "还没有完成过";
+  const { count, last } = t.completions;
+  return `共 ${count} 次，${last === isoDate(now) ? "今天已完成" : `上次是${formatDay(day(last).getTime(), now)}`}`;
 }
 
 /** The title, edited in place. */

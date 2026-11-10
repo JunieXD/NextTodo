@@ -126,7 +126,8 @@ private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boole
             Column(GlanceModifier.fillMaxWidth().padding(start = CIRCLE, top = 8.dp, bottom = 8.dp)) {
                 val title = if (ticked) TextStyle(color = Colors.done, fontSize = 15.sp, textDecoration = TextDecoration.LineThrough) else TextStyle(color = Colors.text, fontSize = 15.sp)
                 Text(item.title, style = title, maxLines = 1)
-                val meta = listOfNotNull(item.folder.takeIf { it.isNotEmpty() }, item.due?.label(now)).joinToString(" · ")
+                val doneToday = "今天已完成".takeIf { item.lastDone == now.toLocalDate() }
+                val meta = listOfNotNull(item.folder.takeIf { it.isNotEmpty() }, doneToday, item.due?.label(now)).joinToString(" · ")
                 if (meta.isNotEmpty()) {
                     val color = when {
                         item.due?.overdue(now) == true -> Colors.overdue

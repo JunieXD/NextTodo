@@ -153,6 +153,8 @@ enum Command {
     Done {
         #[arg(required = true, value_parser = number)]
         tasks: Vec<i64>,
+        #[arg(long, help = "重复的事项结束重复、直接完成，如读完一本书时")]
+        end_repeat: bool,
     },
     #[command(about = "重新打开")]
     Reopen {
@@ -666,7 +668,11 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             call("edit", args.into(), j)
         }
         // A repeating task's next due date counts from today here.
-        Command::Done { tasks } => call("done", json!({ "tasks": tasks, "today": chrono::Local::now().format("%Y-%m-%d").to_string() }), j),
+        Command::Done { tasks, end_repeat } => call(
+            "done",
+            json!({ "tasks": tasks, "today": chrono::Local::now().format("%Y-%m-%d").to_string(), "end_repeat": end_repeat }),
+            j,
+        ),
         Command::Reopen { tasks } => call("reopen", json!({ "tasks": tasks }), j),
         Command::Mkdir { path } => call("mkdir", json!({ "path": path }), j),
         Command::Rename { folder, name } => call("rename", json!({ "folder": folder, "name": name }), j),

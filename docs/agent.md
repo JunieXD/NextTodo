@@ -29,14 +29,14 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `tree` | `tree` | | 文件夹树，每个文件夹直接包含的待办数和可做数 |
 | `list` | `ls [文件夹] [--all] [--limit 条数]` | `folder?`、`all?`、`limit?` | 文件夹的子文件夹和事项，按[文件夹内顺序](design.md#排序)；默认不含已完成；文件夹里有 [AI 整理](ai.md)请求时开头注明 |
 | `next` | `next [--limit 条数]` | `limit?` | 接下来：可做的事项，按[接下来的顺序](design.md#排序) |
-| `show` | `show <事项>` | `task` | 事项详情：截止、提醒、前置、后续、来源、描述 |
+| `show` | `show <事项>` | `task` | 事项详情：截止、提醒、完成次数（重复的事项）、前置、后续、来源、描述 |
 | `search` | `search <关键词> [--limit 条数]` | `query`、`limit?` | 标题和描述里包含关键词的事项（不区分大小写） |
 | `graph` | `graph [文件夹] [--all] [--mermaid]` | `folder?`、`all?`、`mermaid?` | 文件夹（含子文件夹）里的事项和依赖，按先后顺序；连到外面的事项也列出并注明文件夹 |
 | `log` | `log [-n 条数]` | `limit?` | 最近的改动批次，默认 10，最多 100 |
 | `jobs` | `jobs` | | [AI 整理](ai.md)的请求：等待、整理中和失败的，失败的带原因，以及建议待用户确认的整理文件夹；整理完的请求已经变成事项，不在这里 |
 | `add` | `add <标题> [--folder] [-d 描述] [--due] [--remind] [--repeat [--repeat-from]] [--after 编号…] [--before 编号…]` | `title`、`folder?`、`description?`、`due?`、`remind?`、`repeat?`、`repeat_from?`、`after?`、`before?` | 添加一个事项；文件夹不存在时一起新建 |
 | `edit` | `edit <事项> [--title] [-d 描述 \| --replace 原文 新文… \| --append 文本] [--due \| --no-due] [--remind \| --no-remind] [--repeat [--repeat-from] \| --no-repeat]` | `task`、`title?`、`description?`、`replace?`、`append?`、`due?`、`remind?`、`repeat?`、`repeat_from?` | 修改事项；`due`、`remind`、`repeat` 给 `null` 表示清除；描述的改法见[同时修改](#同时修改) |
-| `done` | `done <事项…>` | `tasks`、`today?` | 标为完成，输出因此变成可做的事项；重复的事项改为顺延，输出下一次的截止时间。有重复的事项时必须给 `today`（用户当地的当天日期），命令行自动带上本机日期 |
+| `done` | `done <事项…> [--end-repeat]` | `tasks`、`today?`、`end_repeat?` | 标为完成，输出因此变成可做的事项；重复的事项改为顺延，输出下一次的截止时间。有重复的事项时必须给 `today`（用户当地的当天日期），命令行自动带上本机日期。`end_repeat` 让重复的事项结束重复、直接完成，用于打卡的长期事项全部做完时，见[总体设计](design.md#重复) |
 | `reopen` | `reopen <事项…>` | `tasks` | 重新打开 |
 | `mkdir` | `mkdir <路径>` | `path` | 新建文件夹，路径上缺的层级一起建；已存在时报错 |
 | `rename` | `rename <文件夹> <新名字>` | `folder`、`name` | 文件夹改名 |
@@ -139,7 +139,7 @@ $ nexttodo graph 工作
 
 | 工具 | 数据 |
 |---|---|
-| 事项 | `{id, number, title, status, folder}`；`status` 是 `ready`、`waiting`、`done`，`folder` 是路径；`waiting_on`（还在等的前置数）、`unlocks`（解锁数）不为 0 时才有，`due`、`done_at` 有值时才有 |
+| 事项 | `{id, number, title, status, folder}`；`status` 是 `ready`、`waiting`、`done`，`folder` 是路径；`waiting_on`（还在等的前置数）、`unlocks`（解锁数）不为 0 时才有，`due`、`done_at`、`completions`（`{count, last}`，重复的事项完成过时）有值时才有 |
 | `tree` | `[{path, name, depth, pending, ready}]`，先序排列，第一项是根目录 |
 | `list` | `{folder, folders: [{path, name, pending, ready}], tasks: [事项], total}`，`total` 是没截断时的事项数；有 AI 整理请求时另有 `jobs: {waiting, running, failed, ready}`，只含不为 0 的 |
 | `next` | `{tasks: [事项], total}` |

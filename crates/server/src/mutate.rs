@@ -1,9 +1,12 @@
 //! The mutation pipeline: validate and apply operations in one transaction, record the resulting
 //! entity changes in the mutation log. Resubmitting a mutation id returns the first result.
 
+use std::num::NonZeroU32;
+
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
-    AiJob, AiJobId, Change, Dependency, Due, Effect, Folder, FolderId, JobState, Link, MutationId, SortKey, Suggestion, Task, TaskId,
+    AiJob, AiJobId, Change, Completions, Dependency, Due, Effect, Folder, FolderId, JobState, Link, MutationId, SortKey, Suggestion, Task,
+    TaskId,
 };
 use nexttodo_core::ops::{MAX_OPS, Mutation, Op};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -226,6 +229,7 @@ impl Cx<'_> {
                     description: description.clone(),
                     done_at: done.then_some(self.now),
                     due: due.clone(),
+                    completions: None,
                     sort_key,
                     created_at: self.now,
                     updated_at: self.now,
@@ -262,6 +266,8 @@ impl Cx<'_> {
                                 .as_ref()
                                 .ok_or_else(|| ApiError::invalid("完成重复的事项需要给出今天的日期", Some("today".into())))?;
                             d.date = r.next(&d.date, today).map_err(|m| ApiError::invalid(m, Some("due".into())))?;
+                            let count = t.completions.as_ref().map_or(NonZeroU32::MIN, |c| c.count.saturating_add(1));
+                            t.completions = Some(Completions { count, last: today.clone() });
                         }
                         _ => t.done_at = done.then_some(self.now),
                     }
@@ -526,7 +532,7 @@ impl Cx<'_> {
                 }
                 Effect::Task(Change::Updated { before: b, after: a }) => {
                     if let Some(cur) = store::load_task(self.c, self.owner, b.id)? {
-                        let mut restored = restore!(cur, b, a, folder_id, title, description, done_at, sort_key);
+                        let mut restored = restore!(cur, b, a, folder_id, title, description, done_at, completions, sort_key);
                         restored.due = restore_due(&cur.due, &b.due, &a.due);
                         self.update_task(cur, restored)?;
                     }

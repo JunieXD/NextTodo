@@ -142,7 +142,7 @@ svg { display: block; flex: none; }
 .m-path { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; display: inline-block !important; }
 .overdue { color: var(--error); }
 .today { color: var(--warn); }
-.m-unlock { color: var(--primary); font-weight: 500; }
+.m-unlock, .m-done-today { color: var(--primary); font-weight: 500; }
 .task.unlocked > .row-inner { animation: unlock 1.6s ease-out; }
 .task.unlocked .check { animation: ring 1s ease-out; }
 @keyframes unlock { 0%, 30% { background: var(--primary-container); } }
@@ -571,7 +571,8 @@ svg { display: block; flex: none; }
 /* What a button without words does, on hovering it. */
 .tip { z-index: 70; padding: 6px 10px; border-radius: 8px; background: var(--inverse-surface); color: var(--inverse-on-surface); font-size: 13px; line-height: 1.3; box-shadow: var(--shadow-1); pointer-events: none; }
 .tip[data-state$="open"] { animation: fade .12s; }
-.detail-actions { margin: 22px 16px 0; }
+.detail-actions { margin: 22px 16px 0; --sep-left: 16px; }
+.detail-actions .end-repeat .row-inner { color: var(--primary); justify-content: center; font-weight: 500; }
 
 /* Dragging a row of a rail list to another place. */
 .reorderable > .row { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }

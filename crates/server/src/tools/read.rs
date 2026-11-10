@@ -133,6 +133,9 @@ pub fn show(c: &Connection, cx: &Cx, a: ShowArgs) -> Result<Output, ApiError> {
     if let Some(done_at) = t.done_at {
         lines.push(format!("完成：{}", ago(cx.now, done_at)));
     }
+    if let Some(c) = &t.completions {
+        lines.push(format!("完成次数：{}，最近 {}", c.count, c.last.as_str()));
+    }
     let (before, after) = (b.before(t), b.after(t));
     for (label, list) in [("前置", &before), ("后续", &after)] {
         if !list.is_empty() {

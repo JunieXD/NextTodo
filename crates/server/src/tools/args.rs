@@ -149,6 +149,9 @@ pub struct DoneArgs {
     pub tasks: Vec<i64>,
     #[schemars(with = "Option<String>", description = "用户当地今天的日期，如 2026-11-08；有重复的事项时必须给，下一次的截止时间据此计算")]
     pub today: Option<Date>,
+    #[schemars(description = "重复的事项结束重复、直接完成，如读完一本书时；默认 false")]
+    #[serde(default)]
+    pub end_repeat: bool,
 }
 
 #[derive(Deserialize, JsonSchema)]

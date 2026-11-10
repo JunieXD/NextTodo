@@ -1,5 +1,7 @@
 //! Entities and the validated values they are made of.
 
+use std::num::NonZeroU32;
+
 use serde::{Deserialize, Deserializer, Serialize};
 use ts_rs::TS;
 use uuid::Uuid;
@@ -260,6 +262,16 @@ pub struct Repeat {
     pub days: Option<Weekdays>,
 }
 
+/// How many times a repeating task has been done, and the last day it was, on the device that did
+/// it: done, it moves on instead (docs/design.md#重复).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export)]
+pub struct Completions {
+    pub count: NonZeroU32,
+    pub last: Date,
+}
+
 /// How many units apart the due dates of a repeating task are: 1–365.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(try_from = "u32", into = "u32")]
@@ -443,6 +455,10 @@ pub struct Task {
     pub description: Description,
     pub done_at: Option<i64>,
     pub due: Option<Due>,
+    /// None until a repeating task is first done.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub completions: Option<Completions>,
     pub sort_key: SortKey,
     pub created_at: i64,
     pub updated_at: i64,

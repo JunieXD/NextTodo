@@ -105,6 +105,9 @@ pub fn task_view(b: &Board, t: &Task) -> Value {
     if let Some(at) = t.done_at {
         v["done_at"] = at.into();
     }
+    if let Some(c) = &t.completions {
+        v["completions"] = json!(c);
+    }
     v
 }
 

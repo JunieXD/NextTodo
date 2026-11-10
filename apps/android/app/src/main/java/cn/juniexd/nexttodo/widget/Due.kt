@@ -5,6 +5,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.temporal.ChronoUnit
+import org.json.JSONObject
 
 /** A due date with an optional time, read the way the web app reads it (`apps/web/src/domain/dates.ts`). */
 data class Due(val date: LocalDate, val time: LocalTime?) {
@@ -31,8 +32,11 @@ data class Due(val date: LocalDate, val time: LocalTime?) {
         }
     }
 
-    private companion object {
-        val WEEK = mapOf(
+    companion object {
+        /** From the web app's `Due`, as JSON. */
+        fun from(d: JSONObject) = Due(LocalDate.parse(d.getString("date")), d.optString("time").takeIf { it.isNotEmpty() }?.let(LocalTime::parse))
+
+        private val WEEK = mapOf(
             DayOfWeek.MONDAY to "一", DayOfWeek.TUESDAY to "二", DayOfWeek.WEDNESDAY to "三", DayOfWeek.THURSDAY to "四",
             DayOfWeek.FRIDAY to "五", DayOfWeek.SATURDAY to "六", DayOfWeek.SUNDAY to "日",
         )

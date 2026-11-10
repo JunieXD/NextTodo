@@ -22,7 +22,6 @@ import cn.juniexd.nexttodo.forUser
 import com.capacitorjs.plugins.localnotifications.NotificationStorage
 import com.capacitorjs.plugins.localnotifications.TimedNotificationPublisher
 import java.time.LocalDate
-import java.time.LocalTime
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -107,7 +106,7 @@ object Widget {
         val list = JSONArray(prefs.getString("tasks", "[]"))
         val done = done(prefs)
         return (0 until list.length()).map(list::getJSONObject).filter { !done.has(it.getString("id")) }.map { t ->
-            val due = t.optJSONObject("due")?.let { d -> Due(LocalDate.parse(d.getString("date")), d.optString("time").takeIf { it.isNotEmpty() }?.let(LocalTime::parse)) }
+            val due = t.optJSONObject("due")?.let { Due.from(it) }
             // `/学习/毕业论文` reads `学习 / 毕业论文`; the root shows nothing.
             val lastDone = t.optJSONObject("completions")?.let { LocalDate.parse(it.getString("last")) }
             Item(t.getString("id"), t.getInt("number"), t.getString("title"), t.getString("folder").removePrefix("/").replace("/", " / "), due, lastDone)

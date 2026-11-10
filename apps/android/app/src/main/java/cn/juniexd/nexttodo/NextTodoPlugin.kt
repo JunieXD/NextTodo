@@ -1,5 +1,6 @@
 package cn.juniexd.nexttodo
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -13,6 +14,7 @@ import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.ActivityCallback
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.getcapacitor.annotation.Permission
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
@@ -26,8 +28,13 @@ private val installing = AtomicBoolean(false)
  * not have read them yet. */
 private var cleared = false
 
-/** What the web app asks of Android beyond the stock plugins: see `apps/web/src/android.ts`. */
-@CapacitorPlugin(name = "NextTodo")
+/** What the web app asks of Android beyond the stock plugins: see `apps/web/src/android.ts`. Its
+ * permission, `calendar`, is checked and asked for with the plugin's own `checkPermissions` and
+ * `requestPermissions`. */
+@CapacitorPlugin(
+    name = "NextTodo",
+    permissions = [Permission(alias = "calendar", strings = [Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR])],
+)
 class NextTodoPlugin : Plugin() {
     /** Does `work`, which is to `what`, off the bridge's thread: resolves `call` with what it gives, or
      * rejects it with what to tell the user, and the kind of failure as its code (`forUser`, `kind`). */
@@ -65,6 +72,51 @@ class NextTodoPlugin : Plugin() {
             Widget.setTextSize(context, size)
             JSObject()
         }
+    }
+
+    /** Where the tasks with a deadline are written in the system calendar: `target`, `own` or the
+     * id of one of the device's calendars, or nothing. See `DeviceCalendar`. */
+    @PluginMethod
+    fun calendar(call: PluginCall) = work(call, "读取日历设置") {
+        JSObject().put(
+            "target",
+            when (val t = DeviceCalendar.target(context)) {
+                null -> null
+                DeviceCalendar.Target.Own -> "own"
+                is DeviceCalendar.Target.Device -> t.id
+            },
+        )
+    }
+
+    @PluginMethod
+    fun calendars(call: PluginCall) = work(call, "读取手机上的日历") { JSObject().put("calendars", DeviceCalendar.calendars(context)) }
+
+    @PluginMethod
+    fun setCalendar(call: PluginCall) {
+        val target = when (val t = call.data.opt("target")) {
+            null -> null
+            "own" -> DeviceCalendar.Target.Own
+            else -> DeviceCalendar.Target.Device((t as Number).toLong())
+        }
+        work(call, "设置写进的日历") {
+            DeviceCalendar.setTarget(context, target)
+            JSObject()
+        }
+    }
+
+    @PluginMethod
+    fun updateCalendar(call: PluginCall) {
+        val events = call.getString("events")!!
+        work(call, "更新系统日历") {
+            DeviceCalendar.update(context, events)
+            JSObject()
+        }
+    }
+
+    @PluginMethod
+    fun clearCalendar(call: PluginCall) = work(call, "删除写进日历的日程") {
+        DeviceCalendar.clear(context)
+        JSObject()
     }
 
     @PluginMethod

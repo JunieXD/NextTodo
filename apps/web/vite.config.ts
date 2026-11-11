@@ -72,6 +72,11 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    // Vite's default, Baseline Widely Available, with Chromium 99 for 111: the WebView of Huawei phones
+    // without Google's services (docs/web.md#浏览器).
+    target: ["chrome99", "edge111", "firefox114", "safari16.4", "ios16.4"],
+  },
   server: {
     proxy: {
       "/api": { target: server, ws: true },

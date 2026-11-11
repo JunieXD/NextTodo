@@ -35,7 +35,7 @@ export function reduce(edges: Edge[]): Edge[] {
   const redundant = new Set<Edge>();
   for (const list of out.values()) {
     if (list.length < 2) continue;
-    const sorted = list.toSorted((x, y) => rank.get(x[1])! - rank.get(y[1])!);
+    const sorted = [...list].sort((x, y) => rank.get(x[1])! - rank.get(y[1])!);
     const last = rank.get(sorted.at(-1)![1])!;
     const reached = new Set<TaskId>();
     for (const e of sorted) {

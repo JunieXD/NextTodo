@@ -32,6 +32,10 @@
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "MiSans", "HarmonyOS Sans SC", "Noto Sans SC", Roboto, "Segoe UI", "Microsoft YaHei UI", sans-serif;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* 1% of the viewport's height as it is now. Through this, not `dvh` itself: Chromium before 108 has
+     none, and a rule written twice, in `vh` first, loses its first value when the CSS is minified
+     (docs/web.md#浏览器). */
+  --dvh: 1dvh;
   --tabbar-h: calc(64px + var(--safe-bottom));
   --ease: cubic-bezier(.2, .9, .25, 1);
   /* Leaving: slow at first, then away. */
@@ -57,6 +61,7 @@
   --shadow-3: 0 6px 16px rgba(0, 0, 0, .45);
   color-scheme: dark;
 }
+@supports not (height: 1dvh) { :root { --dvh: 1vh; } }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; scrollbar-width: none; }
 *::-webkit-scrollbar { display: none; }
@@ -68,8 +73,10 @@ button { background: none; border: 0; padding: 0; cursor: pointer; text-align: i
 .scrim, .modal-scrim, .dialog-scrim { cursor: default; }
 svg { display: block; flex: none; }
 :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+/* Not Tailwind's, which mixes the text's color: Chromium before 111 would show it unmixed, like typed text. */
+::placeholder { color: var(--outline); }
 .muted { color: var(--outline); }
-.app { position: relative; height: 100dvh; overflow: hidden; }
+.app { position: relative; height: calc(100 * var(--dvh)); overflow: hidden; }
 
 /* ---------- phone shell ---------- */
 .screen { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--surface); }
@@ -188,7 +195,7 @@ svg { display: block; flex: none; }
 .qa-field { flex: 1; min-width: 0; display: flex; border-radius: 20px; background: var(--surface-container); }
 .qa-field textarea { flex: 1; min-width: 0; border: 0; background: none; outline: none; resize: none; font-size: 16px; line-height: 22px; padding: 9px 14px; max-height: calc(22px * 5 + 18px); overflow-y: auto; text-overflow: ellipsis; }
 /* The placeholder takes one line, cut short with the field's ellipsis. */
-.qa-field ::placeholder { color: var(--outline); white-space: nowrap; overflow: hidden; text-overflow: inherit; }
+.qa-field ::placeholder { white-space: nowrap; overflow: hidden; text-overflow: inherit; }
 .qa-side { align-self: stretch; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; gap: 4px; padding-bottom: 2px; flex: none; }
 .qa-side .expand { margin-bottom: auto; }
 .qa-btns { display: flex; gap: 4px; }
@@ -204,7 +211,6 @@ svg { display: block; flex: none; }
 .editor.enter { animation: sheet-in .38s var(--ease); }
 .editor.leave { animation: sheet-out .26s var(--ease-exit) forwards; }
 .editor textarea { flex: 1; min-height: 0; border: 0; background: none; outline: none; resize: none; font-size: 16px; line-height: 1.6; padding: 4px 24px 12px; }
-.editor textarea::placeholder { color: var(--outline); }
 .editor-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 16px 0; }
 
 /* AI jobs in lists */
@@ -271,9 +277,9 @@ svg { display: block; flex: none; }
 .scrim.leave { animation: fade-out .28s var(--ease-exit) forwards; }
 @keyframes fade { from { opacity: 0; } }
 @keyframes fade-out { to { opacity: 0; } }
-.sheet { position: absolute; z-index: 21; left: 0; right: 0; bottom: 0; height: calc(100dvh - var(--safe-top) - 10px); display: flex; flex-direction: column;
+.sheet { position: absolute; z-index: 21; left: 0; right: 0; bottom: 0; height: calc(100 * var(--dvh) - var(--safe-top) - 10px); display: flex; flex-direction: column;
   background: var(--surface-low); border-radius: 28px 28px 0 0; box-shadow: 0 -8px 32px rgba(0, 0, 0, .14); transition: transform .38s var(--ease); }
-.sheet.half { transform: translateY(calc(100% - 60dvh)); }
+.sheet.half { transform: translateY(calc(100% - 60 * var(--dvh))); }
 .sheet.enter { animation: sheet-in .42s var(--ease); }
 .sheet.leave { animation: sheet-out .28s var(--ease-exit) forwards; }
 @keyframes sheet-in { from { transform: translateY(100%); } }
@@ -283,7 +289,7 @@ svg { display: block; flex: none; }
 .handle { width: 36px; height: 5px; border-radius: 3px; background: var(--outline-variant); }
 .sheet-scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding-bottom: calc(24px + var(--safe-bottom)); }
 /* in the half state the lower part of the sheet is off screen; pad so the content can still scroll fully into view */
-.sheet.half .sheet-scroll { padding-bottom: calc(40dvh - var(--safe-top) + 14px + var(--safe-bottom)); }
+.sheet.half .sheet-scroll { padding-bottom: calc(40 * var(--dvh) - var(--safe-top) + 14px + var(--safe-bottom)); }
 
 .detail { padding-bottom: 8px; }
 .d-head { display: flex; align-items: flex-start; gap: 14px; padding: 6px 12px 14px 20px; touch-action: none; }
@@ -335,7 +341,7 @@ svg { display: block; flex: none; }
 .modal-scrim { position: absolute; z-index: 30; inset: 0; background: rgba(0, 0, 0, .36); }
 .modal-scrim.enter { animation: fade .25s; }
 .modal-scrim.leave { animation: fade-out .26s var(--ease-exit) forwards; }
-.modal { position: absolute; z-index: 31; left: 0; right: 0; bottom: 0; max-height: 86dvh; display: flex; flex-direction: column; background: var(--surface-low); border-radius: 28px 28px 0 0; padding-bottom: calc(16px + var(--safe-bottom)); overflow: hidden; }
+.modal { position: absolute; z-index: 31; left: 0; right: 0; bottom: 0; max-height: calc(86 * var(--dvh)); display: flex; flex-direction: column; background: var(--surface-low); border-radius: 28px 28px 0 0; padding-bottom: calc(16px + var(--safe-bottom)); overflow: hidden; }
 .modal.enter { animation: sheet-in .38s var(--ease); }
 .modal.leave { animation: sheet-out .26s var(--ease-exit) forwards; }
 /* One page of the settings for another: the panel stays, its content moves on or back. */
@@ -471,7 +477,7 @@ svg { display: block; flex: none; }
    that removes something apart on the left. */
 .actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 22px 16px 0; }
 .actions .danger-text { margin-right: auto; }
-.login { min-height: 100dvh; display: grid; place-items: center; padding: calc(24px + var(--safe-top)) 0 calc(24px + var(--safe-bottom)); overflow-y: auto; }
+.login { min-height: calc(100 * var(--dvh)); display: grid; place-items: center; padding: calc(24px + var(--safe-top)) 0 calc(24px + var(--safe-bottom)); overflow-y: auto; }
 .login-card { width: min(420px, 100%); }
 .login-brand { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 24px; text-align: center; }
 .login-brand .brand-mark { width: 56px; height: 56px; }

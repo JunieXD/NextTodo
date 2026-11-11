@@ -70,7 +70,7 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
 
   const s = useMemo(() => scene(board, folder, { done, sub }), [board, folder, done, sub]);
   const ids = s.tasks.map((t) => t.id).sort();
-  const sorted = s.edges.toSorted((a, b) => (edgeKey(a) < edgeKey(b) ? -1 : 1));
+  const sorted = [...s.edges].sort((a, b) => (edgeKey(a) < edgeKey(b) ? -1 : 1));
   const n = widest(ids, sorted);
   const node: Size = { width: across ? 184 : Math.floor(Math.max(104, Math.min(146, (innerWidth - 48 - (n - 1) * 12) / n))), height: NODE_HEIGHT };
 

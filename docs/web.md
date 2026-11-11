@@ -81,6 +81,17 @@
 
 网页用 HttpOnly Cookie，脚本拿不到令牌。登录和注册页面提交后服务端设置 Cookie；请求 `/me` 返回 401 时回到登录页。设备名取自浏览器和系统，如“Chrome · macOS”。
 
+## 浏览器
+
+最低支持 Chromium 99，其余按 Vite 默认的 Baseline Widely Available（Safari 16.4、Firefox 114）。Chromium 放低到 99 是为了没有谷歌服务的华为手机：App 的页面跑在系统的 WebView 里，这些手机用华为自己的 WebView，不随 Google Play 更新，华为 WebView 14 报的内核版本是 Chrome 99。
+
+- 语法和 CSS 由构建按这些目标转换（`vite.config.ts` 的 `build.target`），比如媒体查询的范围写法。
+- 浏览器自带的方法转换不了，用了 Chromium 99 没有的就会出错。TypeScript 的 `lib` 是 ES2023，更新的方法通不过类型检查；ES2023 给数组加的 `toSorted` 等方法和常见的较新 DOM 方法，由 ESLint 的 `no-restricted-properties` 拦下，清单在 `eslint.config.js`。其他较新的接口，用之前查 MDN 的兼容表，没有的先判断再用。
+- 跟着视口变的高度不直接写 `dvh`，写成 `calc(100 * var(--dvh))`：`--dvh` 是 `1dvh`，没有 `dvh` 的内核里是 `1vh`。同一属性先写 `vh` 再写 `dvh` 的回退不管用：构建压缩 CSS 时 Tailwind 按 Chrome 111 优化，会删掉前一条；含 `var()` 的值在旧内核里也不会退回前一条，而是整条失效。
+- 占位文字的颜色由应用的样式给出：Tailwind 默认的要混色，Chromium 99 上会和输入的文字一样深。
+- 在 Chromium 99 上不生效、影响不大的：`color-mix()`（按下行时的底色、几处光晕动画，构建时生成的后备颜色不混合）、`:has()`、`field-sizing`（详情里的标题编辑框不随内容变高）、`inert`。
+- 试的时候用 Chromium 的官方快照，比如 macOS ARM 的 99.0.4844.0：`https://commondatastorage.googleapis.com/chromium-browser-snapshots/Mac_Arm/961656/chrome-mac.zip`，打开开发版服务端提供的构建（`vite build` 的输出）。
+
 ## 部署
 
 `pnpm build` 输出到 `apps/web/dist`，并为每个文本文件生成 `.br` 和 `.gz` 预压缩版本。构建时还写出 `app/web.json`，供 Android App 热更新（见 [Android](android.md#更新)）；构建所在的提交是网页的版本号，设置页“关于”里显示（`import.meta.env.WEB_VERSION`）。服务端用 `--web <目录>` 提供这些文件：
@@ -99,7 +110,7 @@
 - `apply.ts` 和 `store.ts`：本地应用、撤销、待发队列和基线的合并、拒绝、重连重发。
 - `reorder.ts`：随机生成的依赖和顺序键下，任意允许的拖动之后，排序结果正好是拖成的顺序。
 
-界面在浏览器里实际操作验证，不写冻结样式的测试。
+界面在浏览器里实际操作验证，不写冻结样式的测试。改了样式或用了较新的接口，在 Chromium 99 里也试一遍，见[浏览器](#浏览器)。
 
 ## 命令
 

@@ -12,6 +12,8 @@ Android App（包括小米澎湃 OS）：Capacitor 外壳加载打包在安装�
 
 网页端用 `Capacitor.isNativePlatform()` 区分自己是在浏览器里还是在 App 里，只有连接服务器的方式和下面几项 App 专有的功能不同，界面完全一样。
 
+页面跑在系统的 WebView 里。没有谷歌服务的华为手机用华为自己的 WebView，内核较旧，网页端因此支持到 Chromium 99，见[网页端](web.md#浏览器)。
+
 ## 连接服务器
 
 也可以不连服务器，在本机使用，见[本机模式](local.md)。

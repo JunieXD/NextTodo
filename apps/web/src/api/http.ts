@@ -104,22 +104,30 @@ export function fetchServer(path: string, init?: RequestInit): Promise<Response>
 }
 
 export async function api<T>(method: string, path: string, body?: unknown, timeoutMs = TIMEOUT_MS): Promise<T> {
+  const headers: Record<string, string> = body === undefined ? {} : { "Content-Type": "application/json" };
+  if (server.token) headers.Authorization = `Bearer ${server.token}`;
+  // Not `AbortSignal.timeout`, which Chromium has from 103 only (docs/web.md#浏览器).
+  const timeout = new AbortController();
+  const init = {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: timeout.signal,
+    ...(app === "desktop" && server.local && DIRECT),
+  };
+  const timer = setTimeout(() => timeout.abort(), timeoutMs);
   let res: Response;
   let text: string;
+  // Only the request itself: a mistake in the code is not the network failing.
   try {
-    const headers: Record<string, string> = body === undefined ? {} : { "Content-Type": "application/json" };
-    if (server.token) headers.Authorization = `Bearer ${server.token}`;
-    res = await fetchServer(`/api/v1${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
-      ...(app === "desktop" && server.local && DIRECT),
-    });
+    res = await fetchServer(`/api/v1${path}`, init);
     text = await res.text();
   } catch {
     // The app's own server is on this device: the network has nothing to do with it.
     throw new ApiError(0, OFFLINE, server.local ? "无法连接 App 内置的服务端，请重试" : "无法连接服务器，请检查网络后重试");
+  } finally {
+    // Answered, the request is not aborted: the desktop app's HTTP plugin would cancel it again.
+    clearTimeout(timer);
   }
   // 202 and 204 come without a body.
   if (res.ok) return (text ? JSON.parse(text) : undefined) as T;

@@ -100,7 +100,7 @@ enum Command {
         #[arg(
             long,
             value_name = "间隔",
-            help = "重复：1d 每天、2w 每两周、3m 每三个月，1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；要有截止时间"
+            help = "重复：1d 每天、2w 每两周、3m 每三个月、1y 每年，1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五，1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；要有截止时间"
         )]
         repeat: Option<String>,
         #[arg(long, requires = "repeat", value_parser = ["due", "done"], help = "下一次从哪天算：due 按截止日期（默认），done 从完成那天")]
@@ -141,7 +141,7 @@ enum Command {
             long,
             value_name = "间隔",
             conflicts_with = "no_repeat",
-            help = "重复：1d 每天、2w 每两周、3m 每三个月，1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五"
+            help = "重复：1d 每天、2w 每两周、3m 每三个月、1y 每年，1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五，1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天"
         )]
         repeat: Option<String>,
         #[arg(long, requires = "repeat", value_parser = ["due", "done"], help = "下一次从哪天算：due 按截止日期（默认），done 从完成那天")]

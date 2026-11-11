@@ -6,8 +6,8 @@ use std::collections::{HashMap, HashSet};
 use nexttodo_core::board::{Board, Snapshot};
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
-    AiJob, Description, FolderId, NewTask, Reorder, Repeat, RepeatFrom, RepeatUnit, Suggestion, Task, TaskDeletion, TaskEdit, TaskId,
-    Title, Was,
+    AiJob, Description, FolderId, NewTask, Period, Reorder, Repeat, RepeatFrom, Suggestion, Task, TaskDeletion, TaskEdit, TaskId, Title,
+    Was,
 };
 use nexttodo_core::ops::MAX_OPS;
 use serde::Deserialize;
@@ -34,7 +34,7 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
 - folder：这个文件夹；
 - request：用户这次的要求；
 - subfolders：这个文件夹下的子文件夹，可以把事项移进去；
-- open_tasks：文件夹里未完成的事项，按现在的顺序。number 是编号；requires 是它已有的前置事项的编号，那些事项要先做完才能做它；due 是截止时间，remind 是提前多少分钟提醒，repeat 是重复，写成间隔数加单位 d（天）、w（周）或 m（月），如 1d 每天、2w 每两周、1m 每月、3m 每三个月；按周重复在某几天的，冒号后写周几（1 是周一，7 是周日），如 1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五、2w:2,4 每两周的周二和周四；repeat_from 为 done 表示下一次从完成那天算；description_omitted 为 true 的事项描述太长，没有发来；
+- open_tasks：文件夹里未完成的事项，按现在的顺序。number 是编号；requires 是它已有的前置事项的编号，那些事项要先做完才能做它；due 是截止时间，remind 是提前多少分钟提醒，repeat 是重复，写成间隔数加单位 d（天）、w（周）、m（月）或 y（年，就是 12 个月），如 1d 每天、2w 每两周、1m 每月、3m 每三个月、1y 每年；按周重复在某几天的，冒号后写周几（1 是周一，7 是周日），如 1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五、2w:2,4 每两周的周二和周四；按月重复在某几号的，冒号后写几号（1–31，没有这天的月份取最后一天），如 1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；repeat_from 为 done 表示下一次从完成那天算；description_omitted 为 true 的事项描述太长，没有发来；
 - done_tasks：最近完成的事项，只有编号和标题。
 
 只输出一个 json 对象，不要有任何别的文字，格式如下：
@@ -165,14 +165,14 @@ pub fn prompt(job: &AiJob, snap: Snapshot) -> (Prompt, Shown) {
     (chat(SYSTEM, &input), Shown { snap, folder: job.folder_id, tasks })
 }
 
-/// `1d`, `2w`, `3m`, `1w:1,3,5`, as the tools take a repeat.
+/// `1d`, `2w`, `3m`, `1w:1,3,5`, `1m:1,15`, as the tools take a repeat.
 pub fn repeat_text(r: Repeat) -> String {
-    let unit = match r.unit {
-        RepeatUnit::Day => 'd',
-        RepeatUnit::Week => 'w',
-        RepeatUnit::Month => 'm',
+    let (unit, days) = match r.period {
+        Period::Day => ('d', None),
+        Period::Week(days) => ('w', days.map(Vec::from)),
+        Period::Month(days) => ('m', days.map(Vec::from)),
     };
-    let days = r.days.map(|w| format!(":{}", Vec::from(w).iter().map(u8::to_string).collect::<Vec<_>>().join(",")));
+    let days = days.map(|d| format!(":{}", d.iter().map(u8::to_string).collect::<Vec<_>>().join(",")));
     format!("{}{unit}{}", r.every.get(), days.unwrap_or_default())
 }
 

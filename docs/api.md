@@ -50,7 +50,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 // 事项
 { "id": "…", "number": 5, "folder_id": "…", "title": "设计问卷", "description": "…", "done_at": null,
   "due": { "date": "2026-11-02", "time": "18:00", "remind_before": 60, "repeat": { "every": 1, "unit": "week", "from": "due" } },
-  // 没有截止时间时为 null；time、remind_before、repeat 可省略；按周的 repeat 可以带 "days": [1, 3, 5]，在周几（1 是周一，7 是周日）
+  // 没有截止时间时为 null；time、remind_before、repeat 可省略；按周的 repeat 可以带 "days": [1, 3, 5]，在周几（1 是周一，7 是周日）；按月的 days 是几号（1–31）。每年是 every 12、unit month
   "completions": { "count": 12, "last": "2026-11-01" },
   // 重复的事项完成过几次、最近一次的日期；没完成过时没有这一项。只随完成改变，改动里不能直接写
   "sort_key": "a1", "created_at": …, "updated_at": …, "created_via": "Claude Code", "updated_via": null }

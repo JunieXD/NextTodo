@@ -250,16 +250,71 @@ pub const MAX_REMIND_BEFORE: u32 = 30 * 24 * 60;
 
 /// A repeating task stays open: done, its due date moves on (docs/design.md#重复).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(deny_unknown_fields)]
-#[ts(export)]
+#[serde(try_from = "RepeatFields", into = "RepeatFields")]
+#[ts(export, as = "RepeatFields")]
 pub struct Repeat {
     pub every: Every,
-    pub unit: RepeatUnit,
+    pub period: Period,
     pub from: RepeatFrom,
-    /// A weekly one's days, when not just the due date's.
+}
+
+/// What `every` counts: days; weeks, on some days of the week or the due date's; months, on some days
+/// of the month or the due date's. A year is 12 months.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Period {
+    Day,
+    Week(Option<Weekdays>),
+    Month(Option<Monthdays>),
+}
+
+impl Period {
+    pub fn unit(self) -> RepeatUnit {
+        match self {
+            Period::Day => RepeatUnit::Day,
+            Period::Week(_) => RepeatUnit::Week,
+            Period::Month(_) => RepeatUnit::Month,
+        }
+    }
+}
+
+/// How `Repeat` looks in JSON.
+#[derive(Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(rename = "RepeatFields")]
+pub struct RepeatFields {
+    every: Every,
+    unit: RepeatUnit,
+    from: RepeatFrom,
+    /// A weekly one's days of the week, Monday 1 to Sunday 7, or a monthly one's days of the month,
+    /// 1–31, when not just the due date's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub days: Option<Weekdays>,
+    days: Option<Vec<u8>>,
+}
+
+impl TryFrom<RepeatFields> for Repeat {
+    type Error = &'static str;
+
+    fn try_from(f: RepeatFields) -> Result<Self, Self::Error> {
+        let period = match (f.unit, f.days) {
+            (RepeatUnit::Day, None) => Period::Day,
+            (RepeatUnit::Day, Some(_)) => return Err("按天重复不能选周几或几号"),
+            (RepeatUnit::Week, days) => Period::Week(days.map(Weekdays::try_from).transpose()?),
+            (RepeatUnit::Month, days) => Period::Month(days.map(Monthdays::try_from).transpose()?),
+        };
+        Ok(Repeat { every: f.every, period, from: f.from })
+    }
+}
+
+impl From<Repeat> for RepeatFields {
+    fn from(r: Repeat) -> Self {
+        let days = match r.period {
+            Period::Day => None,
+            Period::Week(days) => days.map(Vec::from),
+            Period::Month(days) => days.map(Vec::from),
+        };
+        RepeatFields { every: r.every, unit: r.period.unit(), from: r.from, days }
+    }
 }
 
 /// How many times a repeating task has been done, and the last day it was, on the device that did
@@ -308,9 +363,7 @@ pub enum RepeatUnit {
 }
 
 /// The days of the week a weekly repeat falls on, at least one: in JSON Monday is 1 and Sunday 7.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
-#[serde(try_from = "Vec<u8>", into = "Vec<u8>")]
-#[ts(export, type = "Array<number>")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Weekdays(u8);
 
 impl Weekdays {
@@ -340,6 +393,35 @@ impl From<Weekdays> for Vec<u8> {
     }
 }
 
+/// The days of the month a monthly repeat falls on, 1–31, at least one. A month without one of them
+/// has its last day instead.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Monthdays(u32);
+
+impl Monthdays {
+    /// Whether it has the day `d`, 1–31.
+    pub fn has(self, d: u32) -> bool {
+        self.0 & 1 << (d - 1) != 0
+    }
+}
+
+impl TryFrom<Vec<u8>> for Monthdays {
+    type Error = &'static str;
+
+    fn try_from(days: Vec<u8>) -> Result<Self, Self::Error> {
+        if days.is_empty() || days.iter().any(|d| !(1..=31).contains(d)) {
+            return Err("重复的几号应为 1–31，至少一天");
+        }
+        Ok(Monthdays(days.iter().fold(0, |bits, d| bits | 1 << (d - 1))))
+    }
+}
+
+impl From<Monthdays> for Vec<u8> {
+    fn from(m: Monthdays) -> Vec<u8> {
+        (1..=31).filter(|&d| m.has(u32::from(d))).collect()
+    }
+}
+
 /// What the next due date counts from: the one before, keeping to the schedule, or the day it is
 /// done.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -366,6 +448,24 @@ impl rusqlite::types::FromSql for Weekdays {
 
 #[cfg(feature = "sql")]
 impl rusqlite::ToSql for Weekdays {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        Ok(self.0.into())
+    }
+}
+
+/// Stored as bits, the 1st the lowest.
+#[cfg(feature = "sql")]
+impl rusqlite::types::FromSql for Monthdays {
+    fn column_result(v: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        match u32::column_result(v)? {
+            bits @ 1..=0x7fff_ffff => Ok(Monthdays(bits)),
+            bits => Err(rusqlite::types::FromSqlError::OutOfRange(bits.into())),
+        }
+    }
+}
+
+#[cfg(feature = "sql")]
+impl rusqlite::ToSql for Monthdays {
     fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
         Ok(self.0.into())
     }
@@ -406,9 +506,6 @@ impl Due {
     pub fn new(date: Date, time: Option<Time>, remind_before: Option<u32>, repeat: Option<Repeat>) -> Result<Due, String> {
         if remind_before.is_some_and(|m| m > MAX_REMIND_BEFORE) {
             return Err("提醒最多提前 30 天".into());
-        }
-        if repeat.is_some_and(|r| r.days.is_some() && r.unit != RepeatUnit::Week) {
-            return Err("只有按周重复才能选周几".into());
         }
         let at = match (time, remind_before) {
             (Some(time), remind_before) => Some(DueAt { time, remind_before }),
@@ -763,6 +860,8 @@ mod tests {
         assert_eq!(to_value(from_value::<Due>(repeating.clone()).unwrap()).unwrap(), repeating);
         let days = json!({ "date": "2026-11-20", "repeat": { "every": 1, "unit": "week", "from": "due", "days": [5, 1, 3] } });
         assert_eq!(to_value(from_value::<Due>(days).unwrap()).unwrap()["repeat"]["days"], json!([1, 3, 5]));
+        let monthdays = json!({ "date": "2026-11-20", "repeat": { "every": 1, "unit": "month", "from": "due", "days": [31, 1, 15] } });
+        assert_eq!(to_value(from_value::<Due>(monthdays).unwrap()).unwrap()["repeat"]["days"], json!([1, 15, 31]));
         for bad in [
             json!({ "every": 0, "unit": "day", "from": "due" }),
             json!({ "every": 366, "unit": "day", "from": "due" }),
@@ -771,6 +870,8 @@ mod tests {
             json!({ "every": 1, "unit": "week", "from": "due", "days": [0, 1] }),
             json!({ "every": 1, "unit": "week", "from": "due", "days": [8] }),
             json!({ "every": 1, "unit": "day", "from": "due", "days": [1] }),
+            json!({ "every": 1, "unit": "month", "from": "due", "days": [0] }),
+            json!({ "every": 1, "unit": "month", "from": "due", "days": [32] }),
         ] {
             assert!(from_value::<Due>(json!({ "date": "2026-11-20", "repeat": bad })).is_err(), "{bad}");
         }

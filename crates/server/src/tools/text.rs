@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use nexttodo_core::board::{Board, Snapshot, Status};
 use nexttodo_core::model::{
-    AiJob, Change, Date, Due, Effect, FolderId, JobState, Link, Repeat, RepeatFrom, RepeatUnit, Task, TaskId, Weekdays,
+    AiJob, Change, Date, Due, Effect, FolderId, JobState, Link, Period, Repeat, RepeatFrom, Task, TaskId, Weekdays,
 };
 use serde_json::{Value, json};
 
@@ -31,24 +31,30 @@ pub fn due(d: &Due) -> String {
     s
 }
 
-/// `每天`, `每 2 周`, `每个工作日`, `每 2 周的周二、四`, `每 3 个月，从完成那天算`.
+/// `每天`, `每 2 周`, `每个工作日`, `每 2 周的周二、四`, `每月 1、15 号`, `每年`, `每 3 个月，从完成那天算`;
+/// the web app's `repeatLabel` has them so too.
 pub fn repeat(r: Repeat) -> String {
-    let unit = match r.unit {
-        RepeatUnit::Day => "天",
-        RepeatUnit::Week => "周",
-        RepeatUnit::Month => "个月",
-    };
-    let every = match (r.every.get(), r.unit, r.days) {
-        (1, _, Some(Weekdays::WORKDAYS)) => "每个工作日".to_owned(),
-        (n, _, Some(days)) => {
+    let every = match (r.every.get(), r.period) {
+        (1, Period::Week(Some(Weekdays::WORKDAYS))) => "每个工作日".to_owned(),
+        (n, Period::Week(Some(days))) => {
             let names: Vec<&str> =
                 (0..7).filter(|&i| days.has(i)).map(|i| ["一", "二", "三", "四", "五", "六", "日"][i as usize]).collect();
             let names = names.join("、");
             if n == 1 { format!("每周{names}") } else { format!("每 {n} 周的周{names}") }
         }
-        (1, RepeatUnit::Month, None) => "每月".to_owned(),
-        (1, _, None) => format!("每{unit}"),
-        (n, _, None) => format!("每 {n} {unit}"),
+        (n, Period::Month(Some(days))) => {
+            let days: Vec<String> = Vec::from(days).iter().map(u8::to_string).collect();
+            let days = days.join("、");
+            if n == 1 { format!("每月 {days} 号") } else { format!("每 {n} 个月的 {days} 号") }
+        }
+        (12, Period::Month(None)) => "每年".to_owned(),
+        (n, Period::Month(None)) if n % 12 == 0 => format!("每 {} 年", n / 12),
+        (1, Period::Day) => "每天".to_owned(),
+        (1, Period::Week(None)) => "每周".to_owned(),
+        (1, Period::Month(None)) => "每月".to_owned(),
+        (n, Period::Day) => format!("每 {n} 天"),
+        (n, Period::Week(None)) => format!("每 {n} 周"),
+        (n, Period::Month(None)) => format!("每 {n} 个月"),
     };
     match r.from {
         RepeatFrom::Due => every,

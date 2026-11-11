@@ -2,13 +2,13 @@
 import type { Every } from "./Every";
 import type { RepeatFrom } from "./RepeatFrom";
 import type { RepeatUnit } from "./RepeatUnit";
-import type { Weekdays } from "./Weekdays";
 
 /**
  * A repeating task stays open: done, its due date moves on (docs/design.md#重复).
  */
 export type Repeat = { every: Every, unit: RepeatUnit, from: RepeatFrom, 
 /**
- * A weekly one's days, when not just the due date's.
+ * A weekly one's days of the week, Monday 1 to Sunday 7, or a monthly one's days of the month,
+ * 1–31, when not just the due date's.
  */
-days?: Weekdays, };
+days?: Array<number>, };

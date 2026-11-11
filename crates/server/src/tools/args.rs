@@ -1,6 +1,6 @@
 //! Tool arguments. Descriptions are written for the agents that read the tool list.
 
-use nexttodo_core::model::{Date, Description, Every, Name, RepeatFrom, RepeatUnit, Time, Title, Weekdays};
+use nexttodo_core::model::{Date, Description, Every, Monthdays, Name, Period, RepeatFrom, Time, Title, Weekdays};
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer};
 
@@ -78,7 +78,7 @@ pub struct AddArgs {
     pub remind: Option<u32>,
     #[schemars(
         with = "Option<String>",
-        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；要有截止时间。完成时顺延截止时间，不会真的完成"
+        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；要有截止时间。完成时顺延截止时间，不会真的完成"
     )]
     pub repeat: Option<RepeatText>,
     #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
@@ -119,7 +119,7 @@ pub struct EditArgs {
     #[serde(default, deserialize_with = "nullable")]
     #[schemars(
         with = "Option<String>",
-        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；null 不再重复。只改截止时间时重复保留"
+        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；null 不再重复。只改截止时间时重复保留"
     )]
     pub repeat: Option<Option<RepeatText>>,
     #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
@@ -239,7 +239,7 @@ pub struct PlanTask {
     pub remind: Option<u32>,
     #[schemars(
         with = "Option<String>",
-        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；要有截止时间。完成时顺延截止时间，不会真的完成"
+        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；要有截止时间。完成时顺延截止时间，不会真的完成"
     )]
     pub repeat: Option<RepeatText>,
     #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
@@ -285,29 +285,37 @@ impl TryFrom<String> for DueText {
     }
 }
 
-/// A repeat as typed: `1d`, `2w`, `3m`; weekly on some days, Monday 1 to Sunday 7, `1w:1,3,5`.
+/// A repeat as typed: `1d`, `2w`, `3m`, `1y` (12 months); weekly on some days, Monday 1 to Sunday 7,
+/// `1w:1,3,5`; monthly on some days of the month, `1m:1,15`.
 #[derive(Clone, Copy, Deserialize)]
 #[serde(try_from = "String")]
 pub struct RepeatText {
     pub every: Every,
-    pub unit: RepeatUnit,
-    pub days: Option<Weekdays>,
+    pub period: Period,
 }
 
 impl TryFrom<String> for RepeatText {
     type Error = String;
 
     fn try_from(s: String) -> Result<Self, String> {
-        let wrong = || format!("重复“{s}”格式错误，应为间隔数加单位，如 1d、2w、3m；按周的可以在冒号后写周几，如 1w:1,3,5");
-        let (interval, days) = s.trim().split_once(':').map_or((s.trim(), None), |(i, d)| (i, Some(d)));
-        let units = [('d', RepeatUnit::Day), ('w', RepeatUnit::Week), ('m', RepeatUnit::Month)];
-        let Some((n, unit)) = units.into_iter().find_map(|(c, unit)| interval.strip_suffix(c).map(|n| (n, unit))) else {
-            return Err(wrong());
+        let wrong = || {
+            format!(
+                "重复“{s}”格式错误，应为间隔数加单位，如 1d、2w、3m、1y；按周的可以在冒号后写周几，如 1w:1,3,5；按月的可以写几号，如 1m:1,15"
+            )
         };
-        let n: u32 = n.parse().map_err(|_| wrong())?;
+        let (interval, days) = s.trim().split_once(':').map_or((s.trim(), None), |(i, d)| (i, Some(d)));
+        let Some(unit) = interval.chars().last() else { return Err(wrong()) };
+        let n: u32 = interval[..interval.len() - unit.len_utf8()].parse().map_err(|_| wrong())?;
         let days =
             days.map(|d| d.split(',').map(|d| d.trim().parse::<u8>().map_err(|_| wrong())).collect::<Result<Vec<_>, _>>()).transpose()?;
-        Ok(RepeatText { every: n.try_into()?, unit, days: days.map(Weekdays::try_from).transpose()? })
+        let (n, period) = match (unit, days) {
+            ('d', None) => (n, Period::Day),
+            ('w', days) => (n, Period::Week(days.map(Weekdays::try_from).transpose()?)),
+            ('m', days) => (n, Period::Month(days.map(Monthdays::try_from).transpose()?)),
+            ('y', None) => (n.saturating_mul(12), Period::Month(None)),
+            _ => return Err(wrong()),
+        };
+        Ok(RepeatText { every: n.try_into()?, period })
     }
 }
 

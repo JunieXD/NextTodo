@@ -29,18 +29,27 @@ export function DueEditor({ due, done, onSave, onClose }: { due: Due | null; don
   const [time, setTime] = useState(due?.time ?? "");
   const [remind, setRemind] = useState(due?.remind_before?.toString() ?? "off");
   const was = due?.repeat;
-  // One of the units, every one of them; or every so many of a unit.
-  const [kind, setKind] = useState<RepeatUnit | "custom" | "off">(!was ? "off" : was.every > 1 ? "custom" : was.unit);
+  // One of the units, every one of them; a year, every 12 months; or every so many of a unit.
+  const [kind, setKind] = useState<RepeatUnit | "year" | "custom" | "off">(
+    !was ? "off" : was.every === 1 ? was.unit : was.every === 12 && was.unit === "month" && !was.days ? "year" : "custom",
+  );
   const [every, setEvery] = useState(was?.every ?? 2);
   const [unit, setUnit] = useState<RepeatUnit>(was?.unit ?? "day");
   const [from, setFrom] = useState<RepeatFrom>(was?.from ?? "due");
-  // A weekly repeat's days; null for a plain weekly one, on the due date's day whichever it is moved to.
+  // A weekly repeat's days of the week, or a monthly one's of the month; null for a plain one, on the
+  // due date's day whichever it is moved to.
   const [days, setDays] = useState(was?.days ?? null);
-  const weekly = kind === "week" || (kind === "custom" && unit === "week");
-  const shownDays = days ?? [((day(date).getDay() + 6) % 7) + 1];
-  const picked = weekly && days ? days : undefined;
+  const on = kind === "custom" ? unit : kind;
+  const shownDays = days ?? [on === "week" ? ((day(date).getDay() + 6) % 7) + 1 : day(date).getDate()];
+  const picked = (on === "week" || on === "month") && days ? days : undefined;
   const repeat: Repeat | null =
-    kind === "off" ? null : { ...(kind === "custom" ? { every, unit } : { every: 1, unit: kind }), from, ...(picked && { days: picked }) };
+    kind === "off"
+      ? null
+      : {
+          ...(kind === "custom" ? { every, unit } : kind === "year" ? { every: 12, unit: "month" } : { every: 1, unit: kind }),
+          from,
+          ...(picked && { days: picked }),
+        };
   // Days picked are a menu item of their own, named by them as 每个工作日 is: picking any other item is
   // then a change, all the menu reports, and starts over without them.
   const workdays = repeat?.every === 1 && repeat.days?.join() === WORKDAYS.join();
@@ -75,6 +84,7 @@ export function DueEditor({ due, done, onSave, onClose }: { due: Due | null; don
             ["week", "每周"],
             ...(named ? [["days", named] satisfies [typeof menu, string]] : []),
             ["month", "每月"],
+            ["year", "每年"],
             ["custom", "自定义"],
           ]}
           value={menu}
@@ -92,17 +102,36 @@ export function DueEditor({ due, done, onSave, onClose }: { due: Due | null; don
               间隔
               <span className="row-value">
                 <Stepper value={every} onChange={setEvery} />
-                <Seg<RepeatUnit> label="间隔单位" small items={UNITS} value={unit} onChange={setUnit} />
+                <Seg<RepeatUnit>
+                  label="间隔单位"
+                  small
+                  items={UNITS}
+                  value={unit}
+                  onChange={(u) => {
+                    setUnit(u);
+                    setDays(null);
+                  }}
+                />
               </span>
             </div>
           </div>
         )}
-        {weekly && (
+        {on === "week" && (
           <div className="row">
             <div className="row-inner">
               周几
               <span className="row-value">
-                <Weekdays value={shownDays} onChange={setDays} />
+                <Days label="周几" texts={[...WEEKDAYS]} name={(t) => `周${t}`} value={shownDays} onChange={setDays} />
+              </span>
+            </div>
+          </div>
+        )}
+        {on === "month" && (
+          <div className="row">
+            <div className="row-inner">
+              几号
+              <span className="row-value">
+                <Days label="几号" texts={MONTHDAYS} name={(t) => `${t} 号`} value={shownDays} onChange={setDays} />
               </span>
             </div>
           </div>
@@ -287,21 +316,24 @@ function TimeRow({ value, extra, onChange }: { value: string; extra?: string; on
   );
 }
 
-/** The days of the week a weekly repeat falls on, Monday 1 first; the last one picked stays. */
-function Weekdays({ value, onChange }: { value: number[]; onChange(days: number[]): void }) {
+const MONTHDAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
+
+/** The days a repeat falls on, seven a line: Monday 1 to Sunday 7, or the 1st to the 31st. `texts`
+ * are on the buttons, `name` says them in full. The last one picked stays. */
+function Days(p: { label: string; texts: string[]; name(text: string): string; value: number[]; onChange(days: number[]): void }) {
   return (
-    <span className="weekdays" role="group" aria-label="周几">
-      {[...WEEKDAYS].map((name, i) => {
-        const on = value.includes(i + 1);
+    <span className="days" role="group" aria-label={p.label}>
+      {p.texts.map((text, i) => {
+        const on = p.value.includes(i + 1);
         return (
           <button
-            key={name}
+            key={text}
             aria-pressed={on}
-            aria-label={`周${name}`}
-            disabled={on && value.length === 1}
-            onClick={() => onChange(on ? value.filter((d) => d !== i + 1) : [...value, i + 1].sort((a, b) => a - b))}
+            aria-label={p.name(text)}
+            disabled={on && p.value.length === 1}
+            onClick={() => p.onChange(on ? p.value.filter((d) => d !== i + 1) : [...p.value, i + 1].sort((a, b) => a - b))}
           >
-            {name}
+            {text}
           </button>
         );
       })}

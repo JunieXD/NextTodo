@@ -168,7 +168,7 @@ pub(crate) fn new_due(
 fn repeat(repeat: Option<RepeatText>, from: Option<RepeatFrom>) -> Result<Option<Repeat>, ApiError> {
     match (repeat, from) {
         (None, Some(_)) => Err(ApiError::invalid("repeat_from 只能和 repeat 一起给", Some("repeat_from".into()))),
-        (r, from) => Ok(r.map(|r| Repeat { every: r.every, unit: r.unit, from: from.unwrap_or(RepeatFrom::Due), days: r.days })),
+        (r, from) => Ok(r.map(|r| Repeat { every: r.every, period: r.period, from: from.unwrap_or(RepeatFrom::Due) })),
     }
 }
 

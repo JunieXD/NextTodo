@@ -1,12 +1,13 @@
 //! Moving a repeating task's due date on when it is done (docs/design.md#重复). The web app has a
 //! TypeScript twin, `apps/web/src/domain/repeat.ts`; both are checked against `fixtures/repeat.json`.
 
-use crate::model::{Date, Repeat, RepeatFrom, RepeatUnit, days_in_month};
+use crate::model::{Date, Period, Repeat, RepeatFrom, days_in_month};
 
 impl Repeat {
     /// The due date after `due`, the task done `today`: a step on from the start, or as many as it
-    /// takes to get past today. Weekly on some days, a step is to the next of them: later that week,
-    /// or in the first week `every` weeks on. An error past the year 9999, which dates don't go beyond.
+    /// takes to get past today. On some days of the week or month, a step is to the next of them: later
+    /// that week or month, or in the first one `every` on. An error past the year 9999, which dates
+    /// don't go beyond.
     pub fn next(self, due: &Date, today: &Date) -> Result<Date, String> {
         let (y, m, d) = parts(match self.from {
             RepeatFrom::Due => due,
@@ -14,28 +15,32 @@ impl Repeat {
         });
         let start = day_number((y, m, d));
         let today = day_number(parts(today));
-        // The end of a month stays the end of the month, the 28th or the 31st.
-        let month_end = d == days_in_month(y, m);
         let every = self.every.get();
-        let step = |k: u32| match self.unit {
-            RepeatUnit::Day => start + i64::from(k * every),
-            RepeatUnit::Week => start + i64::from(7 * k * every),
-            RepeatUnit::Month => {
-                let months = y * 12 + m - 1 + k * every;
-                let (y, m) = (months / 12, months % 12 + 1);
-                let last = days_in_month(y, m);
-                day_number((y, m, if month_end { last } else { d.min(last) }))
-            }
+        // The day `d` of the month `k` months on, or its last day if it has none.
+        let in_month = |k: u32, d: u32| {
+            let months = y * 12 + m - 1 + k;
+            let (y, m) = (months / 12, months % 12 + 1);
+            day_number((y, m, d.min(days_in_month(y, m))))
         };
-        let next = match (self.unit, self.days) {
-            (RepeatUnit::Week, Some(days)) => {
+        let next = match self.period {
+            Period::Week(Some(days)) => {
                 // 1970-01-01 was a Thursday.
                 let monday = start - (start + 3).rem_euclid(7);
                 (0..)
                     .flat_map(|w: i64| (0..7).filter(move |&i| days.has(i)).map(move |i| monday + 7 * w * i64::from(every) + i64::from(i)))
                     .find(|&n| n > start && n > today)
             }
-            _ => (1..).map(step).find(|&n| n > today),
+            Period::Month(Some(days)) => (0..)
+                .flat_map(|k: u32| (1..=31).filter(move |&d| days.has(d)).map(move |d| in_month(k * every, d)))
+                .find(|&n| n > start && n > today),
+            period => (1..)
+                .map(|k: u32| match period {
+                    Period::Day => start + i64::from(k * every),
+                    Period::Week(_) => start + i64::from(7 * k * every),
+                    // The end of a month stays the end of the month, the 28th or the 31st.
+                    Period::Month(_) => in_month(k * every, if d == days_in_month(y, m) { 31 } else { d }),
+                })
+                .find(|&n| n > today),
         };
         let (y, m, d) = civil(next.expect("dates go on"));
         Date::try_from(format!("{y:04}-{m:02}-{d:02}")).map_err(|_| "下一次的截止日期超出范围".into())

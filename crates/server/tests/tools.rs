@@ -308,7 +308,9 @@ async fn a_repeating_task_moves_on_when_done() {
         (json!({ "title": "x", "due": "2026-11-20", "repeat": "2周" }), "repeat"),
         (json!({ "title": "x", "due": "2026-11-20", "repeat": "0d" }), "repeat"),
         (json!({ "title": "x", "due": "2026-11-20", "repeat": "1w:8" }), "repeat"),
-        (json!({ "title": "x", "due": "2026-11-20", "repeat": "1d:1" }), "due"),
+        (json!({ "title": "x", "due": "2026-11-20", "repeat": "1d:1" }), "repeat"),
+        (json!({ "title": "x", "due": "2026-11-20", "repeat": "1m:32" }), "repeat"),
+        (json!({ "title": "x", "due": "2026-11-20", "repeat": "1y:1" }), "repeat"),
         (json!({ "title": "x", "due": "2026-11-20", "repeat_from": "done" }), "repeat_from"),
     ] {
         let r = t.tool(&s, "add", args.clone()).await;
@@ -330,6 +332,18 @@ async fn a_repeating_task_moves_on_when_done() {
     assert!(text(&shown).contains("截止：2026-11-16 18:00，每个工作日"), "{}", text(&shown));
     t.ok(&s, "edit", json!({ "task": 4, "repeat": "2w:4,2" })).await;
     assert!(text(&t.ok(&s, "show", json!({ "task": 4 })).await).contains("截止：2026-11-16 18:00，每 2 周的周二、四"));
+
+    // Monthly on some days, it moves on to the next of them; yearly is every 12 months.
+    t.ok(&s, "add", json!({ "title": "领券", "due": "2026-11-27", "repeat": "1m:28,27" })).await;
+    let done = t.ok(&s, "done", json!({ "tasks": [5], "today": "2026-11-27" })).await;
+    assert!(text(&done).starts_with("顺延 #5 领券 → 2026-11-28"), "{}", text(&done));
+    let shown = t.ok(&s, "show", json!({ "task": 5 })).await;
+    assert_eq!(shown["data"]["due"]["repeat"]["days"], json!([27, 28]));
+    assert!(text(&shown).contains("截止：2026-11-28，每月 27、28 号"), "{}", text(&shown));
+    t.ok(&s, "edit", json!({ "task": 5, "repeat": "1y" })).await;
+    let shown = t.ok(&s, "show", json!({ "task": 5 })).await;
+    assert_eq!(shown["data"]["due"]["repeat"], json!({ "every": 12, "unit": "month", "from": "due" }));
+    assert!(text(&shown).contains("截止：2026-11-28，每年"), "{}", text(&shown));
 }
 
 #[tokio::test]

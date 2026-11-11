@@ -7,11 +7,20 @@ use std::sync::Arc;
 use clap::{Parser, Subcommand};
 
 use nexttodo_server::ai::{Ai, llm::Https, secret::SecretKey};
+use nexttodo_server::upgrade::{self, Upgrade};
 use nexttodo_server::{AppState, Clock, Db, app, auth, db, start, with_web};
 use tracing_subscriber::EnvFilter;
 
+/// The release's version, as `deploy/build.sh` builds it; the crate's for a development build.
+const VERSION: &str = match option_env!("NEXTTODO_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
+/// The arguments stay as they are: a version downloaded from the settings is run with the ones the
+/// version before it was given (docs/deploy.md#在设置里升级).
 #[derive(Parser)]
-#[command(version, about = "NextTodo server")]
+#[command(version = VERSION, about = "NextTodo server")]
 struct Cli {
     /// Directory holding the database
     #[arg(long, env = "NEXTTODO_DATA", default_value = "data")]
@@ -53,17 +62,67 @@ async fn main() -> anyhow::Result<()> {
     // Compose passes an empty one when `.env` has none.
     let secret = std::env::var("NEXTTODO_SECRET_KEY").ok().filter(|s| !s.is_empty()).map(|s| SecretKey::from_base64(&s)).transpose()?;
     let db = cli.data.join("nexttodo.db");
+    let own = upgrade::own();
+    let installed = own.map(|v| upgrade::installed(&cli.data, v)).transpose()?.flatten();
+    // The image's server, after an upgrade from the settings, hands over to the version downloaded,
+    // whatever the command; first going back from a switch that did not start.
+    #[cfg(unix)]
+    if let Some(own) = own
+        && installed.is_none()
+    {
+        if upgrade::interrupted(&cli.data)? {
+            let _alone = lock(&cli.data, true)?;
+            upgrade::recover(&cli.data, &db)?;
+        }
+        upgrade::hand_over(&cli.data, own, matches!(cli.command, Command::Serve { .. }))?;
+    }
     match cli.command {
         Command::Serve { listen, web } => {
             let _lock = lock(&cli.data, false)?;
             let ai = Ai::new(secret, Arc::new(Https { public_only: true }));
             let (started, ()) = start::start(&db, cli.data.join("snapshots"), listen, ai, |_| Ok(())).await?;
-            let router = match &web {
-                Some(dir) => with_web(app(started.state.clone()), dir),
-                None => app(started.state.clone()),
+            let web = match (&installed, own) {
+                // Listening: the switch to it is done.
+                (Some(dir), Some(own)) => {
+                    upgrade::confirm(&cli.data, own)?;
+                    Some(dir.join("web"))
+                }
+                _ => web,
             };
-            tracing::info!(%listen, "listening");
-            started.serve(router).with_graceful_shutdown(shutdown()).await?;
+            let upgrade = own.map(|own| Upgrade::new(cli.data.clone(), own, upgrade::REGISTRY.into())).transpose()?.map(Arc::new);
+            let database = started.state.db.clone();
+            let state = match &upgrade {
+                Some(u) => started.state.clone().with_upgrade(u.clone()),
+                None => started.state.clone(),
+            };
+            let router = match &web {
+                Some(dir) => with_web(app(state), dir),
+                None => app(state),
+            };
+            tracing::info!(%listen, version = VERSION, "listening");
+            let stop = ready(upgrade.clone());
+            let serving = started.serve(router).with_graceful_shutdown(async {
+                tokio::select! {
+                    () = shutdown() => {}
+                    () = stop => {}
+                }
+            });
+            tokio::select! {
+                served = serving.into_future() => served?,
+                () = async {
+                    ready(upgrade.clone()).await;
+                    tokio::time::sleep(upgrade::GRACE).await;
+                } => {}
+            }
+            #[cfg(unix)]
+            if let Some(to) = upgrade.as_ref().and_then(|u| u.downloaded()) {
+                // Ends here, the connection held: a change waiting for it, committed after the copy,
+                // would be undone by going back.
+                database.hold(|c| {
+                    tracing::error!("switching to {to} failed: {:#}", upgrade::switch(c, &cli.data, to));
+                    std::process::exit(1)
+                });
+            }
             Ok(())
         }
         Command::Restore { snapshot } => {
@@ -110,6 +169,16 @@ fn read_password() -> anyhow::Result<String> {
         anyhow::bail!("两次输入的密码不一样");
     }
     Ok(password)
+}
+
+/// Once `upgrade` has downloaded a version to switch to; never without one.
+async fn ready(upgrade: Option<Arc<Upgrade>>) {
+    match upgrade {
+        Some(u) => {
+            u.ready().await;
+        }
+        None => std::future::pending().await,
+    }
 }
 
 /// Ctrl-C, or the SIGTERM a container gets when it stops; the server runs on Linux, and builds

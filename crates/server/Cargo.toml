@@ -15,6 +15,8 @@ base64 = "0.22.1"
 chacha20poly1305 = "0.11.0"
 axum = { version = "0.8.9", features = ["ws", "macros"] }
 clap = { version = "4.6.7", features = ["derive", "env"] }
+# For upgrading from the settings (src/upgrade.rs): the image's layers are gzipped tar files.
+flate2 = "1.1.10"
 hyper-util = { version = "0.1.21", features = ["server-auto", "tokio", "service"], optional = true }
 nexttodo-core = { path = "../core", features = ["sql"] }
 rand = "0.10.3"
@@ -27,6 +29,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 serde_path_to_error = "0.1.20"
 sha2 = "0.11.1"
+tar = { version = "0.4.46", default-features = false }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
 # With ring, as the rest of the desktop app: with two crypto providers, rustls can't pick a default.
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring"], optional = true }

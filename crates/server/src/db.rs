@@ -64,6 +64,12 @@ impl Db {
         Ok(Db(Arc::new(Mutex::new(conn))))
     }
 
+    /// Runs `f` with the connection on this thread, once whoever has it is done: for what keeps
+    /// everyone else out until the process ends.
+    pub fn hold<T>(&self, f: impl FnOnce(&mut Connection) -> T) -> T {
+        f(&mut self.0.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+
     /// Runs `f` with the connection on a blocking thread.
     pub async fn call<T: Send + 'static>(
         &self,
@@ -114,10 +120,22 @@ pub fn prune(conn: &mut Connection, cutoff: i64) -> rusqlite::Result<usize> {
     Ok(cleared)
 }
 
+/// Writes a consistent copy of the database `c` has open to `path`. The copy is written under a
+/// temporary name first, so that a crash never leaves a half-written copy that looks complete.
+pub(crate) fn copy(c: &Connection, path: &Path) -> anyhow::Result<()> {
+    let partial = path.with_extension("db.partial");
+    // Left over from a crash: never complete, and VACUUM INTO refuses to overwrite.
+    if partial.try_exists()? {
+        std::fs::remove_file(&partial)?;
+    }
+    c.execute("VACUUM INTO ?1", [partial.to_str().expect("data directory path is UTF-8")])?;
+    std::fs::rename(&partial, path)?;
+    Ok(())
+}
+
 /// Writes a consistent copy of the database at `db` to `dir/snapshot-<unix seconds>.db` and deletes
-/// all but the newest `keep` copies. Uses a connection of its own, so requests don't wait for it. The
-/// copy is written under a temporary name first, so that a crash never leaves a half-written
-/// snapshot that looks complete. Other files in the directory are left alone.
+/// all but the newest `keep` copies. Uses a connection of its own, so requests don't wait for it.
+/// Other files in the directory are left alone.
 pub fn snapshot(db: &Path, dir: &Path, now_ms: i64, keep: usize) -> anyhow::Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
     // The files named like snapshots, oldest first.
@@ -134,14 +152,12 @@ pub fn snapshot(db: &Path, dir: &Path, now_ms: i64, keep: usize) -> anyhow::Resu
         found.sort();
         Ok(found)
     };
-    // Left over from a crash: never complete, and VACUUM INTO refuses to overwrite.
+    // Left over from a crash at another second: never complete.
     for p in files(".db.partial")? {
         std::fs::remove_file(p)?;
     }
     let path = dir.join(format!("snapshot-{:010}.db", now_ms / 1000));
-    let partial = path.with_extension("db.partial");
-    Connection::open(db)?.execute("VACUUM INTO ?1", [partial.to_str().expect("data directory path is UTF-8")])?;
-    std::fs::rename(&partial, &path)?;
+    copy(&Connection::open(db)?, &path)?;
     let all = files(".db")?;
     for p in &all[..all.len().saturating_sub(keep)] {
         std::fs::remove_file(p)?;

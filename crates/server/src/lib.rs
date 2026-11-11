@@ -14,6 +14,7 @@ pub mod start;
 pub mod store;
 pub mod sync;
 pub mod tools;
+pub mod upgrade;
 pub mod ws;
 
 use std::path::Path;
@@ -61,16 +62,22 @@ pub struct AppState {
     pub clock: Clock,
     pub hub: Hub,
     pub ai: Arc<ai::Ai>,
+    /// Only where the server can upgrade itself.
+    pub upgrade: Option<Arc<upgrade::Upgrade>>,
 }
 
 impl AppState {
     /// With API keys kept only on devices, and models called over HTTPS.
     pub fn new(db: Db, clock: Clock) -> Self {
-        AppState { db, clock, hub: Hub::default(), ai: Arc::new(ai::Ai::new(None, Arc::new(ai::llm::Https { public_only: true }))) }
+        AppState { db, clock, hub: Hub::default(), ai: Arc::new(ai::Ai::new(None, Arc::new(ai::llm::Https { public_only: true }))), upgrade: None }
     }
 
     pub fn with_ai(self, ai: ai::Ai) -> Self {
         AppState { ai: Arc::new(ai), ..self }
+    }
+
+    pub fn with_upgrade(self, upgrade: Arc<upgrade::Upgrade>) -> Self {
+        AppState { upgrade: Some(upgrade), ..self }
     }
 }
 
@@ -106,6 +113,7 @@ pub fn app(state: AppState) -> Router {
         .route("/tokens", get(auth::list_tokens).post(auth::create_token))
         .route("/tokens/{id}", delete(auth::delete_token))
         .route("/invites", get(auth::list_invites).post(auth::create_invite))
+        .route("/admin/upgrade", get(upgrade::status).post(upgrade::start))
         .route("/snapshot", get(sync::snapshot))
         .route("/changes", get(sync::changes))
         .route("/mutations", post(sync::mutate))

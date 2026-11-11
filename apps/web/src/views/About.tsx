@@ -4,7 +4,7 @@ import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { app } from "../api/http";
 import { inLocalMode } from "../local";
-import { newer, useServerVersions } from "../server-update";
+import { type ServerVersions, followUpgrade, newer, upgrade, useServerVersions, useUpgrading } from "../server-update";
 import { useSession } from "../session";
 import { ago } from "../domain/dates";
 import { forUser, useFeedback } from "../ui/feedback";
@@ -40,27 +40,7 @@ export function About() {
             </div>
           </button>
         )}
-        {user.is_admin && !inLocalMode() && server && (
-          <div className="row">
-            <div className="row-inner">
-              <span className="folder-main">
-                <span>服务器版本</span>
-                <span className="folder-sub full">
-                  {server.latest === null ? (
-                    "无法查询最新版本"
-                  ) : newer(server.latest, server.server) ? (
-                    <>
-                      可升级到 {server.latest}，<Help to="server#升级">查看升级方法</Help>
-                    </>
-                  ) : (
-                    "已是最新版本"
-                  )}
-                </span>
-              </span>
-              <span className="row-value">{server.server}</span>
-            </div>
-          </div>
-        )}
+        {user.is_admin && !inLocalMode() && server && <ServerVersion server={server} />}
         {pending && (
           <div className="row">
             <div className="row-inner">
@@ -85,6 +65,63 @@ export function About() {
         <Help to="">使用教程</Help>
       </p>
     </>
+  );
+}
+
+/** The server's version, and upgrading it from here where it can (docs/design.md#部署). */
+function ServerVersion({ server }: { server: ServerVersions }) {
+  const { confirm, snack } = useFeedback();
+  const upgrading = useUpgrading();
+  useEffect(() => {
+    followUpgrade().catch((e) => console.warn("查询服务器升级失败", e));
+  }, []);
+  const latest = server.latest !== null && newer(server.latest, server.server) ? server.latest : null;
+  const howTo = <Help to="server#升级">查看升级方法</Help>;
+  const start = async (version: string) => {
+    const body = "服务器会下载约 45 MB，换上新版本时各设备断开几秒。新版本起不来时会自动退回。";
+    if (await confirm({ title: `升级到 ${version}？`, body, ok: "升级" })) await upgrade(version).catch((e) => snack(forUser("升级", e)));
+  };
+  // Once the server can upgrade itself: those that cannot, and those not asked yet, have the way by hand.
+  const button = latest && (upgrading?.state === "idle" || upgrading?.state === "failed") && (
+    <button className="text-btn" onClick={() => void start(latest)}>
+      {upgrading.state === "failed" && upgrading.version === latest ? "重试" : "升级"}
+    </button>
+  );
+  const text =
+    upgrading?.state === "downloading" ? (
+      `正在下载 ${upgrading.version}，${upgrading.total ? Math.floor((upgrading.received * 100) / upgrading.total) : 0}%`
+    ) : upgrading?.state === "switching" || upgrading?.state === "restarting" ? (
+      `正在重启，换上 ${upgrading.version}…`
+    ) : upgrading?.state === "upgraded" ? (
+      `已升级到 ${upgrading.version}`
+    ) : upgrading?.state === "lost" ? (
+      "服务器没有重新启动，请在服务器上查看（docker compose ps）"
+    ) : upgrading?.state === "failed" ? (
+      <>
+        {upgrading.message}，{howTo}
+      </>
+    ) : server.latest === null ? (
+      "无法查询最新版本"
+    ) : !latest ? (
+      "已是最新版本"
+    ) : button ? (
+      `可升级到 ${latest}`
+    ) : (
+      <>
+        可升级到 {latest}，{howTo}
+      </>
+    );
+  return (
+    <div className="row">
+      <div className="row-inner">
+        <span className="folder-main">
+          <span>服务器版本</span>
+          <span className="folder-sub full">{text}</span>
+        </span>
+        <span className="row-value">{server.server}</span>
+        {button}
+      </div>
+    </div>
   );
 }
 

@@ -129,15 +129,25 @@ docker compose exec nexttodo /nexttodo-server create-admin admin
 
 出了新版本时，管理员打开 NextTodo 会看到提示条“服务器可升级到 0.1.N”，“设置 → 关于”里也写着。想第一时间知道，可以在 [GitHub 仓库](https://github.com/JunieXD/NextTodo)右上角点 **Watch** → **Custom**，勾选 **Releases** 后点 **Apply**，发布新版本时 GitHub 会发邮件通知。
 
+升级有两种方法，结果一样，可以混用。数据会自动升级，不用另外操作。App 不用手动升级：服务器升级后，各设备的 App 会自动获取新版本。
+
+### 在设置里升级
+
+在“设置 → 关于”的“服务器版本”一行点 **升级**，确认后，服务器自己下载新版本并换上，这一行显示下载的进度。换上时各设备会断开几秒，随后自动重连，网页会自动刷新。新版本起不来时，服务器自动退回原来的版本，数据不受影响。
+
+- 服务器要能连上 GHCR（`ghcr.io`），连不上时用命令升级。
+- 这一行没有 **升级** 按钮的，是服务器的版本太旧：用命令升级一次，以后就能在设置里升级了。
+- 在 `.env` 里用 `NEXTTODO_IMAGE` 固定了版本的，在设置里升级以后，服务器用的是新版本。要换回旧版本，见[部署文档](https://github.com/JunieXD/NextTodo/blob/main/docs/deploy.md#在设置里升级)。
+
+### 用命令升级
+
 在服务器上的 `nexttodo` 目录里运行：
 
 ```sh
 docker compose pull && docker compose up -d
 ```
 
-数据会自动升级，不用另外操作。如果在 `.env` 里写了 `NEXTTODO_IMAGE` 固定版本，先把其中的版本号改成新的。
-
-App 不用手动升级：服务器升级后，各设备的 App 会自动获取新版本。
+如果在 `.env` 里写了 `NEXTTODO_IMAGE` 固定版本，先把其中的版本号改成新的。
 
 ## 备份
 

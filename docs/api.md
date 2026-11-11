@@ -23,11 +23,13 @@
 | GET | `/me` | 当前用户 |
 | PATCH | `/me` | 改显示名：`{display_name}` → 用户 |
 | POST | `/auth/password` | 改密码：`{old_password, new_password}`；只能用会话，成功后注销这个用户的其他会话 |
-| GET | `/tokens` | 当前用户的会话和 API 令牌（不含明文）。令牌和邀请码只能用会话管理，API 令牌调用返回 403 |
+| GET | `/tokens` | 当前用户的会话和 API 令牌（不含明文）。令牌、邀请码和升级只能用会话管理，API 令牌调用返回 403 |
 | POST | `/tokens` | 生成 API 令牌：`{name, scope}` → `{token, secret}` |
 | DELETE | `/tokens/{id}` | 注销会话或删除令牌 |
 | GET | `/invites` | 管理员：自己生成的邀请码 |
 | POST | `/invites` | 管理员：生成一个邀请码 |
+| GET | `/admin/upgrade` | 管理员：[在设置里升级](deploy.md#在设置里升级)的状态 `{state, …}`。`state` 是 `idle`；`downloading`，带 `version`、`received`、`total`（字节数）；`switching`，带 `version`；`failed`，带 `version` 和给用户看的 `message`；不能这样升级的（开发版）是 `unsupported` |
+| POST | `/admin/upgrade` | 管理员：开始升级到 `{version}`，返回状态；正在下载或切换时只返回当前的状态。版本号要比服务端的新，否则 400 |
 | GET | `/snapshot` | 完整数据：`{user, seq, folders, tasks, dependencies, ai_jobs}`，`user` 是数据所属用户的 ID |
 | GET | `/changes?since=<seq>` | 增量：`{seq, changes}`；`since` 早于保留期时返回 410 |
 | POST | `/mutations` | 提交一个改动，见下文 |
@@ -112,7 +114,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 |---|---|---|
 | 400 | `invalid` | 字段格式、长度不对，`details.field` 指出哪一项；改动里的操作只定位到第几个，如 `ops[2]` |
 | 401 | `unauthenticated` | 没有令牌、令牌无效，或用户名密码不对 |
-| 403 | `forbidden` | 只读令牌提交改动，或非管理员管理邀请码 |
+| 403 | `forbidden` | 只读令牌提交改动，或非管理员管理邀请码、升级服务端 |
 | 404 | `not_found` | 引用的实体不存在或不属于当前用户 |
 | 409 | `cycle` | 依赖会成环，`details.path` 是环上的事项 ID，首尾相同 |
 | 409 | `folder_cycle` | 文件夹移到了自己的子孙下面 |

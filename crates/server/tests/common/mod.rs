@@ -11,6 +11,7 @@ use axum::body::Body;
 use axum::http::{HeaderMap, Request, StatusCode, header};
 use http_body_util::BodyExt;
 use nexttodo_server::ai::Ai;
+use nexttodo_server::upgrade::Upgrade;
 use nexttodo_server::{AppState, Clock, Db, app, auth};
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -44,6 +45,10 @@ impl TestApp {
 
     pub fn with_ai(ai: Ai) -> Self {
         Self::build(Db::open_in_memory().unwrap(), |s| s.with_ai(ai))
+    }
+
+    pub fn with_upgrade(upgrade: Arc<Upgrade>) -> Self {
+        Self::build(Db::open_in_memory().unwrap(), |s| s.with_upgrade(upgrade))
     }
 
     fn build(db: Db, f: impl FnOnce(AppState) -> AppState) -> Self {

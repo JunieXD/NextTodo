@@ -5,11 +5,15 @@ export type Checked = { ok: true; value: string } | { ok: false; error: string }
 
 const length = (s: string) => [...s].length;
 
+/** Control characters but line breaks and tabs, which the server refuses: dropped, as they can't be
+ * seen to be taken out. Some chat apps, QQ on Android among them, copy them in place of emoji. */
+const control = /[^\P{Cc}\n\r\t]/gu;
+
 function line(s: string, what: string, max: number): Checked {
-  const value = s.trim();
+  // A tab on one line is a space: between cells pasted from a spreadsheet, say.
+  const value = s.replace(control, "").replace(/\t/g, " ").trim();
   if (!value) return { ok: false, error: `${what}不能为空` };
   if (/[\n\r]/.test(value)) return { ok: false, error: `${what}不能换行` };
-  if (/\p{Cc}/u.test(value)) return { ok: false, error: `${what}不能包含控制字符` };
   if (length(value) > max) return { ok: false, error: `${what}不能超过 ${max} 个字` };
   return { ok: true, value };
 }
@@ -22,17 +26,17 @@ export function checkFolderName(s: string): Checked {
 }
 
 export function checkDescription(s: string): Checked {
-  if (length(s) > 20_000) return { ok: false, error: "描述不能超过 20000 个字" };
-  if (/[^\P{Cc}\n\r\t]/u.test(s)) return { ok: false, error: "描述不能包含控制字符" };
-  return { ok: true, value: s };
+  const value = s.replace(control, "");
+  if (length(value) > 20_000) return { ok: false, error: "描述不能超过 20000 个字" };
+  return { ok: true, value };
 }
 
 /** Text for AI to organize: long and on many lines, as written. */
 export function checkJobText(s: string): Checked {
-  if (!s.trim()) return { ok: false, error: "内容不能为空" };
-  if (length(s) > 10_000) return { ok: false, error: "内容不能超过 10000 个字" };
-  if (/[^\P{Cc}\n\r\t]/u.test(s)) return { ok: false, error: "内容不能包含控制字符" };
-  return { ok: true, value: s };
+  const value = s.replace(control, "");
+  if (!value.trim()) return { ok: false, error: "内容不能为空" };
+  if (length(value) > 10_000) return { ok: false, error: "内容不能超过 10000 个字" };
+  return { ok: true, value };
 }
 
 export const checkDisplayName = (s: string) => line(s, "显示名", 50);

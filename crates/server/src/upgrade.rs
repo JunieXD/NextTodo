@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use axum::extract::State;
-use serde::{Deserialize, Serialize};
 use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tar::EntryType;
 use tokio::sync::watch;
@@ -49,7 +49,9 @@ impl std::str::FromStr for Version {
 
     fn from_str(s: &str) -> Result<Self, String> {
         let bad = || format!("版本号不对：{s}");
-        let number = |p: &str| if p.len() > 1 && p.starts_with('0') { None } else { p.parse().ok().filter(|_| p.bytes().all(|b| b.is_ascii_digit())) };
+        let number = |p: &str| {
+            if p.len() > 1 && p.starts_with('0') { None } else { p.parse().ok().filter(|_| p.bytes().all(|b| b.is_ascii_digit())) }
+        };
         let parts: Vec<u32> = s.split('.').map(number).collect::<Option<_>>().ok_or_else(bad)?;
         parts.try_into().map(Version).map_err(|_| bad())
     }
@@ -238,16 +240,14 @@ impl Upgrade {
         if !matches!(*status, Status::Downloading { .. } | Status::Switching { .. }) {
             *status = Status::Downloading { version, received: 0, total: 0 };
             let upgrade = self.clone();
-            tokio::task::spawn_blocking(move || {
-                match upgrade.download(version) {
-                    Ok(()) => {
-                        *upgrade.status() = Status::Switching { version };
-                        upgrade.ready.send_replace(Some(version));
-                    }
-                    Err(e) => {
-                        tracing::warn!(%version, "upgrade failed: {e}");
-                        *upgrade.status() = Status::Failed { version, message: e.message() };
-                    }
+            tokio::task::spawn_blocking(move || match upgrade.download(version) {
+                Ok(()) => {
+                    *upgrade.status() = Status::Switching { version };
+                    upgrade.ready.send_replace(Some(version));
+                }
+                Err(e) => {
+                    tracing::warn!(%version, "upgrade failed: {e}");
+                    *upgrade.status() = Status::Failed { version, message: e.message() };
                 }
             });
         }
@@ -283,7 +283,8 @@ impl Upgrade {
             .iter()
             .find(|m| m.platform.os == "linux" && m.platform.architecture == arch)
             .ok_or_else(|| invalid(format!("no image for linux/{arch}")))?;
-        let body = registry.get(&format!("manifests/{}", checked(&entry.digest)?), MANIFEST)?.into_body().read_to_vec().map_err(unreachable)?;
+        let body =
+            registry.get(&format!("manifests/{}", checked(&entry.digest)?), MANIFEST)?.into_body().read_to_vec().map_err(unreachable)?;
         if !matches(&entry.digest, Sha256::new_with_prefix(&body)) {
             return Err(Failure::Invalid("manifest digest mismatch".into()));
         }
@@ -425,7 +426,8 @@ impl Registry {
     /// challenge names.
     fn authorize(&self, challenge: &str) -> Result<String, Failure> {
         let params = challenge.strip_prefix("Bearer ").ok_or_else(|| Failure::Unreachable(format!("challenge {challenge}")))?;
-        let params: Vec<(&str, &str)> = params.split(',').filter_map(|p| p.split_once('=')).map(|(k, v)| (k.trim(), v.trim().trim_matches('"'))).collect();
+        let params: Vec<(&str, &str)> =
+            params.split(',').filter_map(|p| p.split_once('=')).map(|(k, v)| (k.trim(), v.trim().trim_matches('"'))).collect();
         let realm = params.iter().find(|(k, _)| *k == "realm").ok_or_else(|| Failure::Unreachable(format!("challenge {challenge}")))?.1;
         let mut req = self.agent.get(realm);
         for (k, v) in params.iter().filter(|(k, _)| *k != "realm") {
@@ -597,7 +599,8 @@ pub fn switch(c: &Connection, data: &Path, to: Version) -> anyhow::Error {
         for entry in entries(&snapshots)? {
             let entry = entry?;
             let name = entry.file_name();
-            let earlier = name.to_str().and_then(|n| n.strip_prefix("before-")?.strip_suffix(".db")).is_some_and(|v| v.parse::<Version>().is_ok());
+            let earlier =
+                name.to_str().and_then(|n| n.strip_prefix("before-")?.strip_suffix(".db")).is_some_and(|v| v.parse::<Version>().is_ok());
             if earlier && entry.path() != before {
                 fs::remove_file(entry.path())?;
             }

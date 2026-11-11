@@ -110,7 +110,9 @@ async fn registry(image: Image) -> String {
 }
 
 async fn token(Query(q): Query<HashMap<String, String>>) -> Response {
-    if q.get("scope").map(String::as_str) != Some("repository:juniexd/nexttodo:pull") || q.get("service").map(String::as_str) != Some("test") {
+    if q.get("scope").map(String::as_str) != Some("repository:juniexd/nexttodo:pull")
+        || q.get("service").map(String::as_str) != Some("test")
+    {
         return StatusCode::BAD_REQUEST.into_response();
     }
     axum::Json(json!({ "token": TOKEN })).into_response()
@@ -193,8 +195,14 @@ async fn a_release_that_does_not_check_out_is_not_kept() {
     let misnamed = image("0.1.901", &[server("0.1.902"), web()]);
     let without_web = image("0.1.901", &[server("0.1.901")]);
     let missing = image("0.1.902", &[server("0.1.901"), web()]);
-    let cases =
-        [("changed", changed), ("escaping", escaping), ("elsewhere", elsewhere), ("misnamed", misnamed), ("without web", without_web), ("missing", missing)];
+    let cases = [
+        ("changed", changed),
+        ("escaping", escaping),
+        ("elsewhere", elsewhere),
+        ("misnamed", misnamed),
+        ("without web", without_web),
+        ("missing", missing),
+    ];
     for (what, image) in cases {
         let (status, data) = upgrade_to(image).await;
         assert_eq!(status["state"], "failed", "{what}: {status}");

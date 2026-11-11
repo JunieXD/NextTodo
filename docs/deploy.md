@@ -4,7 +4,7 @@ NextTodo 的服务端和网页端在同一个 Docker 镜像里，部署一次，
 
 ## 用 Docker 部署
 
-需要一台装了 Docker 和 Docker Compose 的 Linux 服务器（amd64 或 arm64），以及一个能配 HTTPS 的域名。
+需要一台装了 Docker 和 Docker Compose 的 Linux 服务器（amd64 或 arm64），以及受信任的 HTTPS 证书：一般给域名申请，没有能用的域名时也可以给公网 IP 申请 Let's Encrypt 的短期证书，配置见官网的[只用 IP 地址](https://juniexd.github.io/NextTodo/guide/server#ip)。
 
 ```sh
 mkdir nexttodo && cd nexttodo
@@ -22,7 +22,7 @@ docker compose exec nexttodo /nexttodo-server create-admin <用户名>
 
 ## 反向代理
 
-反向代理负责 HTTPS，要开启 WebSocket，并把原来的 `Host` 传给服务端（或设 `X-Forwarded-Host`），网页的同步连接靠它确认是同源页面。整个域名都要转给 NextTodo：网页的资源和接口都从根路径开始，不能放在某个路径下。面板、NAS 和反向代理在容器里时的做法和排错，见官网的[部署服务器](https://juniexd.github.io/NextTodo/guide/server#proxy)。
+反向代理负责 HTTPS，要开启 WebSocket，并把原来的 `Host` 传给服务端（或设 `X-Forwarded-Host`），网页的同步连接靠它确认是同源页面。整个域名（或 IP）都要转给 NextTodo：网页的资源和接口都从根路径开始，不能放在某个路径下。面板、NAS 和反向代理在容器里时的做法和排错，见官网的[部署服务器](https://juniexd.github.io/NextTodo/guide/server#proxy)。
 
 Caddy 默认就满足这些要求，还会自动申请证书：
 
@@ -50,7 +50,7 @@ server {
 }
 ```
 
-配好以后，浏览器打开这个域名就是网页端；App 第一次登录时在“服务器地址”里填这个域名。
+配好以后，浏览器打开这个域名就是网页端；App 第一次登录时在“服务器地址”里填这个域名（只用 IP 的填 IP）。
 
 ## 升级
 

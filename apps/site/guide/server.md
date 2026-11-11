@@ -8,8 +8,9 @@
 
 - **一台 Linux 服务器**：云服务器（VPS）、家里的 NAS 或小主机都可以，amd64 或 arm64。NextTodo 占用很少，配置要求不高。
 - **Docker**：按 [Docker 官方文档](https://docs.docker.com/engine/install/)安装 Docker Engine，它自带 Docker Compose。NAS 的系统里一般叫 Container Manager 或“容器”。
-- **一个域名和它的 HTTPS 证书**：Android App 和网页版只能通过 HTTPS 连接服务器，证书要是手机和浏览器默认信任的，比如 Let's Encrypt 签发的；自己签发的证书手机不认。所以单用 IP 地址、或者没有受信任证书的局域网地址都连不上。
+- **受信任的 HTTPS 证书**：Android App 和网页版只能通过 HTTPS 连接服务器，证书要是手机和浏览器默认信任的，比如 Let's Encrypt 签发的；自己签发的证书手机不认，所以没有受信任证书的地址都连不上。证书一般给域名申请：
   - 服务器在公网上：在域名服务商那里添加一条 A 记录，把域名（比如 `todo.example.com`）指向服务器的公网 IP。在中国大陆的服务器上用域名提供网站，需要先完成备案。
+  - 没有域名，或者域名暂时用不了（比如还在备案）：可以直接用服务器的公网 IP，Let's Encrypt 也给公网 IP 签证书，见[只用 IP 地址](#ip)。
   - 只在家里的局域网里用：同样需要一个域名和受信任的证书，比如用 DNS 验证的方式申请证书，再在路由器或局域网 DNS 里把域名指向这台机器。
 - **一个反向代理**：负责 HTTPS，把请求转给 NextTodo。Caddy、Nginx、OpenResty、1Panel 或宝塔面板里的网站、NAS 自带的反向代理都可以，服务器上已经有的就直接用它，要求见[第 2 步](#proxy)。
 - **放行端口**：在防火墙（云服务器还有安全组）里放行反向代理用的端口，通常是 443；用 HTTP 验证的方式自动申请证书（Caddy 默认就是）还要放行 80。
@@ -46,8 +47,8 @@ NextTodo 默认只在这台机器内部的 `127.0.0.1:8080` 上运行，外面�
 
 | 要求 | 说明 |
 |---|---|
-| 用 HTTPS 提供，证书受信任 | 浏览器打开 `https://你的域名` 时，地址栏没有证书警告 |
-| 整个域名转发到 `http://127.0.0.1:8080` | 要单独占一个域名或子域名，不能放在某个路径下（如 `example.com/todo`） |
+| 用 HTTPS 提供，证书受信任 | 浏览器打开 `https://你的域名`（或 IP）时，地址栏没有证书警告 |
+| 整个网站转发到 `http://127.0.0.1:8080` | 要单独占一个域名、子域名或 IP，不能放在某个路径下（如 `example.com/todo`） |
 | 支持 WebSocket | 各设备靠 `/api/v1/sync` 上的 WebSocket 实时同步。NextTodo 每 30 秒发一次心跳，反向代理的空闲超时不能短于 30 秒（Nginx 默认的 60 秒就够） |
 | 把原来的 `Host` 传过去 | 或者设置 `X-Forwarded-Host`。网页版的同步连接靠它确认是同一个网站 |
 
@@ -92,9 +93,36 @@ server {
 
 1Panel、宝塔、群晖这类面板通常有“反向代理”或“网站”功能。新建一个，按上面的表格填写：目标（后端）地址填 `http://127.0.0.1:8080`，打开 WebSocket 支持，申请或上传证书。有的面板没有 WebSocket 开关，要在自定义配置里加上和上面 Nginx 一样的 `Upgrade`、`Connection` 两行。具体在哪里设置，见面板自己的文档。
 
+### 只用 IP 地址 {#ip}
+
+没有能用的域名时，可以给服务器的公网 IP 申请 Let's Encrypt 的证书。这种证书的有效期只有 6 天左右，要靠程序自动续期，用 Caddy（2.11 或更新的版本）最省事。Caddyfile 写成：
+
+```
+{
+	default_sni 203.0.113.10
+}
+
+203.0.113.10 {
+	tls {
+		issuer acme {
+			profile shortlived
+		}
+	}
+	reverse_proxy 127.0.0.1:8080
+}
+```
+
+- 两处 `203.0.113.10` 都换成服务器的公网 IP。只能用公网 IP，`192.168.x.x` 这类局域网地址申请不到；公网 IP 变了要改配置。
+- `profile shortlived` 申请 IP 证书要用的短期证书。Caddy 在到期前自己续期，保持它一直运行就行。
+- `default_sni` 不能省：按 IP 访问时，App 和浏览器不告诉服务器要访问哪个名字，云服务器上 Caddy 看到的本机地址又往往是内网 IP，没有这一行它就不知道该用哪张证书，证书申请下来了，连接照样失败。
+- Let's Encrypt 验证时要从外网按 IP 连到服务器的 80 或 443 端口，防火墙和安全组要放行这两个端口。
+- App 里的服务器地址填这个 IP，比如 `203.0.113.10`。
+
+也可以用别的工具申请，前提是它支持 Let's Encrypt 的 `shortlived` 证书档，能每隔几天自动续期，续期后让反向代理加载新证书，比如 certbot 5.3 起的 `--ip-address`。
+
 ### 检查
 
-用浏览器打开 `https://todo.example.com`，能看到 NextTodo 的登录页、地址栏没有证书警告，就成功了。WebSocket 是否正常，要在下一步登录以后才看得出来，见[遇到问题](#troubleshooting)。
+用浏览器打开 `https://todo.example.com`（只用 IP 的打开 `https://` 加 IP），能看到 NextTodo 的登录页、地址栏没有证书警告，就成功了。WebSocket 是否正常，要在下一步登录以后才看得出来，见[遇到问题](#troubleshooting)。
 
 ## 3. 创建账号并登录
 
@@ -104,7 +132,7 @@ server {
 docker compose exec nexttodo /nexttodo-server create-admin admin
 ```
 
-然后在 App 里点“连接服务器”，服务器地址填域名（如 `todo.example.com`），再填用户名和密码登录。浏览器里打开域名就是网页版。
+然后在 App 里点“连接服务器”，服务器地址填域名（如 `todo.example.com`）或 IP，再填用户名和密码登录。浏览器里打开这个地址就是网页版。
 
 ## 4. 邀请其他人
 
@@ -161,6 +189,7 @@ docker compose pull && docker compose up -d
 |---|---|---|
 | 网页打不开 | 域名、端口或反向代理 | 域名是否指向这台服务器，端口是否放行，反向代理是否在运行，它的错误日志 |
 | 502 Bad Gateway | 反向代理连不到 NextTodo | NextTodo 是否在运行（[第 1 步](#start)的 `curl`），反向代理转发的地址和端口对不对；反向代理在容器里时见第 1 步最后一条 |
-| 浏览器提示证书不安全，App 连接失败 | 证书不受信任或过期 | 换成受信任的证书，比如 Let's Encrypt |
+| 浏览器提示证书不安全，App 连接失败 | 证书不受信任或过期 | 换成受信任的证书，比如 Let's Encrypt；只能用 IP 访问的见[只用 IP 地址](#ip) |
+| 只用 IP，证书申请下来了，但浏览器和 App 都连不上 | 没设 `default_sni` | 见[只用 IP 地址](#ip) |
 | 能登录，但一直显示“离线”，别的设备的改动要刷新才出现 | WebSocket 没打通 | 反向代理是否开了 WebSocket；网页版还要检查是否传了原来的 `Host` |
-| App 里填服务器地址后连接失败，浏览器能打开 | 地址写错 | 只填域名（如 `todo.example.com`），不写路径；不写协议时按 `https://` |
+| App 里填服务器地址后连接失败，浏览器能打开 | 地址写错 | 只填域名（如 `todo.example.com`）或 IP，不写路径；不写协议时按 `https://` |

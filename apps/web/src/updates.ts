@@ -48,7 +48,7 @@ const source = () => (inLocalMode() ? GITHUB : serverUrl());
 /** The manifest `name` of `from`: the server has them under `/app/`. */
 const manifest = (from: string, name: string) => (from === GITHUB ? `${GITHUB}/${name}` : `${from}/app/${name}`);
 
-/** The app's version, beside the web app's `import.meta.env.WEB_VERSION`; null in a browser. */
+/** The installed app's version, which on Android the web app's updates outgrow; null in a browser. */
 export const appVersion = async () => (app === "android" ? (await NextTodo.appInfo()).version : app === "desktop" ? getVersion() : null);
 
 /** How often to look again: the web app changes with nearly every release, the desktop app is a

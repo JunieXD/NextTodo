@@ -6,12 +6,16 @@ import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { defineConfig } from "vitest/config";
+import pkg from "./package.json" with { type: "json" };
 
 const server = "http://127.0.0.1:8080";
 
 const git = (...args: string[]) => execFileSync("git", ["-C", "../..", ...args], { encoding: "utf8" }).trim();
-/** The build's version: the commit it is built from. */
-const version = git("rev-parse", "--short", "HEAD");
+/** The build the Android app's web updates go by: the commit it is built from. */
+const commit = git("rev-parse", "--short", "HEAD");
+/** The version shown, the server's and the apps' alike: deploy/build.sh gives it; built otherwise, it
+ * is package.json's. */
+const version = process.env.NEXTTODO_VERSION ?? pkg.version;
 /** The native version of the Android app this build needs, as apps/android/app/build.gradle counts
  * it: the commits that changed the native part. */
 const native = Number(git("rev-list", "--count", "HEAD", "--", "apps/android", "apps/web/capacitor.config.ts", "apps/web/package.json"));
@@ -34,7 +38,7 @@ function webJson(): Plugin {
           .map((e) => relative(dir, join(e.parentPath, e.name)))
           .sort();
         mkdirSync(join(dir, "app"), { recursive: true });
-        writeFileSync(join(dir, "app/web.json"), JSON.stringify({ version, native, files }));
+        writeFileSync(join(dir, "app/web.json"), JSON.stringify({ version: commit, native, files }));
       },
     },
   };

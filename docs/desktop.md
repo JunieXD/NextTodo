@@ -52,7 +52,7 @@
 - 更新密钥：私钥文件路径和密码从环境变量 `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 读取，不进仓库；公钥写在 `tauri.conf.json`。私钥丢了，已装的 App 就收不到更新，只能手动装一次换了公钥的新版本。
 - App 装在哪就在哪替换。
 
-设置页“关于”显示网页版本和 App 版本，点按 App 版本立即检查更新，见[总体设计](design.md#app-更新)。
+设置页“关于”显示 App 版本，点按它立即检查更新，见[总体设计](design.md#app-更新)。
 
 ## 命令行
 

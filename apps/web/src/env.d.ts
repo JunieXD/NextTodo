@@ -1,4 +1,4 @@
 interface ImportMetaEnv {
-  /** The commit the web app is built from: see vite.config.ts. */
+  /** The version of the release the web app is built for: see vite.config.ts. */
   readonly WEB_VERSION: string;
 }

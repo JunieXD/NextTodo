@@ -17,20 +17,21 @@ export function About() {
   const pending = usePending();
   const { user } = useSession();
   const server = useServerVersions();
-  const [version, setVersion] = useState<string | null>(null);
+  const [installed, setInstalled] = useState<string | null>(null);
   useEffect(() => {
-    appVersion().then(setVersion, (e) => snack(forUser("读取版本", e)));
+    appVersion().then(setInstalled, (e) => snack(forUser("读取版本", e)));
   }, [snack]);
+  const version = import.meta.env.WEB_VERSION;
   return (
     <>
       <div className="group">
-        <Row label="网页版本" value={import.meta.env.WEB_VERSION} />
-        {app && (
+        {app ? (
           // Checks at once, however lately it did.
           <button className="row" onClick={() => void check(true)}>
             <div className="row-inner">
               <span className="folder-main">
                 <span>App 版本</span>
+                {installed && installed !== version && <span className="folder-sub full">安装包 {installed}</span>}
                 <LastCheck />
               </span>
               <span className="row-value">{version}</span>
@@ -39,6 +40,8 @@ export function About() {
               </span>
             </div>
           </button>
+        ) : (
+          <Row label="网页版本" value={version} />
         )}
         {user.is_admin && !inLocalMode() && server && <ServerVersion server={server} />}
         {pending && (

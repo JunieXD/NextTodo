@@ -94,7 +94,7 @@
 
 ## 部署
 
-`pnpm build` 输出到 `apps/web/dist`，并为每个文本文件生成 `.br` 和 `.gz` 预压缩版本。构建时还写出 `app/web.json`，供 Android App 热更新（见 [Android](android.md#更新)）；构建所在的提交是网页的版本号，设置页“关于”里显示（`import.meta.env.WEB_VERSION`）。服务端用 `--web <目录>` 提供这些文件：
+`pnpm build` 输出到 `apps/web/dist`，并为每个文本文件生成 `.br` 和 `.gz` 预压缩版本。构建时还写出 `app/web.json`，供 Android App 热更新（见 [Android](android.md#更新)），热更新按构建所在的提交区分版本。设置页“关于”里显示的版本号（`import.meta.env.WEB_VERSION`）和服务端一样，是 `deploy/build.sh` 给的 `NEXTTODO_VERSION`，没有它时（开发版）是 `package.json` 的版本 0.1.0。服务端用 `--web <目录>` 提供这些文件：
 
 - 页面地址（最后一段没有扩展名，如 `/folders/<id>`）返回 `index.html`，由前端路由处理。
 - 其他路径按文件提供，不存在就是 404；`/assets/` 下带内容哈希的资源成功返回时长期缓存，其余（含 `index.html` 和 Service Worker）每次重新检查。

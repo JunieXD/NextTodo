@@ -93,6 +93,8 @@ enum Command {
         folder: Option<String>,
         #[arg(short, long, allow_hyphen_values = true, help = "描述，Markdown")]
         description: Option<String>,
+        #[arg(long, help = "开始日期：2026-11-14，没到这天时事项等着")]
+        start: Option<String>,
         #[arg(long, help = "截止时间：2026-11-20 或 \"2026-11-20 18:00\"")]
         due: Option<String>,
         #[arg(long, help = "提前多少分钟提醒，0 表示截止时")]
@@ -129,6 +131,10 @@ enum Command {
         replace: Vec<String>,
         #[arg(long, allow_hyphen_values = true, conflicts_with = "description", help = "在描述末尾另起一行追加")]
         append: Option<String>,
+        #[arg(long, conflicts_with = "no_start", help = "开始日期：2026-11-14")]
+        start: Option<String>,
+        #[arg(long, help = "清除开始日期")]
+        no_start: bool,
         #[arg(long, conflicts_with = "no_due", help = "截止时间：2026-11-20 或 \"2026-11-20 18:00\"")]
         due: Option<String>,
         #[arg(long, help = "清除截止时间")]
@@ -465,7 +471,13 @@ fn printable(s: &str) -> String {
     out
 }
 
-fn call(name: &str, args: Value, json_out: bool) -> anyhow::Result<()> {
+/// The day here: start dates come by it, and repeating tasks done move on from it (docs/agent.md#引用).
+fn today() -> String {
+    chrono::Local::now().format("%Y-%m-%d").to_string()
+}
+
+fn call(name: &str, mut args: Value, json_out: bool) -> anyhow::Result<()> {
+    args["today"] = today().into();
     let (server, token) = connect()?;
     let (text, data) = server.tool(name, &token, &args)?;
     if json_out {
@@ -552,14 +564,18 @@ fn mcp() -> anyhow::Result<()> {
         if line.trim().is_empty() {
             continue;
         }
-        let message: Value = match serde_json::from_str(&line) {
+        let mut message: Value = match serde_json::from_str(&line) {
             Ok(m) => m,
             Err(e) => {
                 answer(&json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32700, "message": format!("不是 JSON：{e}") } }))?;
                 continue;
             }
         };
-        match forward(&line, version.as_deref()) {
+        // Agents seldom say what day it is: through here, it is this computer's.
+        if message["method"] == "tools/call" && message["params"]["arguments"].get("today").is_none() {
+            message["params"]["arguments"]["today"] = today().into();
+        }
+        match forward(&message.to_string(), version.as_deref()) {
             Ok(Some(reply)) => {
                 if message["method"] == "initialize" {
                     version = reply["result"]["protocolVersion"].as_str().map(str::to_owned);
@@ -630,15 +646,30 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Graph { folder, all, mermaid } => call("graph", json!({ "folder": folder, "all": all, "mermaid": mermaid }), j),
         Command::Log { limit } => call("log", json!({ "limit": limit }), j),
         Command::Jobs => call("jobs", json!({}), j),
-        Command::Add { title, folder, description, due, remind, repeat, repeat_from, after, before } => call(
+        Command::Add { title, folder, description, start, due, remind, repeat, repeat_from, after, before } => call(
             "add",
             json!({
-                "title": title, "folder": folder, "description": description, "due": due, "remind": remind,
+                "title": title, "folder": folder, "description": description, "start": start, "due": due, "remind": remind,
                 "repeat": repeat, "repeat_from": repeat_from, "after": after, "before": before
             }),
             j,
         ),
-        Command::Edit { task, title, description, replace, append, due, no_due, remind, no_remind, repeat, repeat_from, no_repeat } => {
+        Command::Edit {
+            task,
+            title,
+            description,
+            replace,
+            append,
+            start,
+            no_start,
+            due,
+            no_due,
+            remind,
+            no_remind,
+            repeat,
+            repeat_from,
+            no_repeat,
+        } => {
             let mut args = Map::new();
             args.insert("task".into(), task.into());
             if let Some(title) = title {
@@ -652,6 +683,9 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             }
             if let Some(append) = append {
                 args.insert("append".into(), append.into());
+            }
+            if no_start || start.is_some() {
+                args.insert("start".into(), start.into());
             }
             if no_due || due.is_some() {
                 args.insert("due".into(), due.into());
@@ -667,12 +701,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             }
             call("edit", args.into(), j)
         }
-        // A repeating task's next due date counts from today here.
-        Command::Done { tasks, end_repeat } => call(
-            "done",
-            json!({ "tasks": tasks, "today": chrono::Local::now().format("%Y-%m-%d").to_string(), "end_repeat": end_repeat }),
-            j,
-        ),
+        Command::Done { tasks, end_repeat } => call("done", json!({ "tasks": tasks, "end_repeat": end_repeat }), j),
         Command::Reopen { tasks } => call("reopen", json!({ "tasks": tasks }), j),
         Command::Mkdir { path } => call("mkdir", json!({ "path": path }), j),
         Command::Rename { folder, name } => call("rename", json!({ "folder": folder, "name": name }), j),

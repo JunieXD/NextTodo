@@ -13,6 +13,7 @@ function task(n: number, extra: Partial<Task>): Task {
     title: `t${n}`,
     description: "",
     done_at: null,
+    start: null,
     due: null,
     sort_key: `a${n}`,
     created_at: 0,
@@ -37,7 +38,7 @@ test("reminders come before the deadline by the time set, for pending synced tas
     ],
     dependencies: [],
     ai_jobs: [],
-  });
+  }, "2026-11-03");
   expect(reminders(board, now).map((r) => [r.id, r.at.getHours(), r.at.getMinutes(), r.body])).toEqual([
     [2, 12, 0, "今天 12:00 截止"],
     [1, 17, 30, "今天 18:00 截止 · 学习"],

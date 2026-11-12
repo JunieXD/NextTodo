@@ -48,7 +48,8 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 // 文件夹
 { "id": "…", "parent_id": null, "name": "毕业论文", "sort_key": "a0", "created_at": 1730000000000, "updated_at": 1730000000000 }
 // 事项
-{ "id": "…", "number": 5, "folder_id": "…", "title": "设计问卷", "description": "…", "done_at": null,
+{ "id": "…", "number": 5, "folder_id": "…", "title": "设计问卷", "description": "…", "done_at": null, "start": "2026-10-30",
+  // 开始日期，没设时为 null，见 design.md#开始日期
   "due": { "date": "2026-11-02", "time": "18:00", "remind_before": 60, "repeat": { "every": 1, "unit": "week", "from": "due" } },
   // 没有截止时间时为 null；time、remind_before、repeat 可省略；按周的 repeat 可以带 "days": [1, 3, 5]，在周几（1 是周一，7 是周日）；按月的 days 是几号（1–31）。每年是 every 12、unit month
   "completions": { "count": 12, "last": "2026-11-01" },
@@ -83,8 +84,8 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | `folder.create` | `id`、`name`，可选 `parent_id`、`sort_key` | 不给 `sort_key` 时排在同一层最后 |
 | `folder.update` | `id`，可选 `name`、`parent_id`、`sort_key` | `parent_id: null` 表示移到根目录 |
 | `folder.delete` | `id` | 连同子文件夹、事项和相关依赖 |
-| `task.create` | `id`、`title`，可选 `folder_id`、`description`、`due`、`sort_key`、`done` | |
-| `task.update` | `id`，可选 `folder_id`、`title`、`description`、`due`、`sort_key`、`done`、`today` | 只带要改的字段；`due: null` 清除截止时间（连同重复）；`done: true/false` 完成或重新打开 |
+| `task.create` | `id`、`title`，可选 `folder_id`、`description`、`start`、`due`、`sort_key`、`done` | |
+| `task.update` | `id`，可选 `folder_id`、`title`、`description`、`start`、`due`、`sort_key`、`done`、`today` | 只带要改的字段；`start: null` 清除开始日期；`due: null` 清除截止时间（连同重复）；`done: true/false` 完成或重新打开 |
 | `task.delete` | `id` | 连同相关依赖 |
 | `dep.add` | `before`、`after` | |
 | `dep.remove` | `before`、`after` | |

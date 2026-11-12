@@ -95,6 +95,7 @@ export class Session {
   private readonly socket: Socket;
   /** In the app: stops keeping the reminders and the widget in step, and clears them. */
   private readonly unwatch?: () => Promise<void>;
+  private readonly ticking: ReturnType<typeof setInterval>;
   connection: Connection = "connecting";
   private readonly watchers = new Set<() => void>();
   private listeners: Listeners = { rejected() {}, arrived() {}, unsaved() {}, appFailed() {}, signedOut() {} };
@@ -139,6 +140,8 @@ export class Session {
       },
     });
     this.socket.start();
+    // A minute late at most, also after the device has slept.
+    this.ticking = setInterval(this.store.tick, 60_000);
     tabs.addEventListener("message", this.heard);
     if (app) this.unwatch = (app === "android" ? android : desktop).watch(this.store, (e) => this.listeners.appFailed(e));
   }
@@ -266,6 +269,7 @@ export class Session {
 
   private async stop() {
     this.socket.stop();
+    clearInterval(this.ticking);
     // The token goes first, so that the widget, emptied next, asks to sign in.
     await dropSession();
     await this.unwatch?.();

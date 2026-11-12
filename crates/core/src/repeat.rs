@@ -1,5 +1,6 @@
-//! Moving a repeating task's due date on when it is done (docs/design.md#重复). The web app has a
-//! TypeScript twin, `apps/web/src/domain/repeat.ts`; both are checked against `fixtures/repeat.json`.
+//! Moving a repeating task's due date on when it is done (docs/design.md#重复), and the counting of
+//! days it takes. The web app has a TypeScript twin, `apps/web/src/domain/repeat.ts`; both are checked
+//! against `fixtures/repeat.json`.
 
 use crate::model::{Date, Period, Repeat, RepeatFrom, days_in_month};
 
@@ -44,6 +45,22 @@ impl Repeat {
         };
         let (y, m, d) = civil(next.expect("dates go on"));
         Date::try_from(format!("{y:04}-{m:02}-{d:02}")).map_err(|_| "下一次的截止日期超出范围".into())
+    }
+}
+
+impl Date {
+    /// This date moved as many days as `from` moved to `to`: a start date kept as far before its due
+    /// date, which it is not after.
+    pub fn shifted(&self, from: &Date, to: &Date) -> Date {
+        let days = day_number(parts(self)) + day_number(parts(to)) - day_number(parts(from));
+        let (y, m, d) = civil(days);
+        Date::try_from(format!("{y:04}-{m:02}-{d:02}")).expect("no later than `to`")
+    }
+
+    /// The day in UTC at `ms` milliseconds since 1970-01-01: today for those who don't say where they are.
+    pub fn utc(ms: i64) -> Date {
+        let (y, m, d) = civil(ms.div_euclid(86_400_000));
+        Date::try_from(format!("{y:04}-{m:02}-{d:02}")).expect("a time this side of the year 9999")
     }
 }
 

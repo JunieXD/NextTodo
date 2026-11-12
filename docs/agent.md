@@ -18,8 +18,10 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 
 - **事项**用编号：`12` 或 `#12`。
 - **文件夹**用路径：`/工作/网站改版`，根目录是 `/`。输入时开头的 `/` 可以省略；文件夹名本身像数字时（如 `2026`）必须带 `/`，否则会被当成事项编号。
+- **开始日期**写成 `2026-11-14`，没到这天时事项等着，不能晚于截止日期，见[总体设计](design.md#开始日期)。
 - **截止时间**写成 `2026-11-20` 或 `2026-11-20 18:00`。**提醒**写提前的分钟数，`0` 表示截止时提醒，只有带具体时间的截止才能设提醒。
 - **重复**写成间隔数加单位：`1d`、`2w`、`3m`、`1y`（每天、每两周、每三个月、每年；`1y` 就是 `12m`）；按周的可以在冒号后写周几（`1` 是周一，`7` 是周日），如 `1w:1,2,3,4,5`（每个工作日）、`1w:1,3,5`（每周一三五）、`2w:2,4`（每两周的周二和周四）；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），如 `1m:1,15`（每月 1 号和 15 号）、`1m:31`（每月最后一天）。只有带截止时间的事项能设；`repeat_from` 是 `due`（按截止日期，默认）或 `done`（从完成那天），规则见[总体设计](design.md#重复)。
+- **今天**：所有工具都可以带 `today`，用户当地的当天日期（`YYYY-MM-DD`），用来判断开始日期到了没有，重复的事项完成时按它顺延。命令行自动带上本机日期；不带的按 UTC 的当天算，完成重复的事项时必须带。
 - **批次**是改动记录里的序号，写操作的输出和 `log` 里都会给出，撤销时用它。
 
 ## 工具
@@ -29,13 +31,13 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `tree` | `tree` | | 文件夹树，每个文件夹直接包含的待办数和可做数 |
 | `list` | `ls [文件夹] [--all] [--limit 条数]` | `folder?`、`all?`、`limit?` | 文件夹的子文件夹和事项，按[文件夹内顺序](design.md#排序)；默认不含已完成；文件夹里有 [AI 整理](ai.md)请求时开头注明 |
 | `next` | `next [--limit 条数]` | `limit?` | 接下来：可做的事项，按[接下来的顺序](design.md#排序) |
-| `show` | `show <事项>` | `task` | 事项详情：截止、提醒、完成次数（重复的事项）、前置、后续、来源、描述 |
+| `show` | `show <事项>` | `task` | 事项详情：开始、截止、提醒、完成次数（重复的事项）、前置、后续、来源、描述 |
 | `search` | `search <关键词> [--limit 条数]` | `query`、`limit?` | 标题和描述里包含关键词的事项（不区分大小写） |
 | `graph` | `graph [文件夹] [--all] [--mermaid]` | `folder?`、`all?`、`mermaid?` | 文件夹（含子文件夹）里的事项和依赖，按先后顺序；连到外面的事项也列出并注明文件夹 |
 | `log` | `log [-n 条数]` | `limit?` | 最近的改动批次，默认 10，最多 100 |
 | `jobs` | `jobs` | | [AI 整理](ai.md)的请求：等待、整理中和失败的，失败的带原因，以及建议待用户确认的整理文件夹；整理完的请求已经变成事项，不在这里 |
-| `add` | `add <标题> [--folder] [-d 描述] [--due] [--remind] [--repeat [--repeat-from]] [--after 编号…] [--before 编号…]` | `title`、`folder?`、`description?`、`due?`、`remind?`、`repeat?`、`repeat_from?`、`after?`、`before?` | 添加一个事项；文件夹不存在时一起新建 |
-| `edit` | `edit <事项> [--title] [-d 描述 \| --replace 原文 新文… \| --append 文本] [--due \| --no-due] [--remind \| --no-remind] [--repeat [--repeat-from] \| --no-repeat]` | `task`、`title?`、`description?`、`replace?`、`append?`、`due?`、`remind?`、`repeat?`、`repeat_from?` | 修改事项；`due`、`remind`、`repeat` 给 `null` 表示清除；描述的改法见[同时修改](#同时修改) |
+| `add` | `add <标题> [--folder] [-d 描述] [--start] [--due] [--remind] [--repeat [--repeat-from]] [--after 编号…] [--before 编号…]` | `title`、`folder?`、`description?`、`start?`、`due?`、`remind?`、`repeat?`、`repeat_from?`、`after?`、`before?` | 添加一个事项；文件夹不存在时一起新建 |
+| `edit` | `edit <事项> [--title] [-d 描述 \| --replace 原文 新文… \| --append 文本] [--start \| --no-start] [--due \| --no-due] [--remind \| --no-remind] [--repeat [--repeat-from] \| --no-repeat]` | `task`、`title?`、`description?`、`replace?`、`append?`、`start?`、`due?`、`remind?`、`repeat?`、`repeat_from?` | 修改事项；`due`、`remind`、`repeat` 给 `null` 表示清除；描述的改法见[同时修改](#同时修改) |
 | `done` | `done <事项…> [--end-repeat]` | `tasks`、`today?`、`end_repeat?` | 标为完成，输出因此变成可做的事项；重复的事项改为顺延，输出下一次的截止时间。有重复的事项时必须给 `today`（用户当地的当天日期），命令行自动带上本机日期。`end_repeat` 让重复的事项结束重复、直接完成，用于打卡的长期事项全部做完时，见[总体设计](design.md#重复) |
 | `reopen` | `reopen <事项…>` | `tasks` | 重新打开 |
 | `mkdir` | `mkdir <路径>` | `path` | 新建文件夹，路径上缺的层级一起建；已存在时报错 |
@@ -49,6 +51,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 
 - 命令行里 `mv`、`rm` 的参数像编号的是事项，其余是文件夹。
 - `list`、`next`、`search` 最多列出 `limit` 项，默认 50，最多 500；没列完时最后一行说明还有多少项。`list` 先列未完成的，再列已完成的。
+- `edit` 的 `start` 给 `null`（命令行 `--no-start`）清除开始日期，`due` 同样。改了截止或开始，开始晚于截止时报错。
 - `edit` 只改 `due` 不给 `remind` 时：新截止带具体时间就保留原来的提醒，否则去掉；重复总是保留，清除截止时间时一起清除。`repeat_from` 只能和 `repeat` 一起给。
 - 每个写操作是一个批次，全部生效或全部不生效。
 - 只读令牌只能用前 8 个查询工具。
@@ -120,7 +123,7 @@ $ nexttodo graph 工作
 #20 [等 1 项] 上线 · /生活 ← #16
 ```
 
-- 状态：`[可做]`、`[等 N 项]`（还有 N 个前置没完成）、`[已完成]`。“解锁 N 项”是做完它就能开始的后续数。
+- 状态：`[可做]`、`[等 N 项]`（还有 N 个前置没完成）、`[2026-11-14 开始]`（还没到开始日期，两样都等的是 `[等 N 项，2026-11-14 开始]`）、`[已完成]`。“解锁 N 项”是做完它就能开始的后续数。
 - 列表没列完时，最后一行是 `另有 N 项未列出，可调大 limit`。
 - 列表里的标题是全文；写操作的结果、`log` 和 `show` 的前置、后续只是提到事项，标题超过 30 字时截成前 30 字加“…”，全文用 `show` 看。
 - 写操作输出实际发生的变化，同类合并成一行，最后一行是批次：
@@ -139,7 +142,7 @@ $ nexttodo graph 工作
 
 | 工具 | 数据 |
 |---|---|
-| 事项 | `{id, number, title, status, folder}`；`status` 是 `ready`、`waiting`、`done`，`folder` 是路径；`waiting_on`（还在等的前置数）、`unlocks`（解锁数）不为 0 时才有，`due`、`done_at`、`completions`（`{count, last}`，重复的事项完成过时）有值时才有 |
+| 事项 | `{id, number, title, status, folder}`；`status` 是 `ready`、`waiting`、`done`，`folder` 是路径；`waiting_on`（还在等的前置数）、`unlocks`（解锁数）不为 0 时才有，`start`、`due`、`done_at`、`completions`（`{count, last}`，重复的事项完成过时）有值时才有 |
 | `tree` | `[{path, name, depth, pending, ready}]`，先序排列，第一项是根目录 |
 | `list` | `{folder, folders: [{path, name, pending, ready}], tasks: [事项], total}`，`total` 是没截断时的事项数；有 AI 整理请求时另有 `jobs: {waiting, running, failed, ready}`，只含不为 0 的 |
 | `next` | `{tasks: [事项], total}` |

@@ -16,7 +16,7 @@ import type { Snapshot } from "../api/types/Snapshot";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import { cmp } from "./board";
-import { nextDue } from "./repeat";
+import { nextDue, shifted } from "./repeat";
 
 /** A user's data, keyed for changes. */
 export interface Data {
@@ -158,6 +158,7 @@ class Applier {
           title: op.title,
           description: op.description ?? "",
           done_at: op.done ? now : null,
+          start: op.start ?? null,
           due: op.due ?? null,
           sort_key: op.sort_key ?? lastKey(keys),
           created_at: now,
@@ -173,6 +174,7 @@ class Applier {
         if (op.folder_id !== undefined) t.folder_id = op.folder_id;
         if (op.title !== undefined) t.title = op.title;
         if (op.description !== undefined) t.description = op.description;
+        if (op.start !== undefined) t.start = op.start;
         if (op.due !== undefined) t.due = op.due;
         if (op.sort_key !== undefined) t.sort_key = op.sort_key;
         if (op.done !== undefined && op.done !== (t.done_at !== null)) {
@@ -182,6 +184,8 @@ class Applier {
             if (!op.today) throw new Rejected("invalid", "完成重复的事项需要给出今天的日期");
             const date = nextDue(repeat, t.due.date, op.today);
             if (!date) throw new Rejected("invalid", "下一次的截止日期超出范围");
+            // The start date keeps as far before it (docs/design.md#开始日期).
+            if (t.start) t.start = shifted(t.start, t.due.date, date);
             t.due = { ...t.due, date };
             t.completions = { count: (t.completions?.count ?? 0) + 1, last: op.today };
           } else t.done_at = op.done ? now : null;
@@ -330,13 +334,13 @@ class Applier {
   }
 
   private createTask(t: Task) {
-    checkRepeat(t);
+    checkTask(t);
     this.push({ kind: "task", before: null, after: t });
   }
 
   private updateTask(before: Task, after: Task) {
     if (same(before, after)) return;
-    checkRepeat(after);
+    checkTask(after);
     if (after.folder_id !== before.folder_id && after.folder_id !== null) this.folder(after.folder_id);
     this.push({ kind: "task", before, after: { ...after, updated_at: this.cx.now, updated_via: null } });
   }
@@ -417,7 +421,7 @@ class Applier {
           this.createTask({ ...t, updated_at: now, updated_via: null });
         } else {
           const cur = this.d.tasks.get(e.before.id);
-          const fields = ["folder_id", "title", "description", "done_at", "completions", "sort_key"] as const;
+          const fields = ["folder_id", "title", "description", "done_at", "start", "completions", "sort_key"] as const;
           if (cur) this.updateTask(cur, { ...restore(cur, e.before, e.after, fields), due: restoreDue(cur.due, e.before.due, e.after.due) });
         }
       } else if (e.kind === "ai_job") {
@@ -478,8 +482,10 @@ function restoreDue(cur: Due | null, before: Due | null, after: Due | null): Due
 }
 
 /** A repeating task is never done: done, it moves on (docs/design.md#重复). */
-function checkRepeat(t: Task) {
+/** A repeating task is never done; none starts after it is due. As the server checks. */
+function checkTask(t: Task) {
   if (t.done_at !== null && t.due?.repeat) throw new Rejected("invalid", `“${t.title}”已完成，不能设置重复，请先重新打开`);
+  if (t.start && t.due && t.start > t.due.date) throw new Rejected("invalid", `“${t.title}”的开始日期不能晚于截止日期`);
 }
 
 /** Equal as data: entities and their fields are plain JSON. */

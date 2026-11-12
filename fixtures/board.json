@@ -132,5 +132,24 @@
       "next": ["soon", "evening", "day", "root1", "home1", "home2", "work1", "site1"],
       "paths": { "/": "/", "work": "/工作", "site": "/工作/网站", "home": "/生活" }
     }
+  },
+  {
+    "name": "开始日期之前等着，到了那天可做；等的前置照常数",
+    "today": "2026-11-12",
+    "folders": [],
+    "tasks": [
+      { "id": "a", "key": "a0", "start": "2026-11-13" },
+      { "id": "b", "key": "a1", "start": "2026-11-12" },
+      { "id": "c", "key": "a2", "start": "2026-11-01" },
+      { "id": "d", "key": "a3" },
+      { "id": "e", "key": "a4", "start": "2026-11-20" },
+      { "id": "f", "key": "a5" }
+    ],
+    "deps": [["d", "c"], ["d", "e"], ["a", "f"]],
+    "expect": {
+      "status": { "a": "not started", "b": "ready", "c": "waiting 1", "d": "ready", "e": "waiting 1, not started", "f": "waiting 1" },
+      "unlocks": { "d": ["c"], "a": ["f"] },
+      "next": ["b", "d"]
+    }
   }
 ]

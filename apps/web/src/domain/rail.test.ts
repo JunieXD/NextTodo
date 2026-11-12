@@ -16,6 +16,7 @@ function board(n: number, deps: [number, number][]) {
       title: `t${i}`,
       description: "",
       done_at: null,
+      start: null,
       due: null,
       sort_key: `a${String(i).padStart(3, "0")}`,
       created_at: 0,
@@ -26,7 +27,7 @@ function board(n: number, deps: [number, number][]) {
     dependencies: deps.map(([b, a]) => ({ before: id(b), after: id(a), created_at: 0 })),
     ai_jobs: [],
   };
-  const b = new Board(snapshot);
+  const b = new Board(snapshot, "2026-11-12");
   return { board: b, list: b.tasksIn(null) };
 }
 

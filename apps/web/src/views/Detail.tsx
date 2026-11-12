@@ -1,13 +1,13 @@
 // A task's details: title, folder, due date, description, what it waits for and what waits for it.
 
-import { Bell, Calendar, CalendarCheck, Folder as FolderIcon, KeyRound, type LucideIcon, Plus, User, X } from "lucide-react";
+import { Bell, Calendar, CalendarCheck, CalendarClock, Folder as FolderIcon, KeyRound, type LucideIcon, Plus, User, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
-import { day, formatDay, formatDue, formatMoment, isoDate, remindLabel } from "../domain/dates";
+import { day, formatDay, formatDue, formatMoment, isoDate, remindLabel, startLabel } from "../domain/dates";
 import { repeatLabel } from "../domain/repeat";
 import { checkDescription, checkTitle } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
@@ -17,7 +17,7 @@ import { Icon } from "../ui/icons";
 import { composing } from "../ui/keys";
 import { Description } from "../ui/Markdown";
 import { useTaskActions } from "./actions";
-import { DueEditor } from "./due";
+import { DueEditor, StartEditor } from "./due";
 import { useMarks } from "./marks";
 import { useSelection } from "./nav";
 import { FolderPicker, TaskPicker } from "./pickers";
@@ -25,7 +25,7 @@ import { dueClass } from "./rows";
 
 const STATUS = { ready: "可做", waiting: "等待中", done: "已完成" };
 
-type Panel = "folder" | "due" | "pred" | "succ" | null;
+type Panel = "folder" | "start" | "due" | "pred" | "succ" | null;
 
 /** Who made a change: nobody named for the user, or a token's name followed by a space before the Chinese. */
 const who = (via: string | null) => (via ? `${via} ` : "");
@@ -101,7 +101,9 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
           <Title key={t.id} task={t} onSave={(title) => update({ title })} />
           <div className="d-status">
             <span className={`pill ${status}`}>{STATUS[status]}</span>
-            {status === "waiting" && <span>还有 {board.waitingOn(t)} 项前置未完成</span>}
+            {/* What it waits for. */}
+            {status === "waiting" && board.waitingOn(t) > 0 && <span>还有 {board.waitingOn(t)} 项前置未完成</span>}
+            {status === "waiting" && board.notStarted(t) && <span>{startLabel(t.start!, now)}</span>}
             {t.number > 0 && <span className="tabular-nums">#{t.number}</span>}
           </div>
         </div>
@@ -116,6 +118,13 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
 
       <div className="group">
         <Prop icon={FolderIcon} label="文件夹" value={board.place(t.folder_id)} onClick={() => setPanel("folder")} />
+        <Prop
+          icon={CalendarClock}
+          label="开始"
+          value={t.start ? formatDue({ date: t.start }, now) : "未设置"}
+          cls={t.start ? "" : "muted"}
+          onClick={() => setPanel("start")}
+        />
         <Prop
           icon={Calendar}
           label="截止"
@@ -170,7 +179,10 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
           onClose={() => setPanel(null)}
         />
       )}
-      {panel === "due" && <DueEditor due={t.due} done={t.done_at !== null} onSave={(due) => update({ due })} onClose={() => setPanel(null)} />}
+      {panel === "start" && <StartEditor start={t.start} due={t.due?.date} onSave={(start) => update({ start })} onClose={() => setPanel(null)} />}
+      {panel === "due" && (
+        <DueEditor due={t.due} start={t.start} done={t.done_at !== null} onSave={(due) => update({ due })} onClose={() => setPanel(null)} />
+      )}
       {(panel === "pred" || panel === "succ") && (
         <TaskPicker
           task={t}

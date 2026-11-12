@@ -17,11 +17,15 @@ export type Op = { "op": "folder.create", id: FolderId, name: Name, parent_id?: 
 /**
  * `null` moves the folder to the root.
  */
-parent_id?: FolderId | null, sort_key?: SortKey, } | { "op": "folder.delete", id: FolderId, } | { "op": "task.create", id: TaskId, title: Title, folder_id?: FolderId, description?: Description, due?: Due, sort_key?: SortKey, done?: boolean, } | { "op": "task.update", id: TaskId, 
+parent_id?: FolderId | null, sort_key?: SortKey, } | { "op": "folder.delete", id: FolderId, } | { "op": "task.create", id: TaskId, title: Title, folder_id?: FolderId, description?: Description, start?: Date, due?: Due, sort_key?: SortKey, done?: boolean, } | { "op": "task.update", id: TaskId, 
 /**
  * `null` moves the task to the root.
  */
 folder_id?: FolderId | null, title?: Title, description?: Description, 
+/**
+ * `null` clears the start date.
+ */
+start?: Date | null, 
 /**
  * `null` clears the due date.
  */

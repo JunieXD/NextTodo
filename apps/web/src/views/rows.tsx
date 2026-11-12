@@ -1,6 +1,6 @@
 // Rows in lists: tasks, folders, and the folder view's tasks with the dependency rail on the left.
 
-import { CheckCheck, ChevronRight, Clock, Folder as FolderIcon, FolderInput, Check as CheckIcon, PanelRightOpen, Repeat, RotateCcw, Trash2 } from "lucide-react";
+import { CalendarClock, CheckCheck, ChevronRight, Clock, Folder as FolderIcon, FolderInput, Check as CheckIcon, PanelRightOpen, Repeat, RotateCcw, Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FolderId } from "../api/types/FolderId";
 import type { Op } from "../api/types/Op";
@@ -8,7 +8,7 @@ import type { Folder } from "../api/types/Folder";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
-import { dueKind, formatDue, isoDate } from "../domain/dates";
+import { dueKind, formatDue, isoDate, startLabel } from "../domain/dates";
 import { plainRail, railLayout } from "../domain/rail";
 import { range, rekey } from "../domain/reorder";
 import { useCommit } from "../session";
@@ -82,10 +82,18 @@ export function TaskRow({
       </span>,
     );
   }
-  if (status === "waiting") {
+  if (status === "waiting" && board.waitingOn(t) > 0) {
     meta.push(
       <span key="wait">
         <Icon of={Inbound} size={14} />等 {board.waitingOn(t)} 项
+      </span>,
+    );
+  }
+  if (t.done_at === null && board.notStarted(t)) {
+    meta.push(
+      <span key="start">
+        <Icon of={CalendarClock} size={14} />
+        {startLabel(t.start!, now)}
       </span>,
     );
   }

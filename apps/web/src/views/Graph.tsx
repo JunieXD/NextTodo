@@ -18,12 +18,12 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import "./graph.css";
-import { Check as CheckIcon, Clock, Folder as FolderIcon, Link, X } from "lucide-react";
+import { CalendarClock, Check as CheckIcon, Clock, Folder as FolderIcon, Link, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { FolderId } from "../api/types/FolderId";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
-import { formatDue } from "../domain/dates";
+import { formatDue, startLabel } from "../domain/dates";
 import { type Edge, lineage, scene } from "../domain/graph";
 import { useView } from "../session";
 import { useBack } from "../ui/back";
@@ -147,7 +147,16 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
     } else if (!outside && status === "waiting") {
       meta = (
         <span className="n-meta">
-          <Icon of={Inbound} size={12} />等 {board.waitingOn(t)} 项
+          {board.waitingOn(t) > 0 ? (
+            <>
+              <Icon of={Inbound} size={12} />等 {board.waitingOn(t)} 项
+            </>
+          ) : (
+            <>
+              <Icon of={CalendarClock} size={12} />
+              {startLabel(t.start!, now)}
+            </>
+          )}
         </span>
       );
     }

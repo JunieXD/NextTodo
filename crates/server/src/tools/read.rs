@@ -44,7 +44,7 @@ fn counts(b: &Board, f: Option<FolderId>) -> (String, usize, usize) {
 
 pub fn tree(c: &Connection, cx: &Cx, _: NoArgs) -> Result<Output, ApiError> {
     let snap = store::snapshot(c, cx.owner)?;
-    let b = Board::new(&snap);
+    let b = Board::new(&snap, cx.today.clone());
     let (mut lines, mut data) = (Vec::new(), Vec::new());
     for f in b.folder_tree() {
         let name = f.and_then(|id| b.folder(id)).map_or("/", |f| f.name.as_str());
@@ -58,7 +58,7 @@ pub fn tree(c: &Connection, cx: &Cx, _: NoArgs) -> Result<Output, ApiError> {
 
 pub fn list(c: &Connection, cx: &Cx, a: ListArgs) -> Result<Output, ApiError> {
     let snap = store::snapshot(c, cx.owner)?;
-    let b = Board::new(&snap);
+    let b = Board::new(&snap, cx.today.clone());
     let f = find_folder(&b, a.folder.as_deref().unwrap_or("/"))?;
     let limit = limit(a.limit)?;
     let mut lines = vec![b.path(f)];
@@ -103,7 +103,7 @@ pub fn list(c: &Connection, cx: &Cx, a: ListArgs) -> Result<Output, ApiError> {
 pub fn next(c: &Connection, cx: &Cx, a: NextArgs) -> Result<Output, ApiError> {
     let limit = limit(a.limit)?;
     let snap = store::snapshot(c, cx.owner)?;
-    let b = Board::new(&snap);
+    let b = Board::new(&snap, cx.today.clone());
     let mut tasks = b.next();
     let total = tasks.len();
     tasks.truncate(limit);
@@ -118,10 +118,12 @@ pub fn next(c: &Connection, cx: &Cx, a: NextArgs) -> Result<Output, ApiError> {
 
 pub fn show(c: &Connection, cx: &Cx, a: ShowArgs) -> Result<Output, ApiError> {
     let snap = store::snapshot(c, cx.owner)?;
-    let b = Board::new(&snap);
+    let b = Board::new(&snap, cx.today.clone());
     let t = find_task(&b, a.task)?;
-    let mut lines =
-        vec![format!("#{} {} {}", t.number, status_tag(b.status(t)), t.title.as_str()), format!("文件夹：{}", b.path(t.folder_id))];
+    let mut lines = vec![format!("#{} {} {}", t.number, status_tag(&b, t), t.title.as_str()), format!("文件夹：{}", b.path(t.folder_id))];
+    if let Some(s) = &t.start {
+        lines.push(format!("开始：{}", s.as_str()));
+    }
     if let Some(d) = &t.due {
         let remind = match d.at.as_ref().and_then(|at| at.remind_before) {
             None => String::new(),
@@ -178,7 +180,7 @@ pub fn search(c: &Connection, cx: &Cx, a: SearchArgs) -> Result<Output, ApiError
         return Err(ApiError::invalid("关键词不能为空", Some("query".into())));
     }
     let snap = store::snapshot(c, cx.owner)?;
-    let b = Board::new(&snap);
+    let b = Board::new(&snap, cx.today.clone());
     let mut found: Vec<&Task> = snap
         .tasks
         .iter()
@@ -202,7 +204,7 @@ pub fn search(c: &Connection, cx: &Cx, a: SearchArgs) -> Result<Output, ApiError
 
 pub fn graph(c: &Connection, cx: &Cx, a: GraphArgs) -> Result<Output, ApiError> {
     let snap = store::snapshot(c, cx.owner)?;
-    let b = Board::new(&snap);
+    let b = Board::new(&snap, cx.today.clone());
     let scope = find_folder(&b, a.folder.as_deref().unwrap_or("/"))?;
     let shown = |t: &Task| a.all || t.done_at.is_none();
     let mut nodes: Vec<&Task> = snap.tasks.iter().filter(|t| shown(t) && b.in_subtree(t.folder_id, scope)).collect();
@@ -245,7 +247,7 @@ fn mermaid(b: &Board, nodes: &[&Task], edges: &[(&Task, &Task)], scope: Option<F
     for t in nodes {
         let class = match b.status(t) {
             Status::Ready => "ready",
-            Status::Waiting(_) => "waiting",
+            Status::Waiting { .. } => "waiting",
             Status::Done => "done",
         };
         let mut label = format!("#{} {}", t.number, escape(t.title.as_str()));
@@ -268,7 +270,7 @@ pub fn jobs(c: &Connection, cx: &Cx, _: NoArgs) -> Result<Output, ApiError> {
     if snap.ai_jobs.is_empty() {
         return Ok(Output { text: "没有 AI 整理请求。".into(), data: json!([]) });
     }
-    let b = Board::new(&snap);
+    let b = Board::new(&snap, cx.today.clone());
     let (mut lines, mut data) = (Vec::new(), Vec::new());
     for j in &snap.ai_jobs {
         let state = match j.state {

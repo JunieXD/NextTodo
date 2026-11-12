@@ -13,6 +13,7 @@ import type { SeqSnapshot } from "../api/types/SeqSnapshot";
 import type { Snapshot } from "../api/types/Snapshot";
 import { type Data, Rejected, apply, copy, fromSnapshot, replay, toSnapshot } from "../domain/apply";
 import { Board } from "../domain/board";
+import { isoDate } from "../domain/dates";
 
 /** A change made here, with when it was made, so that applying it again gives the same times. */
 export interface Pending {
@@ -66,6 +67,8 @@ export class Store {
   private readonly saving = new Set<MutationId>();
   private view!: View;
   private data!: Data;
+  /** The day the view is as of: start dates come by it. */
+  private today = isoDate(new Date());
   private readonly listeners = new Set<() => void>();
 
   constructor(
@@ -89,6 +92,15 @@ export class Store {
   };
 
   getView = () => this.view;
+
+  /** Moves the view on to a new day, if there is one: what starts today can be done (docs/design.md#开始日期). */
+  tick = () => {
+    const today = isoDate(new Date());
+    if (today === this.today) return;
+    this.today = today;
+    this.recompute();
+    for (const listener of this.listeners) listener();
+  };
 
   /** The sequence number of the base: everything up to it is in. */
   get since() {
@@ -202,7 +214,7 @@ export class Store {
       }
     }
     this.data = d;
-    this.view = { board: new Board(toSnapshot(d)), stuck, pending: this.outbox.length };
+    this.view = { board: new Board(toSnapshot(d), this.today), stuck, pending: this.outbox.length };
   }
 }
 

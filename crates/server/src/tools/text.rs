@@ -11,10 +11,14 @@ use serde_json::{Value, json};
 /// How much of a title is shown where a task is only mentioned, not listed.
 const SHORT: usize = 30;
 
-pub fn status_tag(s: Status) -> String {
-    match s {
+/// `[可做]`, `[等 2 项]`, `[2026-11-14 开始]`, both `[等 2 项，2026-11-14 开始]`, or `[已完成]`.
+pub fn status_tag(b: &Board, t: &Task) -> String {
+    let start = || format!("{} 开始", t.start.as_ref().expect("a start date to wait for").as_str());
+    match b.status(t) {
         Status::Ready => "[可做]".into(),
-        Status::Waiting(n) => format!("[等 {n} 项]"),
+        Status::Waiting { on, not_started: false } => format!("[等 {on} 项]"),
+        Status::Waiting { on: 0, not_started: true } => format!("[{}]", start()),
+        Status::Waiting { on, not_started: true } => format!("[等 {on} 项，{}]", start()),
         Status::Done => "[已完成]".into(),
     }
 }
@@ -66,7 +70,7 @@ pub fn repeat(r: Repeat) -> String {
 pub fn task_line(b: &Board, t: &Task, folder: bool, status: bool) -> String {
     let mut line = format!("#{}", t.number);
     if status {
-        line += &format!(" {}", status_tag(b.status(t)));
+        line += &format!(" {}", status_tag(b, t));
     }
     line += &format!(" {}", t.title.as_str());
     if folder {
@@ -84,7 +88,7 @@ pub fn task_line(b: &Board, t: &Task, folder: bool, status: bool) -> String {
 
 /// `#12 [可做] 出设计稿 · /工作`: a task mentioned, by its title shortened.
 pub fn mention(b: &Board, t: &Task, folder: bool) -> String {
-    let mut line = format!("#{} {} {}", t.number, status_tag(b.status(t)), excerpt(t.title.as_str(), SHORT));
+    let mut line = format!("#{} {} {}", t.number, status_tag(b, t), excerpt(t.title.as_str(), SHORT));
     if folder {
         line += &format!(" · {}", b.path(t.folder_id));
     }
@@ -96,14 +100,19 @@ pub fn task_view(b: &Board, t: &Task) -> Value {
     let status = b.status(t);
     let mut v = json!({
         "id": t.id, "number": t.number, "title": t.title, "folder": b.path(t.folder_id),
-        "status": match status { Status::Ready => "ready", Status::Waiting(_) => "waiting", Status::Done => "done" },
+        "status": match status { Status::Ready => "ready", Status::Waiting { .. } => "waiting", Status::Done => "done" },
     });
-    if let Status::Waiting(n) = status {
-        v["waiting_on"] = n.into();
+    if let Status::Waiting { on, .. } = status
+        && on > 0
+    {
+        v["waiting_on"] = on.into();
     }
     match b.unlocks(t).len() {
         0 => {}
         n => v["unlocks"] = n.into(),
+    }
+    if let Some(s) = &t.start {
+        v["start"] = json!(s);
     }
     if let Some(d) = &t.due {
         v["due"] = json!(d);

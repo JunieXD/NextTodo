@@ -27,6 +27,8 @@ pub struct WriteCx<'a> {
     pub c: &'a Connection,
     pub owner: &'a str,
     pub board: &'a Board<'a>,
+    /// As the user gave it: a repeating task done needs it.
+    pub today: Option<Date>,
 }
 
 /// The operations a write tool wants applied.
@@ -42,7 +44,14 @@ impl From<Vec<Op>> for Write {
     }
 }
 
-pub fn run(c: &mut Connection, auth: &Auth, id: Option<MutationId>, now: i64, build: WriteFn) -> Result<Output, ApiError> {
+pub fn run(
+    c: &mut Connection,
+    auth: &Auth,
+    id: Option<MutationId>,
+    now: i64,
+    today: Option<Date>,
+    build: WriteFn,
+) -> Result<Output, ApiError> {
     let actor = Actor { owner: &auth.user_id, token_id: &auth.token_id, via: auth.via() };
     let id = id.unwrap_or_else(|| MutationId(Uuid::now_v7()));
     let tx = c.transaction()?;
@@ -59,22 +68,23 @@ pub fn run(c: &mut Connection, auth: &Auth, id: Option<MutationId>, now: i64, bu
         };
     }
     let snap = store::snapshot(&tx, &auth.user_id)?;
-    let write = build(&WriteCx { c: &tx, owner: &auth.user_id, board: &Board::new(&snap) })?;
+    let day = today.clone().unwrap_or_else(|| Date::utc(now));
+    let write = build(&WriteCx { c: &tx, owner: &auth.user_id, board: &Board::new(&snap, day.clone()), today })?;
     let effects = mutate::run(&tx, &actor, &write.ops, now)?;
     // Rendered inside the transaction, so a preview still sees what it would have made.
     let after = store::snapshot(&tx, &auth.user_id)?;
     if write.preview {
-        return Ok(report(&after, None, &effects));
+        return Ok(report(&after, &day, None, &effects));
     }
     let batch = mutate::record(&tx, &actor, id, &write.ops, &effects, now)?;
-    let output = report(&after, Some(batch), &effects);
+    let output = report(&after, &day, Some(batch), &effects);
     tx.execute("UPDATE mutations SET reply = ?1 WHERE seq = ?2", params![serde_json::to_string(&output)?, batch])?;
     tx.commit()?;
     Ok(output)
 }
 
-fn report(after: &Snapshot, batch: Option<i64>, effects: &[Effect]) -> Output {
-    let b = Board::new(after);
+fn report(after: &Snapshot, today: &Date, batch: Option<i64>, effects: &[Effect]) -> Output {
+    let b = Board::new(after, today.clone());
     let mut lines = Vec::new();
     if batch.is_none() {
         lines.push("预览（未保存）：".to_owned());
@@ -208,7 +218,8 @@ fn plan_ops(b: &Board, plan: Plan) -> Result<Vec<Op>, ApiError> {
     };
     let mut links = Vec::new();
     for (t, &id) in plan.tasks.into_iter().zip(&ids) {
-        let PlanTask { name: _, title, description, folder, due: due_text, remind, repeat: repeat_text, repeat_from, after, before } = t;
+        let PlanTask { name: _, title, description, folder, start, due: due_text, remind, repeat: repeat_text, repeat_from, after, before } =
+            t;
         let folder_id = match folder {
             None => base,
             Some(p) if p.trim_start().starts_with('/') => folders.ensure(&mut ops, &p)?.0,
@@ -219,6 +230,7 @@ fn plan_ops(b: &Board, plan: Plan) -> Result<Vec<Op>, ApiError> {
             title,
             folder_id,
             description: description.unwrap_or_default(),
+            start,
             due: new_due(due_text, remind, repeat_text, repeat_from)?,
             sort_key: None,
             done: false,
@@ -242,6 +254,7 @@ pub fn add(w: &WriteCx, a: AddArgs) -> Result<Write, ApiError> {
         title: a.title,
         description: a.description,
         folder: None,
+        start: a.start,
         due: a.due,
         remind: a.remind,
         repeat: a.repeat,
@@ -261,8 +274,8 @@ pub fn apply(w: &WriteCx, a: ApplyArgs) -> Result<Write, ApiError> {
 }
 
 pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
-    let Edit { id, title, description, due } = edit_fields(w.board, a)?;
-    Ok(vec![Op::TaskUpdate { id, folder_id: None, title, description, due, sort_key: None, done: None, today: None }].into())
+    let Edit { id, title, description, start, due } = edit_fields(w.board, a)?;
+    Ok(vec![Op::TaskUpdate { id, folder_id: None, title, description, start, due, sort_key: None, done: None, today: None }].into())
 }
 
 /// The fields `edit` sets on a task, the due date in full; `None` where it leaves one as it is.
@@ -270,6 +283,7 @@ pub(crate) struct Edit {
     pub id: TaskId,
     pub title: Option<Title>,
     pub description: Option<Description>,
+    pub start: Option<Option<Date>>,
     pub due: Option<Option<Due>>,
 }
 
@@ -277,7 +291,14 @@ pub(crate) struct Edit {
 pub(crate) fn edit_fields(b: &Board, a: EditArgs) -> Result<Edit, ApiError> {
     let revising = !a.replace.is_empty() || a.append.is_some();
     let changes_repeat = a.repeat.is_some() || a.repeat_from.is_some();
-    if a.title.is_none() && a.description.is_none() && !revising && a.due.is_none() && a.remind.is_none() && !changes_repeat {
+    if a.title.is_none()
+        && a.description.is_none()
+        && !revising
+        && a.start.is_none()
+        && a.due.is_none()
+        && a.remind.is_none()
+        && !changes_repeat
+    {
         return Err(ApiError::invalid("未指定要修改的内容", None));
     }
     if a.description.is_some() && revising {
@@ -326,7 +347,7 @@ pub(crate) fn edit_fields(b: &Board, a: EditArgs) -> Result<Edit, ApiError> {
             None => None,
         },
     };
-    Ok(Edit { id: t.id, title: a.title, description, due: new_due })
+    Ok(Edit { id: t.id, title: a.title, description, start: a.start, due: new_due })
 }
 
 /// The description as it is now with each `old` replaced by its `new` in turn, then `append` on a
@@ -379,6 +400,7 @@ fn set_done(b: &Board, tasks: Vec<i64>, done: bool, today: Option<Date>, end_rep
                 folder_id: None,
                 title: None,
                 description: None,
+                start: None,
                 due,
                 sort_key: None,
                 done: Some(done),
@@ -391,7 +413,7 @@ fn set_done(b: &Board, tasks: Vec<i64>, done: bool, today: Option<Date>, end_rep
 
 pub fn done(w: &WriteCx, a: DoneArgs) -> Result<Write, ApiError> {
     let b = w.board;
-    set_done(b, a.tasks, true, a.today, a.end_repeat)
+    set_done(b, a.tasks, true, w.today.clone(), a.end_repeat)
 }
 
 pub fn reopen(w: &WriteCx, a: TasksArgs) -> Result<Write, ApiError> {
@@ -434,6 +456,7 @@ pub fn move_to(w: &WriteCx, a: MoveArgs) -> Result<Write, ApiError> {
             folder_id: Some(to),
             title: None,
             description: None,
+            start: None,
             due: None,
             sort_key: None,
             done: None,

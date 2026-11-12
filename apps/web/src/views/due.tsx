@@ -25,9 +25,24 @@ const UNITS: [RepeatUnit, string][] = [
 const AHEAD = (["minute", "hour", "day"] as const).map((u): [RemindUnit, string] => [u, REMIND_UNITS[u].name]);
 
 /** Sets or clears the due date, its time, the reminder and how it repeats; a task `done` doesn't
- * repeat. */
-export function DueEditor({ due, done, onSave, onClose }: { due: Due | null; done: boolean; onSave(d: Due | null): void; onClose(): void }) {
-  const [date, setDate] = useState(due?.date ?? isoDate(new Date()));
+ * repeat. Not before the task's `start`. */
+export function DueEditor({
+  due,
+  start,
+  done,
+  onSave,
+  onClose,
+}: {
+  due: Due | null;
+  start: string | null;
+  done: boolean;
+  onSave(d: Due | null): void;
+  onClose(): void;
+}) {
+  const [date, setDate] = useState(() => {
+    const today = isoDate(new Date());
+    return due?.date ?? (start && start > today ? start : today);
+  });
   const [time, setTime] = useState(due?.time ?? "");
   // One of the menu's reminders, its minutes as text; or so many of a unit ahead, which one not on the
   // menu (set by an agent, say) is.
@@ -68,7 +83,7 @@ export function DueEditor({ due, done, onSave, onClose }: { due: Due | null; don
   };
   return (
     <Modal title="截止时间" onClose={onClose}>
-      <Calendar value={date} onChange={setDate} />
+      <Calendar value={date} min={start ?? undefined} onChange={setDate} />
       <div className="group settings">
         <TimeRow value={time} extra={due?.time} onChange={setTime} />
         <Select
@@ -205,11 +220,29 @@ const ARROWS = new Map([
   ["ArrowDown", 7],
 ]);
 
-/** A month of days, Monday first, to pick `value` from; the days around it in the six weeks shown
- * are there to pick too. */
-function Calendar({ value, onChange }: { value: string; onChange(date: string): void }) {
+/** Sets the day a task starts, not after it is due, or clears it: picked, it is set. */
+export function StartEditor({ start, due, onSave, onClose }: { start: string | null; due?: string; onSave(start: string | null): void; onClose(): void }) {
+  const pick = (date: string | null) => (onSave(date), onClose());
+  return (
+    <Modal title="开始日期" onClose={onClose}>
+      <Calendar value={start ?? ""} max={due} onChange={pick} />
+      {start && (
+        <div className="actions">
+          <button className="text-btn danger-text" onClick={() => pick(null)}>
+            清除开始日期
+          </button>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/** A month of days, Monday first, to pick `value` from, if any, between `min` and `max`; the days
+ * around it in the six weeks shown are there to pick too. */
+function Calendar({ value, min, max, onChange }: { value: string; min?: string; max?: string; onChange(date: string): void }) {
   const today = isoDate(useNow());
-  const [shown, setShown] = useState(() => monthOf(day(value)));
+  const [shown, setShown] = useState(() => monthOf(day(value || today)));
+  const out = (iso: string) => (min !== undefined && iso < min) || (max !== undefined && iso > max);
   const days = useRef<HTMLDivElement>(null);
   const first = new Date(shown.year, shown.month, 1);
   const start = 1 - ((first.getDay() + 6) % 7);
@@ -226,6 +259,7 @@ function Calendar({ value, onChange }: { value: string; onChange(date: string): 
     if (by === undefined) return;
     e.preventDefault();
     const to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + by);
+    if (out(isoDate(to))) return;
     // Shown at once, in its month, to take the focus.
     flushSync(() => pick(to));
     days.current!.querySelector<HTMLElement>(`[data-date="${isoDate(to)}"]`)!.focus();
@@ -263,6 +297,7 @@ function Calendar({ value, onChange }: { value: string; onChange(date: string): 
               tabIndex={iso === tabStop ? 0 : -1}
               aria-pressed={iso === value}
               aria-current={iso === today ? "date" : undefined}
+              disabled={out(iso)}
               aria-label={`${d.getMonth() + 1}月${d.getDate()}日`}
               onClick={() => pick(d)}
               onKeyDown={(e) => move(e, d)}

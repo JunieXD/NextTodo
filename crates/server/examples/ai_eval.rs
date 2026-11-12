@@ -13,7 +13,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use clap::Parser;
 use nexttodo_core::board::{Board, Snapshot};
 use nexttodo_core::dag::find_path;
-use nexttodo_core::model::{AiJob, Due, RepeatFrom, Suggestion, TaskId};
+use nexttodo_core::model::{AiJob, Date, Due, RepeatFrom, Suggestion, TaskId};
 use nexttodo_core::ops::{MAX_OPS, Op};
 use nexttodo_server::ai::llm::{Api, Config, Https, Prompt, Thinking};
 use nexttodo_server::ai::{organize, tidy};
@@ -279,6 +279,11 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The checks read no task's status, which is all a board's day is for.
+fn board(snap: &Snapshot) -> Board<'_> {
+    Board::new(snap, Date::utc(0))
+}
+
 fn ask(config: &Config, system: Option<&str>, case: &Case, index: usize, run: usize) -> Outcome {
     let e = match &case.expect {
         Kind::Organize(e) => e,
@@ -294,7 +299,7 @@ fn ask(config: &Config, system: Option<&str>, case: &Case, index: usize, run: us
         Ok(text) => {
             // As the server adds them: what it refuses fails the job.
             let planned = organize::parse(&text, &shown)
-                .and_then(|tasks| tools::plan_into(&Board::new(&snap), None, tasks).map_err(|e| e.describe()))
+                .and_then(|tasks| tools::plan_into(&board(&snap), None, tasks).map_err(|e| e.describe()))
                 .and_then(|ops| accepted(&snap, &ops).map(|()| ops));
             let checked = match planned {
                 Err(e) => Err(format!("出错：{e}")),
@@ -638,7 +643,7 @@ fn ask_tidy(config: &Config, system: Option<&str>, e: &TidyExpect, data: &(Snaps
 
 /// What is wrong with the suggestions `s` for `snap`, and how many of the facts all of them taken keep.
 fn check_tidy(e: &TidyExpect, snap: &Snapshot, s: &[Suggestion]) -> (Vec<String>, usize) {
-    let b = Board::new(snap);
+    let b = board(snap);
     let number = |id: &TaskId| b.task(*id).map(|t| t.number);
     let mut problems = Vec::new();
     let mut kinds = BTreeSet::new();

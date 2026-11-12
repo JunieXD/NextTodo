@@ -72,6 +72,7 @@
 | title | TEXT | 1–200 字，单行，不含控制字符 |
 | description | TEXT | Markdown，最长 20000 字；除换行和制表符外不含控制字符 |
 | done_at | INTEGER，可空 | 空表示待办 |
+| start_date | TEXT，可空 | [开始日期](design.md#开始日期)，没到这天时事项等着；有 `due_date` 时不能晚于它 |
 | due_date | TEXT，可空 | |
 | due_time | TEXT，可空 | 只能在有 `due_date` 时设置 |
 | remind_before | INTEGER，可空 | 提前多少分钟提醒，0 表示截止时；只能在有 `due_time` 时设置 |
@@ -86,7 +87,7 @@
 | created_at / updated_at | INTEGER | |
 | created_via / updated_via | TEXT，可空 | 用 API 令牌改动时记令牌名，AI 整理添加的记“AI 整理”；本人在设备上改动时为空 |
 
-`(owner_id, number)` 唯一。重复的三列同时有值或同时为空，已完成的事项（`done_at` 有值）不能有。截止、提醒和重复的约束同时用 `CHECK` 写在表上，`completion_count` 和 `last_completed` 也一样同时有值或同时为空。
+`(owner_id, number)` 唯一。重复的三列同时有值或同时为空，已完成的事项（`done_at` 有值）不能有。开始、截止、提醒和重复的约束同时用 `CHECK` 写在表上，`completion_count` 和 `last_completed` 也一样同时有值或同时为空。
 
 ### dependencies
 

@@ -21,6 +21,7 @@ function board(tasks: { key: string; done?: boolean; other?: boolean }[], deps: 
       title: `t${i}`,
       description: "",
       done_at: t.done ? 1 : null,
+      start: null,
       due: null,
       sort_key: t.key,
       created_at: 0,
@@ -31,7 +32,7 @@ function board(tasks: { key: string; done?: boolean; other?: boolean }[], deps: 
     dependencies: deps.map(([b, a]) => ({ before: id(b), after: id(a), created_at: 0 })),
     ai_jobs: [],
   };
-  return new Board(snapshot);
+  return new Board(snapshot, "2026-11-12");
 }
 
 const list = (b: Board) => b.order(b.contents(FOLDER).filter((t) => t.done_at === null), (t) => t.done_at === null);

@@ -41,5 +41,8 @@
   { "name": "每 3 个月的 1 号，从完成那天算，下一次是三个月后那个月的 1 号", "repeat": { "every": 3, "unit": "month", "from": "done", "days": [1] }, "due": "2026-11-01", "today": "2026-11-10", "next": "2027-02-01" },
   { "name": "每年，同一天", "repeat": { "every": 12, "unit": "month", "from": "due" }, "due": "2026-11-12", "today": "2026-11-12", "next": "2027-11-12" },
   { "name": "每 2 年，逾期三年，跳过过去的", "repeat": { "every": 24, "unit": "month", "from": "due" }, "due": "2023-03-01", "today": "2026-11-12", "next": "2027-03-01" },
+  { "name": "开始日期跟着顺延：每年续费，到期前 30 天开始，跨过闰年", "repeat": { "every": 12, "unit": "month", "from": "due" }, "due": "2027-12-20", "today": "2027-11-25", "next": "2028-12-20", "start": "2027-11-20", "next_start": "2028-11-20" },
+  { "name": "开始日期跟着顺延：开始和截止同一天的，一直是同一天", "repeat": { "every": 1, "unit": "month", "from": "due", "days": [1] }, "due": "2026-12-01", "today": "2026-12-01", "next": "2027-01-01", "start": "2026-12-01", "next_start": "2027-01-01" },
+  { "name": "开始日期跟着顺延：相隔的天数不变，月末到短月时开始日期也前移", "repeat": { "every": 1, "unit": "month", "from": "due" }, "due": "2027-01-31", "today": "2027-01-31", "next": "2027-02-28", "start": "2027-01-01", "next_start": "2027-01-29" },
   { "name": "超出 9999 年就没有下一次", "repeat": { "every": 1, "unit": "day", "from": "due" }, "due": "9999-12-31", "today": "9999-12-31", "next": null }
 ]

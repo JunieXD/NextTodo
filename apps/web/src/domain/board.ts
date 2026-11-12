@@ -20,7 +20,8 @@ export const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 /** Whether a task's title or description has `q`, given trimmed and in lower case. */
 export const matches = (t: Task, q: string) => t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q);
 
-/** A snapshot indexed for lookups. `null` as a folder means the root. */
+/** A snapshot indexed for lookups, as of a day, the user's today (`YYYY-MM-DD`). `null` as a folder
+ * means the root. */
 export class Board {
   private readonly tasks = new Map<TaskId, Task>();
   private readonly numbers = new Map<number, Task>();
@@ -33,7 +34,10 @@ export class Board {
   /** Position of each folder when the tree is listed top to bottom, root first. */
   private readonly rank = new Map<FolderId | null, number>();
 
-  constructor(readonly snapshot: Snapshot) {
+  constructor(
+    readonly snapshot: Snapshot,
+    readonly today: string,
+  ) {
     for (const f of snapshot.folders) {
       this.folders.set(f.id, f);
       push(this.children, f.parent_id, f);
@@ -84,7 +88,12 @@ export class Board {
 
   status(t: Task): Status {
     if (t.done_at !== null) return "done";
-    return this.waitingOn(t) === 0 ? "ready" : "waiting";
+    return this.waitingOn(t) === 0 && !this.notStarted(t) ? "ready" : "waiting";
+  }
+
+  /** Whether its start date is still to come. */
+  notStarted(t: Task): boolean {
+    return t.start !== null && t.start > this.today;
   }
 
   /** How many prerequisites are not done yet. */
@@ -95,7 +104,7 @@ export class Board {
   /** Tasks that become ready once this one is done. */
   unlocks(t: Task): Task[] {
     if (t.done_at !== null) return [];
-    return this.after(t).filter((a) => a.done_at === null && this.waitingOn(a) === 1);
+    return this.after(t).filter((a) => a.done_at === null && this.waitingOn(a) === 1 && !this.notStarted(a));
   }
 
   /** The tasks on a shortest dependency chain from `from` to `to`, if there is one: linking

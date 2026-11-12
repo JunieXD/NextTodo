@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use nexttodo_core::board::Board;
-use nexttodo_core::model::{AiJobId, JobKind, JobState, MutationId, Suggestion};
+use nexttodo_core::model::{AiJobId, Date, JobKind, JobState, MutationId, Suggestion};
 use nexttodo_core::ops::Op;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
 use rusqlite::{Connection, OptionalExtension, ToSql, params};
@@ -266,7 +266,8 @@ async fn organize(st: AppState, turn: Turn, job: AiJobId, config: Config) {
             let snap = store::snapshot(c, &owner)?;
             Ok(Some(match j.kind {
                 JobKind::Organize => {
-                    let (prompt, shown) = organize::prompt(&j, &Board::new(&snap));
+                    // Organizing reads no task's status, for which the board needs the user's day.
+                    let (prompt, shown) = organize::prompt(&j, &Board::new(&snap, Date::utc(j.created_at)));
                     (prompt, Shown::Organize(shown))
                 }
                 JobKind::Tidy => {
@@ -323,7 +324,7 @@ fn finish(c: &mut Connection, owner: &str, id: AiJobId, outcome: Result<Answer, 
             let tx = c.transaction()?;
             let Some(job) = store::load_job(&tx, owner, id)?.filter(|j| j.state == JobState::Running) else { return Ok(Ended::Dropped) };
             let snap = store::snapshot(&tx, owner)?;
-            let applied = tools::plan_into(&Board::new(&snap), job.folder_id, tasks).and_then(|mut ops| {
+            let applied = tools::plan_into(&Board::new(&snap, Date::utc(now)), job.folder_id, tasks).and_then(|mut ops| {
                 ops.push(Op::AiJobDelete { id });
                 let effects = mutate::run(&tx, &actor, &ops, now)?;
                 Ok((ops, effects))

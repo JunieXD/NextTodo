@@ -3,13 +3,16 @@
 use std::collections::HashMap;
 
 use nexttodo_core::board::{Board, Snapshot, Status};
-use nexttodo_core::model::{FolderId, Task};
+use nexttodo_core::model::{Date, FolderId, Task};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 #[derive(Deserialize)]
 struct Case {
     name: String,
+    /// The user's today; any day for the cases without start dates.
+    #[serde(default)]
+    today: Option<String>,
     folders: Vec<Value>,
     tasks: Vec<Value>,
     deps: Vec<(String, String)>,
@@ -69,7 +72,7 @@ fn snapshot(case: &Case, names: &mut Names) -> Snapshot {
             json!({
                 "id": names.id(t["id"].as_str().unwrap()), "number": i + 1,
                 "folder_id": s(&t["folder"]).map(|f| names.id(&f)),
-                "title": t["id"], "description": "", "done_at": t["done_at"], "due": t["due"], "sort_key": t["key"],
+                "title": t["id"], "description": "", "done_at": t["done_at"], "start": t["start"], "due": t["due"], "sort_key": t["key"],
                 "created_at": 0, "updated_at": 0, "created_via": null, "updated_via": null,
             })
         })
@@ -85,7 +88,8 @@ fn board_matches_fixtures() {
     for case in &cases {
         let mut names = Names::default();
         let snap = snapshot(case, &mut names);
-        let board = Board::new(&snap);
+        let today = Date::try_from(case.today.clone().unwrap_or_else(|| "2026-11-12".into())).unwrap();
+        let board = Board::new(&snap, today);
         let task = |names: &mut Names, n: &str| board.task(serde_json::from_value(json!(names.id(n))).unwrap()).unwrap();
         let folder =
             |names: &mut Names, n: &str| -> Option<FolderId> { (n != "/").then(|| serde_json::from_value(json!(names.id(n))).unwrap()) };
@@ -94,7 +98,9 @@ fn board_matches_fixtures() {
         for (n, want) in &case.expect.status {
             let got = match board.status(task(&mut names, n)) {
                 Status::Ready => "ready".to_owned(),
-                Status::Waiting(k) => format!("waiting {k}"),
+                Status::Waiting { on, not_started: false } => format!("waiting {on}"),
+                Status::Waiting { on: 0, not_started: true } => "not started".to_owned(),
+                Status::Waiting { on, not_started: true } => format!("waiting {on}, not started"),
                 Status::Done => "done".to_owned(),
             };
             assert_eq!(&got, want, "{c}: status of {n}");
@@ -125,10 +131,10 @@ fn ordering_stays_linear_through_a_shared_task() {
     tasks.extend((0..n).map(|i| json!({ "id": format!("a{i}"), "folder": "f", "key": "a0" })));
     let deps = (0..n).flat_map(|i| [(format!("b{i}"), "hub".to_owned()), ("hub".to_owned(), format!("a{i}"))]).collect();
     let folders = vec![json!({ "id": "f", "name": "f", "key": "a0" }), json!({ "id": "g", "name": "g", "key": "a1" })];
-    let case = Case { name: String::new(), folders, tasks, deps, expect: serde_json::from_value(json!({})).unwrap() };
+    let case = Case { name: String::new(), today: None, folders, tasks, deps, expect: serde_json::from_value(json!({})).unwrap() };
     let mut names = Names::default();
     let snap = snapshot(&case, &mut names);
-    let board = Board::new(&snap);
+    let board = Board::new(&snap, Date::try_from("2026-11-12".to_owned()).unwrap());
     let f = Some(serde_json::from_value(json!(names.id("f"))).unwrap());
     let order: Vec<String> = board.tasks_in(f).into_iter().map(|t| names.name(t)).collect();
     let want: Vec<String> = (0..n).map(|i| format!("b{i}")).chain((0..n).map(|i| format!("a{i}"))).collect();

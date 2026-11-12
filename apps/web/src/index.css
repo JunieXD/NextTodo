@@ -573,12 +573,13 @@ label.row { cursor: pointer; }
 .cal-days button { height: 40px; display: grid; place-items: center; font-size: 15px; font-variant-numeric: tabular-nums; outline: none; }
 .cal-days span { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; }
 .cal-days .out { color: var(--outline); }
+.cal-days :disabled { color: var(--outline); opacity: .4; cursor: default; }
 .cal-days [aria-current="date"] { color: var(--primary); font-weight: 700; }
 .cal-days [aria-pressed="true"] span { background: var(--primary); color: var(--on-primary); font-weight: 600; }
 .cal-days :focus-visible span { box-shadow: 0 0 0 2px var(--primary); }
 .cal-days [aria-pressed="true"]:focus-visible span { box-shadow: 0 0 0 2px var(--group-bg), 0 0 0 4px var(--primary); }
-@media (hover: hover) { .cal-days button:not([aria-pressed="true"]):hover span { background: var(--press); } }
-.cal-days button:not([aria-pressed="true"]):active span { background: var(--press); }
+@media (hover: hover) { .cal-days button:not([aria-pressed="true"], :disabled):hover span { background: var(--press); } }
+.cal-days button:not([aria-pressed="true"], :disabled):active span { background: var(--press); }
 
 /* Hours and minutes, side by side. */
 .time-menu { min-width: 0; padding: 6px; }

@@ -36,7 +36,9 @@ object Server {
     /** The ready tasks, as a JSON array in the shape of the `next` tool's `tasks`, and the change they
      * are as of. */
     suspend fun next(context: Context, token: String): Pair<String, Long> {
-        val reply = JSONObject(post(context, token, "/tools/next", JSONObject().put("limit", LIMIT)))
+        // Start dates come by the day here (docs/design.md#开始日期).
+        val args = JSONObject().put("limit", LIMIT).put("today", LocalDate.now().toString())
+        val reply = JSONObject(post(context, token, "/tools/next", args))
         return reply.getJSONObject("data").getJSONArray("tasks").toString() to reply.getLong("seq")
     }
 

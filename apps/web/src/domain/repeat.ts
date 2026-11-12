@@ -60,6 +60,16 @@ export function nextDue(r: Repeat, due: string, today: string): string | null {
   return year > 9999 ? null : `${pad(year, 4)}-${pad(next.getUTCMonth() + 1)}-${pad(next.getUTCDate())}`;
 }
 
+/** `date` moved as many days as `from` moved to `to`: a start date kept as far before its due date. */
+export function shifted(date: string, from: string, to: string): string {
+  const day = (s: string) => {
+    const [y, m, d] = s.split("-").map(Number);
+    return utc(y, m, d).getTime();
+  };
+  const t = new Date(day(date) + day(to) - day(from));
+  return `${pad(t.getUTCFullYear(), 4)}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
+}
+
 /** `每天`, `每 2 周`, `每 3 个月`, `每个工作日`, `每 2 周的周二、四`, `每月 1、15 号`, `每年`, as the
  * command line has them too. */
 export function repeatLabel(r: Repeat): string {

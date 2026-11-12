@@ -143,10 +143,16 @@ fn restore_due(cur: &Option<Due>, b: &Option<Due>, a: &Option<Due>) -> Option<Du
     })
 }
 
-/// A repeating task is never done: done, it moves on (docs/design.md#重复).
-fn check_repeat(t: &Task) -> Result<(), ApiError> {
+/// A repeating task is never done: done, it moves on (docs/design.md#重复). It does not start after it
+/// is due (docs/design.md#开始日期).
+fn check_task(t: &Task) -> Result<(), ApiError> {
     if t.done_at.is_some() && t.due.as_ref().is_some_and(|d| d.repeat.is_some()) {
         return Err(ApiError::invalid(format!("“{}”已完成，不能设置重复，请先重新打开", t.title.as_str()), Some("due".into())));
+    }
+    if let (Some(start), Some(due)) = (&t.start, &t.due)
+        && *start > due.date
+    {
+        return Err(ApiError::invalid(format!("“{}”的开始日期不能晚于截止日期", t.title.as_str()), Some("start".into())));
     }
     Ok(())
 }
@@ -210,7 +216,7 @@ impl Cx<'_> {
                 self.folder(*id)?;
                 self.delete_folder(*id)
             }
-            Op::TaskCreate { id, title, folder_id, description, due, sort_key, done } => {
+            Op::TaskCreate { id, title, folder_id, description, start, due, sort_key, done } => {
                 if store::task_id_taken(self.c, *id)? {
                     return Err(ApiError::conflict("事项 ID 已存在"));
                 }
@@ -228,6 +234,7 @@ impl Cx<'_> {
                     title: title.clone(),
                     description: description.clone(),
                     done_at: done.then_some(self.now),
+                    start: start.clone(),
                     due: due.clone(),
                     completions: None,
                     sort_key,
@@ -238,7 +245,7 @@ impl Cx<'_> {
                 };
                 self.create_task(task)
             }
-            Op::TaskUpdate { id, folder_id, title, description, due, sort_key, done, today } => {
+            Op::TaskUpdate { id, folder_id, title, description, start, due, sort_key, done, today } => {
                 let before = self.task(*id)?;
                 let mut t = before.clone();
                 if let Some(folder_id) = folder_id {
@@ -249,6 +256,9 @@ impl Cx<'_> {
                 }
                 if let Some(description) = description {
                     t.description = description.clone();
+                }
+                if let Some(start) = start {
+                    t.start = start.clone();
                 }
                 if let Some(due) = due {
                     t.due = due.clone();
@@ -265,7 +275,10 @@ impl Cx<'_> {
                             let today = today
                                 .as_ref()
                                 .ok_or_else(|| ApiError::invalid("完成重复的事项需要给出今天的日期", Some("today".into())))?;
-                            d.date = r.next(&d.date, today).map_err(|m| ApiError::invalid(m, Some("due".into())))?;
+                            let next = r.next(&d.date, today).map_err(|m| ApiError::invalid(m, Some("due".into())))?;
+                            // The start date keeps as far before it (docs/design.md#开始日期).
+                            t.start = t.start.as_ref().map(|s| s.shifted(&d.date, &next));
+                            d.date = next;
                             let count = t.completions.as_ref().map_or(NonZeroU32::MIN, |c| c.count.saturating_add(1));
                             t.completions = Some(Completions { count, last: today.clone() });
                         }
@@ -408,7 +421,7 @@ impl Cx<'_> {
     }
 
     fn create_task(&mut self, t: Task) -> Result<(), ApiError> {
-        check_repeat(&t)?;
+        check_task(&t)?;
         store::insert_task(self.c, self.owner, &t)?;
         self.effects.push(Effect::Task(Change::Created(Box::new(t))));
         Ok(())
@@ -418,7 +431,7 @@ impl Cx<'_> {
         if after == before {
             return Ok(());
         }
-        check_repeat(&after)?;
+        check_task(&after)?;
         if after.folder_id != before.folder_id
             && let Some(f) = after.folder_id
         {
@@ -532,7 +545,7 @@ impl Cx<'_> {
                 }
                 Effect::Task(Change::Updated { before: b, after: a }) => {
                     if let Some(cur) = store::load_task(self.c, self.owner, b.id)? {
-                        let mut restored = restore!(cur, b, a, folder_id, title, description, done_at, completions, sort_key);
+                        let mut restored = restore!(cur, b, a, folder_id, title, description, done_at, start, completions, sort_key);
                         restored.due = restore_due(&cur.due, &b.due, &a.due);
                         self.update_task(cur, restored)?;
                     }

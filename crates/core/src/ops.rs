@@ -80,6 +80,9 @@ pub enum Op {
         description: Description,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
+        start: Option<Date>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         due: Option<Due>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
@@ -101,6 +104,10 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         description: Option<Description>,
+        /// `null` clears the start date.
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        start: Option<Option<Date>>,
         /// `null` clears the due date.
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
         #[ts(optional)]

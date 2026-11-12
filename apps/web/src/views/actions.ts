@@ -33,7 +33,13 @@ export function useTaskActions(): RowActions & {
     if (!t) return;
     const completing = t.done_at === null;
     if (completing && board().status(t) === "waiting") {
-      const ok = await confirm({ title: "前置尚未完成", body: `“${t.title}”还有 ${board().waitingOn(t)} 项前置未完成，仍要标为完成吗？`, ok: "标为完成" });
+      const on = board().waitingOn(t);
+      const waits = [on > 0 && `还有 ${on} 项前置未完成`, board().notStarted(t) && `要到${formatDue({ date: t.start! }, new Date())}才开始`];
+      const ok = await confirm({
+        title: on > 0 ? "前置尚未完成" : "还没到开始日期",
+        body: `“${t.title}”${waits.filter(Boolean).join("，")}，仍要标为完成吗？`,
+        ok: "标为完成",
+      });
       if (!ok) return;
     }
     const readyBefore = new Set(board().next().map((x) => x.id));

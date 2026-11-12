@@ -9,7 +9,7 @@ use rusqlite::{Connection, OptionalExtension, Params, Row, params};
 
 const FOLDER_COLUMNS: &str = "id, parent_id, name, sort_key, created_at, updated_at";
 const JOB_COLUMNS: &str = "id, folder_id, kind, text, local_time, state, error, suggestions, created_at, updated_at";
-const TASK_COLUMNS: &str = "id, number, folder_id, title, description, done_at, due_date, due_time, remind_before, sort_key, created_at, updated_at, created_via, updated_via, repeat_every, repeat_unit, repeat_from, repeat_days, completion_count, last_completed, repeat_monthdays";
+const TASK_COLUMNS: &str = "id, number, folder_id, title, description, done_at, due_date, due_time, remind_before, sort_key, created_at, updated_at, created_via, updated_via, repeat_every, repeat_unit, repeat_from, repeat_days, completion_count, last_completed, repeat_monthdays, start_date";
 
 /// Folder ids in the subtree rooted at `?1`, including the root.
 const SUBTREE: &str = "WITH RECURSIVE sub(id, depth) AS (
@@ -46,6 +46,7 @@ fn task_row(r: &Row) -> rusqlite::Result<Task> {
         title: r.get(3)?,
         description: r.get(4)?,
         done_at: r.get(5)?,
+        start: r.get(21)?,
         due: date.map(|date| Due { date, at: time.map(|time| DueAt { time, remind_before }), repeat }),
         completions,
         sort_key: r.get(9)?,
@@ -201,7 +202,7 @@ pub fn insert_task(c: &Connection, owner: &str, t: &Task) -> rusqlite::Result<()
     let (date, time, remind, every, unit, from, days, monthdays) = due_columns(&t.due);
     c.execute(
         &format!(
-            "INSERT INTO tasks (owner_id, {TASK_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)"
+            "INSERT INTO tasks (owner_id, {TASK_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)"
         ),
         params![
             owner,
@@ -225,7 +226,8 @@ pub fn insert_task(c: &Connection, owner: &str, t: &Task) -> rusqlite::Result<()
             days,
             t.completions.as_ref().map(|c| c.count),
             t.completions.as_ref().map(|c| &c.last),
-            monthdays
+            monthdays,
+            t.start
         ],
     )?;
     Ok(())
@@ -236,7 +238,8 @@ pub fn update_task(c: &Connection, t: &Task) -> rusqlite::Result<()> {
     c.execute(
         "UPDATE tasks SET folder_id = ?2, title = ?3, description = ?4, done_at = ?5, due_date = ?6, due_time = ?7,
          remind_before = ?8, sort_key = ?9, updated_at = ?10, updated_via = ?11, repeat_every = ?12, repeat_unit = ?13,
-         repeat_from = ?14, repeat_days = ?15, completion_count = ?16, last_completed = ?17, repeat_monthdays = ?18 WHERE id = ?1",
+         repeat_from = ?14, repeat_days = ?15, completion_count = ?16, last_completed = ?17, repeat_monthdays = ?18,
+         start_date = ?19 WHERE id = ?1",
         params![
             t.id,
             t.folder_id,
@@ -255,7 +258,8 @@ pub fn update_task(c: &Connection, t: &Task) -> rusqlite::Result<()> {
             days,
             t.completions.as_ref().map(|c| c.count),
             t.completions.as_ref().map(|c| &c.last),
-            monthdays
+            monthdays,
+            t.start
         ],
     )?;
     Ok(())

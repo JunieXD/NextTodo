@@ -6,8 +6,9 @@ import { Board } from "./board";
 
 interface Case {
   name: string;
+  today?: string;
   folders: { id: string; parent?: string; name: string; key: string }[];
-  tasks: { id: string; folder?: string; key: string; done_at?: number; due?: Task["due"] }[];
+  tasks: { id: string; folder?: string; key: string; done_at?: number; start?: string; due?: Task["due"] }[];
   deps: [string, string][];
   expect: {
     status?: Record<string, string>;
@@ -45,6 +46,7 @@ function snapshot(c: Case, id: (name: string) => string): Snapshot {
       title: t.id,
       description: "",
       done_at: t.done_at ?? null,
+      start: t.start ?? null,
       due: t.due ?? null,
       sort_key: t.key,
       created_at: 0,
@@ -59,7 +61,7 @@ function snapshot(c: Case, id: (name: string) => string): Snapshot {
 
 describe.each(cases as unknown as Case[])("$name", (c) => {
   const id = ids();
-  const board = new Board(snapshot(c, id));
+  const board = new Board(snapshot(c, id), c.today ?? "2026-11-12");
   const task = (n: string) => board.task(id(n))!;
   const folder = (n: string) => (n === "/" ? null : id(n));
   const titles = (list: Task[]) => list.map((t) => t.title);
@@ -68,7 +70,9 @@ describe.each(cases as unknown as Case[])("$name", (c) => {
     for (const [n, want] of Object.entries(c.expect.status ?? {})) {
       const t = task(n);
       const s = board.status(t);
-      expect(s === "waiting" ? `waiting ${board.waitingOn(t)}` : s, n).toBe(want);
+      const on = board.waitingOn(t);
+      const waiting = [on > 0 && `waiting ${on}`, board.notStarted(t) && "not started"].filter(Boolean).join(", ");
+      expect(s === "waiting" ? waiting : s, n).toBe(want);
     }
   });
   test("unlocks", () => {

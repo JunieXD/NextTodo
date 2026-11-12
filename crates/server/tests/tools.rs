@@ -255,6 +255,33 @@ async fn a_repeating_task_counts_its_completions_and_can_end_done() {
 }
 
 #[tokio::test]
+async fn a_task_waits_for_its_start_date_and_keeps_it_as_far_before_its_due_date() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let today = "2026-11-12";
+    t.ok(&s, "add", json!({ "title": "续费域名", "start": "2026-11-20", "due": "2026-12-20", "repeat": "1y" })).await;
+    t.ok(&s, "add", json!({ "title": "领券", "start": today, "due": today })).await;
+    let late = t.tool(&s, "add", json!({ "title": "晚了", "start": "2026-11-21", "due": "2026-11-20" })).await;
+    assert_eq!((late.status, late.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("start")));
+
+    // Not started, it waits; the day it starts, it can be done.
+    let next = t.ok(&s, "next", json!({ "today": today })).await;
+    assert_eq!(numbers(&next["data"]["tasks"]), [2]);
+    let shown = t.ok(&s, "show", json!({ "task": 1, "today": today })).await;
+    assert_eq!((shown["data"]["status"].as_str(), shown["data"]["start"].as_str()), (Some("waiting"), Some("2026-11-20")));
+    assert!(text(&shown).starts_with("#1 [2026-11-20 开始] 续费域名\n") && text(&shown).contains("开始：2026-11-20"), "{}", text(&shown));
+    assert_eq!(numbers(&t.ok(&s, "next", json!({ "today": "2026-11-20" })).await["data"]["tasks"]), [2, 1]);
+
+    // Done, it moves on a year, and the start date with it.
+    t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-25" })).await;
+    let shown = t.ok(&s, "show", json!({ "task": 1, "today": "2026-11-25" })).await;
+    assert_eq!((shown["data"]["start"].as_str(), shown["data"]["due"]["date"].as_str()), (Some("2027-11-20"), Some("2027-12-20")));
+    assert_eq!(shown["data"]["status"], "waiting", "it waits for next time");
+    t.ok(&s, "edit", json!({ "task": 1, "start": null })).await;
+    assert!(t.ok(&s, "show", json!({ "task": 1 })).await["data"].get("start").is_none());
+}
+
+#[tokio::test]
 async fn a_repeating_task_moves_on_when_done() {
     let t = TestApp::new();
     let s = t.admin().await;

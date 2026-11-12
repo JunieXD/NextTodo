@@ -7,7 +7,7 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::model::{AiJob, Dependency, Folder, FolderId, SortKey, Task, TaskId};
+use crate::model::{AiJob, Date, Dependency, Folder, FolderId, SortKey, Task, TaskId};
 
 /// All of a user's data.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, TS)]
@@ -21,15 +21,19 @@ pub struct Snapshot {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
-    /// Not done, and every prerequisite is done.
+    /// Not done, every prerequisite done, and the start date come.
     Ready,
-    /// Not done; the number of prerequisites that are not done yet.
-    Waiting(usize),
+    /// Not done: the prerequisites not done yet, and whether the start date is still to come.
+    Waiting {
+        on: usize,
+        not_started: bool,
+    },
     Done,
 }
 
-/// A snapshot indexed for lookups. `None` as a folder means the root.
+/// A snapshot indexed for lookups, as of a day, the user's today. `None` as a folder means the root.
 pub struct Board<'a> {
+    today: Date,
     tasks: HashMap<TaskId, &'a Task>,
     numbers: HashMap<i64, &'a Task>,
     folders: HashMap<FolderId, &'a Folder>,
@@ -43,7 +47,7 @@ pub struct Board<'a> {
 }
 
 impl<'a> Board<'a> {
-    pub fn new(s: &'a Snapshot) -> Self {
+    pub fn new(s: &'a Snapshot, today: Date) -> Self {
         let mut children: HashMap<Option<FolderId>, Vec<&Folder>> = HashMap::new();
         for f in &s.folders {
             children.entry(f.parent_id).or_default().push(f);
@@ -68,6 +72,7 @@ impl<'a> Board<'a> {
             after.entry(d.before).or_default().push(d.after);
         }
         Board {
+            today,
             tasks: s.tasks.iter().map(|t| (t.id, t)).collect(),
             numbers: s.tasks.iter().map(|t| (t.number, t)).collect(),
             folders: s.folders.iter().map(|f| (f.id, f)).collect(),
@@ -111,10 +116,9 @@ impl<'a> Board<'a> {
         if t.done_at.is_some() {
             return Status::Done;
         }
-        match self.before.get(&t.id).into_iter().flatten().filter(|id| self.tasks[*id].done_at.is_none()).count() {
-            0 => Status::Ready,
-            n => Status::Waiting(n),
-        }
+        let on = self.before.get(&t.id).into_iter().flatten().filter(|id| self.tasks[*id].done_at.is_none()).count();
+        let not_started = t.start.as_ref().is_some_and(|s| *s > self.today);
+        if on == 0 && !not_started { Status::Ready } else { Status::Waiting { on, not_started } }
     }
 
     /// Tasks that become ready once this one is done.
@@ -122,7 +126,7 @@ impl<'a> Board<'a> {
         if t.done_at.is_some() {
             return Vec::new();
         }
-        self.after(t).into_iter().filter(|a| a.done_at.is_none() && self.status(a) == Status::Waiting(1)).collect()
+        self.after(t).into_iter().filter(|a| self.status(a) == Status::Waiting { on: 1, not_started: false }).collect()
     }
 
     pub fn subfolders(&self, f: Option<FolderId>) -> &[&'a Folder] {

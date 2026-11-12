@@ -14,12 +14,12 @@ use std::sync::Arc;
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;
 use nexttodo_core::board::Board;
-use nexttodo_core::model::{FolderId, MutationId, Task};
+use nexttodo_core::model::{Date, FolderId, MutationId, Task};
 use rmcp::handler::server::common::schema_for_type;
 use rmcp::model::JsonObject;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::AppState;
 use crate::auth::Auth;
@@ -66,6 +66,8 @@ pub struct Tool {
 pub struct Cx<'a> {
     pub owner: &'a str,
     pub now: i64,
+    /// The user's, or UTC's if they don't say.
+    pub today: Date,
 }
 
 type ReadFn = Box<dyn FnOnce(&Connection, &Cx) -> Result<Output, ApiError> + Send>;
@@ -79,7 +81,7 @@ enum Call {
 macro_rules! tools {
     ($($kind:ident $name:literal($args:ty) => $run:path, $desc:literal;)*) => {
         pub fn list() -> Vec<Tool> {
-            vec![$(Tool { name: $name, description: $desc, kind: Kind::$kind, input_schema: schema_for_type::<$args>() }),*]
+            vec![$(Tool { name: $name, description: $desc, kind: Kind::$kind, input_schema: with_today(schema_for_type::<$args>()) }),*]
         }
 
         fn parse_call(name: &str, args: Value) -> Result<Call, ApiError> {
@@ -119,6 +121,27 @@ tools! {
     Write "undo"(UndoArgs) => write::undo, "撤销一个批次（批次号见写操作的结果或 log）。撤销本身也是一个新批次。";
 }
 
+/// A tool's arguments and `today`, which every tool takes (docs/agent.md#引用).
+fn with_today(schema: Arc<JsonObject>) -> Arc<JsonObject> {
+    let mut s = (*schema).clone();
+    s.entry("properties").or_insert_with(|| json!({}))["today"] = json!({
+        "type": "string",
+        "description": "用户当地今天的日期，如 2026-11-08：开始日期到了没有按它算，完成重复的事项时必须给，下一次的截止时间据此计算。不给时按 UTC 的今天",
+    });
+    Arc::new(s)
+}
+
+#[derive(Deserialize)]
+struct Today {
+    today: Option<Date>,
+}
+
+/// The `today` given with a tool's arguments, taken out of them.
+fn take_today(args: &mut Value) -> Result<Option<Date>, ApiError> {
+    let Some(today) = args.as_object_mut().and_then(|o| o.remove("today")) else { return Ok(None) };
+    Ok(from_value::<Today>(json!({ "today": today }))?.today)
+}
+
 /// The folder at a path; `None` is the root.
 fn find_folder(b: &Board, path: &str) -> Result<Option<FolderId>, ApiError> {
     b.find_folder(path).ok_or_else(|| ApiError::not_found(format!("未找到文件夹 /{}", path.trim().trim_matches('/'))))
@@ -129,15 +152,17 @@ fn find_task<'a>(b: &Board<'a>, number: i64) -> Result<&'a Task, ApiError> {
 }
 
 /// Runs a tool. `id` makes a write idempotent: the same id returns the first result.
-pub async fn call(st: &AppState, auth: Auth, name: &str, args: Value, id: Option<MutationId>) -> Result<Reply, ApiError> {
+pub async fn call(st: &AppState, auth: Auth, name: &str, mut args: Value, id: Option<MutationId>) -> Result<Reply, ApiError> {
     let now = st.clock.now();
+    let today = take_today(&mut args)?;
     match parse_call(name, args)? {
         // The read and the sequence number come from the same call on the one connection: no
         // change can come between them.
         Call::Read(run) => {
             st.db
                 .call(move |c| {
-                    let output = run(c, &Cx { owner: &auth.user_id, now })?;
+                    let today = today.unwrap_or_else(|| Date::utc(now));
+                    let output = run(c, &Cx { owner: &auth.user_id, now, today })?;
                     Ok(Reply { output, seq: Some(store::latest_seq(c, &auth.user_id)?) })
                 })
                 .await
@@ -147,7 +172,7 @@ pub async fn call(st: &AppState, auth: Auth, name: &str, args: Value, id: Option
             let hub = st.hub.clone();
             st.db
                 .call(move |c| {
-                    let output = write::run(c, &auth, id, now, build)?;
+                    let output = write::run(c, &auth, id, now, today, build)?;
                     hub.changed(&auth.user_id);
                     Ok(Reply { output, seq: None })
                 })

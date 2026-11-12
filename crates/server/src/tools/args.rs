@@ -72,13 +72,15 @@ pub struct AddArgs {
     pub folder: Option<String>,
     #[schemars(with = "Option<String>", description = "描述，Markdown；写清怎样算完成")]
     pub description: Option<Description>,
+    #[schemars(with = "Option<String>", description = "开始日期，如 2026-11-14：没到这天时事项等着，不进“接下来”；不能晚于截止日期")]
+    pub start: Option<Date>,
     #[schemars(with = "Option<String>", description = "截止时间：2026-11-20 或 2026-11-20 18:00")]
     pub due: Option<DueText>,
     #[schemars(description = "提前多少分钟提醒，0 表示截止时；截止时间要带具体时间")]
     pub remind: Option<u32>,
     #[schemars(
         with = "Option<String>",
-        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；要有截止时间。完成时顺延截止时间，不会真的完成"
+        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；要有截止时间。完成时顺延截止时间，开始日期跟着顺延，不会真的完成"
     )]
     pub repeat: Option<RepeatText>,
     #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
@@ -107,6 +109,9 @@ pub struct EditArgs {
     pub replace: Vec<Replace>,
     #[schemars(description = "在描述末尾另起一行追加，在 replace 之后")]
     pub append: Option<String>,
+    #[serde(default, deserialize_with = "nullable")]
+    #[schemars(with = "Option<String>", description = "开始日期，如 2026-11-14：没到这天时事项等着；null 清除。不能晚于截止日期")]
+    pub start: Option<Option<Date>>,
     #[serde(default, deserialize_with = "nullable")]
     #[schemars(
         with = "Option<String>",
@@ -147,8 +152,6 @@ pub struct TasksArgs {
 pub struct DoneArgs {
     #[schemars(description = "事项编号", length(min = 1))]
     pub tasks: Vec<i64>,
-    #[schemars(with = "Option<String>", description = "用户当地今天的日期，如 2026-11-08；有重复的事项时必须给，下一次的截止时间据此计算")]
-    pub today: Option<Date>,
     #[schemars(description = "重复的事项结束重复、直接完成，如读完一本书时；默认 false")]
     #[serde(default)]
     pub end_repeat: bool,
@@ -233,6 +236,8 @@ pub struct PlanTask {
     pub description: Option<Description>,
     #[schemars(description = "文件夹：相对计划的 folder，以 / 开头则是完整路径；不存在时一起新建")]
     pub folder: Option<String>,
+    #[schemars(with = "Option<String>", description = "开始日期，如 2026-11-14：没到这天时事项等着，不进“接下来”；不能晚于截止日期")]
+    pub start: Option<Date>,
     #[schemars(with = "Option<String>", description = "截止时间：2026-11-20 或 2026-11-20 18:00")]
     pub due: Option<DueText>,
     #[schemars(description = "提前多少分钟提醒，0 表示截止时；截止时间要带具体时间")]

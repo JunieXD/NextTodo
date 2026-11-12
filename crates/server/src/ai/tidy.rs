@@ -6,8 +6,8 @@ use std::collections::{HashMap, HashSet};
 use nexttodo_core::board::{Board, Snapshot};
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
-    AiJob, Description, FolderId, NewTask, Period, Reorder, Repeat, RepeatFrom, Suggestion, Task, TaskDeletion, TaskEdit, TaskId, Title,
-    Was,
+    AiJob, Date, Description, FolderId, NewTask, Period, Reorder, Repeat, RepeatFrom, Suggestion, Task, TaskDeletion, TaskEdit, TaskId,
+    Title, Was,
 };
 use nexttodo_core::ops::MAX_OPS;
 use serde::Deserialize;
@@ -85,6 +85,8 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
 /// What the model was shown: the data as it was then, the folder, and which of its tasks.
 pub struct Shown {
     snap: Snapshot,
+    /// The day the board is as of: the job's in UTC, since tidying reads no task's status.
+    day: Date,
     folder: Option<FolderId>,
     tasks: HashMap<i64, Seen>,
 }
@@ -100,7 +102,8 @@ enum Seen {
 
 /// The chat for `job`, a tidying of its folder in `snap`, and what was shown in it.
 pub fn prompt(job: &AiJob, snap: Snapshot) -> (Prompt, Shown) {
-    let board = Board::new(&snap);
+    let day = Date::utc(job.created_at);
+    let board = Board::new(&snap, day.clone());
     let all = board.tasks_in(job.folder_id);
     let open: Vec<&Task> = all.iter().copied().filter(|t| t.done_at.is_none()).take(SHOWN).collect();
     // Listed most recently done first.
@@ -162,7 +165,7 @@ pub fn prompt(job: &AiJob, snap: Snapshot) -> (Prompt, Shown) {
         "open_tasks": open_tasks,
         "done_tasks": done_tasks,
     });
-    (chat(SYSTEM, &input), Shown { snap, folder: job.folder_id, tasks })
+    (chat(SYSTEM, &input), Shown { snap, day, folder: job.folder_id, tasks })
 }
 
 /// `1d`, `2w`, `3m`, `1w:1,3,5`, `1m:1,15`, as the tools take a repeat.
@@ -300,7 +303,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             None => suggestions.push(s),
         }
     }
-    let board = Board::new(&shown.snap);
+    let board = Board::new(&shown.snap, shown.day.clone());
     let task = |n: i64| -> Result<(&Task, Seen), String> {
         let seen = *shown.tasks.get(&n).ok_or_else(|| format!("结果引用了不在这个文件夹里的事项 #{n}"))?;
         Ok((board.task_by_number(n).expect("shown tasks are in the snapshot"), seen))
@@ -392,6 +395,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
                 description,
                 replace: Vec::new(),
                 append: None,
+                start: None,
                 due: if clear(Setting::Due) { Some(None) } else { s.due.map(Some) },
                 remind: if clear(Setting::Remind) { Some(None) } else { s.remind.map(Some) },
                 repeat: if clear(Setting::Repeat) { Some(None) } else { s.repeat.map(Some) },
@@ -399,7 +403,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             };
             edit_fields(&board, args).map_err(|e| format!("事项 #{n}：{}", e.describe()))?
         } else {
-            Edit { id: t.id, title: None, description: None, due: None }
+            Edit { id: t.id, title: None, description: None, start: None, due: None }
         };
         let folder = match s.folder.as_deref().map(|p| (p, board.find_folder(p))) {
             None => None,

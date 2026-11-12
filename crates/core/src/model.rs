@@ -551,6 +551,9 @@ pub struct Task {
     pub title: Title,
     pub description: Description,
     pub done_at: Option<i64>,
+    /// The day it can start: it waits until then (docs/design.md#开始日期). Not after the due date.
+    #[serde(default)]
+    pub start: Option<Date>,
     pub due: Option<Due>,
     /// None until a repeating task is first done.
     #[serde(default, skip_serializing_if = "Option::is_none")]

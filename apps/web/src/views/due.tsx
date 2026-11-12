@@ -8,7 +8,7 @@ import type { Due } from "../api/types/Due";
 import type { Repeat } from "../api/types/Repeat";
 import type { RepeatFrom } from "../api/types/RepeatFrom";
 import type { RepeatUnit } from "../api/types/RepeatUnit";
-import { REMINDERS, day, isoDate, remindLabel } from "../domain/dates";
+import { MAX_REMIND, REMINDERS, REMIND_UNITS, type RemindUnit, day, isoDate, remindIn, remindLabel } from "../domain/dates";
 import { WORKDAYS, repeatLabel } from "../domain/repeat";
 import { useBack } from "../ui/back";
 import { Seg, Select } from "../ui/controls";
@@ -21,13 +21,18 @@ const UNITS: [RepeatUnit, string][] = [
   ["week", "周"],
   ["month", "个月"],
 ];
+const AHEAD = (["minute", "hour", "day"] as const).map((u): [RemindUnit, string] => [u, REMIND_UNITS[u].name]);
 
 /** Sets or clears the due date, its time, the reminder and how it repeats; a task `done` doesn't
  * repeat. */
 export function DueEditor({ due, done, onSave, onClose }: { due: Due | null; done: boolean; onSave(d: Due | null): void; onClose(): void }) {
   const [date, setDate] = useState(due?.date ?? isoDate(new Date()));
   const [time, setTime] = useState(due?.time ?? "");
-  const [remind, setRemind] = useState(due?.remind_before?.toString() ?? "off");
+  // One of the menu's reminders, its minutes as text; or so many of a unit ahead, which one not on the
+  // menu (set by an agent, say) is.
+  const before = due?.remind_before;
+  const [remind, setRemind] = useState(before === undefined ? "off" : REMINDERS.includes(before) ? String(before) : "custom");
+  const [ahead, setAhead] = useState(() => remindIn(before || 10));
   const was = due?.repeat;
   // One of the units, every one of them; a year, every 12 months; or every so many of a unit.
   const [kind, setKind] = useState<RepeatUnit | "year" | "custom" | "off">(
@@ -55,10 +60,9 @@ export function DueEditor({ due, done, onSave, onClose }: { due: Due | null; don
   const workdays = repeat?.every === 1 && repeat.days?.join() === WORKDAYS.join();
   const named = repeat?.days && !workdays ? repeatLabel(repeat) : null;
   const menu = workdays ? "workdays" : named ? "days" : kind;
-  // A reminder set elsewhere (say, by an agent) may not be one of the usual choices.
-  const choices = [...new Set([...REMINDERS, ...(due?.remind_before === undefined ? [] : [due.remind_before])])].sort((a, b) => a - b);
+  const remindBefore = remind === "custom" ? ahead[0] * REMIND_UNITS[ahead[1]].minutes : Number(remind);
   const save = () => {
-    onSave({ date, ...(time && { time }), ...(time && remind !== "off" && { remind_before: Number(remind) }), ...(repeat && { repeat }) });
+    onSave({ date, ...(time && { time }), ...(time && remind !== "off" && { remind_before: remindBefore }), ...(repeat && { repeat }) });
     onClose();
   };
   return (
@@ -69,11 +73,32 @@ export function DueEditor({ due, done, onSave, onClose }: { due: Due | null; don
         <Select
           label="提醒"
           row
-          items={[["off", time ? "不提醒" : "设置时间后才能提醒"], ...choices.map((m): [string, string] => [String(m), remindLabel(m)])]}
+          items={[["off", time ? "不提醒" : "设置时间后才能提醒"], ...REMINDERS.map((m): [string, string] => [String(m), remindLabel(m)]), ["custom", "自定义"]]}
           value={time ? remind : "off"}
           disabled={!time}
-          onChange={setRemind}
+          onChange={(r) => {
+            // Customizing what was picked: it is the place to start from.
+            if (r === "custom" && Number(remind) > 0) setAhead(remindIn(Number(remind)));
+            setRemind(r);
+          }}
         />
+        {time && remind === "custom" && (
+          <div className="row">
+            <div className="row-inner">
+              提前
+              <span className="row-value">
+                <Stepper label="提前多少" value={ahead[0]} max={MAX_REMIND / REMIND_UNITS[ahead[1]].minutes} onChange={(n) => setAhead([n, ahead[1]])} />
+                <Seg<RemindUnit>
+                  label="提前的单位"
+                  small
+                  items={AHEAD}
+                  value={ahead[1]}
+                  onChange={(u) => setAhead([Math.min(ahead[0], MAX_REMIND / REMIND_UNITS[u].minutes), u])}
+                />
+              </span>
+            </div>
+          </div>
+        )}
         <Select<typeof menu>
           label="重复"
           row
@@ -101,7 +126,7 @@ export function DueEditor({ due, done, onSave, onClose }: { due: Due | null; don
             <div className="row-inner">
               间隔
               <span className="row-value">
-                <Stepper value={every} onChange={setEvery} />
+                <Stepper label="间隔数" value={every} max={365} onChange={setEvery} />
                 <Seg<RepeatUnit>
                   label="间隔单位"
                   small
@@ -341,32 +366,33 @@ function Days(p: { label: string; texts: string[]; name(text: string): string; v
   );
 }
 
-const EVERY = { min: 1, max: 365 };
-
-/** How many units apart, `−` and `+` a step, or typed; out of range, the nearest bound. */
-function Stepper({ value, onChange }: { value: number; onChange(n: number): void }) {
+/** Typed out of range, it takes the nearest bound rather than refusing it. */
+function Stepper({ label, value, max, onChange }: { label: string; value: number; max: number; onChange(n: number): void }) {
   // While typing, what is typed, empty say.
   const [typed, setTyped] = useState<string | null>(null);
+  const digits = String(max).length;
   return (
     <span className="stepper">
       <Tip label="减少">
-        <button disabled={value <= EVERY.min} onClick={() => onChange(value - 1)}>
+        <button disabled={value <= 1} onClick={() => onChange(value - 1)}>
           <Icon of={Minus} size={16} />
         </button>
       </Tip>
       <input
         inputMode="numeric"
-        aria-label="间隔数"
+        aria-label={label}
+        style={{ width: `${digits + 1}ch` }}
         value={typed ?? value}
         onChange={(e) => {
-          const digits = e.target.value.replace(/\D/g, "").slice(0, 3);
-          setTyped(digits);
-          if (digits) onChange(Math.min(EVERY.max, Math.max(EVERY.min, Number(digits))));
+          const entered = e.target.value.replace(/\D/g, "");
+          // Too many is the most there can be at once; too few, 0 say, may be the start of more.
+          setTyped(Number(entered) > max ? String(max) : entered);
+          if (entered) onChange(Math.min(max, Math.max(1, Number(entered))));
         }}
         onBlur={() => setTyped(null)}
       />
       <Tip label="增加">
-        <button disabled={value >= EVERY.max} onClick={() => onChange(value + 1)}>
+        <button disabled={value >= max} onClick={() => onChange(value + 1)}>
           <Icon of={Plus} size={16} />
         </button>
       </Tip>

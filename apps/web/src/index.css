@@ -594,7 +594,7 @@ label.row { cursor: pointer; }
 .stepper button { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--on-surface); }
 .stepper button:disabled { color: var(--outline); opacity: .5; cursor: default; }
 .stepper button:not(:disabled):active { background: var(--press); }
-.stepper input { width: 36px; height: 30px; border: 0; outline: none; background: none; padding: 0; text-align: center; font: 600 15px var(--font); font-variant-numeric: tabular-nums; color: var(--on-surface); }
+.stepper input { height: 30px; border: 0; outline: none; background: none; padding: 0; text-align: center; font: 600 15px var(--font); font-variant-numeric: tabular-nums; color: var(--on-surface); }
 
 /* What a button without words does, on hovering it. */
 .tip { z-index: 70; padding: 6px 10px; border-radius: 8px; background: var(--inverse-surface); color: var(--inverse-on-surface); font-size: 13px; line-height: 1.3; box-shadow: var(--shadow-1); pointer-events: none; }

@@ -86,10 +86,25 @@ export function ago(ms: number, now: Date): string {
 /** The reminder choices offered, in minutes before the deadline. */
 export const REMINDERS = [0, 5, 15, 30, 60, 120, 1440, 2880, 10_080];
 
+/** The furthest ahead a reminder may be, as the server has it: 30 days. */
+export const MAX_REMIND = 30 * 1440;
+
+export type RemindUnit = "minute" | "hour" | "day";
+
+export const REMIND_UNITS: Record<RemindUnit, { minutes: number; name: string }> = {
+  minute: { minutes: 1, name: "分钟" },
+  hour: { minutes: 60, name: "小时" },
+  day: { minutes: 1440, name: "天" },
+};
+
+/** In whole numbers only: 90 minutes are not 1.5 hours. */
+export function remindIn(minutes: number): [number, RemindUnit] {
+  return minutes % 1440 === 0 ? [minutes / 1440, "day"] : minutes % 60 === 0 ? [minutes / 60, "hour"] : [minutes, "minute"];
+}
+
 export function remindLabel(minutes: number | undefined): string {
   if (minutes === undefined) return "不提醒";
   if (minutes === 0) return "截止时";
-  if (minutes < 60) return `提前 ${minutes} 分钟`;
-  if (minutes < 1440) return `提前 ${minutes / 60} 小时`;
-  return `提前 ${minutes / 1440} 天`;
+  const [n, unit] = remindIn(minutes);
+  return `提前 ${n} ${REMIND_UNITS[unit].name}`;
 }

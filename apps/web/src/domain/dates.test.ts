@@ -23,4 +23,6 @@ test("a date alone is due at the end of that day", () => {
 
 test("reminders", () => {
   expect([undefined, 0, 30, 120, 2880].map(remindLabel)).toEqual(["不提醒", "截止时", "提前 30 分钟", "提前 2 小时", "提前 2 天"]);
+  // Not a whole number of a larger unit, as an agent may set it.
+  expect([90, 1500].map(remindLabel)).toEqual(["提前 90 分钟", "提前 25 小时"]);
 });

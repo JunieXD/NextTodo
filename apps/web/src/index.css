@@ -539,6 +539,14 @@ label.row { cursor: pointer; }
 .menu .tick { margin-left: auto; color: var(--primary); display: grid; }
 .menu.suggest { min-width: 0; width: var(--radix-popover-trigger-width); max-height: min(280px, var(--radix-popover-content-available-height)); overflow-y: auto; font-weight: 400; }
 .menu.suggest .menu-item { display: block; height: 40px; line-height: 40px; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Sized for a finger above; with a mouse, as compact as the system's menus. Before the time menu, which
+   keeps its own room. */
+@media (pointer: fine) {
+  .menu { min-width: 180px; padding: 4px; border-radius: 12px; }
+  .menu-item { height: 32px; gap: 10px; padding: 0 10px; border-radius: 8px; font-size: 14px; }
+  .menu-item svg { width: 16px; height: 16px; }
+  .menu.suggest .menu-item { height: 32px; line-height: 32px; }
+}
 
 /* The square box of a checklist item. */
 .box { width: 18px; height: 18px; border-radius: 5px; border: 1.8px solid var(--outline); display: grid; place-items: center; color: transparent; flex: none; }

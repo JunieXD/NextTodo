@@ -282,6 +282,21 @@ async fn a_task_waits_for_its_start_date_and_keeps_it_as_far_before_its_due_date
 }
 
 #[tokio::test]
+async fn next_says_which_step_a_task_is() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "开通账号" })).await;
+    t.ok(&s, "add", json!({ "title": "配置", "after": [1] })).await;
+    t.ok(&s, "add", json!({ "title": "上线", "after": [2] })).await;
+    t.ok(&s, "add", json!({ "title": "买菜" })).await;
+    t.ok(&s, "done", json!({ "tasks": [1] })).await;
+    let next = t.ok(&s, "next", json!({})).await;
+    assert_eq!(text(&next), "#2 配置 · 第 2/3 步 · 解锁 1 项\n#4 买菜");
+    assert_eq!(next["data"]["tasks"][0]["step"], json!([2, 3]));
+    assert!(next["data"]["tasks"][1].get("step").is_none());
+}
+
+#[tokio::test]
 async fn a_repeating_task_moves_on_when_done() {
     let t = TestApp::new();
     let s = t.admin().await;

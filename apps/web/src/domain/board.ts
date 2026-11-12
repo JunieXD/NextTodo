@@ -1,4 +1,5 @@
-// What follows from a user's data: task status, the order tasks are listed in and folder paths.
+// What follows from a user's data: task status, the order tasks are listed in, the steps along
+// dependencies and folder paths.
 // A twin of `crates/core/src/board.rs`; both are checked against `fixtures/board.json`.
 
 import type { Folder } from "../api/types/Folder";
@@ -33,6 +34,8 @@ export class Board {
   private readonly direct = new Map<FolderId | null, Task[]>();
   /** Position of each folder when the tree is listed top to bottom, root first. */
   private readonly rank = new Map<FolderId | null, number>();
+
+  private steps?: Map<TaskId, [number, number]>;
 
   constructor(
     readonly snapshot: Snapshot,
@@ -105,6 +108,30 @@ export class Board {
   unlocks(t: Task): Task[] {
     if (t.done_at !== null) return [];
     return this.after(t).filter((a) => a.done_at === null && this.waitingOn(a) === 1 && !this.notStarted(a));
+  }
+
+  /** Which step a task linked to others is along its dependencies, and how many there are on the
+   * longest chain through it (docs/design.md#关联进度). Done tasks are steps too. */
+  step(t: Task): [number, number] | undefined {
+    if (!this.steps) {
+      // Kahn's algorithm: each task after its prerequisites.
+      const waiting = new Map([...this.prerequisites].map(([id, b]) => [id, b.length]));
+      const order = [...this.dependents.keys()].filter((id) => !waiting.has(id));
+      for (let i = 0; i < order.length; i++)
+        for (const next of this.dependents.get(order[i]) ?? []) {
+          const n = waiting.get(next)! - 1;
+          waiting.set(next, n);
+          if (n === 0) order.push(next);
+        }
+      const longest = (edges: Map<TaskId, TaskId[]>, counted: Map<TaskId, number>, id: TaskId) =>
+        1 + Math.max(0, ...(edges.get(id) ?? []).map((other) => counted.get(other)!));
+      const depth = new Map<TaskId, number>();
+      for (const id of order) depth.set(id, longest(this.prerequisites, depth, id));
+      const height = new Map<TaskId, number>();
+      for (const id of [...order].reverse()) height.set(id, longest(this.dependents, height, id));
+      this.steps = new Map(order.map((id) => [id, [depth.get(id)!, depth.get(id)! + height.get(id)! - 1]]));
+    }
+    return this.steps.get(t.id);
   }
 
   /** The tasks on a shortest dependency chain from `from` to `to`, if there is one: linking

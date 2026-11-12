@@ -31,6 +31,8 @@ struct Expect {
     next: Vec<String>,
     #[serde(default)]
     paths: HashMap<String, String>,
+    #[serde(default)]
+    steps: HashMap<String, Option<(usize, usize)>>,
 }
 
 /// Turns the short names in a fixture into entity ids, and back.
@@ -114,6 +116,10 @@ fn board_matches_fixtures() {
             assert_eq!(&list(&names, board.tasks_in(f)), want, "{c}: order in {f:?}");
         }
         assert_eq!(list(&names, board.next()), case.expect.next, "{c}: next");
+        let steps = board.steps();
+        for (n, want) in &case.expect.steps {
+            assert_eq!(steps.get(&task(&mut names, n).id).copied(), *want, "{c}: steps of {n}");
+        }
         for (f, want) in &case.expect.paths {
             let f = folder(&mut names, f);
             assert_eq!(&board.path(f), want, "{c}: path");

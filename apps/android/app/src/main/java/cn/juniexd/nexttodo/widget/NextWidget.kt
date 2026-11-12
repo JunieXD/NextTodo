@@ -147,14 +147,20 @@ private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boole
                 else -> Colors.secondary
             }
             val metaStyle = TextStyle(color = color, fontSize = 12.sp * scale)
+            val stepStyle = TextStyle(color = Colors.secondary, fontSize = 12.sp * scale)
             if (compact) {
                 Row(GlanceModifier.fillMaxWidth().padding(start = CIRCLE, top = 7.dp * scale, bottom = 7.dp * scale), verticalAlignment = Alignment.CenterVertically) {
                     Text(item.title, GlanceModifier.defaultWeight(), style = title, maxLines = 1)
+                    if (item.step != null) Text(item.step, GlanceModifier.padding(start = 6.dp), style = stepStyle, maxLines = 1)
                     if (meta.isNotEmpty()) Text(meta, GlanceModifier.padding(start = 8.dp), style = metaStyle, maxLines = 1)
                 }
             } else {
                 Column(GlanceModifier.fillMaxWidth().padding(start = CIRCLE, top = 8.dp * scale, bottom = 8.dp * scale)) {
-                    Text(item.title, style = title, maxLines = 1)
+                    // The step whole, however long the title.
+                    Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(item.title, GlanceModifier.defaultWeight(), style = title, maxLines = 1)
+                        if (item.step != null) Text(item.step, GlanceModifier.padding(start = 6.dp), style = stepStyle, maxLines = 1)
+                    }
                     if (meta.isNotEmpty()) Text(meta, style = metaStyle, maxLines = 1)
                 }
             }

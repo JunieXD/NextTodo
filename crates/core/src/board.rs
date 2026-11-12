@@ -1,4 +1,5 @@
-//! What follows from a user's data: task status, the order tasks are listed in and folder paths.
+//! What follows from a user's data: task status, the order tasks are listed in, the steps along
+//! dependencies and folder paths.
 //! The web app has a TypeScript twin of this module; both are checked against `fixtures/board.json`.
 
 use std::cmp::Reverse;
@@ -127,6 +128,37 @@ impl<'a> Board<'a> {
             return Vec::new();
         }
         self.after(t).into_iter().filter(|a| self.status(a) == Status::Waiting { on: 1, not_started: false }).collect()
+    }
+
+    /// For each task linked to others, which step it is along its dependencies and how many there are
+    /// on the longest chain through it (docs/design.md#关联进度). Done tasks are steps too.
+    pub fn steps(&self) -> HashMap<TaskId, (usize, usize)> {
+        // Kahn's algorithm: each task after its prerequisites.
+        let mut waiting: HashMap<TaskId, usize> = self.before.iter().map(|(id, b)| (*id, b.len())).collect();
+        let mut order: Vec<TaskId> = self.after.keys().filter(|id| !waiting.contains_key(id)).copied().collect();
+        let mut i = 0;
+        while let Some(&id) = order.get(i) {
+            for next in self.after.get(&id).into_iter().flatten() {
+                let n = waiting.get_mut(next).expect("a task with prerequisites");
+                *n -= 1;
+                if *n == 0 {
+                    order.push(*next);
+                }
+            }
+            i += 1;
+        }
+        let longest = |edges: &HashMap<TaskId, Vec<TaskId>>, counted: &HashMap<TaskId, usize>, id| {
+            1 + edges.get(id).into_iter().flatten().map(|other| counted[other]).max().unwrap_or(0)
+        };
+        let mut depth = HashMap::new();
+        for id in &order {
+            depth.insert(*id, longest(&self.before, &depth, id));
+        }
+        let mut height = HashMap::new();
+        for id in order.iter().rev() {
+            height.insert(*id, longest(&self.after, &height, id));
+        }
+        order.iter().map(|id| (*id, (depth[id], depth[id] + height[id] - 1))).collect()
     }
 
     pub fn subfolders(&self, f: Option<FolderId>) -> &[&'a Folder] {

@@ -73,7 +73,7 @@ export function NextBody({ now }: { now: Date }) {
           <h2 className={`group-title ${cls}`}>{label}</h2>
           <div className="group">
             {groups.get(g)!.map((t) => (
-              <TaskRow key={t.id} task={t} board={board} now={now} path open selected={selected === t.id} actions={actions} />
+              <TaskRow key={t.id} task={t} board={board} now={now} path step open selected={selected === t.id} actions={actions} />
             ))}
           </div>
         </section>

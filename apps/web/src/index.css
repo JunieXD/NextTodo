@@ -141,7 +141,10 @@ svg { display: block; flex: none; }
 .check.lg { width: 30px; height: 30px; }
 
 .task-main { min-width: 0; flex: 1; display: block; text-align: left; }
-.task-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.task-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.task-title { display: block; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Whole, however long the title before it. */
+.task-step { flex: none; font-size: 13px; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
 .task.waiting .task-title { color: var(--on-surface-variant); }
 .task.done .task-title { color: var(--outline); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--outline), transparent 40%); }
 .task-meta { display: flex; gap: 10px; margin-top: 2px; font-size: 13px; color: var(--on-surface-variant); white-space: nowrap; overflow: hidden; }

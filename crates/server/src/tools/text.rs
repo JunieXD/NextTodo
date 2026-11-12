@@ -66,8 +66,9 @@ pub fn repeat(r: Repeat) -> String {
     }
 }
 
-/// `#12 [可做] 出设计稿 · /工作 · 截止 2026-11-20 18:00 · 解锁 1 项`
-pub fn task_line(b: &Board, t: &Task, folder: bool, status: bool) -> String {
+/// `#12 [可做] 出设计稿 · /工作 · 截止 2026-11-20 18:00 · 第 1/3 步 · 解锁 1 项`, with the step
+/// where it is given.
+pub fn task_line(b: &Board, t: &Task, folder: bool, status: bool, step: Option<(usize, usize)>) -> String {
     let mut line = format!("#{}", t.number);
     if status {
         line += &format!(" {}", status_tag(b, t));
@@ -78,6 +79,9 @@ pub fn task_line(b: &Board, t: &Task, folder: bool, status: bool) -> String {
     }
     if let Some(d) = &t.due {
         line += &format!(" · 截止 {}", due(d));
+    }
+    if let Some((n, of)) = step {
+        line += &format!(" · 第 {n}/{of} 步");
     }
     match b.unlocks(t).len() {
         0 => {}

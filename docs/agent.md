@@ -102,7 +102,7 @@ agent 和用户可能同时在改同一项：
 
 默认输出简洁的中文文本，给人和 agent 读；命令行加 `--json` 输出结构化数据。
 
-事项一行一个，依次是编号、状态、标题，后面用 ` · ` 接文件夹（在 `next`、`search` 和连到外面的事项上）、截止时间、解锁数：
+事项一行一个，依次是编号、状态、标题，后面用 ` · ` 接文件夹（在 `next`、`search` 和连到外面的事项上）、截止时间、[关联进度](design.md#关联进度)（在 `next` 上）、解锁数：
 
 ```text
 $ nexttodo ls 工作/网站改版
@@ -113,8 +113,8 @@ $ nexttodo ls 工作/网站改版
   #16 [等 2 项] 联调
 
 $ nexttodo next
-#12 出设计稿 · /工作/网站改版 · 截止 2026-11-20 18:00 · 解锁 1 项
-#15 写接口 · /工作/网站改版/后端
+#12 出设计稿 · /工作/网站改版 · 截止 2026-11-20 18:00 · 第 1/3 步 · 解锁 1 项
+#15 写接口 · /工作/网站改版/后端 · 第 1/3 步
 
 $ nexttodo graph 工作
 #12 [可做] 出设计稿
@@ -123,7 +123,7 @@ $ nexttodo graph 工作
 #20 [等 1 项] 上线 · /生活 ← #16
 ```
 
-- 状态：`[可做]`、`[等 N 项]`（还有 N 个前置没完成）、`[2026-11-14 开始]`（还没到开始日期，两样都等的是 `[等 N 项，2026-11-14 开始]`）、`[已完成]`。“解锁 N 项”是做完它就能开始的后续数。
+- 状态：`[可做]`、`[等 N 项]`（还有 N 个前置没完成）、`[2026-11-14 开始]`（还没到开始日期，两样都等的是 `[等 N 项，2026-11-14 开始]`）、`[已完成]`。“第 2/5 步”是沿着先后关系，这一项是第 2 步、共 5 步。“解锁 N 项”是做完它就能开始的后续数。
 - 列表没列完时，最后一行是 `另有 N 项未列出，可调大 limit`。
 - 列表里的标题是全文；写操作的结果、`log` 和 `show` 的前置、后续只是提到事项，标题超过 30 字时截成前 30 字加“…”，全文用 `show` 看。
 - 写操作输出实际发生的变化，同类合并成一行，最后一行是批次：
@@ -145,7 +145,7 @@ $ nexttodo graph 工作
 | 事项 | `{id, number, title, status, folder}`；`status` 是 `ready`、`waiting`、`done`，`folder` 是路径；`waiting_on`（还在等的前置数）、`unlocks`（解锁数）不为 0 时才有，`start`、`due`、`done_at`、`completions`（`{count, last}`，重复的事项完成过时）有值时才有 |
 | `tree` | `[{path, name, depth, pending, ready}]`，先序排列，第一项是根目录 |
 | `list` | `{folder, folders: [{path, name, pending, ready}], tasks: [事项], total}`，`total` 是没截断时的事项数；有 AI 整理请求时另有 `jobs: {waiting, running, failed, ready}`，只含不为 0 的 |
-| `next` | `{tasks: [事项], total}` |
+| `next` | `{tasks: [事项], total}`；有前置或后续的事项另有 `step: [2, 5]`（第几步、共几步） |
 | `show` | 事项加上 `created_at, updated_at`；`description`、`created_via`、`updated_via`（令牌名，本人时没有）、`before: [事项]`、`after: [事项]` 有内容时才有 |
 | `search` | `{tasks: [事项], total}` |
 | `graph` | `{tasks: [事项], edges: [{before, after}]}`，边用编号 |

@@ -16,6 +16,7 @@ interface Case {
     order?: Record<string, string[]>;
     next?: string[];
     paths?: Record<string, string>;
+    steps?: Record<string, [number, number] | null>;
   };
 }
 
@@ -83,6 +84,9 @@ describe.each(cases as unknown as Case[])("$name", (c) => {
   });
   test("next", () => {
     expect(titles(board.next())).toEqual(c.expect.next ?? []);
+  });
+  test("steps", () => {
+    for (const [n, want] of Object.entries(c.expect.steps ?? {})) expect(board.step(task(n)) ?? null, n).toEqual(want);
   });
   test("paths", () => {
     for (const [f, want] of Object.entries(c.expect.paths ?? {})) {

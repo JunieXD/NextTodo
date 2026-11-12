@@ -44,6 +44,7 @@ export function TaskRow({
   board,
   now,
   path,
+  step,
   railX,
   open,
   selected,
@@ -54,6 +55,8 @@ export function TaskRow({
   now: Date;
   /** Show the folder, in lists that mix folders. */
   path?: boolean;
+  /** Show which step it is, in “接下来”, which has no rail to show it (docs/design.md#关联进度). */
+  step?: boolean;
   /** Where the check sits on the rail. */
   railX?: number;
   /** In a list of open tasks, which a completed one leaves by folding away. */
@@ -97,6 +100,7 @@ export function TaskRow({
       </span>,
     );
   }
+  const at = step ? board.step(t) : undefined;
   if (unlocks) {
     meta.push(
       <span key="unlock" className="m-unlock">
@@ -141,7 +145,14 @@ export function TaskRow({
             <Check status={status} pop={marks.pop === t.id} left={railX === undefined ? undefined : railX - 12} onToggle={() => actions.toggle(t)} />
             {/* The whole row opens the task; this button is how keyboards and screen readers get there. */}
             <button type="button" className="task-main">
-              <span className="task-title">{t.title}</span>
+              <span className="task-head">
+                <span className="task-title">{t.title}</span>
+                {at && (
+                  <span className="task-step">
+                    {at[0]}/{at[1]}
+                  </span>
+                )}
+              </span>
               {meta.length > 0 && <span className="task-meta">{meta}</span>}
             </button>
           </div>

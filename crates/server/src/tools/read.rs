@@ -90,7 +90,7 @@ pub fn list(c: &Connection, cx: &Cx, a: ListArgs) -> Result<Output, ApiError> {
     let mut tasks: Vec<&Task> = b.tasks_in(f).into_iter().filter(|t| a.all || t.done_at.is_none()).collect();
     let total = tasks.len();
     tasks.truncate(limit);
-    lines.extend(tasks.iter().map(|t| format!("  {}", task_line(&b, t, false, true))));
+    lines.extend(tasks.iter().map(|t| format!("  {}", task_line(&b, t, false, true, None))));
     if lines.len() == 1 {
         lines.push("  （空）".into());
     }
@@ -104,15 +104,26 @@ pub fn next(c: &Connection, cx: &Cx, a: NextArgs) -> Result<Output, ApiError> {
     let limit = limit(a.limit)?;
     let snap = store::snapshot(c, cx.owner)?;
     let b = Board::new(&snap, cx.today.clone());
+    let steps = b.steps();
     let mut tasks = b.next();
     let total = tasks.len();
     tasks.truncate(limit);
     let text = if tasks.is_empty() {
         "暂无可做的事项。".to_owned()
     } else {
-        listed(tasks.iter().map(|t| task_line(&b, t, t.folder_id.is_some(), false)).collect(), tasks.len(), total).join("\n")
+        let lines = tasks.iter().map(|t| task_line(&b, t, t.folder_id.is_some(), false, steps.get(&t.id).copied())).collect();
+        listed(lines, tasks.len(), total).join("\n")
     };
-    let tasks: Vec<Value> = tasks.iter().map(|t| task_view(&b, t)).collect();
+    let tasks: Vec<Value> = tasks
+        .iter()
+        .map(|t| {
+            let mut v = task_view(&b, t);
+            if let Some(step) = steps.get(&t.id) {
+                v["step"] = json!(step);
+            }
+            v
+        })
+        .collect();
     Ok(Output { text, data: json!({ "tasks": tasks, "total": total }) })
 }
 
@@ -193,8 +204,8 @@ pub fn search(c: &Connection, cx: &Cx, a: SearchArgs) -> Result<Output, ApiError
     let text = match total {
         0 => format!("未找到包含“{}”的事项。", a.query.trim()),
         _ => {
-            let lines =
-                std::iter::once(format!("找到 {total} 项：")).chain(found.iter().map(|t| task_line(&b, t, t.folder_id.is_some(), true)));
+            let lines = std::iter::once(format!("找到 {total} 项："))
+                .chain(found.iter().map(|t| task_line(&b, t, t.folder_id.is_some(), true, None)));
             listed(lines.collect(), found.len(), total).join("\n")
         }
     };
@@ -228,7 +239,7 @@ pub fn graph(c: &Connection, cx: &Cx, a: GraphArgs) -> Result<Output, ApiError> 
         nodes
             .iter()
             .map(|&t| {
-                let line = task_line(&b, t, t.folder_id != scope, true);
+                let line = task_line(&b, t, t.folder_id != scope, true, None);
                 let before: Vec<String> = edges.iter().filter(|(_, a)| a.id == t.id).map(|(p, _)| format!("#{}", p.number)).collect();
                 if before.is_empty() { line } else { format!("{line} ← {}", before.join(", ")) }
             })

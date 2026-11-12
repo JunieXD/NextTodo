@@ -38,8 +38,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** A task as the widget shows it. Its number is the id of its reminder; `lastDone` is the last day a
- * repeating one was done. */
-data class Item(val id: String, val number: Int, val title: String, val folder: String, val due: Due?, val lastDone: LocalDate?)
+ * repeating one was done; `step`, which step it is along its dependencies, such as `2/5`. */
+data class Item(val id: String, val number: Int, val title: String, val folder: String, val due: Due?, val lastDone: LocalDate?, val step: String?)
 
 /** What the widget shows: the list with the tasks just ticked off in it, or that the app is signed out;
  * its text `scale`d as the user chose. */
@@ -109,7 +109,8 @@ object Widget {
             val due = t.optJSONObject("due")?.let { Due.from(it) }
             // `/学习/毕业论文` reads `学习 / 毕业论文`; the root shows nothing.
             val lastDone = t.optJSONObject("completions")?.let { LocalDate.parse(it.getString("last")) }
-            Item(t.getString("id"), t.getInt("number"), t.getString("title"), t.getString("folder").removePrefix("/").replace("/", " / "), due, lastDone)
+            val step = t.optJSONArray("step")?.let { "${it.getInt(0)}/${it.getInt(1)}" }
+            Item(t.getString("id"), t.getInt("number"), t.getString("title"), t.getString("folder").removePrefix("/").replace("/", " / "), due, lastDone, step)
         }
     }
 

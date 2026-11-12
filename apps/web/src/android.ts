@@ -95,7 +95,15 @@ function inTurn(f: () => Promise<void>) {
 
 /** What the widget lists: the ready tasks, as the `next` tool gives them. */
 export const widgetTasks = (board: Board) =>
-  board.next().map((t) => ({ id: t.id, number: t.number, title: t.title, folder: board.folderPath(t.folder_id), due: t.due, completions: t.completions }));
+  board.next().map((t) => ({
+    id: t.id,
+    number: t.number,
+    title: t.title,
+    folder: board.folderPath(t.folder_id),
+    due: t.due,
+    completions: t.completions,
+    step: board.step(t),
+  }));
 
 /** What the system calendar shows when it is written to: the open tasks with a deadline, and where
  * each is. */

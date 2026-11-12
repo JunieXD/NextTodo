@@ -8,13 +8,14 @@ import type { Due } from "../api/types/Due";
 import type { Repeat } from "../api/types/Repeat";
 import type { RepeatFrom } from "../api/types/RepeatFrom";
 import type { RepeatUnit } from "../api/types/RepeatUnit";
-import { MAX_REMIND, REMINDERS, REMIND_UNITS, type RemindUnit, day, isoDate, remindIn, remindLabel } from "../domain/dates";
+import { MAX_REMIND, REMINDERS, REMIND_UNITS, type RemindUnit, day, isoDate, parseTime, remindIn, remindLabel } from "../domain/dates";
 import { WORKDAYS, repeatLabel } from "../domain/repeat";
 import { useBack } from "../ui/back";
 import { Seg, Select } from "../ui/controls";
 import { Modal, RootContext, Tip } from "../ui/feedback";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
+import { composing } from "../ui/keys";
 
 const UNITS: [RepeatUnit, string][] = [
   ["day", "天"],
@@ -277,9 +278,10 @@ function Calendar({ value, onChange }: { value: string; onChange(date: string): 
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
+const FIVES = Array.from({ length: 12 }, (_, i) => i * 5);
 
-/** The time of day, `HH:MM`, or none: the hour, then the minute, every 5, from two columns. The minute
- * of `extra`, the time it was, is there to pick too. */
+/** The time of day, `HH:MM`, or none: typed, or the hour, then the minute, every 5, from two columns.
+ * The minutes of `extra`, the time it was, and of the time now are there to pick too. */
 function TimeRow({ value, extra, onChange }: { value: string; extra?: string; onChange(time: string): void }) {
   const root = useContext(RootContext);
   const [open, setOpen] = useState(false);
@@ -288,16 +290,25 @@ function TimeRow({ value, extra, onChange }: { value: string; extra?: string; on
   const mins = useRef<HTMLDivElement>(null);
   const hour = value ? Number(value.slice(0, 2)) : null;
   const minute = value ? Number(value.slice(3)) : null;
-  const minutes = [...new Set([...Array.from({ length: 12 }, (_, i) => i * 5), ...(extra ? [Number(extra.slice(3))] : [])])].sort((a, b) => a - b);
-  // Each column at what is picked, the hours at this one if none is; that hour takes the focus.
-  const show = (e: Event) => {
-    e.preventDefault();
+  const minutes = [...new Set([...FIVES, ...[extra, value].filter((t) => t).map((t) => Number(t!.slice(3)))])].sort((a, b) => a - b);
+  // Each column at what is picked, the hours at `h` if none is.
+  const scroll = (h: number) => {
     const centre = (col: HTMLElement, el: HTMLElement) => (col.scrollTop = el.offsetTop - (col.clientHeight - el.offsetHeight) / 2);
-    const h = hours.current!.querySelectorAll("button")[hour ?? new Date().getHours()];
-    centre(hours.current!, h);
+    const at = hours.current!.querySelectorAll("button")[h];
+    centre(hours.current!, at);
     const m = mins.current!.querySelector<HTMLElement>(".on");
     if (m) centre(mins.current!, m);
-    h.focus({ preventScroll: true });
+    return at;
+  };
+  // Opened, at this hour if none is picked; that hour takes the focus.
+  const show = (e: Event) => {
+    e.preventDefault();
+    scroll(hour ?? new Date().getHours()).focus({ preventScroll: true });
+  };
+  // Typed, the columns show it at once: its minute may be a new one.
+  const typed = (time: string) => {
+    flushSync(() => onChange(time));
+    scroll(Number(time.slice(0, 2)));
   };
   return (
     <Popover.Root open={open} onOpenChange={setOpen} modal>
@@ -310,6 +321,7 @@ function TimeRow({ value, extra, onChange }: { value: string; extra?: string; on
       </Popover.Trigger>
       <Popover.Portal container={root}>
         <Popover.Content className="menu time-menu" align="end" sideOffset={4} onOpenAutoFocus={show}>
+          <TimeInput onChange={typed} onDone={() => setOpen(false)} />
           <div className="time-cols">
             <div ref={hours} role="group" aria-label="时">
               {HOURS.map((h) => (
@@ -338,6 +350,39 @@ function TimeRow({ value, extra, onChange }: { value: string; extra?: string; on
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+  );
+}
+
+/** A time typed, taken as it is typed, since the number pads of some phones have no Enter; Enter is
+ * done with it. */
+function TimeInput({ onChange, onDone }: { onChange(time: string): void; onDone(): void }) {
+  const [text, setText] = useState("");
+  const [bad, setBad] = useState(false);
+  const type = (typed: string) => {
+    setText(typed);
+    setBad(false);
+    const time = parseTime(typed);
+    if (time) onChange(time);
+  };
+  const enter = (e: React.KeyboardEvent) => {
+    if (e.key !== "Enter" || composing(e)) return;
+    e.preventDefault();
+    if (parseTime(text)) onDone();
+    else setBad(true);
+  };
+  return (
+    <input
+      className="time-input"
+      value={text}
+      onChange={(e) => type(e.target.value)}
+      onKeyDown={enter}
+      placeholder="输入，如 9:07"
+      aria-label="输入时间"
+      aria-invalid={bad}
+      // Digits on a phone, and a dot to part the hour from the minutes: few number pads have a colon.
+      inputMode="decimal"
+      autoComplete="off"
+    />
   );
 }
 
@@ -379,7 +424,8 @@ function Stepper({ label, value, max, onChange }: { label: string; value: number
         </button>
       </Tip>
       <input
-        inputMode="numeric"
+        // Digits on a phone, and a dot to part the hour from the minutes: few number pads have a colon.
+      inputMode="decimal"
         aria-label={label}
         style={{ width: `${digits + 1}ch` }}
         value={typed ?? value}

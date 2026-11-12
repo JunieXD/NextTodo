@@ -11,6 +11,15 @@ export const isoDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}
 /** `HH:MM` of a moment, in local time. */
 export const isoTime = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
+/** `HH:MM` of a time typed: `9:07`, `907`, or the hour alone, `9`; with a full-width colon or a dot as
+ * well, as Chinese input methods give them. Null if it is none. */
+export function parseTime(s: string): string | null {
+  const m = /^(\d{1,2})(?:[:：.]?(\d{2}))?$/.exec(s.trim());
+  if (!m) return null;
+  const [h, min] = [Number(m[1]), Number(m[2] ?? 0)];
+  return h < 24 && min < 60 ? `${pad(h)}:${pad(min)}` : null;
+}
+
 /** `2026-11-04 16:30 星期三`: the local time, as AI organizing reads "tomorrow" by. */
 export const localTime = (d: Date) => `${isoDate(d)} ${isoTime(d)} 星期${WEEK[d.getDay()]}`;
 

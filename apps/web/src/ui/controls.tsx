@@ -1,5 +1,5 @@
 import { Check as CheckIcon, ChevronsUpDown, type LucideIcon } from "lucide-react";
-import { Select as Choice, RadioGroup } from "radix-ui";
+import { Select as Choice, RadioGroup, Switch as Toggle } from "radix-ui";
 import { useContext, useState } from "react";
 import type { Status } from "../domain/board";
 import { useBack } from "./back";
@@ -29,6 +29,23 @@ export function Box({ checked }: { checked: boolean }) {
     <span className="box" data-checked={checked}>
       <Icon of={CheckIcon} size={12} width={3} />
     </span>
+  );
+}
+
+/** The whole row toggles it, as in the system's settings. */
+export function Switch({ label, sub, on, onChange }: { label: string; sub: string; on: boolean; onChange(on: boolean): void }) {
+  return (
+    <label className="row">
+      <div className="row-inner">
+        <span className="folder-main">
+          <span>{label}</span>
+          <span className="folder-sub full">{sub}</span>
+        </span>
+        <Toggle.Root className="switch" checked={on} onCheckedChange={onChange}>
+          <Toggle.Thumb />
+        </Toggle.Root>
+      </div>
+    </label>
   );
 }
 

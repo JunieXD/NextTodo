@@ -135,9 +135,18 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
     if (!at) continue;
     const outside = s.outside.has(t.id);
     const status = board.status(t);
-    // Tasks from elsewhere show their folder instead.
+    // One line fits: first the start date waited for, which no edge shows (and the due date after it
+    // can't be overdue yet), then the due date, then the prerequisites waited on. Tasks from elsewhere
+    // show their folder instead.
     let meta: ReactNode;
-    if (!outside && t.due) {
+    if (!outside && status === "waiting" && board.notStarted(t)) {
+      meta = (
+        <span className="n-meta">
+          <Icon of={CalendarClock} size={12} />
+          {startLabel(t.start!, now)}
+        </span>
+      );
+    } else if (!outside && t.due) {
       meta = (
         <span className={`n-meta ${dueClass(t, now)}`}>
           <Icon of={Clock} size={12} />
@@ -147,16 +156,7 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
     } else if (!outside && status === "waiting") {
       meta = (
         <span className="n-meta">
-          {board.waitingOn(t) > 0 ? (
-            <>
-              <Icon of={Inbound} size={12} />等 {board.waitingOn(t)} 项
-            </>
-          ) : (
-            <>
-              <Icon of={CalendarClock} size={12} />
-              {startLabel(t.start!, now)}
-            </>
-          )}
+          <Icon of={Inbound} size={12} />等 {board.waitingOn(t)} 项
         </span>
       );
     }

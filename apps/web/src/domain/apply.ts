@@ -481,8 +481,7 @@ function restoreDue(cur: Due | null, before: Due | null, after: Due | null): Due
   };
 }
 
-/** A repeating task is never done: done, it moves on (docs/design.md#重复). */
-/** A repeating task is never done; none starts after it is due. As the server checks. */
+/** What the server rejects too, so that a change it would refuse isn't applied here meanwhile. */
 function checkTask(t: Task) {
   if (t.done_at !== null && t.due?.repeat) throw new Rejected("invalid", `“${t.title}”已完成，不能设置重复，请先重新打开`);
   if (t.start && t.due && t.start > t.due.date) throw new Rejected("invalid", `“${t.title}”的开始日期不能晚于截止日期`);

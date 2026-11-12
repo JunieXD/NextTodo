@@ -1,10 +1,11 @@
 // Panels for choosing: a folder, a task to link.
 
-import { Check, ChevronLeft, ChevronRight, Folder as FolderIcon, Search } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Folder as FolderIcon, Plus, Search } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { FolderId } from "../api/types/FolderId";
 import type { Task } from "../api/types/Task";
 import { matches } from "../domain/board";
+import { checkTitle } from "../domain/text";
 import { useView } from "../session";
 import { Modal } from "../ui/feedback";
 import { Icon } from "../ui/icons";
@@ -52,8 +53,21 @@ export function FolderPicker({
 
 /** Picks a task to come before (`pred`) or after (`succ`) `task`: folder by folder, as the folders page
  * has them, starting in the task's own, or by searching them all. Tasks that would close a loop are
- * shown but cannot be picked. */
-export function TaskPicker({ task, dir, onPick, onClose }: { task: Task; dir: "pred" | "succ"; onPick(t: Task): void; onClose(): void }) {
+ * shown but cannot be picked. One not there yet is created from the search, in the folder the panel
+ * is at. */
+export function TaskPicker({
+  task,
+  dir,
+  onPick,
+  onCreate,
+  onClose,
+}: {
+  task: Task;
+  dir: "pred" | "succ";
+  onPick(t: Task): void;
+  onCreate(title: string, folder: FolderId | null): void;
+  onClose(): void;
+}) {
   const { board } = useView();
   const [query, setQuery] = useState("");
   // `move`: the last step, into a subfolder or up, whose way the folder's page slides in.
@@ -91,7 +105,28 @@ export function TaskPicker({ task, dir, onPick, onClose }: { task: Task; dir: "p
   let list;
   if (q) {
     const found = board.sort(choices.filter((t) => matches(t, q))).slice(0, 100);
-    list = found.length ? <div className="group picker">{found.map((t) => row(t, true))}</div> : <p className="empty">未找到包含“{query.trim()}”的事项。</p>;
+    const title = checkTitle(query);
+    list = (
+      <>
+        {(title.ok || found.length > 0) && (
+          <div className="group picker">
+            {title.ok && (
+              <button className="row dep add-row" onClick={() => (onCreate(title.value, at), onClose())}>
+                <div className="row-inner">
+                  <Icon of={Plus} />
+                  <span className="dep-main">
+                    <span className="dep-title">新建“{title.value}”</span>
+                    <span className="dep-path">放在{board.place(at)}</span>
+                  </span>
+                </div>
+              </button>
+            )}
+            {found.map((t) => row(t, true))}
+          </div>
+        )}
+        {!found.length && <p className="empty">未找到包含“{query.trim()}”的事项。</p>}
+      </>
+    );
   } else {
     // Only the folders with something to pick, at any depth.
     const subs = board

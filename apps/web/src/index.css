@@ -343,6 +343,8 @@ label.row { cursor: pointer; }
 .dep.done .dep-title { color: var(--outline); text-decoration: line-through; }
 .dep-path { font-size: 12px; color: var(--on-surface-variant); }
 .add-row .row-inner { color: var(--primary); font-weight: 500; min-height: 48px; }
+/* As wide as the dots of the rows below it. */
+.add-row.dep svg { margin: 0 2px; flex: none; }
 .provenance { margin: 18px 32px 0; font-size: 12px; color: var(--outline); display: flex; align-items: center; gap: 6px; }
 
 .modal-scrim { position: absolute; z-index: 30; inset: 0; background: rgba(0, 0, 0, .36); }

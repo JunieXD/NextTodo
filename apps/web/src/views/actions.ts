@@ -4,6 +4,8 @@ import type { Due } from "../api/types/Due";
 import type { FolderId } from "../api/types/FolderId";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
+import { v7 as uuidv7 } from "uuid";
+import { lastKey } from "../domain/apply";
 import { formatDue, isoDate } from "../domain/dates";
 import { useCommit, useSession, useUndo } from "../session";
 import { useFeedback } from "../ui/feedback";
@@ -11,7 +13,11 @@ import { useMarking } from "./marks";
 import { useSelection } from "./nav";
 import type { RowActions } from "./rows";
 
-export function useTaskActions(): RowActions & { link(before: TaskId, after: TaskId): void; unlink(before: TaskId, after: TaskId): void } {
+export function useTaskActions(): RowActions & {
+  link(before: TaskId, after: TaskId): void;
+  linkNew(task: Task, dir: "pred" | "succ", title: string, folder: FolderId | null): void;
+  unlink(before: TaskId, after: TaskId): void;
+} {
   const { store } = useSession();
   const commit = useCommit();
   const undo = useUndo();
@@ -95,6 +101,17 @@ export function useTaskActions(): RowActions & { link(before: TaskId, after: Tas
       if (!r) return;
       const [a, b] = [board().task(before)!, board().task(after)!];
       snack({ text: `已将“${b.title}”排在“${a.title}”之后`, action: "撤销", onAction: () => undo(r.id) });
+    },
+
+    /** Creates a task in `folder`, last there, before (`pred`) or after (`succ`) `task`: one change. */
+    linkNew(task, dir, title, folder) {
+      const id = uuidv7();
+      const [before, after] = dir === "pred" ? [id, task.id] : [task.id, id];
+      const r = commit([
+        { op: "task.create", id, title, sort_key: lastKey(board().contents(folder).map((t) => t.sort_key)), ...(folder && { folder_id: folder }) },
+        { op: "dep.add", before, after },
+      ]);
+      if (r) snack({ text: `已新建${dir === "pred" ? "前置" : "后续"}“${title}”`, action: "撤销", onAction: () => undo(r.id) });
     },
 
     unlink(before, after) {

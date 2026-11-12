@@ -176,6 +176,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
           task={t}
           dir={panel}
           onPick={(o) => (panel === "pred" ? actions.link(o.id, t.id) : actions.link(t.id, o.id))}
+          onCreate={(title, folder) => actions.linkNew(t, panel, title, folder)}
           onClose={() => setPanel(null)}
         />
       )}

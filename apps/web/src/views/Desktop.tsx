@@ -1,7 +1,7 @@
 // The desktop layout: folders on the left, which can be folded away, the list in the middle, and the
 // open task's details on the right.
 
-import { ChevronRight, CircleCheck, Folder as FolderIcon, FolderRoot, History, PanelLeft, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, CircleCheck, Folder as FolderIcon, FolderRoot, History, PanelLeft, Search } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
 import { Link, Redirect, useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
@@ -56,7 +56,18 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
       section === undefined ? (
         <Redirect to={settingsUrl()} replace />
       ) : (
-        <Page title={section ? settingsTitle(section) : "设置"} crumbs={section && <Link to={settingsUrl()}>设置</Link>}>
+        <Page
+          title={section ? settingsTitle(section) : "设置"}
+          crumbs={
+            section && (
+              <Link className="crumb-back" to={settingsUrl()}>
+                <Icon of={ChevronLeft} size={16} />
+                设置
+              </Link>
+            )
+          }
+          narrow
+        >
           {section ? <SettingsPage section={section} onSignOut={onSignOut} /> : <SettingsHome />}
         </Page>
       );
@@ -116,10 +127,12 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
   );
 }
 
-function Page({ title, crumbs, actions, add, scroll = true, children }: { title: string; crumbs?: ReactNode; actions?: ReactNode; add?: ReactNode; scroll?: boolean; children: ReactNode }) {
+/** A page in the middle column; `narrow`, its title above the one column of the settings. */
+function Page(p: { title: string; crumbs?: ReactNode; actions?: ReactNode; add?: ReactNode; scroll?: boolean; narrow?: boolean; children: ReactNode }) {
+  const { title, crumbs, actions, add, scroll = true, children } = p;
   return (
     <>
-      <header className="main-head" data-tauri-drag-region="deep">
+      <header className={`main-head${p.narrow ? " narrow" : ""}`} data-tauri-drag-region="deep">
         <div>
           <div className="crumbs">{crumbs}</div>
           <h1 className="main-title">{title}</h1>

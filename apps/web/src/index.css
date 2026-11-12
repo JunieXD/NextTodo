@@ -417,6 +417,8 @@ svg { display: block; flex: none; }
 .crumbs { font-size: 13px; color: var(--on-surface-variant); margin-bottom: 2px; min-height: 18px; }
 .crumbs a { color: inherit; }
 .crumbs a:hover { color: var(--primary); }
+.crumbs .crumb-back { display: inline-flex; align-items: center; gap: 2px; margin-left: -4px; color: var(--primary); font-weight: 500; }
+.crumbs .crumb-back:hover { opacity: .8; }
 .main-title { margin: 0; font-size: 28px; font-weight: 700; line-height: 1.2; }
 .main-head .seg { width: 200px; }
 .head-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
@@ -442,10 +444,11 @@ svg { display: block; flex: none; }
 .desk .row.selected > .row-inner { background: var(--secondary-container); }
 
 /* ---------- macOS app ---------- */
-/* The window's buttons sit at the top left, over the page (tauri.conf.json); the bars around them
-   move the window (data-tauri-drag-region). */
+/* The window's buttons sit at the top left, over the page, their middle 28 from the top
+   (tauri.conf.json): the phone layout's bar is 56 high, and the middle column's buttons come up to
+   it. The bars around them move the window (data-tauri-drag-region). */
 .macos .brand { visibility: hidden; }
-.macos .desk .main-tools { transition: padding-left .32s var(--ease); }
+.macos .desk .main-tools { padding-top: 8px; transition: padding-left .32s var(--ease); }
 .macos .side-closed .main-tools { padding-left: 84px; }
 .macos .phone .nav { padding-left: 84px; }
 
@@ -504,7 +507,10 @@ svg { display: block; flex: none; }
 .settings-page { padding-bottom: 24px; }
 .settings-page > :first-child { margin-top: 12px; }
 .settings-page > .group + .group { margin-top: 22px; }
-.desk .settings-page { max-width: 600px; }
+/* The settings are one column in the middle; their title lines up with it, the scroll's padding
+   (12) and the groups' margin (16) accounted for. */
+.desk .settings-page { max-width: 600px; margin-inline: auto; }
+.main-head.narrow { width: 100%; max-width: 624px; margin-inline: auto; }
 .secret { margin: 0 16px 12px; padding: 6px 6px 6px 14px; border-radius: 12px; background: var(--surface-container); font: 13px/1.5 ui-monospace, Menlo, monospace; display: flex; align-items: center; gap: 8px; }
 .secret span { flex: 1; padding: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
 .field .secret { margin: 0; font-weight: 400; color: var(--on-surface); }

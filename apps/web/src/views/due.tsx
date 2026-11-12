@@ -291,6 +291,9 @@ function TimeRow({ value, extra, onChange }: { value: string; extra?: string; on
   const hour = value ? Number(value.slice(0, 2)) : null;
   const minute = value ? Number(value.slice(3)) : null;
   const minutes = [...new Set([...FIVES, ...[extra, value].filter((t) => t).map((t) => Number(t!.slice(3)))])].sort((a, b) => a - b);
+  // Picked from the columns, what was typed is no longer the time: the field starts afresh.
+  const [picks, setPicks] = useState(0);
+  const pick = (time: string) => (onChange(time), setPicks((n) => n + 1));
   // Each column at what is picked, the hours at `h` if none is.
   const scroll = (h: number) => {
     const centre = (col: HTMLElement, el: HTMLElement) => (col.scrollTop = el.offsetTop - (col.clientHeight - el.offsetHeight) / 2);
@@ -321,11 +324,11 @@ function TimeRow({ value, extra, onChange }: { value: string; extra?: string; on
       </Popover.Trigger>
       <Popover.Portal container={root}>
         <Popover.Content className="menu time-menu" align="end" sideOffset={4} onOpenAutoFocus={show}>
-          <TimeInput onChange={typed} onDone={() => setOpen(false)} />
+          <TimeInput key={picks} onChange={typed} onDone={() => setOpen(false)} />
           <div className="time-cols">
             <div ref={hours} role="group" aria-label="时">
               {HOURS.map((h) => (
-                <button key={h} className={h === hour ? "on" : undefined} aria-pressed={h === hour} onClick={() => onChange(`${pad(h)}:${pad(minute ?? 0)}`)}>
+                <button key={h} className={h === hour ? "on" : undefined} aria-pressed={h === hour} onClick={() => pick(`${pad(h)}:${pad(minute ?? 0)}`)}>
                   {pad(h)}
                 </button>
               ))}
@@ -337,7 +340,7 @@ function TimeRow({ value, extra, onChange }: { value: string; extra?: string; on
                   className={m === minute ? "on" : undefined}
                   aria-pressed={m === minute}
                   disabled={hour === null}
-                  onClick={() => (onChange(`${pad(hour!)}:${pad(m)}`), setOpen(false))}
+                  onClick={() => (pick(`${pad(hour!)}:${pad(m)}`), setOpen(false))}
                 >
                   {pad(m)}
                 </button>
@@ -424,8 +427,7 @@ function Stepper({ label, value, max, onChange }: { label: string; value: number
         </button>
       </Tip>
       <input
-        // Digits on a phone, and a dot to part the hour from the minutes: few number pads have a colon.
-      inputMode="decimal"
+        inputMode="numeric"
         aria-label={label}
         style={{ width: `${digits + 1}ch` }}
         value={typed ?? value}

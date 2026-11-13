@@ -1,7 +1,7 @@
 package cn.juniexd.nexttodo
 
 import android.content.Context
-import cn.juniexd.nexttodo.widget.Server
+import cn.juniexd.nexttodo.reminders.Reminders
 import cn.juniexd.nexttodo.widget.Widget
 import com.getcapacitor.JSObject
 import java.io.File
@@ -44,8 +44,12 @@ object Local {
         val started = start(context)
         val epoch = started.getString("epoch")
         if (prefs.getString(EPOCH, null) != epoch) {
-            // The widget's list and the reminders are of data that is not there any more.
-            runBlocking { Widget.forget(context) }
+            // The widget's list, the reminders and the changes not sent are of data that is not there any more.
+            runBlocking {
+                Widget.forget(context)
+                Changes.forget(context)
+            }
+            Reminders.clear(context)
             prefs.edit().putString(EPOCH, epoch).commit()
         }
         val token = LocalServer.session()

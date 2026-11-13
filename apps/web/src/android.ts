@@ -1,15 +1,19 @@
-// What only the Android app does: deadline reminders scheduled on the device, the list the
-// home-screen widget shows, and the tasks written into the system calendar. See docs/android.md.
+// What only the Android app does: deadline reminders shown by the device, the list the home-screen
+// widget shows, the changes the widget and reminders made, and the tasks written into the system
+// calendar. See docs/android.md.
 
 import { App } from "@capacitor/app";
 import { type PermissionState, registerPlugin } from "@capacitor/core";
-import { LocalNotifications, type PendingLocalNotificationSchema } from "@capacitor/local-notifications";
+import { Preferences } from "@capacitor/preferences";
 import { navigate } from "wouter/use-browser-location";
+import { aiReady, loadAiMode } from "./ai";
+import type { Mutation } from "./api/types/Mutation";
 import type { Board } from "./domain/board";
-import { type Reminder, reminder, reminders } from "./domain/reminders";
+import { reminders } from "./domain/reminders";
 import type { Started } from "./local";
 import type { Store } from "./sync/store";
 import { back } from "./ui/back";
+import { settingsUrl } from "./views/nav";
 
 export type WidgetTextSize = "small" | "standard" | "large";
 
@@ -24,8 +28,39 @@ export interface DeviceCalendar {
 /** Where the tasks with a deadline are written: the app's own calendar, or one of the device's by id. */
 export type CalendarTarget = "own" | number;
 
+/** What reminders are allowed: `notify`, to show; `exact`, to come on time; and whether the reminder
+ * card is on and allowed to draw over other apps (`overlay`). */
+export interface ReminderSettings {
+  notify: boolean;
+  exact: boolean;
+  card: boolean;
+  overlay: boolean;
+}
+
 /** The app's own plugin, in `apps/android`. */
 interface NextTodoPlugin {
+  /** Hands the device the reminders, as JSON in the shape `deviceReminders` gives; the first time
+   * there are some, asks for notifications. */
+  setReminders(o: { reminders: string }): Promise<void>;
+  /** Takes every reminder away, those put off and those shown too. */
+  clearReminders(): Promise<void>;
+  reminderSettings(): Promise<ReminderSettings>;
+  /** Asks for notifications where Android asks; whether they are allowed. */
+  allowNotifications(): Promise<{ notify: boolean }>;
+  openExactAlarmSettings(): Promise<void>;
+  /** Turns the reminder card on or off (docs/android.md#弹窗提醒). */
+  setCard(o: { on: boolean }): Promise<void>;
+  /** The system page that allows drawing over other apps, which the card needs. */
+  openOverlaySettings(): Promise<void>;
+  /** Signing in as `user`: the changes the widget, reminders and the add popup made for anyone else
+   * go, before the token is written, so that none is sent under it. */
+  signIn(o: { user: string }): Promise<void>;
+  /** The changes the widget, reminders and the add popup made for `user` and could not send yet, as
+   * JSON `[{id, ops}]`, for the app to take in as its own; they go from there too, the server taking
+   * each once (docs/android.md#原生发出的改动). */
+  takeChanges(o: { user: string }): Promise<{ changes: string }>;
+  /** Deletes those changes, and the add popup's draft: signed out. */
+  forgetChanges(): Promise<void>;
   /** Hands the widget its list, as JSON in the shape of the `next` tool's `tasks`, as of the change
    * `seq`; without one, as when signing out, it replaces whatever the widget has. */
   updateWidget(o: { tasks: string; seq?: number }): Promise<void>;
@@ -44,7 +79,7 @@ interface NextTodoPlugin {
   /** Deletes what was written, keeping where to write. */
   clearCalendar(): Promise<void>;
   checkPermissions(): Promise<{ calendar: PermissionState }>;
-  requestPermissions(): Promise<{ calendar: PermissionState }>;
+  requestPermissions(o: { permissions: "calendar"[] }): Promise<{ calendar: PermissionState }>;
   /** The system settings page of this app, where autostart and battery use are allowed. */
   openAppSettings(): Promise<void>;
   /** The APK's version, and its native version, which builds of the web app may need. */
@@ -76,9 +111,6 @@ interface NextTodoPlugin {
 
 export const NextTodo = registerPlugin<NextTodoPlugin>("NextTodo");
 
-/** How many reminders are kept scheduled ahead: the system limits an app's alarms. */
-const AHEAD = 50;
-
 /** Changes coming close together are handled once, at most this long after the first: a stream of
  * them does not hold back a reminder. */
 const SETTLE_MS = 2000;
@@ -105,6 +137,19 @@ export const widgetTasks = (board: Board) =>
     step: board.step(t),
   }));
 
+/** What the device reminds of (docs/android.md#截止提醒): every reminder, past ones too, with whether
+ * the task waits for prerequisites, and for its start date, which the device reads by its own day. */
+export const deviceReminders = (board: Board) =>
+  reminders(board).map((r) => ({
+    task: r.task.id,
+    number: r.number,
+    at: r.at.getTime(),
+    title: r.title,
+    body: r.body,
+    waiting: board.waitingOn(r.task),
+    start: r.task.start,
+  }));
+
 /** What the system calendar shows when it is written to: the open tasks with a deadline, and where
  * each is. */
 export const calendarEvents = (board: Board) =>
@@ -125,49 +170,25 @@ export const setCalendar = (target: CalendarTarget | undefined) =>
     await writeCalendar?.();
   });
 
-/** Keeps the reminders, the widget and the calendar in step with the local copy, also when the app
- * comes back to the front: the time has moved on, and the permissions may have changed. An update
- * that fails is reported to `failed`; the next change tries again. Returns how to stop and clear them. */
-export function watch(store: Store, failed: (e: unknown) => void): () => Promise<void> {
+/** Keeps the reminders, the widget and the calendar in step with the local copy of `user`'s data, also
+ * when the app comes back to the front: the time has moved on, and the permissions may have changed.
+ * Takes in the changes made by the widget, reminders and the add popup meanwhile, and the mode the
+ * popup last used; tells the popup whether AI organizing is set up. An update that fails is reported
+ * to `failed`; the next change tries again. Returns how to stop and clear them. */
+export function watch(store: Store, user: string, failed: (e: unknown) => void): () => Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const update = async () => {
     const { board } = store.getView();
     // With the change the copy is as of: the widget keeps a list it fetched since, should the copy
     // be behind the server.
     await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board)), seq: store.since });
-    const now = new Date();
-    const wanted = reminders(board, now).slice(0, AHEAD);
-    // Without the permission for exact alarms, the plugin would open the system settings on every
-    // schedule; ask for inexact ones instead. The settings page offers to allow it.
-    const exact = (await LocalNotifications.checkExactNotificationSetting()).exact_alarm === "granted";
-    const { notifications } = await LocalNotifications.getPending();
-    // The plugin gives the time back in a format of its own, so each reminder carries its time.
-    const same = (w: Reminder, n: PendingLocalNotificationSchema) =>
-      w.id === n.id && w.title === n.title && w.body === n.body && n.extra?.at === w.at.getTime() && n.extra?.exact === exact;
-    // An inexact alarm can come a little after its time: one still on its way stays while its task
-    // still wants it.
-    const coming = (n: PendingLocalNotificationSchema) => {
-      const t = n.extra && n.extra.at <= now.getTime() && board.task(n.extra.task);
-      const r = t && reminder(board, t);
-      return !!r && r.at.getTime() === n.extra.at && r.title === n.title && r.body === n.body;
-    };
-    const stale = notifications.filter((n) => !coming(n) && !wanted.some((w) => same(w, n)));
-    if (stale.length) await LocalNotifications.cancel({ notifications: stale.map((n) => ({ id: n.id })) });
-    const fresh = wanted.filter((w) => !notifications.some((n) => same(w, n)));
-    if (!fresh.length) return;
-    if ((await LocalNotifications.checkPermissions()).display !== "granted" && (await LocalNotifications.requestPermissions()).display !== "granted") return;
-    await LocalNotifications.schedule({
-      notifications: fresh.map((r) => ({
-        id: r.id,
-        title: r.title,
-        body: r.body,
-        schedule: { at: r.at, allowWhileIdle: true },
-        isExactNotification: exact,
-        extra: { task: r.task, at: r.at.getTime(), exact },
-      })),
-    });
+    await NextTodo.setReminders({ reminders: JSON.stringify(deviceReminders(board)) });
   };
   const calendar = () => NextTodo.updateCalendar({ events: JSON.stringify(calendarEvents(store.getView().board)) });
+  const takeOver = async () => {
+    const { changes } = await NextTodo.takeChanges({ user });
+    store.adopt(JSON.parse(changes) as Mutation[]);
+  };
   // The calendar in a turn of its own: failing, it holds back neither the reminders nor the widget.
   const run = () => {
     inTurn(update).catch(failed);
@@ -179,10 +200,21 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
       run();
     }, SETTLE_MS);
   };
-  const shown = () => document.visibilityState === "visible" && changed();
+  const shown = () => {
+    if (document.visibilityState !== "visible") return;
+    takeOver().catch(failed);
+    loadAiMode().catch(failed);
+    changed();
+  };
   const unsubscribe = store.subscribe(changed);
   document.addEventListener("visibilitychange", shown);
   writeCalendar = calendar;
+  takeOver().catch(failed);
+  // Unless said since: by the settings page, or by the session ending.
+  const asked = ++aiReadySaid;
+  aiReady(user)
+    .then((ready) => (asked === aiReadySaid ? setAiReady(ready) : undefined))
+    .catch(failed);
   run();
   return async () => {
     // The next session may have started watching already.
@@ -194,35 +226,48 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
   };
 }
 
+/** How many times the add popup has been told whether AI organizing is set up, or asked about it: an
+ * answer to an earlier question must not say otherwise than what came since. */
+let aiReadySaid = 0;
+
+/** Tells the add popup whether AI organizing is set up (docs/android.md#添加弹窗). */
+export const setAiReady = (ready: boolean) => {
+  aiReadySaid++;
+  return Preferences.set({ key: "aiReady", value: String(ready) });
+};
+
 /** Empties the widget, takes away every reminder, those shown already too, and the events written in
  * the calendar; after the updates under way. The calendar failing goes to `failed` and holds back
  * neither the rest nor the sign-out: what is left there stays noted, and the next session's first
  * update deletes it, reporting should it fail again. Before a session there is no one to tell, and
  * that update alone reports. */
 export const clear = async (failed: (e: unknown) => void = () => {}) => {
+  aiReadySaid++;
   const calendar = inTurn(() => NextTodo.clearCalendar()).catch(failed);
   await inTurn(async () => {
     await NextTodo.updateWidget({ tasks: "[]" });
-    const { notifications } = await LocalNotifications.getPending();
-    if (notifications.length) await LocalNotifications.cancel({ notifications: notifications.map((n) => ({ id: n.id })) });
-    await LocalNotifications.removeAllDeliveredNotifications();
+    await NextTodo.clearReminders();
+    await Preferences.remove({ key: "aiReady" });
   });
   await calendar;
 };
 
-/** Opens what a notification or the widget points at: `nexttodo://task/<id>`, `nexttodo://add` or
- * `nexttodo://home`. */
+/** Signed out: the changes the widget, reminders and the add popup could not send yet go, with the
+ * popup's draft. A session that just ended keeps them for the same user's next sign-in. */
+export const forget = () => NextTodo.forgetChanges();
+
+/** Opens what a notification, the widget or the add popup points at: `nexttodo://task/<id>`,
+ * `nexttodo://home`, or `nexttodo://ai`, the settings of AI organizing. */
 function open(url: string) {
-  const [, kind, id] = /^nexttodo:\/\/(task|add|home)\/?(.*)$/.exec(url) ?? [];
+  const [, kind, id] = /^nexttodo:\/\/(task|home|ai)\/?(.*)$/.exec(url) ?? [];
   if (kind === "task") navigate(`/?open=${id}`);
-  else if (kind === "add") navigate("/?add");
   else if (kind === "home") navigate("/");
+  else if (kind === "ai") navigate(settingsUrl("ai"));
 }
 
-/** Listens for taps on notifications and the widget. The plugins keep the one that started the app
- * until there is a listener. */
+/** Listens for taps on notifications, the widget and the add popup. The plugin keeps the one that
+ * started the app until there is a listener. */
 export async function listen() {
-  await LocalNotifications.addListener("localNotificationActionPerformed", (e) => open(`nexttodo://task/${e.notification.extra.task}`));
   await App.addListener("appUrlOpen", (e) => open(e.url));
   await App.addListener("backButton", () => {
     if (!back()) void App.minimizeApp();

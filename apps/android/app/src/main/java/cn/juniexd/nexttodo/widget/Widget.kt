@@ -1,14 +1,8 @@
 package cn.juniexd.nexttodo.widget
 
-import android.app.AlarmManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.content.SharedPreferences
-import android.os.Build
-import android.os.SystemClock
 import android.widget.Toast
-import androidx.core.app.NotificationManagerCompat
 import androidx.glance.appwidget.updateAll
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -17,15 +11,14 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import cn.juniexd.nexttodo.Due
+import cn.juniexd.nexttodo.HttpError
 import cn.juniexd.nexttodo.Local
-import cn.juniexd.nexttodo.forUser
-import com.capacitorjs.plugins.localnotifications.NotificationStorage
-import com.capacitorjs.plugins.localnotifications.TimedNotificationPublisher
+import cn.juniexd.nexttodo.Server
 import java.time.LocalDate
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.callbackFlow
@@ -37,9 +30,9 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** A task as the widget shows it. Its number is the id of its reminder; `lastDone` is the last day a
- * repeating one was done; `step`, which step it is along its dependencies, such as `2/5`. */
-data class Item(val id: String, val number: Int, val title: String, val folder: String, val due: Due?, val lastDone: LocalDate?, val step: String?)
+/** A task as the widget shows it. `lastDone` is the last day a repeating one was done; `step`, which
+ * step it is along its dependencies, such as `2/5`. */
+data class Item(val id: String, val title: String, val folder: String, val due: Due?, val lastDone: LocalDate?, val step: String?)
 
 /** What the widget shows: the list with the tasks just ticked off in it, or that the app is signed out;
  * its text `scale`d as the user chose. */
@@ -57,8 +50,9 @@ object Widget {
     private const val SEQ = "seq"
 
     /** Tasks done here that the list kept still has, being from before, by the change that did each:
-     * hidden from it until a list as of that change comes. Kept apart from the list, which stays
-     * what it was as of its change. */
+     * hidden from it until a list as of that change comes; by none while the change waits to be sent
+     * (docs/android.md#原生发出的改动). Kept apart from the list, which stays what it was as of its
+     * change. */
     private const val DONE = "done"
 
     /** How large the text is, chosen in the app's settings (docs/android.md#小组件), and the scale of each. */
@@ -88,7 +82,7 @@ object Widget {
             edit.remove(SEQ).remove(DONE)
         } else {
             val done = done(prefs)
-            done.keys().asSequence().toList().filter { done.getLong(it) <= seq }.forEach(done::remove)
+            done.keys().asSequence().toList().filter { !done.isNull(it) && done.getLong(it) <= seq }.forEach(done::remove)
             edit.putLong(SEQ, seq).putString(DONE, done.toString())
         }
         edit.apply()
@@ -110,7 +104,7 @@ object Widget {
             // `/学习/毕业论文` reads `学习 / 毕业论文`; the root shows nothing.
             val lastDone = t.optJSONObject("completions")?.let { LocalDate.parse(it.getString("last")) }
             val step = t.optJSONArray("step")?.let { "${it.getInt(0)}/${it.getInt(1)}" }
-            Item(t.getString("id"), t.getInt("number"), t.getString("title"), t.getString("folder").removePrefix("/").replace("/", " / "), due, lastDone, step)
+            Item(t.getString("id"), t.getString("title"), t.getString("folder").removePrefix("/").replace("/", " / "), due, lastDone, step)
         }
     }
 
@@ -133,14 +127,25 @@ object Widget {
         return Shown(token != null, items, ticked.keys, SCALES.getValue(textSize(context)))
     }
 
-    /** Hides a task done on the server in session `token` by the change `seq` while the list kept
-     * is from before it, unless signed in again since. */
-    private suspend fun drop(context: Context, task: String, token: String, seq: Long) = update(context) { prefs ->
-        if (Server.token(context) != token || (prefs.contains(SEQ) && prefs.getLong(SEQ, 0) >= seq)) return@update false
-        // The latest of its completions, should it be completed twice, from two widgets say.
+    /** Hides a task done in session `token` by the change `seq`, or by one not sent yet without it,
+     * while the list kept is from before it, unless signed in again since. */
+    suspend fun hide(context: Context, task: String, token: String, seq: Long?) = update(context) { prefs ->
+        if (Server.token(context) != token) return@update false
         val done = done(prefs)
-        prefs.edit().putString(DONE, done.put(task, maxOf(seq, done.optLong(task, seq))).toString()).apply()
+        when {
+            seq == null -> done.put(task, JSONObject.NULL)
+            prefs.contains(SEQ) && prefs.getLong(SEQ, 0) >= seq -> done.remove(task)
+            // The latest of its completions, should it be completed twice, from two widgets say.
+            else -> done.put(task, if (done.isNull(task)) seq else maxOf(seq, done.optLong(task, seq)))
+        }
+        prefs.edit().putString(DONE, done.toString()).commit()
         true
+    }
+
+    /** Shows a task again whose completion the server turned down. */
+    suspend fun unhide(context: Context, task: String) = update(context) { prefs ->
+        val done = done(prefs)
+        done.remove(task) != null && prefs.edit().putString(DONE, done.toString()).commit()
     }
 
     /** What to show, each time the list or the sign-in changes: an empty list stays empty when the
@@ -168,65 +173,27 @@ object Widget {
         update(context) { Server.token(context) == token && keep(it, tasks, seq) }
     }
 
-    /** Marks a task done, takes back its reminder (`number`), and fetches the list again. The task
-     * shows as done at once, and stays a moment before it goes, as in the app. */
-    suspend fun complete(context: Context, task: String, number: Int) {
-        val token = Server.token(context) ?: return
-        val start = SystemClock.elapsedRealtime()
+    /** Shows `task` done where it is in the list, whatever lists come, while it is being completed in
+     * session `token`. */
+    suspend fun tick(context: Context, task: String, token: String) {
         shown(context).items.withIndex().find { it.value.id == task }?.let { row -> ticked.update { it + (task to Ticked(row, token)) } }
-        try {
-            NextWidget().updateAll(context)
-            val seq = try {
-                Server.complete(context, token, task)
-            } catch (e: Exception) {
-                if (e is HttpError && e.status == 401) ended(context, token) else toast(context, forUser("完成事项", e))
-                return
-            }
-            // Signed in again meanwhile, maybe as someone else, whose reminder this number may be.
-            if (Server.token(context) != token) return
-            cancelReminder(context, number)
-            delay(LINGER_MS - (SystemClock.elapsedRealtime() - start))
-            drop(context, task, token, seq)
-        } finally {
-            // Signed in again, the same task may have been ticked off in the new session meanwhile.
-            ticked.update { if (it[task]?.token == token) it - task else it }
-            NextWidget().updateAll(context)
-        }
-        try {
-            refresh(context)
-        } catch (e: Exception) {
-            toast(context, forUser("刷新", e))
-        }
+        NextWidget().updateAll(context)
     }
 
-    /** How long a task ticked off stays in the list, as in the app (`apps/web/src/views/marks.tsx`). */
-    private const val LINGER_MS = 900L
+    suspend fun untick(context: Context, task: String, token: String) {
+        // Signed in again, the same task may have been ticked off in the new session meanwhile.
+        ticked.update { if (it[task]?.token == token) it - task else it }
+        NextWidget().updateAll(context)
+    }
 
     /** The server says the session `token` has ended: unless the app has signed in again since, sign
      * out, and the widget asks to sign in again. */
-    private suspend fun ended(context: Context, token: String) {
+    suspend fun ended(context: Context, token: String) {
         update(context) { Server.ended(context, token) && keep(it, "[]", null) }
     }
 
-    /** Empties the list and takes away every reminder, those shown already too: they are of data that
-     * is there no more (docs/local.md#数据代号). */
-    suspend fun forget(context: Context) {
-        update(context) { keep(it, "[]", null) }
-        NotificationStorage(context).getSavedNotificationIds().forEach { cancelReminder(context, it.toInt()) }
-        NotificationManagerCompat.from(context).cancelAll()
-    }
-
-    /** Takes back a reminder the app scheduled with Capacitor's LocalNotifications (8.3), the way the
-     * plugin does: the app may not be running to notice that the task is done. */
-    private fun cancelReminder(context: Context, id: Int) {
-        val flags = PendingIntent.FLAG_NO_CREATE or if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
-        PendingIntent.getBroadcast(context, id, Intent(context, TimedNotificationPublisher::class.java), flags)?.let {
-            context.getSystemService(AlarmManager::class.java).cancel(it)
-            it.cancel()
-        }
-        NotificationStorage(context).deleteNotification(id.toString())
-        NotificationManagerCompat.from(context).cancel(id)
-    }
+    /** Empties the list: it is of data that is there no more (docs/local.md#数据代号). */
+    suspend fun forget(context: Context) = update(context) { keep(it, "[]", null) }
 
     suspend fun toast(context: Context, text: String) = withContext(Dispatchers.Main) {
         Toast.makeText(context, text, Toast.LENGTH_LONG).show()

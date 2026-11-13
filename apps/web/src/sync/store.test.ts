@@ -82,6 +82,21 @@ test("a change shows at once, is sent once saved, and leaves the queue when the 
   expect([store.since, saved().seq, saved().base.tasks.length]).toEqual([1, 1, 1]);
 });
 
+test("changes the Android widget could not send join the queue in the order made, and are sent once saved", async () => {
+  const { store, sent, hold, saved } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "交房租")], dependencies: [], ai_jobs: [] } });
+  const mine = store.commit([{ op: "task.create", id: id(2), title: "买菜", sort_key: "a2" }]);
+  await settle();
+  const earlier = { id: uuidv7({ msecs: 1 }), ops: [{ op: "task.update" as const, id: id(1), done: true }] };
+  const release = hold();
+  store.adopt([earlier, sent[0]]);
+  expect(store.getView().board.task(id(1))!.done_at).not.toBeNull();
+  expect(saved().outbox.map((p) => p.mutation.id).sort()).toEqual([earlier.id, mine.id].sort());
+  expect(store.unconfirmed.map((m) => m.id)).toEqual([mine.id]);
+  release();
+  await settle();
+  expect(sent.map((m) => m.id)).toEqual([mine.id, earlier.id]);
+});
+
 test("changes from elsewhere merge under the ones still queued", () => {
   const { store, titles, arrived } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "写初稿")], dependencies: [], ai_jobs: [] } });
   store.commit([{ op: "task.update", id: id(1), title: "写终稿" }]);

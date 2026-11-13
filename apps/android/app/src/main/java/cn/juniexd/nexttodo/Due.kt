@@ -1,4 +1,4 @@
-package cn.juniexd.nexttodo.widget
+package cn.juniexd.nexttodo
 
 import java.time.DayOfWeek
 import java.time.LocalDate

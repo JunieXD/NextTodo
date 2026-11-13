@@ -26,9 +26,10 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
   const update = () => {
     const now = new Date();
     // From `now` instead, should the clock have gone back since.
-    const list = reminders(store.getView().board, since < now ? since : now);
+    const after = since < now ? since : now;
     since = now;
-    return hand(list.map((r) => ({ title: r.title, body: r.body, at: r.at.getTime(), task: r.task })));
+    const list = reminders(store.getView().board).filter((r) => r.at > after);
+    return hand(list.map((r) => ({ title: r.title, body: r.body, at: r.at.getTime(), task: r.task.id })));
   };
   const changed = () => {
     timer ??= setTimeout(() => {

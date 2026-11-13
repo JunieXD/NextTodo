@@ -82,6 +82,10 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation "androidx.glance:glance-appwidget:$glanceVersion"
+    // The reminder card and the add popup (docs/android.md#弹窗提醒, #添加弹窗).
+    implementation platform("androidx.compose:compose-bom:$composeBomVersion")
+    implementation "androidx.compose.material3:material3"
+    implementation "androidx.activity:activity-compose:$androidxActivityVersion"
     implementation "androidx.work:work-runtime-ktx:$workVersion"
     implementation project(':capacitor-android')
     implementation project(':capacitor-cordova-android-plugins')

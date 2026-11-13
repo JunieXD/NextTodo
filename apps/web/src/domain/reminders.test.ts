@@ -24,13 +24,12 @@ function task(n: number, extra: Partial<Task>): Task {
   };
 }
 
-test("reminders come before the deadline by the time set, for pending synced tasks, earliest first", () => {
-  const now = new Date(2026, 10, 3, 9, 0);
+test("reminders come before the deadline by the time set, for pending synced tasks, earliest first, past ones too", () => {
   const board = new Board({
     folders: [{ id: FOLDER, parent_id: null, name: "学习", sort_key: "a0", created_at: 0, updated_at: 0 }],
     tasks: [
       task(1, { due: { date: "2026-11-03", time: "18:00", remind_before: 30 }, folder_id: FOLDER }),
-      task(2, { due: { date: "2026-11-03", time: "12:00", remind_before: 0 } }),
+      task(2, { due: { date: "2026-11-03", time: "12:00", remind_before: 0, repeat: { every: 1, unit: "week", from: "due" } }, completions: { count: 12, last: "2026-10-27" } }),
       task(3, { due: { date: "2026-11-03", time: "09:10", remind_before: 15 } }), // already past
       task(4, { due: { date: "2026-11-04", time: "08:00" } }), // no reminder
       task(5, { due: { date: "2026-11-05", time: "08:00", remind_before: 60 }, done_at: 1 }),
@@ -39,8 +38,9 @@ test("reminders come before the deadline by the time set, for pending synced tas
     dependencies: [],
     ai_jobs: [],
   }, "2026-11-03");
-  expect(reminders(board, now).map((r) => [r.id, r.at.getHours(), r.at.getMinutes(), r.body])).toEqual([
-    [2, 12, 0, "今天 12:00 截止"],
+  expect(reminders(board).map((r) => [r.number, r.at.getHours(), r.at.getMinutes(), r.body])).toEqual([
+    [3, 8, 55, "今天 09:10 截止"],
+    [2, 12, 0, "今天 12:00 截止 · 已完成 12 次"],
     [1, 17, 30, "今天 18:00 截止 · 学习"],
   ]);
 });

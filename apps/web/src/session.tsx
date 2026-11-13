@@ -143,7 +143,9 @@ export class Session {
     // A minute late at most, also after the device has slept.
     this.ticking = setInterval(this.store.tick, 60_000);
     tabs.addEventListener("message", this.heard);
-    if (app) this.unwatch = (app === "android" ? android : desktop).watch(this.store, (e) => this.listeners.appFailed(e));
+    const failed = (e: unknown) => this.listeners.appFailed(e);
+    if (app === "android") this.unwatch = android.watch(this.store, user.id, failed);
+    else if (app === "desktop") this.unwatch = desktop.watch(this.store, failed);
   }
 
   private readonly heard = ({ data }: MessageEvent<Message>) => {
@@ -332,6 +334,8 @@ async function fresh({ id, user }: Login, copy: string): Promise<Session> {
  * latest; their tabs still open end. In `turn`. */
 async function forgetUser(user: User) {
   await forget(user.id);
+  // What the widget and reminders could not send yet is this data's too.
+  if (app === "android") await android.forget();
   // The sign-in goes last: cut short before, there is no data left to open with.
   if (cachedLogin()?.user.id === user.id) localStorage.removeItem(LOGIN);
   tabs.postMessage({ signedOut: { id: next(), user } } satisfies Message);

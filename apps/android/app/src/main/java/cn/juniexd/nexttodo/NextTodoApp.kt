@@ -15,6 +15,7 @@ class NextTodoApp : Application() {
         super.onCreate()
         // `Restart`'s process, which ends this one, runs nothing of the app.
         if (processName() != packageName) return
+        Channels.create(this)
         if (Local.on(this)) {
             try {
                 Local.open(this)

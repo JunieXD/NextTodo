@@ -1,7 +1,6 @@
 package cn.juniexd.nexttodo
 
 import android.util.Log
-import cn.juniexd.nexttodo.widget.HttpError
 import java.net.ConnectException
 import java.net.NoRouteToHostException
 import java.net.SocketTimeoutException

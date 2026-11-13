@@ -10,7 +10,6 @@ import android.net.Uri
 import android.provider.CalendarContract
 import android.provider.CalendarContract.Calendars
 import android.provider.CalendarContract.Events
-import cn.juniexd.nexttodo.widget.Due
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.TimeZone

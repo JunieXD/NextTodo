@@ -12,7 +12,7 @@ import type { Op } from "../api/types/Op";
 import type { SeqSnapshot } from "../api/types/SeqSnapshot";
 import type { Snapshot } from "../api/types/Snapshot";
 import { type Data, Rejected, apply, copy, fromSnapshot, replay, toSnapshot } from "../domain/apply";
-import { Board } from "../domain/board";
+import { Board, cmp } from "../domain/board";
 import { isoDate } from "../domain/dates";
 
 /** A change made here, with when it was made, so that applying it again gives the same times. */
@@ -129,6 +129,25 @@ export class Store {
     return { id, effects };
   }
 
+  /** Takes in changes made on this device without the page, by the Android widget and reminders, that
+   * the server may not have yet: they join the outbox in the order made, as if made here, and are
+   * sent once saved (docs/android.md#原生发出的改动). One the copy has already is left out; one sent
+   * twice the server takes once. */
+  adopt(mutations: Mutation[]) {
+    const fresh = mutations
+      .filter((m) => !this.log.has(m.id) && !this.outbox.some((p) => p.mutation.id === m.id))
+      .map((mutation) => ({ mutation, at: madeAt(mutation.id) }));
+    if (!fresh.length) return;
+    this.outbox = [...this.outbox, ...fresh].sort((a, b) => cmp(a.mutation.id, b.mutation.id));
+    for (const p of fresh) this.saving.add(p.mutation.id);
+    void this.changed(fresh).then(() => {
+      for (const p of fresh) {
+        this.saving.delete(p.mutation.id);
+        if (this.outbox.includes(p)) this.hooks.send(p.mutation);
+      }
+    });
+  }
+
   /** What a change did, as far as this copy knows. */
   effectsOf = (id: MutationId): Effect[] | undefined => this.log.get(id) ?? this.local.get(id);
 
@@ -218,11 +237,13 @@ export class Store {
   }
 }
 
+/** When a change was made: a UUIDv7 starts with the time in milliseconds. */
+const madeAt = (id: MutationId) => parseInt(id.slice(0, 8) + id.slice(9, 13), 16);
+
 /** An id for a change made after those `queued`, which the page reads in id order when it opens
- * again. A UUIDv7 starts with the time in milliseconds: kept past the last change's, in case the
- * clock has gone back since, as it may have when the page opened. */
+ * again: kept past the last change's time, in case the clock has gone back since, as it may have
+ * when the page opened. */
 function after(queued: Pending[]): MutationId {
   const last = queued.at(-1)?.mutation.id;
-  const time = last ? parseInt(last.slice(0, 8) + last.slice(9, 13), 16) : 0;
-  return uuidv7({ msecs: Math.max(Date.now(), time + 1) });
+  return uuidv7({ msecs: Math.max(Date.now(), last ? madeAt(last) + 1 : 0) });
 }

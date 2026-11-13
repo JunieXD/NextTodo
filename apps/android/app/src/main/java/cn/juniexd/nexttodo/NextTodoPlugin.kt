@@ -1,20 +1,29 @@
 package cn.juniexd.nexttodo
 
 import android.Manifest
+import android.app.NotificationManager
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.OpenableColumns
 import android.provider.Settings
 import androidx.activity.result.ActivityResult
 import androidx.core.content.FileProvider
+import cn.juniexd.nexttodo.add.AddActivity
+import cn.juniexd.nexttodo.reminders.Card
+import cn.juniexd.nexttodo.reminders.Reminders
 import cn.juniexd.nexttodo.widget.Widget
 import com.getcapacitor.JSObject
+import com.getcapacitor.PermissionState
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.ActivityCallback
 import com.getcapacitor.annotation.CapacitorPlugin
 import com.getcapacitor.annotation.Permission
+import com.getcapacitor.annotation.PermissionCallback
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
@@ -29,11 +38,15 @@ private val installing = AtomicBoolean(false)
 private var cleared = false
 
 /** What the web app asks of Android beyond the stock plugins: see `apps/web/src/android.ts`. Its
- * permission, `calendar`, is checked and asked for with the plugin's own `checkPermissions` and
- * `requestPermissions`. */
+ * permission `calendar` is checked and asked for with the plugin's own `checkPermissions` and
+ * `requestPermissions`; `notifications`, which Android asks for only from 13 on, with
+ * `reminderSettings` and `allowNotifications`. */
 @CapacitorPlugin(
     name = "NextTodo",
-    permissions = [Permission(alias = "calendar", strings = [Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR])],
+    permissions = [
+        Permission(alias = "calendar", strings = [Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR]),
+        Permission(alias = "notifications", strings = [Manifest.permission.POST_NOTIFICATIONS]),
+    ],
 )
 class NextTodoPlugin : Plugin() {
     /** Does `work`, which is to `what`, off the bridge's thread: resolves `call` with what it gives, or
@@ -46,6 +59,101 @@ class NextTodoPlugin : Plugin() {
                 call.reject(forUser(what, e), kind(e), e)
             }
         }
+    }
+
+    /** Hands over the reminders, as JSON in the shape `apps/web/src/android.ts` gives
+     * (docs/android.md#截止提醒). The first time there are some, asks for notifications. */
+    @PluginMethod
+    fun setReminders(call: PluginCall) {
+        val reminders = call.getString("reminders")!!
+        val card = Reminders.update(context, reminders)
+        Handler(Looper.getMainLooper()).post { Card.show(context, card) }
+        if (reminders != "[]" && mayAsk() && Reminders.ask(context)) requestPermissionForAlias("notifications", call, "asked") else call.resolve()
+    }
+
+    @PermissionCallback
+    private fun asked(call: PluginCall) = call.resolve()
+
+    /** Whether notifications can be asked for: only from Android 13 on, and only until allowed. */
+    private fun mayAsk() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && getPermissionState("notifications") != PermissionState.GRANTED
+
+    /** Signed out: no reminders, none put off, none shown. */
+    @PluginMethod
+    fun clearReminders(call: PluginCall) {
+        Reminders.clear(context)
+        Handler(Looper.getMainLooper()).post { Card.close() }
+        call.resolve()
+    }
+
+    /** What reminders are allowed: `notify`, to show; `exact`, to come on time; and whether the reminder
+     * card is `card` on and `overlay`, allowed to draw over other apps. */
+    @PluginMethod
+    fun reminderSettings(call: PluginCall) {
+        call.resolve(
+            JSObject()
+                .put("notify", context.getSystemService(NotificationManager::class.java).areNotificationsEnabled())
+                .put("exact", Reminders.exact(context))
+                .put("card", Reminders.cardOn(context))
+                .put("overlay", Settings.canDrawOverlays(context)),
+        )
+    }
+
+    /** Asks for notifications, where Android asks; whether they are allowed. */
+    @PluginMethod
+    fun allowNotifications(call: PluginCall) {
+        if (mayAsk()) requestPermissionForAlias("notifications", call, "answered") else answered(call)
+    }
+
+    @PermissionCallback
+    private fun answered(call: PluginCall) {
+        call.resolve(JSObject().put("notify", context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()))
+    }
+
+    /** The system page that allows exact alarms, from Android 12 on: before, they are always allowed. */
+    @PluginMethod
+    fun openExactAlarmSettings(call: PluginCall) {
+        context.startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        call.resolve()
+    }
+
+    /** Turns the reminder card on or off. */
+    @PluginMethod
+    fun setCard(call: PluginCall) {
+        Reminders.setCard(context, call.getBoolean("on")!!)
+        call.resolve()
+    }
+
+    /** The system page that allows drawing over other apps, which the reminder card needs. */
+    @PluginMethod
+    fun openOverlaySettings(call: PluginCall) {
+        context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        call.resolve()
+    }
+
+    /** Signing in as `user`, before the token is written: the changes made natively for anyone else go. */
+    @PluginMethod
+    fun signIn(call: PluginCall) {
+        val user = call.getString("user")!!
+        work(call, "删除小组件和提醒里别的账号的改动") {
+            Changes.signIn(context, user)
+            JSObject()
+        }
+    }
+
+    /** The changes made natively for `user` and not sent yet, as JSON `[{id, ops}]`, which the app takes
+     * in; anyone else's go (docs/android.md#原生发出的改动). */
+    @PluginMethod
+    fun takeChanges(call: PluginCall) {
+        val user = call.getString("user")!!
+        work(call, "读取小组件和提醒里的改动") { JSObject().put("changes", Changes.takeOver(context, user)) }
+    }
+
+    /** Signed out: the changes made natively and not sent yet go, and the add popup's draft. */
+    @PluginMethod
+    fun forgetChanges(call: PluginCall) = work(call, "删除小组件和提醒里的改动") {
+        Changes.forget(context)
+        AddActivity.forget(context)
+        JSObject()
     }
 
     @PluginMethod

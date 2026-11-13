@@ -11,5 +11,7 @@ ext {
     androidxWebkitVersion = '1.14.0'
     cordovaAndroidVersion = '14.0.1'
     glanceVersion = '1.2.0'
+    // Compose 1.11: 1.12 needs Android Gradle plugin 9.1 and compileSdk 37.
+    composeBomVersion = '2026.06.01'
     workVersion = '2.12.0'
 }

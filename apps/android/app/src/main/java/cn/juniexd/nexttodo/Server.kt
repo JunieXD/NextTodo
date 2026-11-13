@@ -1,7 +1,6 @@
-package cn.juniexd.nexttodo.widget
+package cn.juniexd.nexttodo
 
 import android.content.Context
-import cn.juniexd.nexttodo.Local
 import java.net.HttpURLConnection
 import java.net.Proxy
 import java.net.URL
@@ -45,12 +44,10 @@ object Server {
     /** The most `next` gives, as the app's list has them all. */
     private const val LIMIT = 500
 
-    /** Marks a task done; one done already stays so, a repeating one moves on from today here.
-     * Returns the change that did it. */
-    suspend fun complete(context: Context, token: String, task: String): Long {
-        val op = JSONObject().put("op", "task.update").put("id", task).put("done", true).put("today", LocalDate.now().toString())
-        return JSONObject(post(context, token, "/mutations", JSONObject().put("id", uuid7()).put("ops", JSONArray().put(op)))).getLong("seq")
-    }
+    /** Submits the change `id`, made of `ops`; one submitted before gives what it did then. Returns
+     * the change's sequence number. */
+    suspend fun mutate(context: Context, token: String, id: String, ops: JSONArray): Long =
+        JSONObject(post(context, token, "/mutations", JSONObject().put("id", id).put("ops", ops))).getLong("seq")
 
     /** Throws `HttpError` with the server's message when the server turns the request down. */
     private suspend fun post(context: Context, token: String, path: String, body: JSONObject): String = withContext(Dispatchers.IO) {
@@ -75,8 +72,8 @@ object Server {
         }
     }
 
-    /** Change ids are UUIDv7: the time in milliseconds, then random bits. */
-    private fun uuid7(): String {
+    /** Ids of changes, tasks and AI jobs are UUIDv7: the time in milliseconds, then random bits. */
+    fun uuid7(): String {
         val bytes = ByteArray(16).also(SecureRandom()::nextBytes)
         val ms = System.currentTimeMillis()
         for (i in 0..5) bytes[i] = (ms shr (40 - 8 * i)).toByte()

@@ -1,6 +1,7 @@
 import { ChevronRight, Cloud, MonitorSmartphone } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import { ApiError, api, deviceName, keepSession, native, serverUrl, setServer } from "../api/http";
+import { NextTodo } from "../android";
+import { ApiError, api, app, deviceName, keepSession, native, serverUrl, setServer } from "../api/http";
 import type { Session as SignedIn } from "../api/types/Session";
 import type { User } from "../api/types/User";
 import * as local from "../local";
@@ -52,6 +53,7 @@ export function Login({
         const session = await api<SignedIn>("POST", mode === "login" ? "/auth/login" : "/auth/register", body);
         // First: on Android, leaving local mode takes the session there with it.
         await local.forgetMode();
+        if (app === "android") await NextTodo.signIn({ user: session.user.id });
         await keepSession(session.secret);
         if (invite) history.replaceState(null, "", "/");
         return session.user;

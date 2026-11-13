@@ -1,35 +1,44 @@
 // In the Android app: what reminders, the widget and the calendar need from the system, and where to
 // grant it.
 
-import { LocalNotifications } from "@capacitor/local-notifications";
 import { useEffect, useState } from "react";
-import { type CalendarTarget, type DeviceCalendar, NextTodo, setCalendar } from "../android";
-import { Select } from "../ui/controls";
+import { type CalendarTarget, type DeviceCalendar, NextTodo, type ReminderSettings, setCalendar } from "../android";
+import { Select, Switch } from "../ui/controls";
 import { forUser, useFeedback } from "../ui/feedback";
 
 const TIP_SEEN = "nexttodo.backgroundTip";
 
-interface Allowed {
-  notify: boolean;
-  exact: boolean;
-  calendar: boolean;
-}
+type Allowed = ReminderSettings & { calendar: boolean };
 
 async function allowed(): Promise<Allowed> {
-  const [p, e, c] = await Promise.all([LocalNotifications.checkPermissions(), LocalNotifications.checkExactNotificationSetting(), NextTodo.checkPermissions()]);
-  return { notify: p.display === "granted", exact: e.exact_alarm === "granted", calendar: c.calendar === "granted" };
+  const [r, c] = await Promise.all([NextTodo.reminderSettings(), NextTodo.checkPermissions()]);
+  return { ...r, calendar: c.calendar === "granted" };
+}
+
+/** Whether the reminder card was turned on without the permission it needs, which the system
+ * settings opened for: it goes on once that is given. */
+let wantCard = false;
+
+async function cardAllowed(now: Allowed): Promise<Allowed> {
+  if (wantCard && now.overlay && !now.card) {
+    await NextTodo.setCard({ on: true });
+    now.card = true;
+  }
+  wantCard = false;
+  return now;
 }
 
 /** Asks for notifications. When they stay off, say because the system no longer asks once they
  * were turned off in its settings or turned down for good, opens the app's system settings. */
 async function allowNotifications() {
-  if ((await LocalNotifications.requestPermissions()).display !== "granted") await NextTodo.openAppSettings();
+  if (!(await NextTodo.allowNotifications()).notify) await NextTodo.openAppSettings();
 }
 
-/** The settings section: notifications, exact alarms, autostart, and the system calendar. */
+/** The settings section: notifications, exact alarms, the reminder card, autostart, and the system
+ * calendar. */
 export function BackgroundSettings() {
   const [state, setState] = useState<Allowed | null>(null);
-  const check = () => allowed().then(setState);
+  const check = () => allowed().then(cardAllowed).then(setState);
   useEffect(() => {
     // Back from the system settings, look again.
     const shown = () => document.visibilityState === "visible" && check();
@@ -38,17 +47,30 @@ export function BackgroundSettings() {
     return () => document.removeEventListener("visibilitychange", shown);
   }, []);
   if (!state) return null;
+  const card = async (on: boolean) => {
+    if (on && !state.overlay) {
+      wantCard = true;
+      return NextTodo.openOverlaySettings();
+    }
+    await NextTodo.setCard({ on });
+    await check();
+  };
   return (
     <>
       <div className="group">
         <Row title="通知" sub={state.notify ? "已允许" : "未允许时不会弹出截止提醒"} action={state.notify ? undefined : ["允许", () => allowNotifications().then(check)]} />
-        <Row title="准时提醒" sub={state.exact ? "已允许" : "未允许时提醒可能延迟几分钟"} action={state.exact ? undefined : ["前往设置", () => LocalNotifications.changeExactNotificationSetting()]} />
-        <Row title="自启动和省电" sub="澎湃 OS 需允许自启动，并将省电策略设为“无限制”，小组件和提醒才能按时工作" action={["打开设置", () => NextTodo.openAppSettings()]} />
+        <Row title="准时提醒" sub={state.exact ? "已允许" : "未允许时提醒可能延迟几分钟"} action={state.exact ? undefined : ["前往设置", () => NextTodo.openExactAlarmSettings()]} />
+        <Switch label="弹窗提醒" sub="到点在屏幕底部弹出卡片，不点不收起" on={state.card} onChange={card} />
+        {state.card && !state.overlay && <Row title="显示在其他应用上层" sub="未允许时弹窗提醒改用顶部横幅" action={["前往设置", () => NextTodo.openOverlaySettings()]} />}
+        <Row title="自启动和省电" sub={HYPER_OS} action={["打开设置", () => NextTodo.openAppSettings()]} />
       </div>
       <CalendarSettings allowed={state.calendar} onAllowed={check} />
     </>
   );
 }
+
+/** What HyperOS needs for the widget and reminders: docs/android.md#澎湃-os. */
+const HYPER_OS = "澎湃 OS 需允许自启动、将省电策略设为“无限制”，小组件和提醒才能按时工作；提醒要在屏幕顶部弹出，还需在通知设置的“截止提醒”里允许“悬浮通知”";
 
 function Row({ title, sub, action }: { title: string; sub: string; action?: [string, () => unknown] }) {
   return (
@@ -93,7 +115,7 @@ function CalendarSettings({ allowed, onAllowed }: { allowed: boolean; onAllowed(
       (e) => snack(forUser("设置写进的日历", e)),
     );
   const turnOn = async () => {
-    if ((await NextTodo.requestPermissions()).calendar !== "granted") return setDenied(true);
+    if ((await NextTodo.requestPermissions({ permissions: ["calendar"] })).calendar !== "granted") return setDenied(true);
     onAllowed();
     await change("own");
   };
@@ -128,7 +150,7 @@ export function BackgroundTip() {
   };
   return (
     <div className="tip-card">
-      <p>为确保提醒和小组件按时工作，请在系统设置中允许 NextTodo 自启动，并将省电策略设为“无限制”。此项也可在设置中找到。</p>
+      <p>为确保提醒和小组件按时工作，请在系统设置中允许 NextTodo 自启动，并将省电策略设为“无限制”；要在屏幕顶部弹出提醒，还需在通知设置的“截止提醒”里允许“悬浮通知”。此项也可在设置中找到。</p>
       <div className="tip-actions">
         <button className="text-btn" onClick={dismiss}>
           关闭

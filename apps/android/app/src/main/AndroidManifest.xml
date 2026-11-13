@@ -25,7 +25,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- The widget opens a task or quick add as nexttodo://task/<id>, nexttodo://add. -->
+            <!-- The widget, reminders and the add popup open a task, the home page or AI settings as
+                 nexttodo://task/<id>, nexttodo://home, nexttodo://ai. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -41,6 +42,35 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- The add popup and the reminder card opened from a notification: cards at the bottom over
+             what is on screen, not tasks to come back to. docs/android.md#添加弹窗, #通知. -->
+        <activity
+            android:name=".add.AddActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize|stateAlwaysVisible"
+            android:theme="@style/Popup" />
+
+        <activity
+            android:name=".reminders.SnoozeActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:theme="@style/Popup" />
+
+        <!-- The reminders' alarm, and what may have missed it. docs/android.md#截止提醒. -->
+        <receiver
+            android:name=".reminders.ReminderReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <receiver
             android:name=".widget.NextWidgetReceiver"
@@ -73,4 +103,9 @@
     <!-- To write the tasks with a deadline into the system calendar: docs/android.md#写进系统日历. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <!-- Reminders: docs/android.md#截止提醒. The card draws over other apps: #弹窗提醒. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 </manifest>

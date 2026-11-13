@@ -13,7 +13,7 @@ import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import { lastKey } from "../domain/apply";
 import { type Board, matches } from "../domain/board";
-import { aiReady } from "../ai";
+import { aiReady, setAiMode, useAiMode } from "../ai";
 import { type DueKind, dueKind, formatDay, localTime } from "../domain/dates";
 import { rekey } from "../domain/reorder";
 import { checkJobText, checkTitle } from "../domain/text";
@@ -242,8 +242,6 @@ export function SearchResults({ query, now }: { query: string; now: Date }) {
   );
 }
 
-const AI_MODE = "nexttodo.aiMode";
-
 /** Adds tasks by typing, or, switched to AI organizing with ✦, has AI organize what is written into
  * tasks; that text can be expanded to write at length. In a folder (`null` for the root) it adds
  * there; elsewhere to a folder picked beside it, the root by default. */
@@ -259,7 +257,7 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
     keepDraft(user.id, place, text);
   };
   // The device remembers the mode last used.
-  const [ai, setAi] = useState(() => localStorage.getItem(AI_MODE) === "on");
+  const ai = useAiMode();
   const [target, setTarget] = useState<FolderId | null>(null);
   const [picking, setPicking] = useState(false);
   const [tall, setTall] = useState(false);
@@ -303,8 +301,7 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
       snack("先选好 AI 整理用的模型");
       return navigate(settingsUrl("ai"));
     }
-    localStorage.setItem(AI_MODE, ai ? "off" : "on");
-    setAi(!ai);
+    await setAiMode(!ai);
     requestAnimationFrame(focus);
   };
 

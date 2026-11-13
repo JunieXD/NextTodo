@@ -17,7 +17,6 @@ const config: CapacitorConfig = {
   plugins: {
     // Requests go out through native HTTP, so the server needs no CORS for the app's https://localhost pages.
     CapacitorHttp: { enabled: true },
-    LocalNotifications: { smallIcon: "ic_stat_nexttodo", iconColor: "#1B6B51" },
   },
 };
 

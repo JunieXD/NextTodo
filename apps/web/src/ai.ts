@@ -1,7 +1,8 @@
 // AI organizing on this device: the settings kept here when the user keeps them off the server, and
 // handing them over for the jobs waiting. See docs/ai.md.
 
-import { useEffect } from "react";
+import { Preferences } from "@capacitor/preferences";
+import { useEffect, useSyncExternalStore } from "react";
 import { ApiError, OFFLINE, api } from "./api/http";
 import type { AiConfig } from "./api/types/AiConfig";
 import type { AiSettings } from "./api/types/AiSettings";
@@ -31,6 +32,37 @@ export const forgetAiConfig = (userId: string) => localStorage.removeItem(PREFIX
 export function forgetOtherAiConfigs(userId: string) {
   const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)!);
   for (const key of keys) if (key.startsWith(PREFIX) && key !== PREFIX + userId) localStorage.removeItem(key);
+}
+
+const AI_MODE = "aiMode";
+let aiModeOn = false;
+const aiModeListeners = new Set<() => void>();
+
+const changeAiMode = (on: boolean) => {
+  aiModeOn = on;
+  for (const listener of aiModeListeners) listener();
+};
+
+/** Reads whether AI organizing was the mode last used to add, which the Android app's add popup shares
+ * (docs/android.md#添加弹窗): before anything adds, and again when the app comes back, the popup having
+ * maybe switched it meanwhile. */
+export async function loadAiMode() {
+  changeAiMode((await Preferences.get({ key: AI_MODE })).value === "on");
+}
+
+/** The mode last used, as it changes. */
+export const useAiMode = () =>
+  useSyncExternalStore(
+    (listener) => {
+      aiModeListeners.add(listener);
+      return () => aiModeListeners.delete(listener);
+    },
+    () => aiModeOn,
+  );
+
+export async function setAiMode(on: boolean) {
+  changeAiMode(on);
+  await Preferences.set({ key: AI_MODE, value: on ? "on" : "off" });
 }
 
 /** Whether a model is set up, here or on the server; `true` too when the server cannot be asked,

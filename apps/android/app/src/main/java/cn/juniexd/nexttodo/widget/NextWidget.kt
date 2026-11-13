@@ -3,6 +3,7 @@ package cn.juniexd.nexttodo.widget
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.SystemClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -45,27 +46,33 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.TextDecoration
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
+import cn.juniexd.nexttodo.Changes
 import cn.juniexd.nexttodo.MainActivity
+import cn.juniexd.nexttodo.Palette
+import cn.juniexd.nexttodo.Server
 import cn.juniexd.nexttodo.R
+import cn.juniexd.nexttodo.add.AddActivity
 import cn.juniexd.nexttodo.forUser
 import java.time.LocalDateTime
+import kotlinx.coroutines.delay
 
-/** The colours of docs/ui.md, light and dark. */
+/** The palette's colours, light and dark. */
 private object Colors {
-    val background = ColorProvider(day = Color(0xFFF5FBF6), night = Color(0xFF0F1512))
-    val text = ColorProvider(day = Color(0xFF171D1A), night = Color(0xFFDEE4DF))
-    val secondary = ColorProvider(day = Color(0xFF404944), night = Color(0xFFBFC9C2))
-    val primary = ColorProvider(day = Color(0xFF1B6B51), night = Color(0xFF8BD6B6))
-    val overdue = ColorProvider(day = Color(0xFFBA1A1A), night = Color(0xFFFFB4AB))
-    val today = ColorProvider(day = Color(0xFF8A5100), night = Color(0xFFFFB870))
-    val onPrimary = ColorProvider(day = Color(0xFFFFFFFF), night = Color(0xFF003827))
-    val done = ColorProvider(day = Color(0xFF707973), night = Color(0xFF89938D))
-    /** Fainter than outline-variant: the widget can't draw the app's half-pixel lines. */
-    val divider = ColorProvider(day = Color(0xFFDDE4DF), night = Color(0xFF2A302D))
+    private fun of(color: Palette.() -> Color) = ColorProvider(day = Palette.light.color(), night = Palette.dark.color())
+
+    val background = of { surface }
+    val text = of { onSurface }
+    val secondary = of { onSurfaceVariant }
+    val primary = of { primary }
+    val overdue = of { error }
+    val today = of { warn }
+    val onPrimary = of { onPrimary }
+    val done = of { outline }
+    val divider = of { divider }
 }
 
 private val TaskKey = ActionParameters.Key<String>("task")
-private val NumberKey = ActionParameters.Key<Int>("number")
+private val TitleKey = ActionParameters.Key<String>("title")
 
 /** Opens the app at `nexttodo://…`, which the web app reads (`apps/web/src/android.ts`). */
 private fun open(context: Context, url: String) =
@@ -103,7 +110,7 @@ private fun Content(context: Context, shown: Shown, now: LocalDateTime) {
             )
             Icon(R.drawable.ic_widget_refresh, "刷新", actionRunCallback<RefreshAction>())
             Spacer(GlanceModifier.width(4.dp))
-            Icon(R.drawable.ic_widget_add, "添加事项", open(context, "nexttodo://add"))
+            Icon(R.drawable.ic_add, "添加事项", actionStartActivity(Intent(context, AddActivity::class.java)))
         }
         when {
             !shown.signedIn -> Note("打开 NextTodo 登录", GlanceModifier.clickable(open(context, "nexttodo://home")))
@@ -173,7 +180,7 @@ private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boole
         } else {
             // Larger than the circle, up to where the title starts, to be easy to hit; round, for its ripple.
             Box(
-                GlanceModifier.size(CIRCLE).cornerRadius(CIRCLE / 2).clickable(actionRunCallback<CompleteAction>(actionParametersOf(TaskKey to item.id, NumberKey to item.number))),
+                GlanceModifier.size(CIRCLE).cornerRadius(CIRCLE / 2).clickable(actionRunCallback<CompleteAction>(actionParametersOf(TaskKey to item.id, TitleKey to item.title))),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 Image(ImageProvider(R.drawable.ic_widget_check), "标为完成", GlanceModifier.size(26.dp).padding(2.dp), colorFilter = ColorFilter.tint(Colors.primary))
@@ -195,20 +202,43 @@ private fun Note(text: String, modifier: GlanceModifier = GlanceModifier) {
     Text(text, modifier.padding(vertical = 12.dp), style = TextStyle(color = Colors.secondary, fontSize = 14.sp))
 }
 
+/** Marks a task done (docs/android.md#原生发出的改动), and fetches the list again. The task shows as
+ * done at once, and stays a moment before it goes, as in the app. */
 class CompleteAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        Widget.complete(context, parameters[TaskKey]!!, parameters[NumberKey]!!)
+        val task = parameters[TaskKey]!!
+        val token = Server.token(context) ?: return
+        val start = SystemClock.elapsedRealtime()
+        Widget.tick(context, task, token)
+        val outcome = try {
+            Changes.complete(context, task, parameters[TitleKey]!!).also {
+                if (it !is Changes.Outcome.Refused) delay(LINGER_MS - (SystemClock.elapsedRealtime() - start))
+            }
+        } finally {
+            Widget.untick(context, task, token)
+        }
+        when (outcome) {
+            is Changes.Outcome.Refused -> Widget.toast(context, outcome.message)
+            is Changes.Outcome.Sent -> refresh(context)
+            // Offline: it goes later, and the list with it.
+            Changes.Outcome.Kept -> {}
+        }
+    }
+}
+
+/** How long a task ticked off stays in the list, as in the app (`apps/web/src/views/marks.tsx`). */
+private const val LINGER_MS = 900L
+
+private suspend fun refresh(context: Context) {
+    try {
+        Widget.refresh(context)
+    } catch (e: Exception) {
+        Widget.toast(context, forUser("刷新", e))
     }
 }
 
 class RefreshAction : ActionCallback {
-    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        try {
-            Widget.refresh(context)
-        } catch (e: Exception) {
-            Widget.toast(context, forUser("刷新", e))
-        }
-    }
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) = refresh(context)
 }
 
 class NextWidgetReceiver : GlanceAppWidgetReceiver() {

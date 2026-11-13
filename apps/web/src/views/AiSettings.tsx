@@ -3,7 +3,7 @@
 
 import { Popover } from "radix-ui";
 import { useEffect, useId, useRef, useState } from "react";
-import { ApiError, api } from "../api/http";
+import { ApiError, api, app } from "../api/http";
 import type { AiConfig } from "../api/types/AiConfig";
 import type { AiModels } from "../api/types/AiModels";
 import type { AiProviders } from "../api/types/AiProviders";
@@ -12,6 +12,7 @@ import type { AiSettingsInput } from "../api/types/AiSettingsInput";
 import type { AiTestResult } from "../api/types/AiTestResult";
 import type { AiThinking } from "../api/types/AiThinking";
 import { keepAiConfig, localAiConfig } from "../ai";
+import { setAiReady } from "../android";
 import { inLocalMode } from "../local";
 import { useSession } from "../session";
 import { useBack } from "../ui/back";
@@ -122,6 +123,7 @@ export function AiPage() {
         setKept(await api<AiSettings>("PUT", "/ai/settings", input));
         keepAiConfig(user.id, null);
       }
+      if (app === "android") await setAiReady(true);
       snack(place === "local" ? "已保存在本机" : "已同步到服务器");
       history.back();
     });
@@ -131,6 +133,7 @@ export function AiPage() {
     await run(async () => {
       keepAiConfig(user.id, null);
       if (kept) await api("DELETE", "/ai/settings");
+      if (app === "android") await setAiReady(false);
       history.back();
     });
   };

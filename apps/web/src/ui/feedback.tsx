@@ -72,14 +72,10 @@ export function FeedbackProvider({ outside, children }: { outside: boolean; chil
   const cancel = useRef<() => void>(undefined);
   /** `outside` as last seen: a dialog asked for meanwhile is answered as cancelled at once. */
   const away = useRef(outside);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const feedback = useMemo<Feedback>(
     () => ({
       snack(s) {
-        const shown = typeof s === "string" ? { text: s } : s;
-        clearTimeout(timer.current);
-        setSnack({ ...shown, key: Date.now() });
-        timer.current = setTimeout(() => setSnack(null), shown.ms ?? 5000);
+        setSnack({ ...(typeof s === "string" ? { text: s } : s), key: Date.now() });
       },
       // A dialog asked for while another is open takes its place, which is answered as cancelled.
       confirm: (c) =>
@@ -106,30 +102,124 @@ export function FeedbackProvider({ outside, children }: { outside: boolean; chil
     away.current = outside;
     if (outside) cancel.current?.();
   }, [outside]);
+  const close = () => setSnack(null);
   const act = () => {
-    setSnack(null);
+    close();
     snack?.onAction?.();
   };
   return (
     <FeedbackContext value={feedback}>
       {children}
-      {snack && <Snackbar key={snack.key} text={snack.text} action={snack.action} onAction={act} />}
+      {snack && <Snackbar key={snack.key} text={snack.text} action={snack.action} ms={snack.ms ?? 5000} onAction={act} onClose={close} />}
       {open?.kind === "confirm" && <ConfirmDialog {...open} close={(ok) => (setOpen(null), open.resolve(ok))} />}
       {open?.kind === "prompt" && <PromptDialog {...open} close={(value) => (setOpen(null), open.resolve(value))} />}
     </FeedbackContext>
   );
 }
 
-/** A new one comes in over the one it replaces as that fades. */
-function Snackbar({ text, action, onAction }: { text: string; action?: string; onAction(): void }) {
+/** A new one comes in over the one it replaces as that fades. It closes after `ms`, or before with
+ * the ×, or swiped away sideways, as a notification is. */
+function Snackbar({ text, action, ms, onAction, onClose }: { text: string; action?: string; ms: number; onAction(): void; onClose(): void }) {
   const el = useRef<HTMLDivElement>(null);
   useLeave([el]);
+  useGoing(el, ms, onClose);
   return (
     <div ref={el} className="snackbar enter" role="status">
       <span>{text}</span>
       {action && <button onClick={onAction}>{action}</button>}
+      <Tip label="关闭">
+        <button className="snack-close" onClick={onClose}>
+          <Icon of={X} size={18} />
+        </button>
+      </Tip>
     </div>
   );
+}
+
+/** How far a swipe takes the snackbar away, as a part of its width; or how fast it goes outwards as
+ * the finger lifts, in px per ms, over the moves of the last `RECENT` ms since it last turned. */
+const AWAY = 1 / 3;
+const FLICK = 0.5;
+const RECENT = 100;
+
+/** Calls `close` `ms` after the snackbar `el` shows, or once it is swiped away: a finger moving it
+ * sideways takes it along, fading; let go far or fast enough, it goes on out, otherwise it comes
+ * back, as it does when the system takes the touch away. The time waits while it is held, and starts
+ * again as it comes back, as on Android. Its buttons do not take the end of a swipe for a tap. */
+function useGoing(ref: RefObject<HTMLElement | null>, ms: number, close: () => void) {
+  const latest = useRef(close);
+  useEffect(() => {
+    latest.current = close;
+  });
+  useEffect(() => {
+    const el = ref.current!;
+    let s: { x: number; y: number; dx: number; active: boolean; moves: { dx: number; at: number }[] } | null = null;
+    let swiped = false;
+    // Unmounted, it may still be on screen, leaving: it is no longer the one `close` closes.
+    let mounted = true;
+    let timer = setTimeout(() => latest.current(), ms);
+    const down = () => (swiped = false);
+    const start = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      s = { x: e.touches[0].clientX, y: e.touches[0].clientY, dx: 0, active: false, moves: [{ dx: 0, at: e.timeStamp }] };
+    };
+    const move = (e: TouchEvent) => {
+      if (!s) return;
+      const dx = e.touches[0].clientX - s.x;
+      const last = s.moves.at(-1)!;
+      // Turned back, it goes as fast as it has since: flung out and pulled back, it is not flung.
+      if ((dx - last.dx) * (last.dx - s.moves[0].dx) < 0) s.moves = [last];
+      s.moves.push({ dx, at: e.timeStamp });
+      if (!s.active) {
+        if (Math.abs(e.touches[0].clientY - s.y) > 10) return void (s = null);
+        if (Math.abs(dx) < 12) return;
+        s.active = swiped = true;
+        clearTimeout(timer);
+        el.classList.add("swiping");
+      }
+      s.dx = dx;
+      el.style.transform = `translateX(${dx}px)`;
+      el.style.opacity = String(Math.max(0, 1 - Math.abs(dx) / el.offsetWidth));
+    };
+    const end = (e: TouchEvent) => {
+      const ended = s;
+      s = null;
+      if (!ended?.active) return;
+      el.classList.remove("swiping");
+      const width = el.offsetWidth;
+      // How fast it went at the end, whatever came before: held a while, it can still be flung.
+      const [from] = ended.moves.filter((m) => e.timeStamp - m.at <= RECENT);
+      const speed = from ? (Math.sign(ended.dx) * (ended.dx - from.dx)) / Math.max(e.timeStamp - from.at, 1) : 0;
+      // Taken away by the system, the touch was not let go of.
+      if (e.type === "touchend" && (Math.abs(ended.dx) > width * AWAY || speed > FLICK)) {
+        el.style.transform = `translateX(${Math.sign(ended.dx) * width}px)`;
+        el.style.opacity = "0";
+        // Gone once it is out, as `useLeave` waits: a transition cut short ends too.
+        void Promise.allSettled(el.getAnimations().map((a) => a.finished)).then(() => mounted && latest.current());
+      } else {
+        el.style.transform = "";
+        el.style.opacity = "";
+        timer = setTimeout(() => latest.current(), ms);
+      }
+    };
+    const click = (e: MouseEvent) => swiped && e.stopPropagation();
+    el.addEventListener("pointerdown", down);
+    el.addEventListener("touchstart", start, { passive: true });
+    el.addEventListener("touchmove", move, { passive: true });
+    el.addEventListener("touchend", end);
+    el.addEventListener("touchcancel", end);
+    el.addEventListener("click", click, true);
+    return () => {
+      mounted = false;
+      clearTimeout(timer);
+      el.removeEventListener("pointerdown", down);
+      el.removeEventListener("touchstart", start);
+      el.removeEventListener("touchmove", move);
+      el.removeEventListener("touchend", end);
+      el.removeEventListener("touchcancel", end);
+      el.removeEventListener("click", click, true);
+    };
+  }, [ref, ms]);
 }
 
 function DialogFrame({ title, close, children }: { title: string; close(): void; children: ReactNode }) {

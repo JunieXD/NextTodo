@@ -390,7 +390,9 @@ label.row { cursor: pointer; }
 .text-btn:active { background: var(--press); }
 
 .snackbar { position: absolute; z-index: 50; left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 72px); min-height: 48px; padding: 6px 8px 6px 16px; border-radius: 12px;
-  display: flex; align-items: center; gap: 8px; background: var(--inverse-surface); color: var(--inverse-on-surface); font-size: 14px; box-shadow: var(--shadow-3); }
+  display: flex; align-items: center; gap: 8px; background: var(--inverse-surface); color: var(--inverse-on-surface); font-size: 14px; box-shadow: var(--shadow-3);
+  touch-action: pan-y; transition: transform .2s var(--ease), opacity .2s var(--ease); }
+.snackbar.swiping { transition: none; }
 .snackbar.enter { animation: snack-in .3s var(--ease); }
 .snackbar.leave { animation: fade-out .16s var(--ease-exit) forwards; }
 @keyframes snack-in { from { transform: translateY(16px); opacity: 0; } }
@@ -399,6 +401,7 @@ label.row { cursor: pointer; }
 
 /* ---------- desktop ---------- */
 .desk-cols { --side-w: 272px; --pane-w: 400px; display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr) var(--pane-w); height: 100%; transition: grid-template-columns .32s var(--ease); }
+.snackbar .snack-close { width: 36px; padding: 0; display: grid; place-items: center; color: var(--inverse-on-surface); }
 .desk-cols.side-closed { --side-w: 0px; }
 .desk-cols.pane-closed { --pane-w: 0px; }
 .sidebar { background: var(--surface-low); border-right: 1px solid var(--outline-variant); overflow: hidden; min-width: 0; transition: border-color .32s; }

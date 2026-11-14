@@ -9,6 +9,7 @@ import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -238,8 +239,8 @@ private fun AddBar(close: () -> Unit) {
                 },
             )
             Row(Modifier.padding(bottom = 2.dp), Arrangement.spacedBy(4.dp)) {
-                val container = if (ai) colors.primary else colors.surfaceContainer
-                val content = if (ai) colors.onPrimary else colors.onSurfaceVariant
+                val container by animateColorAsState(if (ai) colors.primary else colors.surfaceContainer, label = "ai")
+                val content by animateColorAsState(if (ai) colors.onPrimary else colors.onSurfaceVariant, label = "ai icon")
                 IconButton(
                     switchMode,
                     Modifier.size(36.dp),

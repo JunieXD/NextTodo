@@ -10,11 +10,13 @@ import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -36,7 +38,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -112,8 +113,8 @@ object Card {
         view.setViewTreeSavedStateRegistryOwner(owner)
         view.setContent {
             NextTodoTheme {
-                val r = queue.firstOrNull() ?: return@NextTodoTheme
-                key(r.task) {
+                val first = queue.firstOrNull() ?: return@NextTodoTheme
+                AnimatedContent(first, contentKey = { it.task }, label = "reminder") { r ->
                     ReminderCard(
                         r,
                         now,
@@ -289,6 +290,7 @@ private fun ReminderCard(
     var snoozing by remember { mutableStateOf(snoozeFirst) }
     var done by remember { mutableStateOf(false) }
     val ready = r.ready(now.toLocalDate())
+    val titleColor by animateColorAsState(if (done) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface, label = "title")
     LaunchedEffect(done) {
         if (!done) return@LaunchedEffect
         delay(LINGER_MS)
@@ -302,10 +304,12 @@ private fun ReminderCard(
     ) {
         Column(Modifier.padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 16.dp)) {
             Row(verticalAlignment = Alignment.Top) {
-                if (snoozing) {
-                    IconButton({ snoozing = false }) { Icon(painterResource(R.drawable.ic_back), "返回") }
-                } else {
-                    Check(ready, done, Modifier.padding(12.dp))
+                Crossfade(snoozing, label = "lead") { s ->
+                    if (s) {
+                        IconButton({ snoozing = false }) { Icon(painterResource(R.drawable.ic_back), "返回") }
+                    } else {
+                        Check(ready, done, Modifier.padding(12.dp))
+                    }
                 }
                 Column(Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = open).padding(horizontal = 4.dp, vertical = 10.dp)) {
                     Text(
@@ -314,7 +318,7 @@ private fun ReminderCard(
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        color = if (done) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
+                        color = titleColor,
                         textDecoration = if (done) TextDecoration.LineThrough else null,
                     )
                     Text(r.meta(now), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -323,9 +327,12 @@ private fun ReminderCard(
                 IconButton(close) { Icon(painterResource(R.drawable.ic_close), "关闭") }
             }
             Spacer(Modifier.height(12.dp))
-            if (snoozing) {
-                SnoozeOptions(snooze)
-            } else {
+            // The card grows or shrinks to what takes the place of what was there.
+            AnimatedContent(snoozing, Modifier.fillMaxWidth(), label = "actions") { s ->
+                if (s) {
+                    SnoozeOptions(snooze)
+                    return@AnimatedContent
+                }
                 Row(Modifier.fillMaxWidth().padding(end = 8.dp), Arrangement.spacedBy(8.dp, Alignment.End)) {
                     FilledTonalButton({ snoozing = true }, enabled = !done) { Text("稍后提醒") }
                     if (ready) {
@@ -349,8 +356,8 @@ private fun ReminderCard(
 @Composable
 private fun Check(ready: Boolean, done: Boolean, modifier: Modifier) {
     val primary = MaterialTheme.colorScheme.primary
-    Box(modifier.size(24.dp)) {
-        if (done) {
+    Crossfade(done, modifier.size(24.dp), label = "check") { d ->
+        if (d) {
             Image(painterResource(R.drawable.ic_widget_dot), "已完成", colorFilter = ColorFilter.tint(primary))
             Image(painterResource(R.drawable.ic_widget_tick), null, colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onPrimary))
         } else {
@@ -364,26 +371,30 @@ private fun Check(ready: Boolean, done: Boolean, modifier: Modifier) {
 @Composable
 private fun SnoozeOptions(snooze: (minutes: Int) -> Unit) {
     var custom by remember { mutableStateOf(false) }
-    if (!custom) {
-        FlowRow(Modifier.padding(horizontal = 12.dp), Arrangement.spacedBy(8.dp), Arrangement.spacedBy(8.dp)) {
-            for ((minutes, label) in listOf(15 to "15 分钟", 30 to "30 分钟", 60 to "1 小时", 180 to "3 小时")) {
-                FilledTonalButton({ snooze(minutes) }) { Text(label) }
-            }
-            FilledTonalButton({ custom = true }) { Text("自定义") }
-        }
-        return
-    }
     var hours by remember { mutableStateOf(false) }
     var minutes by remember { mutableIntStateOf(10) }
     var hourCount by remember { mutableIntStateOf(2) }
-    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (hours) Stepper(hourCount, 1..24, 1) { hourCount = it } else Stepper(minutes, 5..55, 5) { minutes = it }
-        Spacer(Modifier.weight(1f))
-        Segmented(listOf("分钟", "小时"), if (hours) 1 else 0) { hours = it == 1 }
-    }
-    Spacer(Modifier.height(12.dp))
-    Row(Modifier.fillMaxWidth().padding(end = 8.dp), Arrangement.End) {
-        Button({ snooze(if (hours) hourCount * 60 else minutes) }) { Text("确定") }
+    AnimatedContent(custom, Modifier.fillMaxWidth(), label = "snooze") { c ->
+        if (!c) {
+            FlowRow(Modifier.padding(horizontal = 12.dp), Arrangement.spacedBy(8.dp), Arrangement.spacedBy(8.dp)) {
+                for ((minutes, label) in listOf(15 to "15 分钟", 30 to "30 分钟", 60 to "1 小时", 180 to "3 小时")) {
+                    FilledTonalButton({ snooze(minutes) }) { Text(label) }
+                }
+                FilledTonalButton({ custom = true }) { Text("自定义") }
+            }
+            return@AnimatedContent
+        }
+        Column {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (hours) Stepper(hourCount, 1..24, 1) { hourCount = it } else Stepper(minutes, 5..55, 5) { minutes = it }
+                Spacer(Modifier.weight(1f))
+                Segmented(listOf("分钟", "小时"), if (hours) 1 else 0) { hours = it == 1 }
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth().padding(end = 8.dp), Arrangement.End) {
+                Button({ snooze(if (hours) hourCount * 60 else minutes) }) { Text("确定") }
+            }
+        }
     }
 }
 
@@ -402,10 +413,11 @@ private fun Stepper(value: Int, range: IntRange, step: Int, change: (Int) -> Uni
 private fun Segmented(items: List<String>, picked: Int, pick: (Int) -> Unit) {
     Row(Modifier.clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(2.dp)) {
         items.forEachIndexed { i, item ->
+            val background by animateColorAsState(if (i == picked) LocalPalette.current.segOn else MaterialTheme.colorScheme.surfaceContainer, label = "segment")
             Text(
                 item,
                 Modifier.clip(RoundedCornerShape(8.dp))
-                    .background(if (i == picked) LocalPalette.current.segOn else MaterialTheme.colorScheme.surfaceContainer)
+                    .background(background)
                     .clickable { pick(i) }
                     .padding(horizontal = 14.dp, vertical = 6.dp),
                 fontSize = 14.sp,

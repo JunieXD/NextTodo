@@ -9,6 +9,7 @@ import { formatToday } from "../domain/dates";
 import { useConnection, useSession, useView } from "../session";
 import { useBack } from "../ui/back";
 import { Tip } from "../ui/feedback";
+import { Fold } from "../ui/fold";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { BatchTools, batchTitle, useBatch } from "./batch";
@@ -229,7 +230,7 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ro
             <span className="count">{count || ""}</span>
           </button>
         </FolderContextMenu>
-        {open && kids.map((f) => tree(f.id, id, depth + 1))}
+        {kids.length > 0 && <Fold open={open}>{kids.map((f) => tree(f.id, id, depth + 1))}</Fold>}
       </div>
     );
   };

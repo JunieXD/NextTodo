@@ -65,7 +65,13 @@ export function Seg<T extends string>({
   small?: boolean;
 }) {
   return (
-    <RadioGroup.Root className={`seg${small ? " sm" : ""}`} aria-label={label} value={value} onValueChange={(v) => onChange(v as T)}>
+    <RadioGroup.Root
+      className={`seg${small ? " sm" : ""}`}
+      style={{ "--n": items.length, "--i": items.findIndex(([v]) => v === value) } as React.CSSProperties}
+      aria-label={label}
+      value={value}
+      onValueChange={(v) => onChange(v as T)}
+    >
       {items.map(([v, label, icon]) => (
         <RadioGroup.Item key={v} value={v}>
           {icon && <Icon of={icon} size={16} />}

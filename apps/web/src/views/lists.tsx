@@ -18,6 +18,7 @@ import { checkJobText, checkTitle } from "../domain/text";
 import { useCommit, useSession, useView } from "../session";
 import { draft, keepDraft } from "../sync/drafts";
 import { useBack } from "../ui/back";
+import { Fold } from "../ui/fold";
 import { RootContext, Tip, useFeedback } from "../ui/feedback";
 import { Seg } from "../ui/controls";
 import { Icon } from "../ui/icons";
@@ -132,7 +133,11 @@ export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date
                 </div>
               </button>
             )}
-            {doneOpen && done.map((t) => <TaskRow key={t.id} task={t} board={board} now={now} batchable selected={selected === t.id} actions={actions} />)}
+            <Fold open={doneOpen}>
+              {done.map((t) => (
+                <TaskRow key={t.id} task={t} board={board} now={now} batchable selected={selected === t.id} actions={actions} />
+              ))}
+            </Fold>
           </div>
         </>
       ) : (

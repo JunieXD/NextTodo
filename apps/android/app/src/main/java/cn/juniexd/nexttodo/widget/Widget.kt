@@ -16,6 +16,7 @@ import cn.juniexd.nexttodo.HttpError
 import cn.juniexd.nexttodo.Local
 import cn.juniexd.nexttodo.Server
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -59,6 +60,18 @@ object Widget {
     private const val TEXT_SIZE = "text_size"
     private val SCALES = mapOf("small" to 0.88f, "standard" to 1f, "large" to 1.15f)
 
+    /** Until when what the widget last drawn says of the time holds, as `until` gave it then. */
+    private const val UNTIL = "until"
+
+    /** When what the widget says of the time, drawn with `items` at `now`, comes to be otherwise: at the
+     * next midnight, for dates read as from today, or as a task falls due; never, when it says nothing
+     * of the time. Worked out again later, it gives the same only while that still holds, also should
+     * the clock have gone back or the time zone changed. */
+    private fun until(items: List<Item>, now: LocalDateTime): LocalDateTime {
+        if (items.none { it.due != null || it.lastDone != null }) return LocalDateTime.MAX
+        return (items.mapNotNull { it.due?.deadline } + now.toLocalDate().plusDays(1).atStartOfDay()).filter { it.isAfter(now) }.min()
+    }
+
     fun textSize(context: Context): String = prefs(context).getString(TEXT_SIZE, "standard")!!
 
     suspend fun setTextSize(context: Context, size: String) = update(context) {
@@ -69,9 +82,13 @@ object Widget {
     /** Changes go one at a time, each checking, the session too, on what the one before left. */
     private val writing = Mutex()
 
-    /** Runs `change` on the preferences in turn, and shows the list again when it changed them. */
+    /** Runs `change` on the preferences in turn, and shows the list again when it says so. */
     private suspend fun update(context: Context, change: (SharedPreferences) -> Boolean) {
-        if (writing.withLock { change(prefs(context)) }) NextWidget().updateAll(context)
+        val draw = writing.withLock {
+            val prefs = prefs(context)
+            change(prefs).also { if (it) prefs.edit().putString(UNTIL, until(items(prefs), LocalDateTime.now()).toString()).apply() }
+        }
+        if (draw) NextWidget().updateAll(context)
     }
 
     /** Keeps `tasks`, as of the change `seq`, unless the list kept is as of a later one. */
@@ -92,11 +109,18 @@ object Widget {
     private fun done(prefs: SharedPreferences) = JSONObject(prefs.getString(DONE, "{}"))
 
     /** Shows `tasks`, the app's list, as JSON in the shape of the `next` tool's `tasks`, as of the
-     * change `seq` its copy has. The app's lists come in the order of its sign-ins and sign-outs. */
-    suspend fun show(context: Context, tasks: String, seq: Long?) = update(context) { keep(it, tasks, seq) }
+     * change `seq` its copy has. The app's lists come in the order of its sign-ins and sign-outs. Drawn
+     * again only when the tasks it lists change, it signs in or out, or what it says of the time no
+     * longer holds: the app hands its list over each time it starts, and Glance draws on the main
+     * thread, which holds back the app's first frame. */
+    suspend fun show(context: Context, tasks: String, seq: Long?) = update(context) { prefs ->
+        val was = items(prefs) to prefs.contains(SEQ)
+        // A list older than the one kept is not taken, but what that one says of the time may be stale.
+        val changed = keep(prefs, tasks, seq) && (items(prefs) to prefs.contains(SEQ)) != was
+        changed || prefs.getString(UNTIL, null) != until(items(prefs), LocalDateTime.now()).toString()
+    }
 
-    private fun items(context: Context): List<Item> {
-        val prefs = prefs(context)
+    private fun items(prefs: SharedPreferences): List<Item> {
         val list = JSONArray(prefs.getString("tasks", "[]"))
         val done = done(prefs)
         return (0 until list.length()).map(list::getJSONObject).filter { !done.has(it.getString("id")) }.map { t ->
@@ -120,7 +144,7 @@ object Widget {
     fun shown(context: Context): Shown {
         val token = Server.token(context)
         val ticked = ticked.value.filterValues { it.token == token }
-        val items = items(context).toMutableList()
+        val items = items(prefs(context)).toMutableList()
         for ((i, item) in ticked.values.map { it.row }.sortedBy { it.index }) {
             if (items.none { it.id == item.id }) items.add(minOf(i, items.size), item)
         }

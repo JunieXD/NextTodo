@@ -10,7 +10,7 @@ import org.json.JSONObject
 /** A due date with an optional time, read the way the web app reads it (`apps/web/src/domain/dates.ts`). */
 data class Due(val date: LocalDate, val time: LocalTime?) {
     /** A date alone is due at the end of that day. */
-    private val deadline: LocalDateTime get() = time?.let(date::atTime) ?: date.plusDays(1).atStartOfDay()
+    val deadline: LocalDateTime get() = time?.let(date::atTime) ?: date.plusDays(1).atStartOfDay()
 
     fun overdue(now: LocalDateTime) = !deadline.isAfter(now)
 

@@ -134,6 +134,14 @@ docker compose exec nexttodo /nexttodo-server create-admin admin
 
 然后在 App 里点“连接服务器”，服务器地址填域名（如 `todo.example.com`）或 IP，再填用户名和密码登录。浏览器里打开这个地址就是网页版。
 
+谁忘了密码（包括管理员自己），在 `nexttodo` 目录里运行下面的命令，把 `admin` 换成那个人的用户名，再按提示输入两次新密码。这个账号的设备都要用新密码重新登录，API 令牌不受影响。
+
+```sh
+docker compose exec nexttodo /nexttodo-server reset-password admin
+```
+
+提示认不出 `reset-password` 时，说明镜像还是旧的（在设置里升级过），先按[用命令升级](#用命令升级)拉取新镜像。
+
 ## 4. 邀请其他人
 
 每人一个账号，数据彼此独立。管理员在“设置 → 邀请注册”里点“生成邀请码”，邀请链接会自动复制，发给对方即可。对方打开链接，或者在登录页选“邀请码注册”并填入邀请码，就能注册。每个邀请码只能注册一个账号。

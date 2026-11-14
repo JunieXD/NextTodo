@@ -47,6 +47,9 @@ enum Command {
         #[arg(long)]
         display_name: Option<String>,
     },
+    /// Set the password of a user who has forgotten it, signing out their devices; asks for it, or
+    /// reads it from stdin
+    ResetPassword { username: String },
 }
 
 #[tokio::main]
@@ -140,6 +143,15 @@ async fn main() -> anyhow::Result<()> {
             let display_name = display_name.unwrap_or_else(|| username.clone());
             auth::create_admin(&state, username, display_name, password).await?;
             println!("已创建管理员");
+            Ok(())
+        }
+        Command::ResetPassword { username } => {
+            let _lock = lock(&cli.data, false)?;
+            let state = AppState::new(Db::open(&db)?, Clock::system());
+            // Asked for once the user is found, not after typing it twice for a misspelt name.
+            let user = auth::user_named(&state, username).await?;
+            auth::reset_password(&state, user, read_password()?).await?;
+            println!("已重设密码，这个账号已登录的设备要重新登录");
             Ok(())
         }
     }

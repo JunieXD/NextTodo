@@ -3,7 +3,7 @@ mod common;
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use common::{TestApp, id};
-use nexttodo_server::{MUTATION_RETENTION_MS, db};
+use nexttodo_server::{MUTATION_RETENTION_MS, auth, db};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -438,4 +438,23 @@ async fn changing_the_password_signs_out_other_devices() {
 
     let renamed = t.call("PATCH", "/me", Some(&here), Some(json!({ "display_name": "小 J" }))).await;
     assert_eq!(renamed.body["display_name"], "小 J");
+}
+
+#[tokio::test]
+async fn resetting_a_forgotten_password_signs_out_every_device() {
+    let t = TestApp::new();
+    let here = t.admin().await;
+    let token = t.call("POST", "/tokens", Some(&here), Some(json!({ "name": "Claude Code", "scope": "write" }))).await.body;
+    let agent = token["secret"].as_str().unwrap();
+
+    assert_eq!(auth::user_named(&t.state, "nobody".into()).await.unwrap_err().code(), "not_found");
+    let alice = auth::user_named(&t.state, "ALICE".into()).await.unwrap();
+    assert_eq!(auth::reset_password(&t.state, alice.clone(), "short".into()).await.unwrap_err().code(), "invalid");
+    assert_eq!(t.login("alice", "correct horse").await.status, StatusCode::OK, "nothing changed");
+    auth::reset_password(&t.state, alice, "new password".into()).await.unwrap();
+
+    assert_eq!(t.call("GET", "/me", Some(&here), None).await.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(t.call("GET", "/me", Some(agent), None).await.status, StatusCode::OK, "API tokens keep working");
+    assert_eq!(t.login("alice", "correct horse").await.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(t.login("alice", "new password").await.status, StatusCode::OK);
 }

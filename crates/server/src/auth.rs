@@ -254,6 +254,35 @@ pub async fn create_admin(state: &AppState, username: String, display_name: Stri
     state.db.call(move |c| create_user(c, &username.0, &display_name.0, &hash, true, now).map(drop)).await
 }
 
+/// The id of the user named `username`; used by the `reset-password` command.
+pub async fn user_named(state: &AppState, username: String) -> Result<String, ApiError> {
+    state
+        .db
+        .call(move |c| {
+            c.query_row("SELECT id FROM users WHERE username = ?1", [&username], |r| r.get::<_, String>(0))
+                .optional()?
+                .ok_or_else(|| ApiError::not_found(format!("没有用户“{username}”")))
+        })
+        .await
+}
+
+/// Sets the password of a user who has forgotten it, and signs out their devices as changing it
+/// does; used by the `reset-password` command. API tokens keep working.
+pub async fn reset_password(state: &AppState, user_id: String, password: String) -> Result<(), ApiError> {
+    let password = Password::try_from(password).map_err(|m| ApiError::invalid(m, Some("password".into())))?;
+    let hash = hashing(move || hash_password(&password.0)).await;
+    state
+        .db
+        .call(move |c| {
+            let tx = c.transaction()?;
+            tx.execute("UPDATE users SET password_hash = ?1 WHERE id = ?2", params![hash, user_id])?;
+            tx.execute("DELETE FROM tokens WHERE user_id = ?1 AND kind = ?2", params![user_id, TokenKind::Session])?;
+            tx.commit()?;
+            Ok(())
+        })
+        .await
+}
+
 #[derive(Serialize, TS)]
 #[ts(export)]
 struct Session {

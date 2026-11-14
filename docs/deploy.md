@@ -19,6 +19,7 @@ docker compose exec nexttodo /nexttodo-server create-admin <用户名>
 - 默认跟随最新版本（`latest`）。要固定版本，在 `.env` 里写 `NEXTTODO_IMAGE=ghcr.io/juniexd/nexttodo:<版本号>`，版本号见 [Releases](https://github.com/JunieXD/NextTodo/releases)。
 - [AI 整理](ai.md)的配置要同步到服务器（提交后设备可以离线），在 `.env` 里写 `NEXTTODO_SECRET_KEY=<32 字节的 base64>`，可以用 `openssl rand -base64 32` 生成。服务端用它加密用户的 API 密钥，它不在 `data/` 里，数据库和快照单独泄露时密钥仍然安全。不设置时，配置只能保存在各自的设备上。换掉或丢了它，已保存的 API 密钥就解不开，要在设置里重新填写。
 - `create-admin` 会让你输两次密码。其他人用邀请码注册：管理员在设置的“邀请注册”里生成邀请码或复制邀请链接。
+- 有人忘了密码（包括管理员自己）：运行 `docker compose exec nexttodo /nexttodo-server reset-password <用户名>`，同样输两次新密码。这个账号已登录的设备都要重新登录，API 令牌照常能用。在设置里升级过、镜像还是旧的，旧的服务端认不出这个命令，先按[升级](#升级)里的命令拉取新镜像。
 
 ## 反向代理
 
@@ -72,7 +73,7 @@ server {
 1. **下载**：管理员点“升级”并确认后，服务端从 GHCR 匿名拉取这个版本的镜像 `ghcr.io/juniexd/nexttodo:<版本号>` 里服务器架构的那一份，和 `docker compose pull` 拉的是同一份，约 45 MB。按 OCI 的分发协议：先取镜像索引，挑出 `linux/<架构>` 的清单，再取清单里的两层（服务端程序和网页），令牌在仓库回 401 时按它给的地址取。清单和每一层下载完都按 SHA-256 摘要校验，再解压进 `data/versions/<版本号>.part/`：只能有 `nexttodo-server` 这个文件和 `web/` 下的普通文件和目录，有别的路径或文件类型就整个作废，缺了 `nexttodo-server` 或 `web/index.html` 也作废。最后运行一次新的 `nexttodo-server --version`，报出的版本号对得上，再把这些文件同步到磁盘。这期间照常服务。下载好的版本在记下切换以前一直叫 `.part`，镜像里的服务端不会交给它：这时它起不来，没有可以退回的副本。
 2. **切换**：像收到 SIGTERM 时一样停止服务，进行中的请求最多等 10 秒（和 Compose 停容器时一样，等模型的请求可能更久，期间谁都连不上）。然后拿住数据库的连接一直到换掉进程，还没结束的请求、同步连接和后台任务都写不进去，副本之后就不会再有确认过的改动：把数据库复制一份到 `data/snapshots/before-<版本号>.db`（只留最近一次升级的，不计入每天的 7 份）；在 `data/versions/trying` 记下要试的版本和这份副本；再把 `<版本号>.part` 改名为 `<版本号>`。每一步都同步到磁盘（连同所在目录）再做下一步，断电也不会乱了顺序。最后用 `exec` 把进程换成新版本的服务端，参数不变。进程和容器都不退出，各设备断开几秒后自动重连。
 3. **确认**：新版本迁移完数据库、开始监听后，处理请求前，删掉 `trying` 并同步到磁盘，升级就算成功；`data/versions/` 里别的版本这时删掉。从 `data/versions/` 运行的服务端，用它旁边的 `web/` 提供网页，不管 `--web` 和 `NEXTTODO_WEB`。
-4. **以后每次启动**：镜像里的服务端不论运行的是哪个命令（`serve`、`create-admin`、`restore` 都是），先看有没有 `trying`，有就先退回（见下表最后一行，要独占数据目录锁，服务端正在运行时报错）；再看 `data/versions/`，有比自己新的版本，就用 `exec` 交给它，所以 `docker compose exec nexttodo /nexttodo-server create-admin` 照样能用；没有就自己运行，`serve` 时删掉 `data/versions/` 里不比自己新的版本（比如之后又用命令换了更新的镜像）。所以哪个新就用哪个。
+4. **以后每次启动**：镜像里的服务端不论运行的是哪个命令（`serve`、`create-admin`、`reset-password`、`restore` 都是），先看有没有 `trying`，有就先退回（见下表最后一行，要独占数据目录锁，服务端正在运行时报错）；再看 `data/versions/`，有比自己新的版本，就用 `exec` 交给它，所以 `docker compose exec nexttodo /nexttodo-server create-admin` 照样能用；没有就自己运行，`serve` 时删掉 `data/versions/` 里不比自己新的版本（比如之后又用命令换了更新的镜像）。所以哪个新就用哪个。
 
 **失败时**：
 
@@ -107,7 +108,7 @@ docker compose start
 
 - 快照先检查是不是完好的 NextTodo 数据库，不是就报错，什么都不改。现在的数据库损坏或者丢了也能恢复；它好好的却读不出来（权限、磁盘出错），或者正被别的程序读着，就报错停下。
 - 被替换的数据库和它的 `-wal`、`-shm`，有哪个就原样复制哪个到 `data/before-restore-<Unix 秒>/`（已存在就加序号），不自动删除。
-- `serve` 和 `create-admin` 运行时共享数据目录锁 `data/lock`，`restore` 要独占它：服务端没停就运行 `restore` 会报错，什么都不改。`sqlite3` 这类直接打开数据库的程序不拿这把锁，恢复前要先关掉。中途被打断时，再运行一次即可。
+- `serve`、`create-admin` 和 `reset-password` 运行时共享数据目录锁 `data/lock`，`restore` 要独占它：服务端没停就运行 `restore` 会报错，什么都不改。`sqlite3` 这类直接打开数据库的程序不拿这把锁，恢复前要先关掉。中途被打断时，再运行一次即可。
 - 快照之后的改动、登录和 API 令牌都会消失，快照之后才登录的设备要重新登录。各设备下次连上时重新下载全部数据，还没发出的改动保留，照常发送。原理见[数据模型](data-model.md#mutations)。
 
 ## 用部署脚本

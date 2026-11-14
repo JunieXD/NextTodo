@@ -1,14 +1,14 @@
 // The versions running, and updates: see docs/design.md#app-更新.
 
-import { RefreshCw } from "lucide-react";
+import { Copy, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { app } from "../api/http";
 import { inLocalMode } from "../local";
 import { type ServerVersions, followUpgrade, newer, upgrade, useServerVersions, useUpgrading } from "../server-update";
 import { useSession } from "../session";
 import { ago } from "../domain/dates";
-import { forUser, useFeedback } from "../ui/feedback";
-import { Help } from "../ui/help";
+import { Tip, forUser, useFeedback } from "../ui/feedback";
+import { Help, QQ_GROUP } from "../ui/help";
 import { Icon } from "../ui/icons";
 import { appVersion, check, failureText, install, restart, useChecked, useChecking, usePending } from "../updates";
 
@@ -63,6 +63,25 @@ export function About() {
             </div>
           </div>
         )}
+      </div>
+      <div className="group">
+        <div className="row">
+          <div className="row-inner">
+            <span className="folder-main">
+              <span>QQ 群</span>
+              <span className="folder-sub">反馈和交流</span>
+            </span>
+            <Tip label="复制群号">
+              <button className="row-value copy-value" onClick={() => navigator.clipboard.writeText(QQ_GROUP.number).then(() => snack("已复制群号"))}>
+                {QQ_GROUP.number}
+                <Icon of={Copy} size={16} />
+              </button>
+            </Tip>
+            <a className="text-btn" href={QQ_GROUP.url} target="_blank" rel="noreferrer">
+              加入
+            </a>
+          </div>
+        </div>
       </div>
       <p className="help-line">
         <Help to="">使用教程</Help>

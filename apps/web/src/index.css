@@ -387,6 +387,9 @@ label.row { cursor: pointer; }
   font: inherit; font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--on-surface); }
 .text-btn { height: 40px; padding: 0 14px; border-radius: 20px; color: var(--primary); font-size: 14px; font-weight: 600; }
 .text-btn.danger-text { color: var(--error); }
+a.text-btn { display: inline-flex; align-items: center; }
+.copy-value { height: 40px; padding: 0 10px; border-radius: 20px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.copy-value:active { background: var(--press); }
 .text-btn:active { background: var(--press); }
 
 .snackbar { position: absolute; z-index: 50; left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 72px); min-height: 48px; padding: 6px 8px 6px 16px; border-radius: 12px;
@@ -398,10 +401,10 @@ label.row { cursor: pointer; }
 @keyframes snack-in { from { transform: translateY(16px); opacity: 0; } }
 .snackbar span { flex: 1; }
 .snackbar button { height: 36px; padding: 0 12px; border-radius: 18px; color: var(--inverse-primary); font-weight: 600; }
+.snackbar .snack-close { width: 36px; padding: 0; display: grid; place-items: center; color: var(--inverse-on-surface); }
 
 /* ---------- desktop ---------- */
 .desk-cols { --side-w: 272px; --pane-w: 400px; display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr) var(--pane-w); height: 100%; transition: grid-template-columns .32s var(--ease); }
-.snackbar .snack-close { width: 36px; padding: 0; display: grid; place-items: center; color: var(--inverse-on-surface); }
 .desk-cols.side-closed { --side-w: 0px; }
 .desk-cols.pane-closed { --pane-w: 0px; }
 .sidebar { background: var(--surface-low); border-right: 1px solid var(--outline-variant); overflow: hidden; min-width: 0; transition: border-color .32s; }

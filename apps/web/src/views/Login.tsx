@@ -8,7 +8,7 @@ import * as local from "../local";
 import type { Session } from "../session";
 import { Seg } from "../ui/controls";
 import { forUser, useFeedback } from "../ui/feedback";
-import { Help } from "../ui/help";
+import { Help, QQ_GROUP } from "../ui/help";
 import { Icon } from "../ui/icons";
 
 /** `onSignIn` signs in with `request`, which asks the server and says who signed in; `onLocal` hears
@@ -207,7 +207,7 @@ export function StartFailedPage({ message, retry, onRetry }: { message: string; 
           </button>
         </div>
         <p className="help-line">
-          <a className="help" href="https://qm.qq.com/q/yz6W1Q9NFS" target="_blank" rel="noreferrer">
+          <a className="help" href={QQ_GROUP.url} target="_blank" rel="noreferrer">
             到 QQ 群反馈问题
           </a>
         </p>

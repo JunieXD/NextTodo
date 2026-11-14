@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.ColorFilter
@@ -16,6 +17,7 @@ import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalSize
+import androidx.glance.action.Action
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
@@ -34,8 +36,10 @@ import androidx.glance.color.ColorProvider
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
+import androidx.glance.layout.ColumnScope
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
+import androidx.glance.layout.fillMaxHeight
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
@@ -98,25 +102,40 @@ class NextWidget : GlanceAppWidget() {
  * which the 4×2 the widget starts as is. */
 private val COMPACT_BELOW = 260.dp
 
+/** How far the content keeps from the widget's sides, and from its top. Inside what is tapped there:
+ * the widget leaves no gap, which HyperOS's launcher would give to whichever action it picks
+ * (docs/android.md#小组件). */
+private val EDGE = 14.dp
+private val TOP = 10.dp
+
+/** Below the header, and how tall it is with that and `TOP`. */
+private val UNDER_HEADER = 4.dp
+private val HEADER = TOP + 32.dp + UNDER_HEADER
+
 @Composable
 private fun Content(context: Context, shown: Shown, now: LocalDateTime) {
     val compact = LocalSize.current.height < COMPACT_BELOW
-    Column(GlanceModifier.fillMaxSize().background(Colors.background).cornerRadius(20.dp).padding(horizontal = 14.dp, vertical = 10.dp)) {
-        Row(GlanceModifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "接下来",
-                GlanceModifier.defaultWeight().clickable(open(context, "nexttodo://home")),
-                style = TextStyle(color = Colors.text, fontSize = 17.sp * shown.scale, fontWeight = FontWeight.Bold),
-            )
-            Icon(R.drawable.ic_widget_refresh, "刷新", actionRunCallback<RefreshAction>())
-            Spacer(GlanceModifier.width(4.dp))
-            Icon(R.drawable.ic_add, "添加事项", actionStartActivity(Intent(context, AddActivity::class.java)))
+    Column(GlanceModifier.fillMaxSize().background(Colors.background).cornerRadius(20.dp)) {
+        Row(GlanceModifier.fillMaxWidth().height(HEADER), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                GlanceModifier.defaultWeight().fillMaxHeight().padding(start = EDGE, top = TOP, bottom = UNDER_HEADER).clickable(open(context, "nexttodo://home")),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Text("接下来", style = TextStyle(color = Colors.text, fontSize = 17.sp * shown.scale, fontWeight = FontWeight.Bold))
+            }
+            Icon(R.drawable.ic_widget_refresh, "刷新", actionRunCallback<RefreshAction>(), 4.dp)
+            Icon(R.drawable.ic_add, "添加事项", actionStartActivity(Intent(context, AddActivity::class.java)), EDGE)
         }
         when {
-            !shown.signedIn -> Note("打开 NextTodo 登录", GlanceModifier.clickable(open(context, "nexttodo://home")))
-            shown.items.isEmpty() -> Note("暂无可做的事项")
-            else -> LazyColumn {
-                itemsIndexed(shown.items) { i, item -> TaskItem(context, item, i == 0, item.id in shown.ticked, now, compact, shown.scale) }
+            !shown.signedIn -> Note("打开 NextTodo 登录", open(context, "nexttodo://home"))
+            shown.items.isEmpty() -> Note("暂无可做的事项", open(context, "nexttodo://home"))
+            // Under the list, all the rest of the widget, so that a tap below the last task opens the app:
+            // beside the list rather than around it, whose actions it would take.
+            else -> Box(GlanceModifier.defaultWeight().fillMaxWidth()) {
+                Box(GlanceModifier.fillMaxSize().clickable(open(context, "nexttodo://home"))) {}
+                LazyColumn(GlanceModifier.fillMaxWidth()) {
+                    itemsIndexed(shown.items) { i, item -> TaskItem(context, item, i == 0, item.id in shown.ticked, now, compact, shown.scale) }
+                }
             }
         }
     }
@@ -138,7 +157,7 @@ private fun Divider() {
 @Composable
 private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boolean, now: LocalDateTime, compact: Boolean, scale: Float) {
     Box(GlanceModifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
-        Column(GlanceModifier.fillMaxWidth().clickable(open(context, "nexttodo://task/${item.id}"))) {
+        Column(GlanceModifier.fillMaxWidth().padding(horizontal = EDGE).clickable(open(context, "nexttodo://task/${item.id}"))) {
             if (!first) Divider()
             val title = TextStyle(
                 color = if (ticked) Colors.done else Colors.text,
@@ -173,14 +192,15 @@ private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boole
             }
         }
         if (ticked) {
-            Box(GlanceModifier.size(26.dp).padding(2.dp), contentAlignment = Alignment.Center) {
+            Box(GlanceModifier.width(EDGE + 26.dp).height(26.dp).padding(start = EDGE + 2.dp, top = 2.dp, end = 2.dp, bottom = 2.dp)) {
                 Image(ImageProvider(R.drawable.ic_widget_dot), "已完成", GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(Colors.primary))
                 Image(ImageProvider(R.drawable.ic_widget_tick), null, GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(Colors.onPrimary))
             }
         } else {
-            // Larger than the circle, up to where the title starts, to be easy to hit; round, for its ripple.
+            // Larger than the circle, from the widget's side up to where the title starts, to be easy to
+            // hit; round at the ends, for its ripple.
             Box(
-                GlanceModifier.size(CIRCLE).cornerRadius(CIRCLE / 2).clickable(actionRunCallback<CompleteAction>(actionParametersOf(TaskKey to item.id, TitleKey to item.title))),
+                GlanceModifier.width(EDGE + CIRCLE).height(CIRCLE).padding(start = EDGE).cornerRadius(CIRCLE / 2).clickable(actionRunCallback<CompleteAction>(actionParametersOf(TaskKey to item.id, TitleKey to item.title))),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 Image(ImageProvider(R.drawable.ic_widget_check), "标为完成", GlanceModifier.size(26.dp).padding(2.dp), colorFilter = ColorFilter.tint(Colors.primary))
@@ -192,14 +212,21 @@ private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boole
 /** Where the title starts: the circle, and the space after it. */
 private val CIRCLE = 36.dp
 
+/** An icon of the header, 22dp across, tapped anywhere in the header's height and `end` beyond it. */
 @Composable
-private fun Icon(drawable: Int, label: String, onClick: androidx.glance.action.Action) {
-    Image(ImageProvider(drawable), label, GlanceModifier.size(32.dp).padding(5.dp).clickable(onClick), colorFilter = ColorFilter.tint(Colors.secondary))
+private fun Icon(drawable: Int, label: String, onClick: Action, end: Dp) {
+    Image(
+        ImageProvider(drawable),
+        label,
+        GlanceModifier.width(32.dp + end).fillMaxHeight().padding(start = 5.dp, top = TOP + 5.dp, end = 5.dp + end, bottom = UNDER_HEADER + 5.dp).clickable(onClick),
+        colorFilter = ColorFilter.tint(Colors.secondary),
+    )
 }
 
+/** In place of the list, all the rest of the widget: tapped, it opens the app. */
 @Composable
-private fun Note(text: String, modifier: GlanceModifier = GlanceModifier) {
-    Text(text, modifier.padding(vertical = 12.dp), style = TextStyle(color = Colors.secondary, fontSize = 14.sp))
+private fun ColumnScope.Note(text: String, onClick: Action) {
+    Text(text, GlanceModifier.defaultWeight().fillMaxWidth().padding(horizontal = EDGE, vertical = 12.dp).clickable(onClick), style = TextStyle(color = Colors.secondary, fontSize = 14.sp))
 }
 
 /** Marks a task done (docs/android.md#原生发出的改动), and fetches the list again. The task shows as

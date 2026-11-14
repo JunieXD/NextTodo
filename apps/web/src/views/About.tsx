@@ -1,6 +1,6 @@
 // The versions running, and updates: see docs/design.md#app-更新.
 
-import { Copy, RefreshCw } from "lucide-react";
+import { ChevronRight, Copy, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { app } from "../api/http";
 import { inLocalMode } from "../local";
@@ -11,6 +11,7 @@ import { Tip, forUser, useFeedback } from "../ui/feedback";
 import { Help, QQ_GROUP } from "../ui/help";
 import { Icon } from "../ui/icons";
 import { appVersion, check, failureText, install, restart, useChecked, useChecking, usePending } from "../updates";
+import { Changelog } from "./Changelog";
 
 export function About() {
   const { snack } = useFeedback();
@@ -19,6 +20,7 @@ export function About() {
   const server = useServerVersions();
   const admin = user.is_admin && !inLocalMode();
   const [installed, setInstalled] = useState<string | null>(null);
+  const [changelog, setChangelog] = useState(false);
   useEffect(() => {
     appVersion().then(setInstalled, (e) => snack(forUser("读取版本", e)));
   }, [snack]);
@@ -68,7 +70,18 @@ export function About() {
             </div>
           </div>
         )}
+        <button className="row" onClick={() => setChangelog(true)}>
+          <div className="row-inner">
+            <span className="folder-main">
+              <span>更新日志</span>
+            </span>
+            <span className="chev">
+              <Icon of={ChevronRight} size={18} />
+            </span>
+          </div>
+        </button>
       </div>
+      {changelog && <Changelog onClose={() => setChangelog(false)} />}
       <div className="group">
         <div className="row">
           <div className="row-inner">

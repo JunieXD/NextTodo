@@ -45,7 +45,7 @@ function webJson(): Plugin {
 }
 
 export default defineConfig({
-  define: { "import.meta.env.WEB_VERSION": JSON.stringify(version) },
+  define: { "import.meta.env.WEB_VERSION": JSON.stringify(version), "import.meta.env.WEB_DEV": JSON.stringify(!process.env.NEXTTODO_VERSION) },
   plugins: [
     react(),
     tailwindcss(),

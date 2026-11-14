@@ -366,6 +366,13 @@ label.row { cursor: pointer; }
 .md blockquote { margin: 8px 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--primary-container); color: var(--on-surface-variant); }
 .md code { font: 13px ui-monospace, Menlo, monospace; background: var(--surface-container); padding: 1px 5px; border-radius: 5px; }
 .md-edit { display: block; width: 100%; min-height: 200px; border: 0; outline: none; resize: vertical; padding: 14px 16px; background: var(--group-bg); font: 14px/1.6 ui-monospace, Menlo, monospace; }
+/* A release's notes in the changelog (views/Changelog.tsx): its version and day, then what it changed. */
+.release + .release { border-top: .5px solid var(--outline-variant); }
+.release h4 { margin: 16px 24px 0; display: flex; align-items: baseline; gap: 8px; font-size: 16px; font-weight: 600; }
+.release h4 span { font-size: 13px; font-weight: 400; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+.release .md { padding: 4px 24px 14px; font-size: 14px; }
+.release .md h3 { margin-top: 10px; font-size: 13px; color: var(--on-surface-variant); }
+.earlier { margin: 0 10px; }
 .dep .row-inner { min-height: 52px; gap: 12px; }
 .dot { width: 10px; height: 10px; border-radius: 5px; border: 2px solid var(--outline); flex: none; margin: 0 7px; }
 .dot.ready { border-color: var(--primary); } .dot.done { background: var(--primary); border-color: var(--primary); } .dot.waiting { border-style: dashed; border-color: var(--outline-variant); }

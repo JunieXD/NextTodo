@@ -16,6 +16,7 @@ import { inLocalMode } from "../local";
 import { SERVER_EVERY_MS, checkServer, newer, useServerVersions } from "../server-update";
 import { EVERY_MS, check, install, restart, usePending } from "../updates";
 import { BatchProvider } from "./batch";
+import { WhatsNew } from "./Changelog";
 import { Desktop } from "./Desktop";
 import { MarksProvider } from "./marks";
 import { Phone } from "./Phone";
@@ -47,6 +48,7 @@ export function Main({ session, onSignedOut }: { session: Session; onSignedOut(n
         <Root className={className} outside={outside}>
           <Events onSignedOut={onSignedOut} />
           <Updates />
+          <WhatsNew outside={outside} />
           {session.user.is_admin && !inLocalMode() && <ServerUpdates />}
           <BatchProvider>{wide ? <Desktop onSignOut={signOut} /> : <Phone onSignOut={signOut} />}</BatchProvider>
         </Root>

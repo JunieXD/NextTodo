@@ -1,9 +1,10 @@
 //! The desktop app, for macOS and Windows: the web app in a window that closing only hides, a menu
-//! bar or tray icon and a global shortcut for quick add, deadline reminders while it runs, updates,
+//! bar or tray icon and a global shortcut for the panel, deadline reminders while it runs, updates,
 //! the server inside it for local mode, and the command line it carries. See docs/desktop.md.
 
 mod cli;
 mod local;
+mod panel;
 mod reminders;
 mod updates;
 
@@ -14,7 +15,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::webview::NewWindowResponse;
 #[cfg(target_os = "macos")]
 use tauri::{ActivationPolicy, RunEvent};
-use tauri::{AppHandle, Emitter, Manager, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_notification::{Action, ActionType, NotificationExt};
@@ -22,6 +23,9 @@ use tracing_subscriber::EnvFilter;
 
 /// Started at login: in the menu bar only, without the window.
 const HIDDEN: &str = "--hidden";
+
+/// The menu bar or tray icon.
+const TRAY: &str = "tray";
 
 fn show(app: &AppHandle) {
     // Started at login in the menu bar only, the app takes its place in the Dock with the window.
@@ -32,26 +36,32 @@ fn show(app: &AppHandle) {
     let _ = window.show().and_then(|()| window.unminimize()).and_then(|()| window.set_focus());
 }
 
-/// The main window of tauri.conf.json, where it is left to be made here: links that would open a
-/// new one, like those in descriptions, open in the default browser or mail app instead.
+/// Links that would open a new window, like those in descriptions, open in the default browser or
+/// mail app instead.
+fn links<R: Runtime, M: Manager<R>>(builder: WebviewWindowBuilder<'_, R, M>) -> WebviewWindowBuilder<'_, R, M> {
+    builder.on_new_window(|url, _| {
+        if matches!(url.scheme(), "http" | "https" | "mailto") {
+            // Nothing to do about a link the system won't open.
+            let _ = open::that_detached(url.as_str());
+        }
+        NewWindowResponse::Deny
+    })
+}
+
+/// The main window of tauri.conf.json, where it is left to be made here, for its links.
 fn window(app: &AppHandle) -> tauri::Result<()> {
     let config = app.config().app.windows.iter().find(|w| w.label == "main").expect("the main window is in tauri.conf.json");
-    WebviewWindowBuilder::from_config(app, config)?
-        .on_new_window(|url, _| {
-            if matches!(url.scheme(), "http" | "https" | "mailto") {
-                // Nothing to do about a link the system won't open.
-                let _ = open::that_detached(url.as_str());
-            }
-            NewWindowResponse::Deny
-        })
-        .build()?;
+    links(WebviewWindowBuilder::from_config(app, config)?).build()?;
     Ok(())
 }
 
-/// The window, with the quick add field focused.
-fn quick_add(app: &AppHandle) {
-    show(app);
-    let _ = app.emit_to("main", "quick-add", ());
+/// The main window, at `path` of the web app: for the panel, a task or what it shows; for a
+/// reminder, its task.
+#[tauri::command]
+fn open_main(app: AppHandle, path: String) {
+    show(&app);
+    let _ = app.emit_to("main", "open", path);
+    let _ = app.get_webview_window(panel::LABEL).expect("made as the app starts").hide();
 }
 
 fn tray(app: &AppHandle) -> tauri::Result<()> {
@@ -64,21 +74,21 @@ fn tray(app: &AppHandle) -> tauri::Result<()> {
     let icon = tauri::include_image!("icons/tray.png");
     #[cfg(not(target_os = "macos"))]
     let icon = app.default_window_icon().expect("tauri.conf.json has the app icon").clone();
-    TrayIconBuilder::new()
+    TrayIconBuilder::with_id(TRAY)
         .icon(icon)
         .icon_as_template(true)
         .tooltip("NextTodo")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "add" => quick_add(app),
+            "add" => panel::open(app),
             "open" => show(app),
             "quit" => app.exit(0),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
-                quick_add(tray.app_handle());
+                panel::clicked(tray.app_handle());
             }
         })
         .build(app)?;
@@ -104,7 +114,7 @@ pub fn run() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, pressed, event| {
                     if *pressed == shortcut && event.state == ShortcutState::Pressed {
-                        quick_add(app);
+                        panel::toggle(app);
                     }
                 })
                 .build(),
@@ -112,7 +122,9 @@ pub fn run() {
         .manage(reminders::Reminders::default())
         .manage(updates::Downloaded::default())
         .manage(local::Server::default())
+        .manage(panel::Hidden::default())
         .invoke_handler(tauri::generate_handler![
+            open_main,
             reminders::set_reminders,
             reminders::clear_reminders,
             updates::update,
@@ -129,6 +141,7 @@ pub fn run() {
         .setup(move |app| {
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
             window(app.handle())?;
+            panel::build(app.handle())?;
             tray(app.handle())?;
             // A click on a reminder, or on its button, opens its task.
             let open = Action::builder(reminders::OPEN, "打开").build();
@@ -138,9 +151,8 @@ pub fn run() {
                 if !matches!(action.action_id(), "tap" | reminders::OPEN) {
                     return;
                 }
-                if let Some(task) = action.notification().and_then(|n| n.extra().get("task")) {
-                    show(&handle);
-                    let _ = handle.emit_to("main", "open-task", task);
+                if let Some(task) = action.notification().and_then(|n| n.extra().get("task")).and_then(|t| t.as_str()) {
+                    open_main(handle.clone(), format!("/?open={task}"));
                 }
             })?;
             // Taken by another app, the shortcut does nothing; the menu bar or tray icon still works.
@@ -156,12 +168,14 @@ pub fn run() {
             }
             Ok(())
         })
-        .on_window_event(|window, event| {
-            // Closing the window keeps the app in the menu bar or tray, syncing and reminding.
-            if let WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            // Closing a window keeps the app in the menu bar or tray, syncing and reminding.
+            WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            WindowEvent::Focused(false) if window.label() == panel::LABEL => panel::blurred(window),
+            _ => {}
         })
         .build(tauri::generate_context!())
         .expect("the app starts")

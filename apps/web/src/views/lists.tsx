@@ -290,8 +290,8 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   const into = folder !== undefined ? folder : target && board.folder(target) ? target : null;
   const area = useRef<HTMLTextAreaElement>(null);
   const focus = () => area.current?.focus();
-  // The Android widget, the menu bar and the shortcut open `/?add` to type a new task straight away:
-  // on Android with the keyboard up, which focusing alone does not bring.
+  // The Android widget opens `/?add` to type a new task straight away, and so does the desktop app's
+  // panel each time it opens: on Android with the keyboard up, which focusing alone does not bring.
   const [params] = useSearchParams();
   const [location, navigate] = useLocation();
   const asked = params.has("add");

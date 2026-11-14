@@ -1,4 +1,5 @@
-// The signed-in app: the layout for the screen size, and what the session reports.
+// The signed-in app: the layout for the screen size, or the desktop app's panel; and what the session
+// reports.
 
 import { useEffect } from "react";
 import { useLocalRunner } from "../ai";
@@ -8,6 +9,7 @@ import type { LogEntry } from "../api/types/LogEntry";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
+import { inPanel } from "../desktop";
 import { type Session, SessionContext, useSession, useUndo } from "../session";
 import { forUser, useFeedback } from "../ui/feedback";
 import { useWide } from "../ui/hooks";
@@ -19,38 +21,45 @@ import { BatchProvider } from "./batch";
 import { WhatsNew } from "./Changelog";
 import { Desktop } from "./Desktop";
 import { MarksProvider } from "./marks";
+import { Panel } from "./Panel";
 import { Phone } from "./Phone";
 import { settingsUrl, useSelection } from "./nav";
 
 export function Main({ session, onSignedOut }: { session: Session; onSignedOut(notice?: string): void }) {
   const wide = useWide();
-  // Opened from outside the app: quick add from the widget, the menu bar or the shortcut (`/?add`), a
-  // task from the widget or a reminder (`/?open=<task>`), on the page of what to do next. Dialogs make
-  // way.
+  // Opened from outside the app: quick add from the widget or the panel opening (`?add`); a task from
+  // the widget or a reminder, on the page of what to do next, or from the panel, on the page it shows
+  // (`?open=<task>`). Dialogs make way.
   const [params] = useSearchParams();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const open = params.get("open");
   const outside = !!open || params.has("add");
-  // On top of a page without details, which closing them goes back to: there may be no page before.
+  // On top of the page without details, which closing them goes back to: there may be no page before.
   useEffect(() => {
     if (!open) return;
-    navigate("/", { replace: true });
-    navigate(`/?t=${open}`, { state: { sheet: true } });
-  }, [open, navigate]);
+    navigate(location, { replace: true });
+    navigate(`${location}?t=${open}`, { state: { sheet: true } });
+  }, [open, location, navigate]);
   const signOut = async () => {
     await session.signOut();
     onSignedOut();
   };
-  const className = wide ? "app desk" : "app phone";
+  const className = inPanel ? "app phone panel" : wide ? "app desk" : "app phone";
   return (
     <SessionContext value={session}>
       <MarksProvider>
         <Root className={className} outside={outside}>
           <Events onSignedOut={onSignedOut} />
-          <Updates />
-          <WhatsNew outside={outside} />
-          {session.user.is_admin && !inLocalMode() && <ServerUpdates />}
-          <BatchProvider>{wide ? <Desktop onSignOut={signOut} /> : <Phone onSignOut={signOut} />}</BatchProvider>
+          {/* The main window's, done once. */}
+          {!inPanel && (
+            <>
+              <LocalRunner />
+              <Updates />
+              <WhatsNew outside={outside} />
+              {session.user.is_admin && !inLocalMode() && <ServerUpdates />}
+            </>
+          )}
+          <BatchProvider>{inPanel ? <Panel /> : wide ? <Desktop onSignOut={signOut} /> : <Phone onSignOut={signOut} />}</BatchProvider>
         </Root>
       </MarksProvider>
     </SessionContext>
@@ -71,7 +80,6 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
   const undo = useUndo();
   const { select } = useSelection();
   const [, navigate] = useLocation();
-  useLocalRunner(session.store, session.user.id);
   useEffect(() => {
     session.listen({
       signedOut: () => onSignedOut("登录已失效，请重新登录"),
@@ -97,6 +105,13 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
   useEffect(() => {
     void session.check();
   }, [session]);
+  return null;
+}
+
+/** Has AI organize, with what is set up on this device (ai.ts). */
+function LocalRunner() {
+  const session = useSession();
+  useLocalRunner(session.store, session.user.id);
   return null;
 }
 

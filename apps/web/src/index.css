@@ -507,6 +507,27 @@ a.text-btn { display: inline-flex; align-items: center; }
 .macos .side-closed .main-tools { padding-left: 84px; }
 .macos .phone .nav { padding-left: 84px; }
 
+/* ---------- the desktop app's menu bar or tray panel ---------- */
+/* On macOS the window is clear outside the panel's rounded corners (src-tauri/src/panel.rs). */
+.macos.in-panel, .macos.in-panel body { background: transparent; }
+.panel { display: flex; flex-direction: column; background: var(--surface); }
+.macos .panel { border-radius: 12px; border: .5px solid var(--outline-variant); }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 6px 2px 8px; flex: none; }
+.panel-pages { display: flex; align-items: center; gap: 4px; min-width: 0; height: 36px; padding: 0 8px; border-radius: 10px; font-size: 17px; font-weight: 600; transition: background-color .15s; }
+.panel-pages:hover, .panel-pages[data-state="open"] { background: var(--press); }
+.panel-menu { max-width: 300px; max-height: var(--radix-dropdown-menu-content-available-height); overflow-y: auto; }
+.menu-sep { height: .5px; margin: 6px 8px; background: var(--outline-variant); }
+.menu-label { padding: 10px 12px 4px; font-size: 12px; font-weight: 600; color: var(--on-surface-variant); }
+.panel .quick-add { position: static; flex: none; margin: 6px 12px; box-shadow: none; border: 1px solid var(--outline-variant); }
+.panel-scroll { flex: 1; overflow-y: auto; padding-bottom: 16px; }
+.panel .group-title { margin: 16px 28px 6px; }
+.panel .group { margin: 0 12px; }
+.panel .empty { margin: 8px 28px; }
+.panel .row:hover > .row-inner { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 4%); }
+.panel .batch-bar { position: static; flex: none; }
+.panel .snackbar { bottom: 12px; }
+.panel-out { height: 100%; display: grid; place-content: center; justify-items: center; gap: 16px; padding: 24px; text-align: center; color: var(--on-surface-variant); }
+
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .3s; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }

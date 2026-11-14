@@ -3,9 +3,11 @@ import * as local from "./local";
 import { Session } from "./session";
 import { Root } from "./ui/Root";
 import { forUser } from "./ui/feedback";
+import { inPanel } from "./desktop";
 import { started } from "./updates";
 import { Login, StartFailedPage } from "./views/Login";
 import { Main } from "./views/Main";
+import { PanelOut } from "./views/Panel";
 
 type State =
   | { kind: "loading" }
@@ -44,10 +46,17 @@ export function App() {
   }, []);
 
   if (state.kind === "loading") return null;
+  if (inPanel && state.kind !== "in") {
+    return (
+      <Root className="app phone panel">
+        <PanelOut failed={state.kind === "failed" ? state.message : undefined} />
+      </Root>
+    );
+  }
   if (state.kind === "failed") {
     return (
       <Root className="app">
-        <StartFailedPage message={state.message} retry={state.retry} onRetry={() => outcome((resuming = local.resume())).then(setState)} />
+        <StartFailedPage message={state.message} retry={state.retry} onRetry={() => outcome((resuming = local.resume(true))).then(setState)} />
       </Root>
     );
   }

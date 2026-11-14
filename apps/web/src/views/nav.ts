@@ -4,6 +4,7 @@
 import { useSyncExternalStore } from "react";
 import { useLocation, useSearchParams } from "wouter";
 import type { TaskId } from "../api/types/TaskId";
+import { inPanel, openMain } from "../desktop";
 
 /** A section of the settings, a page of its own (views/Settings.tsx). */
 export type SettingsSection = "account" | "local" | "appearance" | "background" | "ai" | "agent" | "invites" | "about";
@@ -17,6 +18,8 @@ export function useSelection(): { selected: TaskId | null; select(id: TaskId): v
   return {
     selected,
     select(id) {
+      // The panel has no room for details: the main window shows them, on the page the panel shows.
+      if (inPanel) return void openMain(`${location}?open=${id}`);
       // Opening pushes an entry for back to close; switching to another task replaces it.
       navigate(`${location}?t=${id}`, selected ? { replace: true, state: history.state } : { state: { sheet: true } });
     },

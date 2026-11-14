@@ -11,9 +11,15 @@ use tauri::async_runtime::Mutex;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::{DialogExt, FileDialogBuilder};
 
-/// The server once started, for as long as the app runs.
+/// The server once started, for as long as the app runs, and the session the app's windows share.
 #[derive(Default)]
-pub struct Server(Mutex<Option<Local>>);
+pub struct Server(Mutex<Running>);
+
+#[derive(Default)]
+struct Running {
+    local: Option<Local>,
+    token: Option<String>,
+}
 
 /// What the page needs to open the local user's data.
 #[derive(Serialize)]
@@ -65,17 +71,21 @@ pub fn set_local_mode(app: AppHandle, on: bool) -> Result<(), String> {
     done.map_err(|e| for_user("切换本机模式", &e))
 }
 
-/// Starts the server the first time, and signs the page in: each call a new session, the earlier
-/// ones revoked. Calls take turns; a start that failed is tried again by the next one.
+/// Starts the server the first time, and signs the page in with the session of the app's windows: a
+/// new one, the earlier ones revoked, the first time or when told to `renew` it. Calls take turns; a
+/// start that failed is tried again by the next one.
 #[tauri::command]
-pub async fn start_local(app: AppHandle, server: State<'_, Server>) -> Result<Started, Failed> {
+pub async fn start_local(app: AppHandle, server: State<'_, Server>, renew: bool) -> Result<Started, Failed> {
     let mut running = server.0.lock().await;
-    let local = match running.take() {
+    let running = &mut *running;
+    let local = match &mut running.local {
         Some(local) => local,
-        None => Local::start(&dir(&app).map_err(|message| Failed { message, locked: false })?).await?,
+        None => running.local.insert(Local::start(&dir(&app).map_err(|message| Failed { message, locked: false })?).await?),
     };
-    let local = running.insert(local);
-    let token = local.session().await.map_err(|e| Failed { message: e.describe(), locked: false })?;
+    let token = match &running.token {
+        Some(token) if !renew => token.clone(),
+        _ => running.token.insert(local.session().await.map_err(|e| Failed { message: e.describe(), locked: false })?).clone(),
+    };
     Ok(Started { url: local.url.clone(), token, user: local.user.clone(), epoch: local.epoch.clone() })
 }
 
@@ -102,7 +112,7 @@ async fn ask(dialog: FileDialogBuilder<tauri::Wry>, save: bool) -> Result<Option
 pub async fn backup_local(app: AppHandle, server: State<'_, Server>, name: String) -> Result<Option<String>, String> {
     let Some(to) = ask(dialog(&app).set_file_name(name), true).await? else { return Ok(None) };
     let running = server.0.lock().await;
-    let local = running.as_ref().ok_or("本机模式没有在运行")?;
+    let local = running.local.as_ref().ok_or("本机模式没有在运行")?;
     local.backup(to.clone()).await.map_err(|e| for_user("备份", e.as_ref()))?;
     Ok(Some(to.display().to_string()))
 }

@@ -28,6 +28,12 @@ export function setTheme(t: Theme) {
 }
 
 dark.addEventListener("change", () => crossFade(applyTheme));
+// Switched in another tab, or the desktop app's other window.
+addEventListener("storage", (e) => {
+  if (e.key !== KEY) return;
+  applyTheme();
+  for (const l of listeners) l();
+});
 
 export const useTheme = () =>
   useSyncExternalStore(

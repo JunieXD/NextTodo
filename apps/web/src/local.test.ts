@@ -5,7 +5,8 @@ import "fake-indexeddb/auto";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { Pending } from "./sync/store";
 
-vi.stubGlobal("__TAURI_INTERNALS__", {});
+// The desktop app's main window.
+vi.stubGlobal("__TAURI_INTERNALS__", { metadata: { currentWindow: { label: "main" } } });
 // Where Capacitor's Preferences find `localStorage`, which the app keeps its token in.
 vi.stubGlobal("window", globalThis);
 vi.stubGlobal("document", { visibilityState: "visible", addEventListener() {}, removeEventListener() {} });

@@ -46,7 +46,7 @@ const shell =
     : {
         mode: () => invoke<boolean>("local_mode"),
         setMode: (on: boolean) => invoke<void>("set_local_mode", { on }),
-        start: () => invoke<Started>("start_local"),
+        start: (renew: boolean) => invoke<Started>("start_local", { renew }),
         locked: (e: Rejected) => !!e.locked,
         backup: (name: string) => invoke<string | null>("backup_local", { name }),
         prepareRestore: () => invoke<boolean>("prepare_restore"),
@@ -79,24 +79,28 @@ export class StartFailed extends Error {
   }
 }
 
-async function start(): Promise<Started> {
+/** Starts the server, and signs the page in: on the desktop with the session the app's windows share,
+ * a new one when told to `renew` it. */
+async function start(renew: boolean): Promise<Started> {
   try {
-    return await shell.start();
+    return await shell.start(renew);
   } catch (e) {
     const rejected = e as Rejected;
     throw new StartFailed(rejected.message, shell.locked(rejected));
   }
 }
 
-/** The local user's session, as the page loads in local mode. */
-export const resume = async () => open(await start());
+/** The local user's session, as the page loads in local mode; a new one when trying again after it
+ * failed to open, which the one kept may have been the cause of. */
+export const resume = async (renew = false) => open(await start(renew));
 
 /** Enters local mode from the sign-in page, also when in it already, after the session ended say.
  * Changes of another account not sent yet would be lost: `confirm` is asked first, and null returned
  * when it declines. On Android, the app restarts into it. */
 export async function enter(confirm: (unsent: number) => Promise<boolean>): Promise<Session | null> {
-  // Android's opens the data as it starts; its server starts here already, to say whose it is.
-  const started = app === "android" ? null : await start();
+  // Android's opens the data as it starts; its server starts here already, to say whose it is. The
+  // session the page had, if any, has ended.
+  const started = app === "android" ? null : await start(true);
   const unsent = await unsentOfOthers(started?.user ?? (await NextTodo.startLocal()).user);
   if (unsent && !(await confirm(unsent))) return null;
   // Should a server's token be kept, it never comes back: after local mode the app signs in afresh.

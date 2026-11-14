@@ -1,10 +1,11 @@
-// What only the desktop app does: deadline reminders, shown by the app while it runs, quick add from
-// the menu bar or tray icon and the global shortcut, and the command line it carries. See
-// docs/desktop.md.
+// What only the desktop app does: deadline reminders, shown by the app while it runs, the panel of the
+// menu bar or tray icon, and the command line it carries. See docs/desktop.md.
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen as on } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { navigate } from "wouter/use-browser-location";
+import { app } from "./api/http";
 import { reminders } from "./domain/reminders";
 import type { Store } from "./sync/store";
 
@@ -50,11 +51,19 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
   };
 }
 
-/** Listens for quick add from the menu bar or tray icon and the global shortcut, and for clicks on
- * reminders. */
+/** In the menu bar or tray panel rather than the main window (docs/desktop.md#菜单栏小窗). */
+export const inPanel = app === "desktop" && getCurrentWindow().label === "panel";
+
+/** Shows `path` in the main window: the panel's task or page, which it closes for. */
+export const openMain = (path: string) => invoke<void>("open_main", { path });
+
+export const hidePanel = () => getCurrentWindow().hide();
+
+/** Listens in the panel for being opened, to quick add; in the main window for what to show, from
+ * the panel or a click on a reminder. */
 export async function listen() {
-  await on("quick-add", () => navigate("/?add"));
-  await on<string>("open-task", (e) => navigate(`/?open=${e.payload}`));
+  if (inPanel) await on("shown", () => navigate(`${location.pathname}?add`, { replace: true }));
+  else await on<string>("open", (e) => navigate(e.payload));
 }
 
 /** Where the command line the app carries stands: on macOS its place may hold another one, `by` says

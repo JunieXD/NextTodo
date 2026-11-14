@@ -73,6 +73,11 @@ async function logout(): Promise<boolean> {
 type Message = { signedIn: Login } | { signedOut: Login } | { rejected: MutationId };
 const tabs = new BroadcastChannel("nexttodo");
 
+/** Calls `f` whenever another tab signs in. */
+export function onSignInElsewhere(f: () => void) {
+  tabs.addEventListener("message", ({ data }: MessageEvent<Message>) => "signedIn" in data && f());
+}
+
 /** Runs `f` while no other tab is signing in or out: what it finds on the device stays so until it
  * is done. */
 const turn = <T,>(f: () => Promise<T>): Promise<T> => navigator.locks.request("nexttodo.login", f);
@@ -144,8 +149,9 @@ export class Session {
     this.ticking = setInterval(this.store.tick, 60_000);
     tabs.addEventListener("message", this.heard);
     const failed = (e: unknown) => this.listeners.appFailed(e);
+    // The main window hands the desktop app the reminders, not the panel too.
     if (app === "android") this.unwatch = android.watch(this.store, user.id, failed);
-    else if (app === "desktop") this.unwatch = desktop.watch(this.store, failed);
+    else if (app === "desktop" && !desktop.inPanel) this.unwatch = desktop.watch(this.store, failed);
   }
 
   private readonly heard = ({ data }: MessageEvent<Message>) => {

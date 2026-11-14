@@ -32,17 +32,14 @@ object Server {
         return true
     }
 
-    /** The ready tasks, as a JSON array in the shape of the `next` tool's `tasks`, and the change they
-     * are as of. */
-    suspend fun next(context: Context, token: String): Pair<String, Long> {
+    /** The first `limit` of the ready tasks and how many there are, as the `next` tool's data gives
+     * them, `{tasks, total}`, and the change they are as of. */
+    suspend fun next(context: Context, token: String, limit: Int): Pair<JSONObject, Long> {
         // Start dates come by the day here (docs/design.md#开始日期).
-        val args = JSONObject().put("limit", LIMIT).put("today", LocalDate.now().toString())
+        val args = JSONObject().put("limit", limit).put("today", LocalDate.now().toString())
         val reply = JSONObject(post(context, token, "/tools/next", args))
-        return reply.getJSONObject("data").getJSONArray("tasks").toString() to reply.getLong("seq")
+        return reply.getJSONObject("data") to reply.getLong("seq")
     }
-
-    /** The most `next` gives, as the app's list has them all. */
-    private const val LIMIT = 500
 
     /** Submits the change `id`, made of `ops`; one submitted before gives what it did then. Returns
      * the change's sequence number. */

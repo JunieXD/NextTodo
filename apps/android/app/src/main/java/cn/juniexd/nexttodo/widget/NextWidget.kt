@@ -128,13 +128,14 @@ private fun Content(context: Context, shown: Shown, now: LocalDateTime) {
         }
         when {
             !shown.signedIn -> Note("打开 NextTodo 登录", open(context, "nexttodo://home"))
-            shown.items.isEmpty() -> Note("暂无可做的事项", open(context, "nexttodo://home"))
+            shown.items.isEmpty() && shown.more == 0 -> Note("暂无可做的事项", open(context, "nexttodo://home"))
             // Under the list, all the rest of the widget, so that a tap below the last task opens the app:
             // beside the list rather than around it, whose actions it would take.
             else -> Box(GlanceModifier.defaultWeight().fillMaxWidth()) {
                 Box(GlanceModifier.fillMaxSize().clickable(open(context, "nexttodo://home"))) {}
                 LazyColumn(GlanceModifier.fillMaxWidth()) {
                     itemsIndexed(shown.items) { i, item -> TaskItem(context, item, i == 0, item.id in shown.ticked, now, compact, shown.scale) }
+                    if (shown.more > 0) item { More(context, shown.more, shown.items.isEmpty(), shown.scale) }
                 }
             }
         }
@@ -206,6 +207,16 @@ private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boole
                 Image(ImageProvider(R.drawable.ic_widget_check), "标为完成", GlanceModifier.size(26.dp).padding(2.dp), colorFilter = ColorFilter.tint(Colors.primary))
             }
         }
+    }
+}
+
+/** Past the tasks listed, how many more there are, which opens the app; `first` when none are listed,
+ * all done here say, with no line above it then. */
+@Composable
+private fun More(context: Context, more: Int, first: Boolean, scale: Float) {
+    Column(GlanceModifier.fillMaxWidth().padding(horizontal = EDGE).clickable(open(context, "nexttodo://home"))) {
+        if (!first) Divider()
+        Text("还有 $more 项", GlanceModifier.padding(start = CIRCLE, top = 8.dp * scale, bottom = 8.dp * scale), style = TextStyle(color = Colors.secondary, fontSize = 13.sp * scale))
     }
 }
 

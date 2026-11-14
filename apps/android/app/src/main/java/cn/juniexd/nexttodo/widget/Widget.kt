@@ -35,9 +35,9 @@ import org.json.JSONObject
  * step it is along its dependencies, such as `2/5`. */
 data class Item(val id: String, val title: String, val folder: String, val due: Due?, val lastDone: LocalDate?, val step: String?)
 
-/** What the widget shows: the list with the tasks just ticked off in it, or that the app is signed out;
- * its text `scale`d as the user chose. */
-data class Shown(val signedIn: Boolean, val items: List<Item>, val ticked: Set<String>, val scale: Float)
+/** What the widget shows: the list with the tasks just ticked off in it, and how many `more` there are
+ * past it; or that the app is signed out. Its text `scale`d as the user chose. */
+data class Shown(val signedIn: Boolean, val items: List<Item>, val more: Int, val ticked: Set<String>, val scale: Float)
 
 /** The widget's list, kept in its own preferences: written by the app, or fetched from the server. */
 object Widget {
@@ -55,6 +55,13 @@ object Widget {
      * (docs/android.md#原生发出的改动). Kept apart from the list, which stays what it was as of its
      * change. */
     private const val DONE = "done"
+
+    /** The most tasks the widget lists, the rest only counted: the launcher is handed all of them at
+     * once, some 14KB each, and takes no more than 1MB. */
+    private const val MOST = 20
+
+    /** How many tasks there are past the list kept: those the server did not give. */
+    private const val MORE = "more"
 
     /** How large the text is, chosen in the app's settings (docs/android.md#小组件), and the scale of each. */
     private const val TEXT_SIZE = "text_size"
@@ -86,15 +93,15 @@ object Widget {
     private suspend fun update(context: Context, change: (SharedPreferences) -> Boolean) {
         val draw = writing.withLock {
             val prefs = prefs(context)
-            change(prefs).also { if (it) prefs.edit().putString(UNTIL, until(items(prefs), LocalDateTime.now()).toString()).apply() }
+            change(prefs).also { if (it) prefs.edit().putString(UNTIL, until(listed(prefs).first, LocalDateTime.now()).toString()).apply() }
         }
         if (draw) NextWidget().updateAll(context)
     }
 
-    /** Keeps `tasks`, as of the change `seq`, unless the list kept is as of a later one. */
-    private fun keep(prefs: SharedPreferences, tasks: String, seq: Long?): Boolean {
+    /** Keeps `tasks`, with `more` past them, as of the change `seq`, unless the list kept is as of a later one. */
+    private fun keep(prefs: SharedPreferences, tasks: String, more: Int, seq: Long?): Boolean {
         if (seq != null && prefs.contains(SEQ) && seq < prefs.getLong(SEQ, 0)) return false
-        val edit = prefs.edit().putString("tasks", tasks)
+        val edit = prefs.edit().putString("tasks", tasks).putInt(MORE, more)
         if (seq == null) {
             edit.remove(SEQ).remove(DONE)
         } else {
@@ -114,10 +121,24 @@ object Widget {
      * longer holds: the app hands its list over each time it starts, and Glance draws on the main
      * thread, which holds back the app's first frame. */
     suspend fun show(context: Context, tasks: String, seq: Long?) = update(context) { prefs ->
-        val was = items(prefs) to prefs.contains(SEQ)
+        val was = drawn(prefs)
         // A list older than the one kept is not taken, but what that one says of the time may be stale.
-        val changed = keep(prefs, tasks, seq) && (items(prefs) to prefs.contains(SEQ)) != was
-        changed || prefs.getString(UNTIL, null) != until(items(prefs), LocalDateTime.now()).toString()
+        val changed = keep(prefs, tasks, 0, seq) && drawn(prefs) != was
+        changed || prefs.getString(UNTIL, null) != until(listed(prefs).first, LocalDateTime.now()).toString()
+    }
+
+    /** What the widget draws of the preferences, but for what it says of the time. */
+    private fun drawn(prefs: SharedPreferences) = listed(prefs) to prefs.contains(SEQ)
+
+    /** The tasks the widget lists, the first of those kept but for those done here, with the rows of
+     * those being completed where they were, `back`; and how many more there are. */
+    private fun listed(prefs: SharedPreferences, back: List<IndexedValue<Item>> = emptyList()): Pair<List<Item>, Int> {
+        val items = items(prefs)
+        val listed = items.take(MOST).toMutableList()
+        for ((i, item) in back.sortedBy { it.index }) {
+            if (listed.none { it.id == item.id }) listed.add(minOf(i, listed.size), item)
+        }
+        return listed to items.count { item -> listed.none { it.id == item.id } } + prefs.getInt(MORE, 0)
     }
 
     private fun items(prefs: SharedPreferences): List<Item> {
@@ -144,11 +165,8 @@ object Widget {
     fun shown(context: Context): Shown {
         val token = Server.token(context)
         val ticked = ticked.value.filterValues { it.token == token }
-        val items = items(prefs(context)).toMutableList()
-        for ((i, item) in ticked.values.map { it.row }.sortedBy { it.index }) {
-            if (items.none { it.id == item.id }) items.add(minOf(i, items.size), item)
-        }
-        return Shown(token != null, items, ticked.keys, SCALES.getValue(textSize(context)))
+        val (items, more) = listed(prefs(context), ticked.values.map { it.row })
+        return Shown(token != null, items, more, ticked.keys, SCALES.getValue(textSize(context)))
     }
 
     /** Hides a task done in session `token` by the change `seq`, or by one not sent yet without it,
@@ -188,13 +206,14 @@ object Widget {
      * meanwhile is dropped. */
     suspend fun refresh(context: Context) {
         val token = Server.token(context) ?: return
-        val (tasks, seq) = try {
-            Server.next(context, token)
+        val (data, seq) = try {
+            Server.next(context, token, MOST)
         } catch (e: HttpError) {
             if (e.status == 401) return ended(context, token)
             throw e
         }
-        update(context) { Server.token(context) == token && keep(it, tasks, seq) }
+        val tasks = data.getJSONArray("tasks")
+        update(context) { Server.token(context) == token && keep(it, tasks.toString(), data.getInt("total") - tasks.length(), seq) }
     }
 
     /** Shows `task` done where it is in the list, whatever lists come, while it is being completed in
@@ -213,11 +232,11 @@ object Widget {
     /** The server says the session `token` has ended: unless the app has signed in again since, sign
      * out, and the widget asks to sign in again. */
     suspend fun ended(context: Context, token: String) {
-        update(context) { Server.ended(context, token) && keep(it, "[]", null) }
+        update(context) { Server.ended(context, token) && keep(it, "[]", 0, null) }
     }
 
     /** Empties the list: it is of data that is there no more (docs/local.md#数据代号). */
-    suspend fun forget(context: Context) = update(context) { keep(it, "[]", null) }
+    suspend fun forget(context: Context) = update(context) { keep(it, "[]", 0, null) }
 
     suspend fun toast(context: Context, text: String) = withContext(Dispatchers.Main) {
         Toast.makeText(context, text, Toast.LENGTH_LONG).show()

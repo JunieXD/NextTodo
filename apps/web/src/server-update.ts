@@ -13,13 +13,11 @@ const LATEST = "https://api.github.com/repos/JunieXD/NextTodo/releases/latest";
 /** How often to ask again, while the app stays open. */
 export const SERVER_EVERY_MS = 24 * 3600_000;
 
-/** The server's version and the latest release's; `latest` null when GitHub could not be asked. `of`:
- * the server they are about, as the app may sign in to another. */
-export type ServerVersions = { of: string; server: string; latest: string | null };
+/** The server's version and the latest release's, asked `at`; `latest` null when GitHub could not be
+ * asked. `of`: the server they are about, as the app may sign in to another. */
+export type ServerVersions = { of: string; server: string; latest: string | null; at: number };
 
 let versions: ServerVersions | null = null;
-/** When both were last had, of `versions.of`. */
-let checked = 0;
 const listeners = new Set<() => void>();
 const subscribe = (f: () => void) => {
   listeners.add(f);
@@ -58,7 +56,7 @@ async function serverVersion(): Promise<string> {
  * again next time; it bothers no one: the row in the settings says the latest is not known. */
 export async function checkServer(now = false) {
   const of = serverUrl();
-  if (!now && versions?.of === of && Date.now() - checked < SERVER_EVERY_MS) return;
+  if (!now && versions?.of === of && versions.latest !== null && Date.now() - versions.at < SERVER_EVERY_MS) return;
   const [server, latest] = await Promise.allSettled([
     serverVersion(),
     json<{ tag_name: string }>(fetch(LATEST)).then((r) => r.tag_name.replace(/^v/, "")),
@@ -67,8 +65,7 @@ export async function checkServer(now = false) {
   // A server without the apps' updates, a development one say, has no version to tell; one left
   // meanwhile for another, no use.
   if (server.status === "rejected" || serverUrl() !== of) return;
-  checked = latest.status === "fulfilled" ? Date.now() : 0;
-  versions = { of, server: server.value, latest: latest.status === "fulfilled" ? latest.value : null };
+  versions = { of, server: server.value, latest: latest.status === "fulfilled" ? latest.value : null, at: Date.now() };
   for (const f of listeners) f();
 }
 

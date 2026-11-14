@@ -4,7 +4,7 @@ import { Copy, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { app } from "../api/http";
 import { inLocalMode } from "../local";
-import { type ServerVersions, followUpgrade, newer, upgrade, useServerVersions, useUpgrading } from "../server-update";
+import { type ServerVersions, checkServer, followUpgrade, newer, upgrade, useServerVersions, useUpgrading } from "../server-update";
 import { useSession } from "../session";
 import { ago } from "../domain/dates";
 import { Tip, forUser, useFeedback } from "../ui/feedback";
@@ -17,10 +17,15 @@ export function About() {
   const pending = usePending();
   const { user } = useSession();
   const server = useServerVersions();
+  const admin = user.is_admin && !inLocalMode();
   const [installed, setInstalled] = useState<string | null>(null);
   useEffect(() => {
     appVersion().then(setInstalled, (e) => snack(forUser("读取版本", e)));
   }, [snack]);
+  // However lately it was asked: an admin come to look may have just heard of a release.
+  useEffect(() => {
+    if (admin) void checkServer(true);
+  }, [admin]);
   const version = import.meta.env.WEB_VERSION;
   return (
     <>
@@ -43,7 +48,7 @@ export function About() {
         ) : (
           <Row label="网页版本" value={version} />
         )}
-        {user.is_admin && !inLocalMode() && server && <ServerVersion server={server} />}
+        {admin && server && <ServerVersion server={server} />}
         {pending && (
           <div className="row">
             <div className="row-inner">
@@ -125,7 +130,7 @@ function ServerVersion({ server }: { server: ServerVersions }) {
     ) : server.latest === null ? (
       "无法查询最新版本"
     ) : !latest ? (
-      "已是最新版本"
+      `已是最新版本，${ago(server.at, new Date())}检查`
     ) : button ? (
       `可升级到 ${latest}`
     ) : (

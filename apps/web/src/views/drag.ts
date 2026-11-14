@@ -16,6 +16,8 @@ export interface Drag {
   /** The row at `from` was let go at place `to` in the list without it, which may be further up or
    * down than it may go. */
   drop(from: number, to: number): void;
+  /** Rows stay put, as while tasks are being chosen. */
+  off?: boolean;
 }
 
 /** Drags the children of `list` that match `rows`, all as tall as each other. A drag stops without
@@ -92,7 +94,7 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, rows: string,
     const down = (e: PointerEvent) => {
       const row = (e.target as Element).closest<HTMLElement>(rows);
       // With Control held, a Mac takes the click for a right click: it opens the row's menu.
-      if (!e.isPrimary || e.button !== 0 || e.ctrlKey || !row || row.parentElement !== el || lifted) return;
+      if (!e.isPrimary || e.button !== 0 || e.ctrlKey || !row || row.parentElement !== el || lifted || latest.current.off) return;
       spent = null;
       press = { id: e.pointerId, x: e.clientX, y: e.clientY, row, timer: e.pointerType === "mouse" ? undefined : setTimeout(lift, HOLD_MS) };
     };

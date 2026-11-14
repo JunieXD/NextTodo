@@ -18,7 +18,8 @@ export const itemClass = (item: MenuItem) => `menu-item${item.danger ? " danger-
 
 /** Right-clicking `children` opens a menu of `items`. Only with a mouse, also on a computer with a
  * touch screen: a long press of a finger or pen picks a row up to drag it. */
-export function ContextMenu({ items, children }: { items: MenuItem[]; children: ReactElement }) {
+/** `off`: right-clicking does what it does elsewhere, as while tasks are being chosen. */
+export function ContextMenu({ items, off, children }: { items: MenuItem[]; off?: boolean; children: ReactElement }) {
   const root = useContext(RootContext);
   // Radix opens the menu on a long press itself, and on the browser's menu that comes of one. Off
   // from a touch on, which also stops the long press begun (Radix 2.4); on again for a mouse, or for
@@ -28,7 +29,7 @@ export function ContextMenu({ items, children }: { items: MenuItem[]; children: 
     <Context.Root>
       <Context.Trigger
         asChild
-        disabled={touched}
+        disabled={touched || off}
         onPointerDown={(e) => setTouched(e.pointerType !== "mouse")}
         onKeyDown={() => setTouched(false)}
       >

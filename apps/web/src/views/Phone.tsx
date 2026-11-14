@@ -1,6 +1,6 @@
 // The phone layout: one page at a time with a tab bar, details in a bottom sheet.
 
-import { ChevronLeft, CircleCheck, Folder as FolderIcon, History, Search } from "lucide-react";
+import { ChevronLeft, CircleCheck, Folder as FolderIcon, History, ListChecks, Search } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Redirect, useLocation } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
@@ -13,6 +13,7 @@ import { Icon } from "../ui/icons";
 import { Sheet } from "../ui/Sheet";
 import { app } from "../api/http";
 import { BackgroundTip } from "./Background";
+import { BatchBar, BatchHead, useBatch } from "./batch";
 import { Detail } from "./Detail";
 import { FolderMenu } from "./FolderMenu";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, SearchResults } from "./lists";
@@ -25,6 +26,7 @@ export function Phone({ onSignOut }: { onSignOut(): void }) {
   const { board } = useView();
   const { user } = useSession();
   const { selected, close } = useSelection();
+  const batch = useBatch();
   const now = useNow();
   const folder = location.match(/^\/folders\/([^/]+)$/)?.[1] ?? null;
   const section = useSectionAt(location);
@@ -60,16 +62,20 @@ export function Phone({ onSignOut }: { onSignOut(): void }) {
   return (
     <>
       {screen}
-      <nav className="tabbar">
-        {tabButton("next", "接下来", CircleCheck, "/")}
-        {tabButton("folders", "文件夹", FolderIcon, "/folders")}
-        <button className={`tab${tab === "settings" ? " on" : ""}`} onClick={() => navigate(settingsUrl())}>
-          <span className="tab-ic">
-            <span className="avatar">{[...user.display_name][0]}</span>
-          </span>
-          设置
-        </button>
-      </nav>
+      {batch.on ? (
+        <BatchBar />
+      ) : (
+        <nav className="tabbar">
+          {tabButton("next", "接下来", CircleCheck, "/")}
+          {tabButton("folders", "文件夹", FolderIcon, "/folders")}
+          <button className={`tab${tab === "settings" ? " on" : ""}`} onClick={() => navigate(settingsUrl())}>
+            <span className="tab-ic">
+              <span className="avatar">{[...user.display_name][0]}</span>
+            </span>
+            设置
+          </button>
+        </nav>
+      )}
       {selected && board.task(selected) && (
         <Sheet label="事项详情" onClose={close}>
           <Detail id={selected} now={now} onClose={close} />
@@ -80,15 +86,23 @@ export function Phone({ onSignOut }: { onSignOut(): void }) {
 }
 
 /** A page with a large title that gives way to a small one in a frosted bar once scrolled past.
- * With `fill`, the page doesn't scroll and its last child takes the height left, as the graph does. */
-function Screen({ title, nav, anim = "", fill, children, after }: { title: string; nav?: ReactNode; anim?: string; fill?: boolean; children: ReactNode; after?: ReactNode }) {
+ * With `fill`, the page doesn't scroll and its last child takes the height left, as the graph does.
+ * With `choosing`, its tasks are being chosen, and the bar is for that. */
+function Screen(p: { title: string; nav?: ReactNode; anim?: string; fill?: boolean; choosing?: boolean; children: ReactNode; after?: ReactNode }) {
+  const { title, nav, anim = "", fill, choosing, children, after } = p;
   const [scrolled, setScrolled] = useState(false);
   return (
-    <section className={`screen${scrolled ? " scrolled" : ""}${anim}`}>
+    <section className={`screen${scrolled ? " scrolled" : ""}${choosing ? " choosing" : ""}${anim}`}>
       <header className="nav" data-tauri-drag-region="deep">
-        {nav ?? <span />}
-        <span className="nav-title">{title}</span>
-        <span />
+        {choosing ? (
+          <BatchHead />
+        ) : (
+          <>
+            {nav ?? <span />}
+            <span className="nav-title">{title}</span>
+            <span />
+          </>
+        )}
       </header>
       <div className={`scroll${fill ? " fill" : ""}`} onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 36)}>
         {children}
@@ -149,10 +163,20 @@ function SettingsScreen({ section, anim, onSignOut }: { section: SettingsSection
 }
 
 function DoneScreen({ anim, now }: { anim: string; now: Date }) {
+  const { board } = useView();
+  const batch = useBatch();
+  const any = board.snapshot.tasks.some((t) => t.done_at !== null);
   return (
-    <Screen title="已完成" nav={<Back to="/" label="接下来" />} anim={anim}>
+    <Screen title="已完成" nav={<Back to="/" label="接下来" />} anim={anim} choosing={batch.on}>
       <div className="hero">
         <h1 className="large-title">已完成</h1>
+        {any && !batch.on && (
+          <Tip label="批量操作">
+            <button className="icon-btn" onClick={() => batch.start()}>
+              <Icon of={ListChecks} />
+            </button>
+          </Tip>
+        )}
       </div>
       <DoneBody now={now} />
     </Screen>
@@ -169,15 +193,15 @@ function FolderScreen({ folder, anim, now }: { folder: FolderId | null; anim: st
   const f = folder ? board.folder(folder)! : null;
   const title = f ? f.name : "文件夹";
   const nav = f && <Back to={folderUrl(f.parent_id)} label={f.parent_id ? board.folderName(f.parent_id) : "文件夹"} />;
-  const menu = folder && <FolderMenu folder={folder} />;
+  const batch = useBatch();
   const graph = f !== null && view === "graph";
   return (
-    <Screen title={title} nav={nav} anim={anim} fill={graph} after={!graph && <QuickAdd folder={folder} />}>
+    <Screen title={title} nav={nav} anim={anim} fill={graph} choosing={batch.on} after={!graph && !batch.on && <QuickAdd folder={folder} />}>
       <div className="hero">
         <h1 className="large-title">{title}</h1>
-        {menu}
+        {!batch.on && <FolderMenu folder={folder} />}
       </div>
-      {f ? (
+      {batch.on ? null : f ? (
         <div className="view-seg">
           <FolderViewSeg />
         </div>
@@ -187,7 +211,13 @@ function FolderScreen({ folder, anim, now }: { folder: FolderId | null; anim: st
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索全部事项" autoComplete="off" />
         </label>
       )}
-      {graph ? <FolderGraph folder={f.id} across={false} now={now} /> : query.trim() ? <SearchResults query={query} now={now} /> : <FolderBody folder={folder} now={now} />}
+      {graph ? (
+        <FolderGraph folder={f.id} across={false} now={now} />
+      ) : query.trim() && !batch.on ? (
+        <SearchResults query={query} now={now} />
+      ) : (
+        <FolderBody folder={folder} now={now} />
+      )}
     </Screen>
   );
 }

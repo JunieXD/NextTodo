@@ -14,9 +14,10 @@ import { range, rekey } from "../domain/reorder";
 import { useCommit } from "../session";
 import { useFeedback } from "../ui/feedback";
 import { useWide } from "../ui/hooks";
-import { Check } from "../ui/controls";
+import { Box, Check } from "../ui/controls";
 import { Icon, Inbound, Outbound } from "../ui/icons";
 import { ContextMenu, type MenuItem } from "../ui/menu";
+import { useChoice } from "./batch";
 import { useRowDrag } from "./drag";
 import { FolderContextMenu } from "./FolderMenu";
 import { useFolderView } from "./nav";
@@ -47,6 +48,7 @@ export function TaskRow({
   step,
   railX,
   open,
+  batchable,
   selected,
   actions,
 }: {
@@ -61,6 +63,8 @@ export function TaskRow({
   railX?: number;
   /** In a list of open tasks, which a completed one leaves by folding away. */
   open?: boolean;
+  /** On a page where tasks can be chosen for [batch operations](docs/ui.md#批量操作). */
+  batchable?: boolean;
   selected: boolean;
   actions: RowActions;
 }) {
@@ -115,8 +119,11 @@ export function TaskRow({
   useLayoutEffect(() => {
     if (leaving) row.current!.style.setProperty("--h", `${row.current!.offsetHeight}px`);
   }, [leaving]);
+  const choice = useChoice();
+  const choosing = !!batchable && choice.on;
+  const chosen = choosing && choice.has(t.id);
   const inner = useRef<HTMLDivElement>(null);
-  const swiped = useSwipe(inner, (dx) => (dx > 0 ? actions.toggle(t) : actions.remove(t)));
+  const swiped = useSwipe(inner, choosing ? null : (dx) => (dx > 0 ? actions.toggle(t) : actions.remove(t)));
   const [moving, setMoving] = useState(false);
   const menu: MenuItem[] = [
     ...(selected ? [] : [{ icon: PanelRightOpen, label: "打开", onSelect: () => actions.open(t) }]),
@@ -125,12 +132,19 @@ export function TaskRow({
     { icon: FolderInput, label: "移动到…", onSelect: () => setMoving(true) },
     { icon: Trash2, label: "删除", danger: true, onSelect: () => actions.remove(t) },
   ];
-  const cls = ["row", "task", status, marks.flash.has(t.id) && "unlocked", leaving && "leaving", selected && "selected"].filter(Boolean).join(" ");
+  const cls = ["row", "task", status, marks.flash.has(t.id) && "unlocked", leaving && "leaving", selected && "selected", chosen && "chosen"].filter(Boolean).join(" ");
+  const tap = (e: React.MouseEvent) => {
+    if (swiped.current) return;
+    if (choosing) choice.tap(t.id, e.shiftKey);
+    // Ctrl, or ⌘ on a Mac, where Control with a click is a right click.
+    else if (batchable && (e.ctrlKey || e.metaKey)) choice.start(t.id);
+    else actions.open(t);
+  };
   // The picker is not inside the row, where its clicks would also open the task.
   return (
     <>
-      <ContextMenu items={menu}>
-        <div ref={row} className={cls} onClick={() => !swiped.current && actions.open(t)}>
+      <ContextMenu items={menu} off={choosing}>
+        <div ref={row} className={cls} onClick={tap}>
           <div className="swipe-bg">
             <span>
               <Icon of={CheckIcon} size={18} />
@@ -142,7 +156,12 @@ export function TaskRow({
             </span>
           </div>
           <div className="row-inner" ref={inner}>
-            <Check status={status} pop={marks.pop === t.id} left={railX === undefined ? undefined : railX - 12} onToggle={() => actions.toggle(t)} />
+            <Check
+              status={status}
+              pop={marks.pop === t.id}
+              left={railX === undefined ? undefined : railX - 12}
+              onToggle={() => (choosing ? choice.tap(t.id, false) : actions.toggle(t))}
+            />
             {/* The whole row opens the task; this button is how keyboards and screen readers get there. */}
             <button type="button" className="task-main">
               <span className="task-head">
@@ -155,6 +174,7 @@ export function TaskRow({
               </span>
               {meta.length > 0 && <span className="task-meta">{meta}</span>}
             </button>
+            {choosing && <Box checked={chosen} />}
           </div>
         </div>
       </ContextMenu>
@@ -163,9 +183,9 @@ export function TaskRow({
   );
 }
 
-/** Right swipe past 90px to complete, left to delete. Returns whether a swipe just ended, which is
- * then not also a tap. */
-function useSwipe(inner: React.RefObject<HTMLDivElement | null>, done: (dx: number) => void) {
+/** Right swipe past 90px to complete, left to delete; none without `done`. Returns whether a swipe
+ * just ended, which is then not also a tap. */
+function useSwipe(inner: React.RefObject<HTMLDivElement | null>, done: ((dx: number) => void) | null) {
   const swiped = useRef(false);
   const latest = useRef(done);
   useEffect(() => {
@@ -180,7 +200,7 @@ function useSwipe(inner: React.RefObject<HTMLDivElement | null>, done: (dx: numb
     };
     const move = (e: TouchEvent) => {
       // A row picked up to be dragged elsewhere doesn't swipe.
-      if (!s || "lifted" in row.dataset) return;
+      if (!s || !latest.current || "lifted" in row.dataset) return;
       const dx = e.touches[0].clientX - s.x;
       if (!s.active) {
         if (Math.abs(e.touches[0].clientY - s.y) > 10) {
@@ -202,7 +222,7 @@ function useSwipe(inner: React.RefObject<HTMLDivElement | null>, done: (dx: numb
       setTimeout(() => (swiped.current = false), 50);
       row.classList.remove("swiping");
       el.style.transform = "";
-      if (Math.abs(ended.dx) > 90) latest.current(ended.dx);
+      if (Math.abs(ended.dx) > 90) latest.current?.(ended.dx);
     };
     row.addEventListener("touchstart", start, { passive: true });
     row.addEventListener("touchmove", move, { passive: true });
@@ -251,7 +271,9 @@ export function RailList({ tasks, board, now, selected, actions }: { tasks: Task
   const commit = useCommit();
   const { snack } = useFeedback();
   const list = useRef<HTMLDivElement>(null);
+  const choice = useChoice();
   useRowDrag(list, ".row.task", {
+    off: choice.on,
     range: (from) => range(board, tasks, from),
     drop(from, to) {
       const t = tasks[from];
@@ -284,7 +306,7 @@ export function RailList({ tasks, board, now, selected, actions }: { tasks: Task
           </svg>
         )}
         {tasks.map((t) => (
-          <TaskRow key={t.id} task={t} board={board} now={now} railX={rail.x(t)} open selected={selected === t.id} actions={actions} />
+          <TaskRow key={t.id} task={t} board={board} now={now} railX={rail.x(t)} open batchable selected={selected === t.id} actions={actions} />
         ))}
       </div>
     </>

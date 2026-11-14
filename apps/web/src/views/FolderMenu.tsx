@@ -2,7 +2,7 @@
 // button, or by right-clicking it on a computer.
 
 import { DropdownMenu } from "radix-ui";
-import { Ellipsis, FolderInput, FolderPlus, Pencil, Sparkles, Trash2 } from "lucide-react";
+import { Ellipsis, FolderInput, FolderPlus, ListChecks, Pencil, Sparkles, Trash2 } from "lucide-react";
 import { type ReactElement, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation } from "wouter";
@@ -17,6 +17,7 @@ import { Modal, RootContext, Tip, useFeedback } from "../ui/feedback";
 import { composing } from "../ui/keys";
 import { Icon } from "../ui/icons";
 import { ContextMenu, type MenuItem, itemClass } from "../ui/menu";
+import { useBatch } from "./batch";
 import { folderUrl, settingsUrl } from "./nav";
 import { FolderPicker } from "./pickers";
 
@@ -172,10 +173,17 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
   };
 }
 
-/** The folder's "…" button. */
-export function FolderMenu({ folder }: { folder: FolderId }) {
+/** The "…" button of the folder shown, or of the root: what its right-click menu has, and choosing its
+ * tasks for [batch operations](docs/ui.md#批量操作). */
+export function FolderMenu({ folder }: { folder: FolderId | null }) {
   const root = useContext(RootContext);
-  const { items, panel } = useFolderActions(folder);
+  const { items: own, panel } = useFolderActions(folder);
+  const { snack } = useFeedback();
+  const { board } = useView();
+  const batch = useBatch();
+  const choose = () => (board.contents(folder).length ? batch.start() : snack("这里没有事项"));
+  // After making a folder and tidying, which the root's menu has alone.
+  const items = own.length ? [...own.slice(0, 2), { icon: ListChecks, label: "批量操作", onSelect: choose }, ...own.slice(2)] : [];
   const [menu, setMenu] = useState(false);
   // A finger come down on the button, to open the menu once the tap is done.
   const tap = useRef(false);

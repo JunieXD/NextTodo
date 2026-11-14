@@ -89,9 +89,15 @@ export function useTaskActions(): RowActions & {
     toggle: (t) => setDone(t, false),
     endRepeat: (t) => setDone(t, true),
 
+    /** Moves `t` to the end of `folder`. */
     move(t: Task, folder: FolderId | null) {
       if (folder === t.folder_id) return;
-      const r = commit([{ op: "task.update", id: t.id, folder_id: folder }]);
+      const sort_key = lastKey(
+        board()
+          .contents(folder)
+          .map((x) => x.sort_key),
+      );
+      const r = commit([{ op: "task.update", id: t.id, folder_id: folder, sort_key }]);
       if (r) snack({ text: `已移至“${board().folderName(folder)}”`, action: "撤销", onAction: () => undo(r.id) });
     },
 

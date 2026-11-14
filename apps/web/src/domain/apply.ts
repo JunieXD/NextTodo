@@ -2,7 +2,7 @@
 // yields the same kind of effects, so the app shows a change at once and can undo it locally.
 // What only the server knows stays unknown: a new task's number is 0 until the server's copy arrives.
 
-import { generateKeyBetween } from "fractional-indexing";
+import { generateNKeysBetween } from "fractional-indexing";
 import type { AiJob } from "../api/types/AiJob";
 import type { AiJobId } from "../api/types/AiJobId";
 import type { Dependency } from "../api/types/Dependency";
@@ -450,10 +450,13 @@ class Applier {
   }
 }
 
-/** A key after everything in `keys`, for something new at the end. */
-export function lastKey(keys: string[]): string {
-  return generateKeyBetween(keys.reduce<string | null>((max, k) => (max === null || cmp(k, max) > 0 ? k : max), null), null);
+/** `n` keys in order after everything in `keys`, for things new or moved to the end. */
+export function lastKeys(keys: string[], n: number): string[] {
+  return generateNKeysBetween(keys.reduce<string | null>((max, k) => (max === null || cmp(k, max) > 0 ? k : max), null), null, n);
 }
+
+/** A key after everything in `keys`, for something new at the end. */
+export const lastKey = (keys: string[]): string => lastKeys(keys, 1)[0];
 
 /** `cur` with the fields that changed from `before` to `after` set back to `before`, so that undoing
  * a change leaves later changes to other fields alone. */

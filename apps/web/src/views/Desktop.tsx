@@ -1,7 +1,7 @@
 // The desktop layout: folders on the left, which can be folded away, the list in the middle, and the
 // open task's details on the right.
 
-import { ChevronLeft, ChevronRight, CircleCheck, Folder as FolderIcon, FolderRoot, History, PanelLeft, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, CircleCheck, Folder as FolderIcon, FolderRoot, History, ListChecks, PanelLeft, Search } from "lucide-react";
 import { Fragment, type ReactNode, useState } from "react";
 import { Link, Redirect, useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
@@ -11,6 +11,7 @@ import { useBack } from "../ui/back";
 import { Tip } from "../ui/feedback";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
+import { BatchTools, batchTitle, useBatch } from "./batch";
 import { Detail } from "./Detail";
 import { FolderContextMenu, FolderMenu } from "./FolderMenu";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, SearchResults } from "./lists";
@@ -29,7 +30,13 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
   const [shown, setShown] = useState(open ? selected : null);
   if (open && selected !== shown) setShown(selected);
   const now = useNow();
+  const batch = useBatch();
   const [query, setQuery] = useState("");
+  // Searching leaves the page the tasks were being chosen on.
+  const search = (q: string) => {
+    setQuery(q);
+    batch.end();
+  };
   // Quick add (`/?add`) is on the page of what to do next, which a search covers.
   const [params] = useSearchParams();
   if (params.has("add") && query) setQuery("");
@@ -72,8 +79,22 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
         </Page>
       );
   } else if (at === "done") {
+    const any = board.snapshot.tasks.some((t) => t.done_at !== null);
+    const actions = batch.on ? (
+      <BatchTools />
+    ) : (
+      any && (
+        <div className="head-actions">
+          <Tip label="批量操作">
+            <button className="icon-btn" onClick={() => batch.start()}>
+              <Icon of={ListChecks} />
+            </button>
+          </Tip>
+        </div>
+      )
+    );
     main = (
-      <Page title="已完成">
+      <Page title={batch.on ? batchTitle(batch.tasks.length) : "已完成"} actions={actions}>
         <DoneBody now={now} />
       </Page>
     );
@@ -82,11 +103,13 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
   } else {
     const f = at === "root" ? null : board.folder(at)!;
     const id = f?.id ?? null;
-    const title = board.folderName(id);
-    const actions = (
+    const title = batch.on ? batchTitle(batch.tasks.length) : board.folderName(id);
+    const actions = batch.on ? (
+      <BatchTools />
+    ) : (
       <div className="head-actions">
         <FolderViewSeg />
-        {f && <FolderMenu folder={f.id} />}
+        <FolderMenu folder={id} />
       </div>
     );
     const crumbs = f ? board.place(f.parent_id) : "";
@@ -96,7 +119,7 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
           <FolderGraph folder={id} across now={now} />
         </Page>
       ) : (
-        <Page title={title} crumbs={crumbs} actions={actions} add={<QuickAdd key={at} folder={id} />}>
+        <Page title={title} crumbs={crumbs} actions={actions} add={!batch.on && <QuickAdd key={at} folder={id} />}>
           <FolderBody key={at} folder={id} now={now} />
         </Page>
       );
@@ -108,8 +131,8 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
       className={`desk-cols${sideOpen ? "" : " side-closed"}${open ? "" : " pane-closed"}`}
       onTransitionEnd={(e) => e.target === e.currentTarget && !open && setShown(null)}
     >
-      <Sidebar at={query.trim() ? null : at} query={query} setQuery={setQuery} />
-      <main className="main">
+      <Sidebar at={query.trim() ? null : at} query={query} setQuery={search} />
+      <main className={`main${batch.on ? " choosing" : ""}`}>
         <div className="main-tools" data-tauri-drag-region="deep">
           <Tip label={label}>
             <button className="icon-btn" onClick={() => setSideOpen(!sideOpen)} aria-pressed={sideOpen}>

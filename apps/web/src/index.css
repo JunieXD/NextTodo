@@ -112,6 +112,11 @@ svg { display: block; flex: none; }
 .tab-ic { width: 56px; height: 30px; border-radius: 15px; display: grid; place-items: center; transition: background .25s; }
 .tab.on { color: var(--on-surface); }
 .tab.on .tab-ic { background: var(--secondary-container); color: var(--on-secondary-container); }
+.batch-bar .tab { color: var(--on-surface); }
+.batch-bar .tab.danger { color: var(--error); }
+.batch-bar .tab:disabled { opacity: .38; }
+.nav .batch-title { font-size: 18px; font-weight: 600; white-space: nowrap; }
+.nav .batch-all { justify-self: end; }
 
 /* ---------- grouped lists ---------- */
 .group-title { margin: 22px 32px 8px; font-size: 13px; font-weight: 600; color: var(--on-surface-variant); display: flex; justify-content: space-between; }
@@ -123,6 +128,11 @@ svg { display: block; flex: none; }
 .row-inner { position: relative; display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 16px; background: var(--group-bg); transition: transform .25s var(--ease); }
 .row:active > .row-inner, .row.pressed > .row-inner { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 6%); }
 .row.selected > .row-inner { background: var(--secondary-container); }
+/* Batch operations: the box on the right, the row tinted once chosen; what cannot be chosen fades. */
+.row.chosen > .row-inner { background: var(--secondary-container); }
+.choosing .row.task { -webkit-user-select: none; user-select: none; }
+.choosing .folder-row, .choosing .row.job, .choosing .add-row, .choosing .rail-note { opacity: .4; pointer-events: none; }
+.row.task .box { width: 20px; height: 20px; }
 .row-value { margin-left: auto; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
 .swipe-bg { position: absolute; inset: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; font-size: 14px; font-weight: 600; }
 .swipe-bg span { display: inline-flex; align-items: center; gap: 6px; }
@@ -460,6 +470,7 @@ a.text-btn { display: inline-flex; align-items: center; }
 .desk .snackbar { left: 0; right: 0; margin: 0 auto; bottom: 24px; width: 440px; }
 .desk .row:hover > .row-inner { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 4%); }
 .desk .row.selected > .row-inner { background: var(--secondary-container); }
+.desk .row.chosen > .row-inner { background: var(--secondary-container); }
 
 /* ---------- macOS app ---------- */
 /* The window's buttons sit at the top left, over the page, their middle 28 from the top

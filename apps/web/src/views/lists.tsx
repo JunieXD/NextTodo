@@ -26,6 +26,7 @@ import { Icon } from "../ui/icons";
 import { composing } from "../ui/keys";
 import { useLeave } from "../ui/leave";
 import { useTaskActions } from "./actions";
+import { useListed } from "./batch";
 import { useRowDrag } from "./drag";
 import { useNewFolder } from "./FolderMenu";
 import { useMarks } from "./marks";
@@ -101,6 +102,7 @@ export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date
   const open = openTasks(board, folder, linger);
   const done = board.tasksIn(folder).filter((t) => t.done_at !== null && !linger.has(t.id));
   const jobs = board.snapshot.ai_jobs.filter((j) => j.folder_id === folder);
+  useListed(doneOpen ? [...open, ...done] : open);
   return (
     <>
       {(subs.length > 0 || folder === null) && (
@@ -128,7 +130,7 @@ export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date
                 </div>
               </button>
             )}
-            {doneOpen && done.map((t) => <TaskRow key={t.id} task={t} board={board} now={now} selected={selected === t.id} actions={actions} />)}
+            {doneOpen && done.map((t) => <TaskRow key={t.id} task={t} board={board} now={now} batchable selected={selected === t.id} actions={actions} />)}
           </div>
         </>
       ) : (
@@ -204,7 +206,9 @@ export function DoneBody({ now }: { now: Date }) {
   const { selected } = useSelection();
   const actions = useTaskActions();
   const days = new Map<string, Task[]>();
-  for (const t of board.snapshot.tasks.filter((t) => t.done_at !== null).sort((a, b) => b.done_at! - a.done_at!)) {
+  const done = board.snapshot.tasks.filter((t) => t.done_at !== null).sort((a, b) => b.done_at! - a.done_at!);
+  useListed(done);
+  for (const t of done) {
     const day = formatDay(t.done_at!, now);
     days.set(day, [...(days.get(day) ?? []), t]);
   }
@@ -214,7 +218,7 @@ export function DoneBody({ now }: { now: Date }) {
       <h2 className="group-title">{day}</h2>
       <div className="group">
         {tasks.map((t) => (
-          <TaskRow key={t.id} task={t} board={board} now={now} path selected={selected === t.id} actions={actions} />
+          <TaskRow key={t.id} task={t} board={board} now={now} path batchable selected={selected === t.id} actions={actions} />
         ))}
       </div>
     </section>

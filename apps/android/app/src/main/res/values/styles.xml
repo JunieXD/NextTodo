@@ -16,8 +16,8 @@
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 
-    <!-- The add popup and the reminder card opened from a notification: a card at the bottom, over what
-         is on screen, dimmed; a tap outside closes it. -->
+    <!-- The reminder card opened from a notification: a card at the bottom, over what is on screen,
+         dimmed; a tap outside closes it. -->
     <style name="Popup" parent="@android:style/Theme.DeviceDefault.Dialog.NoActionBar">
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowCloseOnTouchOutside">true</item>

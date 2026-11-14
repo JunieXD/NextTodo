@@ -55,7 +55,6 @@ import cn.juniexd.nexttodo.MainActivity
 import cn.juniexd.nexttodo.Palette
 import cn.juniexd.nexttodo.Server
 import cn.juniexd.nexttodo.R
-import cn.juniexd.nexttodo.add.AddActivity
 import cn.juniexd.nexttodo.forUser
 import java.time.LocalDateTime
 import kotlinx.coroutines.delay
@@ -124,7 +123,7 @@ private fun Content(context: Context, shown: Shown, now: LocalDateTime) {
                 Text("接下来", style = TextStyle(color = Colors.text, fontSize = 17.sp * shown.scale, fontWeight = FontWeight.Bold))
             }
             Icon(R.drawable.ic_widget_refresh, "刷新", actionRunCallback<RefreshAction>(), 4.dp)
-            Icon(R.drawable.ic_add, "添加事项", actionStartActivity(Intent(context, AddActivity::class.java)), EDGE)
+            Icon(R.drawable.ic_add, "添加事项", open(context, "nexttodo://add"), EDGE)
         }
         when {
             !shown.signedIn -> Note("打开 NextTodo 登录", open(context, "nexttodo://home"))

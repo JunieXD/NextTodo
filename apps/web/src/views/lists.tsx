@@ -6,6 +6,8 @@ import { Dialog } from "radix-ui";
 import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation, useSearchParams } from "wouter";
+import { NextTodo } from "../android";
+import { app } from "../api/http";
 import type { Folder } from "../api/types/Folder";
 import type { FolderId } from "../api/types/FolderId";
 import type { Op } from "../api/types/Op";
@@ -288,13 +290,15 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   const into = folder !== undefined ? folder : target && board.folder(target) ? target : null;
   const area = useRef<HTMLTextAreaElement>(null);
   const focus = () => area.current?.focus();
-  // The app's widget opens `/?add` to type a new task straight away.
+  // The Android widget, the menu bar and the shortcut open `/?add` to type a new task straight away:
+  // on Android with the keyboard up, which focusing alone does not bring.
   const [params] = useSearchParams();
   const [location, navigate] = useLocation();
   const asked = params.has("add");
   useEffect(() => {
     if (!asked) return;
     focus();
+    if (app === "android") void NextTodo.showKeyboard();
     navigate(location, { replace: true });
   }, [asked, location, navigate]);
   // As tall as the text, up to the height the style allows, and then it scrolls; past three lines

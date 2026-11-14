@@ -11,7 +11,8 @@ import android.provider.OpenableColumns
 import android.provider.Settings
 import androidx.activity.result.ActivityResult
 import androidx.core.content.FileProvider
-import cn.juniexd.nexttodo.add.AddActivity
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import cn.juniexd.nexttodo.reminders.Card
 import cn.juniexd.nexttodo.reminders.Reminders
 import cn.juniexd.nexttodo.widget.Widget
@@ -148,11 +149,10 @@ class NextTodoPlugin : Plugin() {
         work(call, "读取小组件和提醒里的改动") { JSObject().put("changes", Changes.takeOver(context, user)) }
     }
 
-    /** Signed out: the changes made natively and not sent yet go, and the add popup's draft. */
+    /** Signed out: the changes made natively and not sent yet go. */
     @PluginMethod
     fun forgetChanges(call: PluginCall) = work(call, "删除小组件和提醒里的改动") {
         Changes.forget(context)
-        AddActivity.forget(context)
         JSObject()
     }
 
@@ -245,6 +245,18 @@ class NextTodoPlugin : Plugin() {
     fun webReady(call: PluginCall) {
         WebUpdate.ready(context)
         call.resolve()
+    }
+
+    /** Shows the keyboard for the field the page has focused: a page cannot itself, but on a tap. As
+     * soon as the window has the focus, should it not yet, coming to the front. */
+    @PluginMethod
+    fun showKeyboard(call: PluginCall) {
+        activity.runOnUiThread {
+            val page = bridge.webView
+            page.requestFocus()
+            WindowCompat.getInsetsController(activity.window, page).show(WindowInsetsCompat.Type.ime())
+            call.resolve()
+        }
     }
 
     /** Downloads the build of the web app on `server`, the one signed in to, for the next start: see

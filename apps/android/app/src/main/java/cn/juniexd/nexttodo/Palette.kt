@@ -2,8 +2,8 @@ package cn.juniexd.nexttodo
 
 import androidx.compose.ui.graphics.Color
 
-/** The colours of docs/ui.md that the native parts use, light and dark: the widget, the reminder card
- * and the add popup. */
+/** The colours of docs/ui.md that the native parts use, light and dark: the widget and the reminder
+ * card. */
 class Palette(
     val primary: Color,
     val onPrimary: Color,

@@ -43,9 +43,7 @@ const changeAiMode = (on: boolean) => {
   for (const listener of aiModeListeners) listener();
 };
 
-/** Reads whether AI organizing was the mode last used to add, which the Android app's add popup shares
- * (docs/android.md#添加弹窗): before anything adds, and again when the app comes back, the popup having
- * maybe switched it meanwhile. */
+/** Reads whether AI organizing was the mode last used to add: before anything adds. */
 export async function loadAiMode() {
   changeAiMode((await Preferences.get({ key: AI_MODE })).value === "on");
 }

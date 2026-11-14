@@ -19,7 +19,6 @@ import cn.juniexd.nexttodo.reminders.Reminders
 import cn.juniexd.nexttodo.widget.Widget
 import java.io.IOException
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -27,8 +26,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Changes made natively, without the app's page: ticking a task off in the widget, on a reminder, and
- * adding from the add popup (docs/android.md#原生发出的改动). They go to the server in the order made;
+ * Changes made natively, without the app's page: ticking a task off in the widget or on a reminder
+ * (docs/android.md#原生发出的改动). They go to the server in the order made;
  * offline they are kept, and sent once online; the app takes them in too when it opens.
  */
 object Changes {
@@ -75,18 +74,6 @@ object Changes {
         if (outcome is Outcome.Refused || token == null || Server.token(context) != token) return outcome
         if (at != null) Reminders.completed(context, task, at)
         return outcome
-    }
-
-    /** Adds a task titled `title` to the root, last. */
-    suspend fun add(context: Context, title: String) =
-        submit(context, JSONObject().put("op", "task.create").put("id", Server.uuid7()).put("title", title), "添加“$title”")
-
-    /** Hands `text` to AI organizing, into the root. */
-    suspend fun organize(context: Context, text: String): Outcome {
-        val now = LocalDateTime.now()
-        // As the app writes it: `2026-11-04 16:30 星期三`.
-        val time = "%s %02d:%02d 星期%s".format(now.toLocalDate(), now.hour, now.minute, "一二三四五六日"[now.dayOfWeek.value - 1])
-        return submit(context, JSONObject().put("op", "ai_job.create").put("id", Server.uuid7()).put("text", text).put("local_time", time), "交给 AI 整理")
     }
 
     /** Submits `op` as a change, after those kept from before. */
@@ -200,7 +187,7 @@ object Changes {
 class SendWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         if (Changes.flush(applicationContext)) return Result.retry()
-        // A task added shows in the widget, one done goes.
+        // A task done goes from the widget.
         Widget.refresh(applicationContext)
         return Result.success()
     }

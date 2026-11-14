@@ -25,8 +25,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- The widget, reminders and the add popup open a task, the home page or AI settings as
-                 nexttodo://task/<id>, nexttodo://home, nexttodo://ai. -->
+            <!-- The widget and reminders open a task, the home page or quick add as
+                 nexttodo://task/<id>, nexttodo://home, nexttodo://add. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -43,17 +43,8 @@
             android:excludeFromRecents="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
-        <!-- The add popup and the reminder card opened from a notification: cards at the bottom over
-             what is on screen, not tasks to come back to. docs/android.md#添加弹窗, #通知. -->
-        <activity
-            android:name=".add.AddActivity"
-            android:exported="false"
-            android:taskAffinity=""
-            android:excludeFromRecents="true"
-            android:launchMode="singleTask"
-            android:windowSoftInputMode="adjustResize|stateAlwaysVisible"
-            android:theme="@style/Popup" />
-
+        <!-- The reminder card opened from a notification: a card at the bottom over what is on screen,
+             not a task to come back to. docs/android.md#通知. -->
         <activity
             android:name=".reminders.SnoozeActivity"
             android:exported="false"

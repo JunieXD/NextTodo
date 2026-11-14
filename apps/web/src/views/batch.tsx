@@ -255,8 +255,8 @@ export function BatchTools() {
   const { toggleAll, end, all, tasks } = batch;
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      // Not what a field, a dialog or a menu takes.
-      if ((e.target as Element).closest("input, textarea, [role=dialog], [role=alertdialog], [role=menu]")) return;
+      // Not what a field, a dialog or a menu takes, nor a drag cut short.
+      if (e.defaultPrevented || (e.target as Element).closest("input, textarea, [role=dialog], [role=alertdialog], [role=menu]")) return;
       if (e.key === "Escape") end();
       else if ((e.key === "Delete" || e.key === "Backspace") && tasks.length) remove();
       else if (e.key === "a" && (e.ctrlKey || e.metaKey)) {

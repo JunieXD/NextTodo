@@ -15,7 +15,6 @@ import { lastKey } from "../domain/apply";
 import { type Board, matches } from "../domain/board";
 import { aiReady, setAiMode, useAiMode } from "../ai";
 import { type DueKind, dueKind, formatDay, localTime } from "../domain/dates";
-import { rekey } from "../domain/reorder";
 import { checkJobText, checkTitle } from "../domain/text";
 import { useCommit, useSession, useView } from "../session";
 import { draft, keepDraft } from "../sync/drafts";
@@ -28,7 +27,7 @@ import { useLeave } from "../ui/leave";
 import { useTaskActions } from "./actions";
 import { useListed } from "./batch";
 import { useRowDrag } from "./drag";
-import { useNewFolder } from "./FolderMenu";
+import { useNewFolder, usePlaceFolder } from "./FolderMenu";
 import { useMarks } from "./marks";
 import { folderUrl, settingsUrl, useFolderView, useSelection } from "./nav";
 import { JobRows } from "./jobs";
@@ -140,22 +139,19 @@ export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date
   );
 }
 
-/** The folders in `folder`, which can be dragged into another order; in the root, also a row to make
- * one. */
+/** The folders in `folder`, which can be dragged into another order or into one another; in the root,
+ * also a row to make one. */
 function FolderList({ folder, folders }: { folder: FolderId | null; folders: Folder[] }) {
   const { board } = useView();
-  const commit = useCommit();
   const [, navigate] = useLocation();
   const newFolder = useNewFolder();
+  const place = usePlaceFolder();
   const list = useRef<HTMLDivElement>(null);
   useRowDrag(list, ".folder-row", {
     range: () => ({ min: 0, max: folders.length - 1 }),
-    drop(from, to) {
-      if (to === from) return;
-      const wanted = folders.filter((_, i) => i !== from);
-      wanted.splice(to, 0, folders[from]);
-      commit(rekey(wanted, folders[from].id).map((k): Op => ({ op: "folder.update", ...k })));
-    },
+    drop: (from, to) => place(folders[from].id, folder, folders.filter((_, i) => i !== from)[to]?.id ?? null),
+    canInto: (from, into) => into !== folder && !board.inSubtree(into, folders[from].id),
+    into: (from, into) => place(folders[from].id, into, null),
   });
   return (
     <div className="group reorderable" ref={list}>

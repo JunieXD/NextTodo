@@ -242,7 +242,7 @@ export function FolderRow({ folder, board, onOpen }: { folder: Folder; board: Bo
   const sub = own.length ? `${ready} 项可做，共 ${own.length} 项待办` : `${board.subfolders(folder.id).length} 个文件夹`;
   return (
     <FolderContextMenu folder={folder.id}>
-      <button className="row folder-row" onClick={onOpen}>
+      <button className="row folder-row" data-into={folder.id} onClick={onOpen}>
         <div className="row-inner">
           <span className="folder-ic">
             <Icon of={FolderIcon} size={18} />
@@ -286,6 +286,8 @@ export function RailList({ tasks, board, now, selected, actions }: { tasks: Task
         commit(rekey(wanted, t.id).map((k): Op => ({ op: "task.update", ...k })));
       }
     },
+    canInto: (from, folder) => folder !== tasks[from].folder_id,
+    into: (from, folder) => actions.move(tasks[from], folder),
   });
   return (
     <>

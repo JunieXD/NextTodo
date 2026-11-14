@@ -2,7 +2,7 @@
 // open task's details on the right.
 
 import { ChevronLeft, ChevronRight, CircleCheck, Folder as FolderIcon, FolderRoot, History, ListChecks, PanelLeft, Search } from "lucide-react";
-import { Fragment, type ReactNode, useState } from "react";
+import { Fragment, type ReactNode, useRef, useState } from "react";
 import { Link, Redirect, useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
 import { formatToday } from "../domain/dates";
@@ -13,7 +13,8 @@ import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { BatchTools, batchTitle, useBatch } from "./batch";
 import { Detail } from "./Detail";
-import { FolderContextMenu, FolderMenu } from "./FolderMenu";
+import { useTreeDrag } from "./drag";
+import { FolderContextMenu, FolderMenu, usePlaceFolder } from "./FolderMenu";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, SearchResults } from "./lists";
 import { folderUrl, settingsUrl, useFolderView, useSelection } from "./nav";
 import { SettingsHome, SettingsPage, settingsTitle, useSectionAt } from "./Settings";
@@ -184,15 +185,35 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ro
       if (!next.delete(id)) next.add(id);
       return next;
     });
+  const scroll = useRef<HTMLDivElement>(null);
+  const place = usePlaceFolder();
+  useTreeDrag(scroll, {
+    canPlace: (folder, parent) => !board.inSubtree(parent, folder),
+    place,
+    unfold: (id) =>
+      setCollapsed((c) => {
+        const next = new Set(c);
+        next.delete(id);
+        return next;
+      }),
+  });
   // The root first, with the folders inside it.
-  const tree = (id: FolderId | null, depth: number): ReactNode => {
+  const tree = (id: FolderId | null, parent: FolderId | null, depth: number): ReactNode => {
     const kids = board.subfolders(id);
     const open = !collapsed.has(id);
     const count = board.contents(id).filter((t) => t.done_at === null).length;
     return (
       <div key={id ?? "root"}>
         <FolderContextMenu folder={id}>
-          <button className={`sb-item${at === (id ?? "root") ? " on" : ""}`} style={{ paddingLeft: 10 + depth * 18 }} onClick={() => go(folderUrl(id))}>
+          <button
+            className={`sb-item${at === (id ?? "root") ? " on" : ""}`}
+            style={{ paddingLeft: 10 + depth * 18 }}
+            data-into={id ?? ""}
+            data-parent={parent ?? ""}
+            data-depth={depth}
+            data-closed={kids.length && !open ? "" : undefined}
+            onClick={() => go(folderUrl(id))}
+          >
             <span
               className={`tw${kids.length && open ? " open" : ""}`}
               onClick={(e) => {
@@ -208,7 +229,7 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ro
             <span className="count">{count || ""}</span>
           </button>
         </FolderContextMenu>
-        {open && kids.map((f) => tree(f.id, depth + 1))}
+        {open && kids.map((f) => tree(f.id, id, depth + 1))}
       </div>
     );
   };
@@ -225,7 +246,7 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ro
           <Icon of={Search} size={18} />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索" autoComplete="off" />
         </label>
-        <div className="sb-scroll">
+        <div className="sb-scroll" ref={scroll}>
           <button className={`sb-item${at === "next" ? " on" : ""}`} onClick={() => go("/")}>
             <span className="tw" />
             <Icon of={CircleCheck} size={18} />
@@ -238,7 +259,7 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ro
             <span>已完成</span>
           </button>
           <div className="sb-label">文件夹</div>
-          {tree(null, 0)}
+          {tree(null, null, 0)}
         </div>
         <div className="sb-foot">
           <button className={`sb-user${at === "settings" ? " on" : ""}`} onClick={() => go(settingsUrl())}>

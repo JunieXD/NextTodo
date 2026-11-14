@@ -430,7 +430,7 @@ a.text-btn { display: inline-flex; align-items: center; }
 .brand { font-size: 17px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
 .brand-mark { width: 26px; height: 26px; }
 .sidebar .search { margin: 0 12px 10px; height: 36px; }
-.sb-scroll { flex: 1; overflow-y: auto; padding: 0 8px 16px; }
+.sb-scroll { position: relative; flex: 1; overflow-y: auto; padding: 0 8px 16px; }
 .sb-item { width: 100%; height: 36px; margin-bottom: 2px; border-radius: 10px; display: flex; align-items: center; gap: 8px; padding: 0 10px; font-size: 14px; color: var(--on-surface); }
 .sb-item:hover { background: var(--press); }
 .sb-item.on { background: var(--secondary-container); color: var(--on-secondary-container); font-weight: 600; }
@@ -636,12 +636,21 @@ a.text-btn { display: inline-flex; align-items: center; }
 .detail-actions { margin: 22px 16px 0; --sep-left: 16px; }
 .detail-actions .end-repeat .row-inner { color: var(--primary); justify-content: center; font-weight: 500; }
 
-/* Dragging a row of a rail list to another place. */
+/* Dragging a row to another place (docs/ui.md#拖动): up or down a list, into a folder, about the folder
+   tree, where a line shows where a folder would go, at the depth of the row below it. */
 .reorderable > .row { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .rail-list.reordering .rail { opacity: 0; }
 .reorderable.reordering > .row { transition: transform .2s var(--ease); }
-.reorderable > .row[data-lifted] { z-index: 4; transition: none; box-shadow: var(--shadow-3); }
-.reorderable > .row[data-lifted] > .row-inner { background: var(--group-bg); }
+.reorderable > .row[data-lifted] { visibility: hidden; }
+/* A copy of the row follows the pointer over the page, which its group would cut off past its corners;
+   over the row it would go into, it lets that show through. */
+.drag-ghost { position: fixed; z-index: 45; margin: 0; border-radius: 14px; overflow: hidden; background: var(--group-bg); box-shadow: var(--shadow-3); pointer-events: none; }
+.drag-ghost.into { opacity: .6; }
+.row[data-drop] > .row-inner, .desk .row[data-drop] > .row-inner { background: var(--primary-container); }
+.sb-item[data-drop] { background: var(--primary-container); color: var(--on-primary-container); }
+.sb-item[data-lifted] { position: relative; z-index: 4; box-shadow: var(--shadow-3); opacity: .6; }
+.sb-item[data-lifted]:not(.on) { background: var(--surface-high); }
+.sb-line { position: absolute; z-index: 5; left: calc(42px + var(--depth) * 18px); right: 8px; height: 2px; margin-top: -2px; border-radius: 1px; background: var(--primary); pointer-events: none; }
 
 /* The Android app's first-start tip. */
 .tip-card { margin: 8px 16px 4px; padding: 14px 16px 6px; border-radius: 14px; background: var(--secondary-container); color: var(--on-secondary-container); font-size: 14px; line-height: 1.5; }

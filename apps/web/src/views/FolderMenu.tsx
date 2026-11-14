@@ -7,9 +7,11 @@ import { type ReactElement, type ReactNode, useContext, useEffect, useRef, useSt
 import { v7 as uuidv7 } from "uuid";
 import { useLocation } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
+import type { Op } from "../api/types/Op";
 import { aiReady } from "../ai";
 import { lastKey } from "../domain/apply";
 import { localTime } from "../domain/dates";
+import { rekey } from "../domain/reorder";
 import { checkFolderName, checkJobText } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
 import { useBack } from "../ui/back";
@@ -31,6 +33,34 @@ export function useNewFolder() {
     if (name === null) return;
     const sort_key = lastKey(store.getView().board.subfolders(parent).map((f) => f.sort_key));
     if (commit([{ op: "folder.create", id: uuidv7(), name, sort_key, ...(parent && { parent_id: parent }) }])) snack(`已新建“${name}”`);
+  };
+}
+
+/** Puts `folder` in `parent`, before the folder `before` there, or last; moved into another folder, says
+ * so, with the undo. */
+export function usePlaceFolder() {
+  const { store } = useSession();
+  const commit = useCommit();
+  const undo = useUndo();
+  const { snack } = useFeedback();
+  return (folder: FolderId, parent: FolderId | null, before: FolderId | null) => {
+    const board = store.getView().board;
+    const f = board.folder(folder)!;
+    const there = board.subfolders(parent);
+    const wanted = there.filter((s) => s.id !== folder);
+    const at = before ? wanted.findIndex((s) => s.id === before) : wanted.length;
+    if (there[at]?.id === folder) return;
+    wanted.splice(at, 0, f);
+    const keys = rekey(wanted, folder);
+    const sort_key = keys.find((k) => k.id === folder)?.sort_key;
+    const moved = parent !== f.parent_id;
+    // Moved, it may keep the key it had: last in a folder, say, as it was last in another.
+    const ops: Op[] = [
+      ...keys.filter((k) => k.id !== folder).map((k): Op => ({ op: "folder.update", ...k })),
+      { op: "folder.update", id: folder, ...(sort_key && { sort_key }), ...(moved && { parent_id: parent }) },
+    ];
+    const r = commit(ops);
+    if (r && moved) snack({ text: `已移至“${board.folderName(parent)}”`, action: "撤销", onAction: () => undo(r.id) });
   };
 }
 
@@ -115,11 +145,11 @@ function TidyRequest({ onSubmit, onClose }: { onSubmit(text: string): void; onCl
 /** The actions on `folder`, and the panel that moving or tidying it opens; in the root, only making a
  * folder and tidying; none for a folder deleted meanwhile, say on another device. */
 function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: ReactNode } {
-  const { store } = useSession();
   const commit = useCommit();
   const undo = useUndo();
   const { prompt, confirm, snack } = useFeedback();
   const newFolder = useNewFolder();
+  const place = usePlaceFolder();
   const tidy = useTidy(folder);
   const [location, navigate] = useLocation();
   const [moving, setMoving] = useState(false);
@@ -139,10 +169,7 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
     if (name !== null && name !== f.name) commit([{ op: "folder.update", id: f.id, name }]);
   };
   const move = (parent: FolderId | null) => {
-    if (parent === f.parent_id) return;
-    const sort_key = lastKey(store.getView().board.subfolders(parent).map((s) => s.sort_key));
-    const r = commit([{ op: "folder.update", id: f.id, parent_id: parent, sort_key }]);
-    if (r) snack({ text: `已移至“${board.folderName(parent)}”`, action: "撤销", onAction: () => undo(r.id) });
+    if (parent !== f.parent_id) place(f.id, parent, null);
   };
   const remove = async () => {
     const inside = [...board.snapshot.tasks].filter((t) => t.folder_id && board.inSubtree(t.folder_id, f.id)).length;

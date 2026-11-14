@@ -2,7 +2,7 @@
 // what waits for it.
 
 import { Bell, Calendar, CalendarCheck, CalendarClock, Folder as FolderIcon, KeyRound, type LucideIcon, Plus, User, Users, X } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, Suspense, useEffect, useRef, useState } from "react";
 import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
@@ -16,7 +16,7 @@ import { Check, Seg } from "../ui/controls";
 import { Tip, useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { composing } from "../ui/keys";
-import { Description } from "../ui/Markdown";
+import { Description } from "../ui/lazy-markdown";
 import { useTaskActions } from "./actions";
 import { DueEditor, StartEditor } from "./due";
 import { useMarks } from "./marks";
@@ -359,7 +359,9 @@ function DescriptionSection({ task, onSave }: { task: Task; onSave: Save }) {
       <div className="group">
         {draft === null ? (
           <div className="md">
-            <Description source={task.description} onChange={onSave} />
+            <Suspense>
+              <Description source={task.description} onChange={onSave} />
+            </Suspense>
           </div>
         ) : (
           <textarea

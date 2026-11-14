@@ -1,11 +1,10 @@
 // The releases' notes: told of once after an update, and all of them from the settings
 // (docs/design.md#更新日志).
 
-import { useContext, useEffect, useState } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { Suspense, useContext, useEffect, useState } from "react";
 import { type Release, RELEASES, seeVersion, unseen } from "../changelog";
 import { Modal, RootContext } from "../ui/feedback";
+import { Prose } from "../ui/lazy-markdown";
 
 /** The most releases told of after an update, before the earlier ones are asked for. */
 const MOST = 10;
@@ -59,9 +58,9 @@ function Releases({ releases }: { releases: Release[] }) {
         <span>{r.date}</span>
       </h4>
       <div className="md">
-        <Markdown remarkPlugins={[remarkGfm]} components={{ a: ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer" /> }}>
-          {r.notes}
-        </Markdown>
+        <Suspense>
+          <Prose source={r.notes} />
+        </Suspense>
       </div>
     </section>
   ));

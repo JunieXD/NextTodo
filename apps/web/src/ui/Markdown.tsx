@@ -1,6 +1,7 @@
-// Descriptions in Markdown. Raw HTML is not rendered. Checklist items can be ticked in place.
+// Markdown: descriptions, whose checklist items can be ticked in place, and the changelog. Raw HTML is
+// not rendered. Loaded when first shown, being large and not needed to start (`lazyMarkdown`).
 
-import Markdown from "react-markdown";
+import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Box } from "./controls";
 
@@ -13,13 +14,24 @@ export function toggleLine(source: string, line: number): string {
   return lines.join("\n");
 }
 
+/** Links open outside the app. */
+const link: Components["a"] = ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />;
+
+export function Prose({ source }: { source: string }) {
+  return (
+    <Markdown remarkPlugins={[remarkGfm]} components={{ a: link }}>
+      {source}
+    </Markdown>
+  );
+}
+
 export function Description({ source, onChange }: { source: string; onChange(source: string): void }) {
   if (!source.trim()) return <p className="muted">暂无描述</p>;
   return (
     <Markdown
       remarkPlugins={[remarkGfm]}
       components={{
-        a: ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+        a: link,
         input: ({ checked }) => <Box checked={!!checked} />,
         li: ({ node, className, children }) => {
           if (!className?.includes("task-list-item")) return <li>{children}</li>;

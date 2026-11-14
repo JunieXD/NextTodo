@@ -8,6 +8,7 @@ import * as android from "./android";
 import * as desktop from "./desktop";
 import { loadMode } from "./local";
 import { ErrorBoundary } from "./ui/ErrorBoundary";
+import { preloadMarkdown } from "./ui/lazy-markdown";
 import { limitBrowserMenu } from "./ui/menu";
 import "./index.css";
 import { applyTheme } from "./theme";
@@ -27,3 +28,4 @@ createRoot(document.getElementById("app")!).render(
     </ErrorBoundary>
   </StrictMode>,
 );
+preloadMarkdown();

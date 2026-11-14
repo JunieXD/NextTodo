@@ -8,9 +8,10 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::model::{AiJob, Date, Dependency, Folder, FolderId, SortKey, Task, TaskId};
+use crate::model::{AiJob, Date, Dependency, Folder, FolderId, Person, Share, SortKey, Task, TaskId};
 
-/// All of a user's data.
+/// All a user can see: their own data and the folders shared with them, where a folder someone else
+/// shares has no parent (docs/design.md#共享).
 #[derive(Clone, Debug, Default, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Snapshot {
@@ -18,6 +19,10 @@ pub struct Snapshot {
     pub tasks: Vec<Task>,
     pub dependencies: Vec<Dependency>,
     pub ai_jobs: Vec<AiJob>,
+    /// The folders shared by the user or with them.
+    pub shares: Vec<Share>,
+    /// The user, everyone in those folders, and whoever made or last changed a task the user sees.
+    pub people: Vec<Person>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,12 +37,20 @@ pub enum Status {
     Done,
 }
 
-/// A snapshot indexed for lookups, as of a day, the user's today. `None` as a folder means the root.
+/// A snapshot indexed for lookups, as of a day, the user's today, for the user `me`. `None` as a
+/// folder means the root, the user's own.
 pub struct Board<'a> {
     today: Date,
+    me: &'a str,
     tasks: HashMap<TaskId, &'a Task>,
-    numbers: HashMap<i64, &'a Task>,
+    /// By owner and number.
+    numbers: HashMap<(&'a str, i64), &'a Task>,
     folders: HashMap<FolderId, &'a Folder>,
+    people: HashMap<&'a str, &'a Person>,
+    /// The share each folder in a shared folder is in, the shared folder itself too.
+    shared: HashMap<FolderId, &'a Share>,
+    /// The folders others share with the user, by who shares them and name.
+    foreign: Vec<&'a Folder>,
     before: HashMap<TaskId, Vec<TaskId>>,
     after: HashMap<TaskId, Vec<TaskId>>,
     /// Subfolders in manual order.
@@ -48,19 +61,34 @@ pub struct Board<'a> {
 }
 
 impl<'a> Board<'a> {
-    pub fn new(s: &'a Snapshot, today: Date) -> Self {
+    pub fn new(s: &'a Snapshot, today: Date, me: &'a str) -> Self {
+        let people: HashMap<&str, &Person> = s.people.iter().map(|p| (p.id.as_str(), p)).collect();
+        let shares: HashMap<FolderId, &Share> = s.shares.iter().map(|sh| (sh.folder_id, sh)).collect();
         let mut children: HashMap<Option<FolderId>, Vec<&Folder>> = HashMap::new();
+        let mut foreign = Vec::new();
         for f in &s.folders {
-            children.entry(f.parent_id).or_default().push(f);
+            if shares.get(&f.id).is_some_and(|sh| sh.owner != me) {
+                foreign.push(f);
+            } else {
+                children.entry(f.parent_id).or_default().push(f);
+            }
         }
         for list in children.values_mut() {
             list.sort_by(|a, b| (&a.sort_key, a.id).cmp(&(&b.sort_key, b.id)));
         }
+        let username = |f: &Folder| people.get(shares[&f.id].owner.as_str()).map(|p| p.username.as_str());
+        foreign.sort_by(|a, b| (username(a), &a.name, a.id).cmp(&(username(b), &b.name, b.id)));
         let mut rank = HashMap::new();
-        let mut stack = vec![None];
-        while let Some(f) = stack.pop() {
+        let mut shared = HashMap::new();
+        let mut stack: Vec<(Option<FolderId>, Option<&Share>)> = foreign.iter().rev().map(|f| (Some(f.id), None)).collect();
+        stack.push((None, None));
+        while let Some((f, within)) = stack.pop() {
             rank.insert(f, rank.len());
-            stack.extend(children.get(&f).into_iter().flatten().rev().map(|c| Some(c.id)));
+            let within = f.and_then(|id| shares.get(&id).copied()).or(within);
+            if let (Some(id), Some(sh)) = (f, within) {
+                shared.insert(id, sh);
+            }
+            stack.extend(children.get(&f).into_iter().flatten().rev().map(|c| (Some(c.id), within)));
         }
         let mut contents: HashMap<Option<FolderId>, Vec<&Task>> = HashMap::new();
         for t in &s.tasks {
@@ -72,11 +100,17 @@ impl<'a> Board<'a> {
             before.entry(d.after).or_default().push(d.before);
             after.entry(d.before).or_default().push(d.after);
         }
+        let owner = |t: &Task| t.folder_id.and_then(|f| shared.get(&f)).map_or(me, |sh: &&Share| sh.owner.as_str());
+        let numbers = s.tasks.iter().map(|t| ((owner(t), t.number), t)).collect();
         Board {
             today,
+            me,
             tasks: s.tasks.iter().map(|t| (t.id, t)).collect(),
-            numbers: s.tasks.iter().map(|t| (t.number, t)).collect(),
+            numbers,
             folders: s.folders.iter().map(|f| (f.id, f)).collect(),
+            people,
+            shared,
+            foreign,
             before,
             after,
             children,
@@ -89,8 +123,56 @@ impl<'a> Board<'a> {
         self.tasks.get(&id).copied()
     }
 
-    pub fn task_by_number(&self, number: i64) -> Option<&'a Task> {
-        self.numbers.get(&number).copied()
+    /// The task with `number` among those of `owner`, a user id.
+    pub fn task_by_number(&self, owner: &str, number: i64) -> Option<&'a Task> {
+        self.numbers.get(&(owner, number)).copied()
+    }
+
+    pub fn me(&self) -> &'a str {
+        self.me
+    }
+
+    pub fn person(&self, id: &str) -> Option<&'a Person> {
+        self.people.get(id).copied()
+    }
+
+    /// Someone in the user's shared folders, the user too, by the username they sign in with, which
+    /// is the same whatever the case.
+    pub fn person_named(&self, username: &str) -> Option<&'a Person> {
+        self.people.values().copied().find(|p| p.username.eq_ignore_ascii_case(username))
+    }
+
+    /// The share a folder is in: its own, or that of the shared folder it is in.
+    pub fn share(&self, f: Option<FolderId>) -> Option<&'a Share> {
+        self.shared.get(&f?).copied()
+    }
+
+    /// Whose what is in folder `f` is: the owner of the shared folder it is in, or the user's.
+    pub fn owner_of(&self, f: Option<FolderId>) -> &'a str {
+        self.share(f).map_or(self.me, |sh| sh.owner.as_str())
+    }
+
+    /// Whose a task is.
+    pub fn owner(&self, t: &Task) -> &'a str {
+        self.owner_of(t.folder_id)
+    }
+
+    /// `#42`, or `@alice#42` for a task in a folder someone else shares.
+    pub fn label(&self, t: &Task) -> String {
+        match self.owner(t) {
+            o if o == self.me => format!("#{}", t.number),
+            o => format!("@{}#{}", self.person(o).map_or(o, |p| p.username.as_str()), t.number),
+        }
+    }
+
+    /// Whether the user is to do it: in a shared folder, if it is assigned to them or to nobody.
+    pub fn mine(&self, t: &Task) -> bool {
+        self.share(t.folder_id).is_none() || t.assignees.is_empty() || t.assignees.iter().any(|a| a == self.me)
+    }
+
+    /// The folders others share with the user.
+    pub fn shared_with_me(&self) -> &[&'a Folder] {
+        &self.foreign
     }
 
     pub fn folder(&self, id: FolderId) -> Option<&'a Folder> {
@@ -165,7 +247,7 @@ impl<'a> Board<'a> {
         self.children.get(&f).map_or(&[], Vec::as_slice)
     }
 
-    /// Every folder, root first, each followed by its subfolders.
+    /// Every folder, root first, each followed by its subfolders, then those shared with the user.
     pub fn folder_tree(&self) -> Vec<Option<FolderId>> {
         let mut list: Vec<_> = self.rank.keys().copied().collect();
         list.sort_by_key(|f| self.rank[f]);
@@ -185,7 +267,7 @@ impl<'a> Board<'a> {
         }
     }
 
-    /// `/` for the root, otherwise `/工作/网站改版`.
+    /// `/` for the root, otherwise `/工作/网站改版`; `@alice/装修/水电` in a folder Alice shares.
     pub fn path(&self, f: Option<FolderId>) -> String {
         let mut names = Vec::new();
         let mut cur = f;
@@ -195,13 +277,24 @@ impl<'a> Board<'a> {
             cur = folder.parent_id;
         }
         names.reverse();
-        format!("/{}", names.join("/"))
+        match self.share(f).filter(|sh| sh.owner != self.me) {
+            Some(sh) => format!("@{}/{}", self.person(&sh.owner).map_or(sh.owner.as_str(), |p| p.username.as_str()), names.join("/")),
+            None => format!("/{}", names.join("/")),
+        }
     }
 
-    /// The folder at a path such as `/工作/网站改版` (the leading `/` is optional).
+    /// The folder at a path such as `/工作/网站改版` (the leading `/` is optional) or `@alice/装修`.
     pub fn find_folder(&self, path: &str) -> Option<Option<FolderId>> {
+        let mut names = path.split('/').map(str::trim).filter(|s| !s.is_empty());
         let mut cur = None;
-        for name in path.split('/').map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some(user) = path.trim_start().strip_prefix('@') {
+            let user = user.split('/').next().unwrap_or_default().trim();
+            names.next();
+            let name = names.next()?;
+            let owner = self.person_named(user)?;
+            cur = Some(self.foreign.iter().find(|f| f.name.as_str() == name && self.shared[&f.id].owner == owner.id)?.id);
+        }
+        for name in names {
             cur = Some(self.subfolders(cur).iter().find(|f| f.name.as_str() == name)?.id);
         }
         Some(cur)
@@ -217,10 +310,10 @@ impl<'a> Board<'a> {
         list
     }
 
-    /// Ready tasks: those with a due date first, earliest first (a date without a time counts as
-    /// the end of that day), then the rest in folder order and manual order.
+    /// The user's ready tasks: those with a due date first, earliest first (a date without a time
+    /// counts as the end of that day), then the rest in folder order and manual order.
     pub fn next(&self) -> Vec<&'a Task> {
-        let mut list: Vec<&Task> = self.tasks.values().copied().filter(|t| self.status(t) == Status::Ready).collect();
+        let mut list: Vec<&Task> = self.tasks.values().copied().filter(|t| self.mine(t) && self.status(t) == Status::Ready).collect();
         list.sort_by_key(|&t| {
             let due = t.due.as_ref().map(|d| (d.date.as_str(), d.at.as_ref().map_or("24:00", |at| at.time.as_str())));
             (due.is_none(), due, self.key(t))

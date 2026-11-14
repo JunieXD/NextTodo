@@ -1,8 +1,8 @@
-// What can be done to a folder: make one inside it, tidy it with AI, rename, move, delete. From its "…"
-// button, or by right-clicking it on a computer.
+// What can be done to a folder: make one inside it, tidy it with AI, share, rename, move, delete. From
+// its "…" button, or by right-clicking it on a computer.
 
 import { DropdownMenu } from "radix-ui";
-import { Ellipsis, FolderInput, FolderPlus, ListChecks, Pencil, Sparkles, Trash2 } from "lucide-react";
+import { Ellipsis, FolderInput, FolderPlus, ListChecks, Pencil, Sparkles, Trash2, Users } from "lucide-react";
 import { type ReactElement, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation } from "wouter";
@@ -10,6 +10,7 @@ import type { FolderId } from "../api/types/FolderId";
 import type { Op } from "../api/types/Op";
 import { aiReady } from "../ai";
 import { lastKey } from "../domain/apply";
+import { inLocalMode } from "../local";
 import { localTime } from "../domain/dates";
 import { rekey } from "../domain/reorder";
 import { checkFolderName, checkJobText } from "../domain/text";
@@ -22,6 +23,7 @@ import { ContextMenu, type MenuItem, itemClass } from "../ui/menu";
 import { useBatch } from "./batch";
 import { folderUrl, settingsUrl } from "./nav";
 import { FolderPicker } from "./pickers";
+import { SharePanel, lost, shareable, sharer } from "./share";
 
 /** Asks for a name and makes a folder inside `parent`. */
 export function useNewFolder() {
@@ -60,7 +62,7 @@ export function usePlaceFolder() {
       { op: "folder.update", id: folder, ...(sort_key && { sort_key }), ...(moved && { parent_id: parent }) },
     ];
     const r = commit(ops);
-    if (r && moved) snack({ text: `已移至“${board.folderName(parent)}”`, action: "撤销", onAction: () => undo(r.id) });
+    if (r && moved) snack({ text: `已移至“${board.folderName(parent)}”${lost(r.effects)}`, action: "撤销", onAction: () => undo(r.id) });
   };
 }
 
@@ -142,8 +144,9 @@ function TidyRequest({ onSubmit, onClose }: { onSubmit(text: string): void; onCl
   );
 }
 
-/** The actions on `folder`, and the panel that moving or tidying it opens; in the root, only making a
- * folder and tidying; none for a folder deleted meanwhile, say on another device. */
+/** The actions on `folder`, and the panel that moving, tidying or sharing it opens; in the root, only
+ * making a folder and tidying; in a folder someone shares with the user, not changing that folder
+ * itself, which is its owner's to do; none for a folder deleted meanwhile, say on another device. */
 function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: ReactNode } {
   const commit = useCommit();
   const undo = useUndo();
@@ -153,6 +156,7 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
   const tidy = useTidy(folder);
   const [location, navigate] = useLocation();
   const [moving, setMoving] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const { board } = useView();
   if (folder === null) {
     const items = [
@@ -180,18 +184,25 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
     snack({ text: `已删除“${f.name}”`, action: "撤销", onAction: () => undo(r.id) });
   };
 
+  const theirs = sharer(board, f.id);
   return {
     items: [
       { icon: FolderPlus, label: "新建子文件夹", onSelect: () => newFolder(f.id) },
       { icon: Sparkles, label: "AI 整理事项", onSelect: tidy.start },
-      { icon: Pencil, label: "重命名", onSelect: rename },
-      { icon: FolderInput, label: "移动到…", onSelect: () => setMoving(true) },
-      { icon: Trash2, label: "删除文件夹", danger: true, onSelect: remove },
+      ...(shareable(board, f.id) && !inLocalMode() ? [{ icon: Users, label: "共享…", onSelect: () => setSharing(true) }] : []),
+      ...(theirs
+        ? []
+        : [
+            { icon: Pencil, label: "重命名", onSelect: rename },
+            { icon: FolderInput, label: "移动到…", onSelect: () => setMoving(true) },
+            { icon: Trash2, label: "删除文件夹", danger: true, onSelect: remove },
+          ]),
     ],
     panel: (
       <>
         {tidy.panel}
         {moving && <FolderPicker mode="move" current={f.parent_id} exclude={f.id} onPick={(parent) => place(f.id, parent, null)} onClose={() => setMoving(false)} />}
+        {sharing && <SharePanel folder={f.id} onClose={() => setSharing(false)} />}
       </>
     ),
   };

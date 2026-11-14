@@ -1,16 +1,15 @@
 //! What a job asks the model, and reading back the tasks it answers with.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use nexttodo_core::board::Board;
-use nexttodo_core::model::{AiJob, Due, Task};
+use nexttodo_core::model::{AiJob, Due, Task, TaskId};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::llm::Prompt;
 use crate::error::from_value;
-use crate::tools::args::{PlanRef, PlanTask};
-use crate::tools::number;
+use crate::tools::args::{PlanRef, PlanTask, task_ref};
 
 /// How many of the folder's open tasks the model is shown.
 const SHOWN: usize = 50;
@@ -59,6 +58,9 @@ pub const SYSTEM: &str = r#"你负责把用户随手写下的一段话整理成�
 - 原文“先订好酒店，再按酒店的位置规划每天的行程”，输出：
   {"tasks": [{"ref": "a", "title": "订酒店"}, {"ref": "b", "title": "按酒店位置规划每天的行程", "after": ["a"]}]}"#;
 
+/// Added to the instructions in a shared folder, where the text may say who is to do what.
+pub const ASSIGN: &str = r#"这个文件夹是共享的，输入里还有 people：共享人和成员，username 是用户名，name 是显示名，me 为 true 的是写这段话的用户。原文说了某件事由谁来做（“让小王去问报价”“我来订酒店”），就在那个事项上写 assign：负责人的 username 列表，如 "assign": ["wang"]；没说的不写，不要猜。"#;
+
 pub(super) fn due_text(d: &Due) -> String {
     match &d.at {
         Some(at) => format!("{} {}", d.date.as_str(), at.time.as_str()),
@@ -66,11 +68,14 @@ pub(super) fn due_text(d: &Due) -> String {
     }
 }
 
-/// The chat for `job`, and the numbers of the tasks it shows, the only ones its tasks may follow or
-/// come before.
-pub fn prompt(job: &AiJob, board: &Board) -> (Prompt, HashSet<i64>) {
+/// The tasks a chat shows, by the numbers it shows them by: the only ones its tasks may follow or come
+/// before. By id, as a task's number changes if it moves to another owner's while the model answers.
+pub type Shown = HashMap<i64, TaskId>;
+
+/// The chat for `job`, and the tasks it shows.
+pub fn prompt(job: &AiJob, board: &Board) -> (Prompt, Shown) {
     let open: Vec<&Task> = board.tasks_in(job.folder_id).into_iter().filter(|t| t.done_at.is_none()).take(SHOWN).collect();
-    let shown: HashSet<i64> = open.iter().map(|t| t.number).collect();
+    let shown: Shown = open.iter().map(|t| (t.number, t.id)).collect();
     let tasks: Vec<Value> = open
         .iter()
         .map(|t| {
@@ -78,20 +83,33 @@ pub fn prompt(job: &AiJob, board: &Board) -> (Prompt, HashSet<i64>) {
             if let Some(d) = &t.due {
                 v["due"] = due_text(d).into();
             }
-            let after: Vec<i64> = board.before(t).iter().map(|b| b.number).filter(|n| shown.contains(n)).collect();
+            let after: Vec<i64> = board.before(t).iter().map(|b| b.number).filter(|n| shown.contains_key(n)).collect();
             if !after.is_empty() {
                 v["after"] = after.into();
             }
             v
         })
         .collect();
-    let input = json!({
+    let mut input = json!({
         "local_time": job.local_time.as_str(),
         "folder": board.path(job.folder_id),
         "open_tasks": tasks,
         "text": job.text.as_str(),
     });
-    (chat(SYSTEM, &input), shown)
+    let Some(share) = board.share(job.folder_id) else { return (chat(SYSTEM, &input), shown) };
+    let people: Vec<Value> = std::iter::once(&share.owner)
+        .chain(&share.members)
+        .filter_map(|id| board.person(id))
+        .map(|p| {
+            let mut v = json!({ "username": p.username, "name": p.display_name });
+            if p.id == board.me() {
+                v["me"] = true.into();
+            }
+            v
+        })
+        .collect();
+    input["people"] = people.into();
+    (chat(&format!("{SYSTEM}\n\n{ASSIGN}"), &input), shown)
 }
 
 /// The chat that gives the model `input`, a job and its folder as `prompt` makes them, with the
@@ -125,7 +143,7 @@ pub fn unwrap(answer: &str) -> &str {
 }
 
 /// The tasks in the model's answer, linked only to each other and to tasks in `shown`.
-pub fn parse(answer: &str, shown: &HashSet<i64>) -> Result<Vec<PlanTask>, String> {
+pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<PlanTask>, String> {
     let mut v: Value = serde_json::from_str(unwrap(answer)).map_err(|_| "模型返回的不是合法的 JSON".to_owned())?;
     // Models write an empty field for one they have nothing for, `"due": ""` say: it is left out. The
     // title has to be there.
@@ -149,9 +167,13 @@ pub fn parse(answer: &str, shown: &HashSet<i64>) -> Result<Vec<PlanTask>, String
         for r in t.after.iter().chain(&t.before) {
             let n = match r {
                 PlanRef::Number(n) => Some(*n),
-                PlanRef::Name(s) => number(s),
+                PlanRef::Name(s) => match task_ref(s) {
+                    Some((None, n)) => Some(n),
+                    Some((Some(_), _)) => return Err(format!("结果引用了不在这个文件夹里的事项 {s}")),
+                    None => None,
+                },
             };
-            if let Some(n) = n.filter(|n| !shown.contains(n)) {
+            if let Some(n) = n.filter(|n| !shown.contains_key(n)) {
                 return Err(format!("结果引用了不在这个文件夹里的事项 #{n}"));
             }
         }
@@ -172,7 +194,7 @@ mod tests {
 
     #[test]
     fn checks_the_answer() {
-        let shown = HashSet::from([12]);
+        let shown = Shown::from([(12, TaskId(uuid::Uuid::nil()))]);
         let ok = r##"{"tasks": [{"ref": "a", "title": "写初稿"}, {"title": "改稿", "after": ["a", 12, "#12"]}]}"##;
         assert_eq!(parse(ok, &shown).unwrap().len(), 2);
         assert_eq!(parse("好的", &shown).err().unwrap(), "模型返回的不是合法的 JSON");

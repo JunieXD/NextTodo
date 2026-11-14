@@ -40,13 +40,15 @@ pub struct Since {
     since: i64,
 }
 
-/// One mutation in the log, as clients receive it.
+/// One mutation in the log, as a user receives it: what they see of it.
 #[derive(Serialize, TS)]
 #[ts(export)]
 pub struct LogEntry {
     seq: i64,
     id: MutationId,
-    /// The API token's name; `null` for the user's own devices.
+    /// Who made it.
+    user: String,
+    /// The API token's name; `null` for a user's own devices.
     actor: Option<String>,
     effects: Vec<Effect>,
     created_at: i64,
@@ -68,21 +70,25 @@ pub async fn changes(
     st.db.call(move |c| changes_since(c, &auth.user_id, since)).await.map(Json)
 }
 
-/// The changes after `since`, or a `resync` error when they are no longer kept.
-pub fn changes_since(c: &Connection, owner: &str, since: i64) -> Result<Changes, ApiError> {
-    let pruned: i64 = c.query_row("SELECT pruned_seq FROM users WHERE id = ?1", [owner], |r| r.get(0))?;
+/// The changes `user` is to see after `since`, or a `resync` error when they are no longer kept, or
+/// the user has joined or left a shared folder since.
+pub fn changes_since(c: &Connection, user: &str, since: i64) -> Result<Changes, ApiError> {
+    let pruned: i64 = c.query_row("SELECT pruned_seq FROM users WHERE id = ?1", [user], |r| r.get(0))?;
     if since < pruned {
         return Err(ApiError::resync());
     }
-    let mut stmt =
-        c.prepare_cached("SELECT seq, id, actor, effects, created_at FROM mutations WHERE owner_id = ?1 AND seq > ?2 ORDER BY seq")?;
-    let rows = stmt.query_map(params![owner, since], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get::<_, String>(3)?, r.get(4)?)))?;
+    let mut stmt = c.prepare_cached(
+        "SELECT m.seq, m.id, m.owner_id, m.actor, coalesce(d.effects, m.effects), m.created_at
+         FROM deliveries d JOIN mutations m ON m.seq = d.seq WHERE d.user_id = ?1 AND d.seq > ?2 ORDER BY d.seq",
+    )?;
+    let rows =
+        stmt.query_map(params![user, since], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get::<_, String>(4)?, r.get(5)?)))?;
     let mut changes = Vec::new();
     for row in rows {
-        let (seq, id, actor, effects, created_at) = row?;
-        changes.push(LogEntry { seq, id, actor, effects: serde_json::from_str(&effects)?, created_at });
+        let (seq, id, user, actor, effects, created_at) = row?;
+        changes.push(LogEntry { seq, id, user, actor, effects: serde_json::from_str(&effects)?, created_at });
     }
-    Ok(Changes { seq: store::latest_seq(c, owner)?, changes })
+    Ok(Changes { seq: store::latest_seq(c, user)?, changes })
 }
 
 pub async fn mutate(State(st): State<AppState>, auth: Auth, Json(m): Json<Mutation>) -> Result<Json<Applied>, ApiError> {
@@ -92,8 +98,8 @@ pub async fn mutate(State(st): State<AppState>, auth: Auth, Json(m): Json<Mutati
     let applied = st
         .db
         .call(move |c| {
-            let applied = mutate::apply(c, &Actor { owner: &auth.user_id, token_id: &auth.token_id, via: auth.via() }, &m, now)?;
-            hub.changed(&auth.user_id);
+            let (applied, to) = mutate::apply(c, &Actor { user: &auth.user_id, token_id: &auth.token_id, via: auth.via() }, &m, now)?;
+            hub.notify(&to);
             Ok(applied)
         })
         .await?;

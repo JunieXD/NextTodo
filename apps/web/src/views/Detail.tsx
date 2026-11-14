@@ -1,7 +1,8 @@
-// A task's details: title, folder, due date, description, what it waits for and what waits for it.
+// A task's details: title, folder, who is to do it, due date, description, what it waits for and
+// what waits for it.
 
-import { Bell, Calendar, CalendarCheck, CalendarClock, Folder as FolderIcon, KeyRound, type LucideIcon, Plus, User, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Bell, Calendar, CalendarCheck, CalendarClock, Folder as FolderIcon, KeyRound, type LucideIcon, Plus, User, Users, X } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
@@ -22,13 +23,24 @@ import { useMarks } from "./marks";
 import { useSelection } from "./nav";
 import { FolderPicker, TaskPicker } from "./pickers";
 import { dueClass } from "./rows";
+import { AssigneePicker, Avatars, namesOf } from "./share";
 
 const STATUS = { ready: "可做", waiting: "等待中", done: "已完成" };
 
-type Panel = "folder" | "start" | "due" | "pred" | "succ" | null;
+type Panel = "folder" | "assignees" | "start" | "due" | "pred" | "succ" | null;
 
-/** Who made a change: nobody named for the user, or a token's name followed by a space before the Chinese. */
-const who = (via: string | null) => (via ? `${via} ` : "");
+/** Who made a change: the user's own token, or someone else, by name or by their token, `Bob 的
+ * Claude Code`; nobody named for the user themselves. */
+function source(board: Board, user: string, via: string | null): string | null {
+  if (user === board.me) return via;
+  return via ? `${board.name(user)} 的 ${via}` : board.name(user);
+}
+
+/** Who made a change, followed by a space before the Chinese. */
+const who = (board: Board, user: string, via: string | null) => {
+  const s = source(board, user, via);
+  return s ? `${s} ` : "";
+};
 
 type TaskFields = Omit<Extract<Op, { op: "task.update" }>, "op" | "id">;
 
@@ -56,8 +68,9 @@ function useKeepEdit(field: "title" | "description", what: string) {
     // Nothing edited: what is there stays, whoever wrote it.
     if (mine === base) return { value: t[field], mine: false };
     if (t[field] !== base && t[field] !== mine) {
+      const by = source(store.getView().board, t.updated_by, t.updated_via);
       const theirs = await confirm({
-        title: `${what}在编辑期间已${t.updated_via ? `被“${t.updated_via}”` : "在别处"}改过`,
+        title: `${what}在编辑期间已${by ? `被“${by}”` : "在别处"}改过`,
         body: "对方现在的版本如下。保留对方的版本，本次修改将丢弃。",
         detail: t[field],
         ok: "保留对方的",
@@ -91,6 +104,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
   if (closing && panel) setPanel(null);
   if (!t) return <div className="detail-empty">该事项已删除</div>;
   const status = board.status(t);
+  const shared = board.sharedRoot(t.folder_id);
   const update = (fields: TaskFields) => commit([{ op: "task.update", id: t.id, ...fields }]);
 
   return (
@@ -104,7 +118,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
             {/* What it waits for. */}
             {status === "waiting" && board.waitingOn(t) > 0 && <span>还有 {board.waitingOn(t)} 项前置未完成</span>}
             {status === "waiting" && board.notStarted(t) && <span>{startLabel(t.start!, now)}</span>}
-            {t.number > 0 && <span className="tabular-nums">#{t.number}</span>}
+            {t.number > 0 && <span className="tabular-nums">{board.label(t)}</span>}
           </div>
         </div>
         {onClose && (
@@ -118,6 +132,26 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
 
       <div className="group">
         <Prop icon={FolderIcon} label="文件夹" value={board.place(t.folder_id)} onClick={() => setPanel("folder")} />
+        {shared && (
+          <Prop
+            icon={Users}
+            label="负责人"
+            value={
+              t.assignees.length > 1 ? (
+                <>
+                  <Avatars board={board} ids={t.assignees} size={22} max={3} />
+                  {namesOf(board, t.assignees)}
+                </>
+              ) : t.assignees.length ? (
+                board.name(t.assignees[0])
+              ) : (
+                "未指定（所有成员）"
+              )
+            }
+            cls={t.assignees.length ? "" : "muted"}
+            onClick={() => setPanel("assignees")}
+          />
+        )}
         <Prop
           icon={CalendarClock}
           label="开始"
@@ -157,8 +191,8 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
 
       <p className="provenance">
         <Icon of={t.created_via ? KeyRound : User} size={14} />
-        {who(t.created_via)}创建于 {formatMoment(t.created_at, now)}
-        {t.updated_at !== t.created_at && `，${who(t.updated_via)}修改于 ${formatMoment(t.updated_at, now)}`}
+        {who(board, t.created_by, t.created_via)}创建于 {formatMoment(t.created_at, now)}
+        {t.updated_at !== t.created_at && `，${who(board, t.updated_by, t.updated_via)}修改于 ${formatMoment(t.updated_at, now)}`}
       </p>
       <div className="group detail-actions">
         {t.due?.repeat && (
@@ -176,6 +210,14 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
           mode="move"
           current={t.folder_id}
           onPick={(f) => actions.move(t, f)}
+          onClose={() => setPanel(null)}
+        />
+      )}
+      {panel === "assignees" && shared && (
+        <AssigneePicker
+          folder={shared}
+          chosen={t.assignees}
+          onToggle={(user, on) => update(on ? { assign: [user] } : { unassign: [user] })}
           onClose={() => setPanel(null)}
         />
       )}
@@ -197,7 +239,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
 }
 
 /** A property of the task; one without `onClick` is only shown. */
-function Prop({ icon, label, value, cls = "", onClick }: { icon: LucideIcon; label: string; value: string; cls?: string; onClick?(): void }) {
+function Prop({ icon, label, value, cls = "", onClick }: { icon: LucideIcon; label: string; value: ReactNode; cls?: string; onClick?(): void }) {
   const inner = (
     <div className="row-inner">
       <Icon of={icon} />

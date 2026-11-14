@@ -39,7 +39,7 @@ vi.mock("@tauri-apps/plugin-http", () => ({
     const body =
       path === "/me"
         ? { id: app.user, username: "local", display_name: "本机", is_admin: false }
-        : { user: app.user, seq: 0, folders: [], tasks: [], dependencies: [], ai_jobs: [] };
+        : { user: app.user, seq: 0, folders: [], tasks: [], dependencies: [], ai_jobs: [], shares: [], people: [] };
     return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
   },
 }));
@@ -53,7 +53,7 @@ async function leftOver(u: string) {
   const { load, saver } = await import("./sync/persist");
   const { Store } = await import("./sync/store");
   const { keepDraft } = await import("./sync/drafts");
-  await load(u, "earlier");
+  await load({ id: u, username: "local", display_name: "本机", is_admin: false }, "earlier");
   const pending: Pending = { mutation: { id: "019a4b2c-0000-7000-8000-000000000100", ops: [] }, at: 1 };
   await saver(u, "earlier", (e) => {
     throw e;

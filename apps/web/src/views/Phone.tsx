@@ -16,6 +16,7 @@ import { BackgroundTip } from "./Background";
 import { BatchBar, BatchHead, useBatch } from "./batch";
 import { Detail } from "./Detail";
 import { FolderMenu } from "./FolderMenu";
+import { SharedWith, sharer } from "./share";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, SearchResults } from "./lists";
 import { folderUrl, type SettingsSection, settingsUrl, useFolderView, useSelection } from "./nav";
 import { SettingsHome, SettingsPage, settingsTitle, useSectionAt } from "./Settings";
@@ -165,7 +166,7 @@ function SettingsScreen({ section, anim, onSignOut }: { section: SettingsSection
 function DoneScreen({ anim, now }: { anim: string; now: Date }) {
   const { board } = useView();
   const batch = useBatch();
-  const any = board.snapshot.tasks.some((t) => t.done_at !== null);
+  const any = board.snapshot.tasks.some((t) => t.done_at !== null && board.mine(t));
   return (
     <Screen title="已完成" nav={<Back to="/" label="接下来" />} anim={anim} choosing={batch.on}>
       <div className="hero">
@@ -195,11 +196,18 @@ function FolderScreen({ folder, anim, now }: { folder: FolderId | null; anim: st
   const nav = f && <Back to={folderUrl(f.parent_id)} label={f.parent_id ? board.folderName(f.parent_id) : "文件夹"} />;
   const batch = useBatch();
   const graph = f !== null && view === "graph";
+  const by = f && sharer(board, f.id);
   return (
     <Screen title={title} nav={nav} anim={anim} fill={graph} choosing={batch.on} after={!graph && !batch.on && <QuickAdd folder={folder} />}>
+      {by && <p className="over-title">{board.name(by)} 共享</p>}
       <div className="hero">
         <h1 className="large-title">{title}</h1>
-        {!batch.on && <FolderMenu folder={folder} />}
+        {!batch.on && (
+          <span className="hero-actions">
+            <SharedWith folder={folder} />
+            <FolderMenu folder={folder} />
+          </span>
+        )}
       </div>
       {batch.on ? null : f ? (
         <div className="view-seg">

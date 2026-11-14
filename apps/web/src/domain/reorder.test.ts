@@ -4,6 +4,9 @@ import type { Task } from "../api/types/Task";
 import { Board } from "./board";
 import { range, rekey } from "./reorder";
 
+/** The user whose data it is. */
+const ME = "019a4b2c-0000-7000-8000-0000000000ee";
+
 const FOLDER = "00000000-0000-7000-8000-000000000f00";
 const OTHER = "00000000-0000-7000-8000-000000000f01";
 
@@ -26,13 +29,18 @@ function board(tasks: { key: string; done?: boolean; other?: boolean }[], deps: 
       sort_key: t.key,
       created_at: 0,
       updated_at: 0,
+      assignees: [],
+      created_by: ME,
+      updated_by: ME,
       created_via: null,
       updated_via: null,
     })),
     dependencies: deps.map(([b, a]) => ({ before: id(b), after: id(a), created_at: 0 })),
     ai_jobs: [],
+    shares: [],
+    people: [],
   };
-  return new Board(snapshot, "2026-11-12");
+  return new Board(snapshot, "2026-11-12", ME);
 }
 
 const list = (b: Board) => b.order(b.contents(FOLDER).filter((t) => t.done_at === null), (t) => t.done_at === null);

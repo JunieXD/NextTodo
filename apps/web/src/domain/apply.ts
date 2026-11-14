@@ -1,6 +1,8 @@
 // Applies operations to a local copy the way the server does (`crates/server/src/mutate.rs`), and
 // yields the same kind of effects, so the app shows a change at once and can undo it locally.
-// What only the server knows stays unknown: a new task's number is 0 until the server's copy arrives.
+// What only the server knows stays unknown: a new task's number, or that of one moved to someone
+// else's, is 0 until the server's copy arrives. Sharing and leaving a folder go to the server
+// directly (`views/share.tsx`), as the people to add are only known there.
 
 import { generateNKeysBetween } from "fractional-indexing";
 import type { AiJob } from "../api/types/AiJob";
@@ -12,6 +14,8 @@ import type { Folder } from "../api/types/Folder";
 import type { FolderId } from "../api/types/FolderId";
 import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
+import type { Person } from "../api/types/Person";
+import type { Share } from "../api/types/Share";
 import type { Snapshot } from "../api/types/Snapshot";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
@@ -24,6 +28,8 @@ export interface Data {
   tasks: Map<TaskId, Task>;
   deps: Map<string, Dependency>;
   jobs: Map<AiJobId, AiJob>;
+  shares: Map<FolderId, Share>;
+  people: Map<string, Person>;
 }
 
 export const depKey = (before: TaskId, after: TaskId) => `${before}>${after}`;
@@ -33,17 +39,32 @@ export function fromSnapshot(s: Snapshot): Data {
     folders: new Map(s.folders.map((f) => [f.id, f])),
     tasks: new Map(s.tasks.map((t) => [t.id, t])),
     deps: new Map(s.dependencies.map((d) => [depKey(d.before, d.after), d])),
-    // Copies saved before there were AI jobs have none.
-    jobs: new Map((s.ai_jobs ?? []).map((j) => [j.id, j])),
+    jobs: new Map(s.ai_jobs.map((j) => [j.id, j])),
+    shares: new Map(s.shares.map((sh) => [sh.folder_id, sh])),
+    people: new Map(s.people.map((p) => [p.id, p])),
   };
 }
 
 export function toSnapshot(d: Data): Snapshot {
-  return { folders: [...d.folders.values()], tasks: [...d.tasks.values()], dependencies: [...d.deps.values()], ai_jobs: [...d.jobs.values()] };
+  return {
+    folders: [...d.folders.values()],
+    tasks: [...d.tasks.values()],
+    dependencies: [...d.deps.values()],
+    ai_jobs: [...d.jobs.values()],
+    shares: [...d.shares.values()],
+    people: [...d.people.values()],
+  };
 }
 
 export function copy(d: Data): Data {
-  return { folders: new Map(d.folders), tasks: new Map(d.tasks), deps: new Map(d.deps), jobs: new Map(d.jobs) };
+  return {
+    folders: new Map(d.folders),
+    tasks: new Map(d.tasks),
+    deps: new Map(d.deps),
+    jobs: new Map(d.jobs),
+    shares: new Map(d.shares),
+    people: new Map(d.people),
+  };
 }
 
 /** Sets each changed entity to how the effect left it. */
@@ -81,6 +102,18 @@ function set(d: Data, e: Effect, side: "before" | "after") {
       const [id, v] = [(e.before ?? e.after)!.id, e[side]];
       if (v) d.jobs.set(id, v);
       else d.jobs.delete(id);
+      return;
+    }
+    case "share": {
+      const [id, v] = [(e.before ?? e.after)!.folder_id, e[side]];
+      if (v) d.shares.set(id, v);
+      else d.shares.delete(id);
+      return;
+    }
+    case "person": {
+      const [id, v] = [(e.before ?? e.after)!.id, e[side]];
+      if (v) d.people.set(id, v);
+      else d.people.delete(id);
     }
   }
 }
@@ -96,6 +129,8 @@ export class Rejected extends Error {
 }
 
 export interface Context {
+  /** The user making the change. */
+  me: string;
   now: number;
   /** What an earlier mutation changed, for undoing it; `undefined` when this copy does not know. */
   effectsOf(id: MutationId): Effect[] | undefined;
@@ -111,6 +146,23 @@ export function apply(d: Data, ops: Op[], cx: Context): Effect[] {
     throw e;
   }
   return a.effects;
+}
+
+/** Where something is, as far as who can see it: the user's own data, or a folder its owner shares. */
+interface Space {
+  owner: string;
+  /** The shared folder. */
+  root: FolderId | null;
+  members: string[];
+}
+
+const sees = (space: Space, user: string) => space.owner === user || space.members.includes(user);
+
+/** The people `users` may be assigned to a task in `space`: some of those it is shared with. */
+function checkAssignees(space: Space, users: string[]) {
+  if (!users.length) return;
+  if (!space.root) throw new Rejected("invalid", "只有共享的文件夹里的事项能设负责人");
+  if (!users.every((u) => sees(space, u))) throw new Rejected("invalid", "负责人须是这个文件夹的共享人或成员");
 }
 
 class Applier {
@@ -151,6 +203,8 @@ class Applier {
         const folder = op.folder_id ?? null;
         if (folder) this.folder(folder);
         const keys = [...this.d.tasks.values()].filter((t) => t.folder_id === folder).map((t) => t.sort_key);
+        const assignees = [...new Set(op.assignees)].sort();
+        checkAssignees(this.space(folder), assignees);
         this.createTask({
           id: op.id,
           number: 0,
@@ -161,8 +215,11 @@ class Applier {
           start: op.start ?? null,
           due: op.due ?? null,
           sort_key: op.sort_key ?? lastKey(keys),
+          assignees,
           created_at: now,
           updated_at: now,
+          created_by: this.cx.me,
+          updated_by: this.cx.me,
           created_via: null,
           updated_via: null,
         });
@@ -177,6 +234,11 @@ class Applier {
         if (op.start !== undefined) t.start = op.start;
         if (op.due !== undefined) t.due = op.due;
         if (op.sort_key !== undefined) t.sort_key = op.sort_key;
+        if (op.assign?.length || op.unassign?.length) {
+          if (t.folder_id !== before.folder_id && t.folder_id) this.folder(t.folder_id);
+          checkAssignees(this.space(t.folder_id), op.assign ?? []);
+          t.assignees = [...new Set([...t.assignees, ...(op.assign ?? [])])].filter((u) => !op.unassign?.includes(u)).sort();
+        }
         if (op.done !== undefined && op.done !== (t.done_at !== null)) {
           const repeat = t.due?.repeat;
           // Done, a repeating task stays open, due next time (docs/design.md#重复).
@@ -199,8 +261,9 @@ class Applier {
         return;
       case "dep.add":
         if (op.before === op.after) throw new Rejected("invalid", "事项不能依赖自己");
-        this.task(op.before);
-        this.task(op.after);
+        if (!this.together(op.before, op.after)) {
+          throw new Rejected("invalid", "只能连同一处的事项：私人的事项之间，或同一个共享的文件夹里的事项之间");
+        }
         if (this.d.deps.has(depKey(op.before, op.after))) throw new Rejected("conflict", "该依赖已存在");
         this.createDependency({ before: op.before, after: op.after, created_at: now });
         return;
@@ -244,10 +307,44 @@ class Applier {
       case "ai_job.delete":
         this.push({ kind: "ai_job", before: this.job(op.id), after: null });
         return;
+      case "share.add":
+      case "share.remove":
+        throw new Rejected("offline", "添加、移除成员需要联网");
       case "undo":
         this.undo(op.mutation);
         return;
     }
+  }
+
+  /** Whether tasks `a` and `b` are in the same place, where they can be linked: both private, or in
+   * the same shared folder. */
+  private together(a: TaskId, b: TaskId): boolean {
+    return this.root(this.task(a).folder_id) === this.root(this.task(b).folder_id);
+  }
+
+  /** The shared folder `f` is in, or is. */
+  private root(f: FolderId | null): FolderId | null {
+    for (let cur = f; cur !== null; cur = this.d.folders.get(cur)!.parent_id) if (this.d.shares.has(cur)) return cur;
+    return null;
+  }
+
+  /** Where what is in folder `f` is. */
+  private space(f: FolderId | null): Space {
+    const root = this.root(f);
+    const share = root ? this.d.shares.get(root)! : undefined;
+    return { owner: share?.owner ?? this.cx.me, root, members: share?.members ?? [] };
+  }
+
+  /** The folders in the subtree rooted at `id`, it first, each before its subfolders. */
+  private subtree(id: FolderId): Folder[] {
+    const list = [this.d.folders.get(id)!];
+    for (let i = 0; i < list.length; i++) for (const f of this.d.folders.values()) if (f.parent_id === list[i].id) list.push(f);
+    return list;
+  }
+
+  private subtreeTasks(id: FolderId): Task[] {
+    const inside = new Set(this.subtree(id).map((f) => f.id));
+    return [...this.d.tasks.values()].filter((t) => t.folder_id !== null && inside.has(t.folder_id));
   }
 
   private folder(id: FolderId): Folder {
@@ -284,7 +381,9 @@ class Applier {
 
   private checkName(f: Folder) {
     for (const o of this.d.folders.values()) {
-      if (o.id !== f.id && o.parent_id === f.parent_id && o.name === f.name) {
+      // Folders others share are at the top of no tree of the user's.
+      const elsewhere = this.d.shares.get(o.id)?.owner !== undefined && this.d.shares.get(o.id)!.owner !== this.cx.me;
+      if (o.id !== f.id && o.parent_id === f.parent_id && o.name === f.name && !elsewhere) {
         throw new Rejected("conflict", `同一层级已有名为“${f.name}”的文件夹`);
       }
     }
@@ -295,21 +394,67 @@ class Applier {
     this.push({ kind: "folder", before: null, after: f });
   }
 
+  /** Changes a folder. One moved into or out of a shared folder takes along everything in it; its
+   * tasks lose the dependencies on what stays behind, and the assignees who can't see them now. */
   private updateFolder(before: Folder, after: Folder) {
     if (same(before, after)) return;
+    const from = this.space(before.id);
+    const shared = from.root === before.id;
+    if (shared && from.owner !== this.cx.me) throw new Rejected("forbidden", "只有共享人能改名、移动或删除共享的文件夹");
+    let to = from;
     if (after.parent_id !== before.parent_id && after.parent_id !== null) {
       this.folder(after.parent_id);
       for (let cur: FolderId | null = after.parent_id; cur !== null; cur = this.d.folders.get(cur)!.parent_id) {
         if (cur === after.id) throw new Rejected("folder_cycle", "文件夹不能移入自身或其子文件夹");
       }
     }
+    if (after.parent_id !== before.parent_id) {
+      const there = this.space(after.parent_id);
+      if (there.root && this.subtree(before.id).some((f) => this.d.shares.has(f.id))) {
+        throw new Rejected("invalid", "共享的文件夹不能放进另一个共享的文件夹");
+      }
+      // A shared folder takes its space along.
+      if (!shared) to = there;
+    }
     if (after.parent_id !== before.parent_id || after.name !== before.name) this.checkName(after);
+    if (from.root !== to.root) {
+      this.cutOff(before.id);
+      this.carry(before.id, from, to);
+    }
     this.push({ kind: "folder", before, after: { ...after, updated_at: this.cx.now } });
   }
 
+  /** Removes the dependencies between the tasks in the subtree rooted at `id` and those outside it. */
+  private cutOff(id: FolderId) {
+    const inside = new Set(this.subtreeTasks(id).map((t) => t.id));
+    for (const dep of [...this.d.deps.values()]) {
+      if (inside.has(dep.before) !== inside.has(dep.after)) this.deleteDependency(dep);
+    }
+  }
+
+  /** Makes the tasks in the subtree rooted at `id`, moved from `from` to `to`, belong there: to `to`'s
+   * owner, numbered anew if that is someone else, assigned only to people there. */
+  private carry(id: FolderId, from: Space, to: Space) {
+    for (const t of this.subtreeTasks(id)) {
+      const after = { ...t, assignees: t.assignees.filter((u) => to.root && sees(to, u)) };
+      if (to.owner !== from.owner) after.number = 0;
+      if (!same(t, after)) this.push({ kind: "task", before: t, after });
+    }
+  }
+
   /** Removes everything in the subtree: dependencies, tasks, then folders deepest first, so that
-   * undo brings it all back in reverse order. */
+   * undo brings it all back in reverse order. Shared folders inside go first. A shared folder stops
+   * being shared first, its tasks assigned to nobody before, so that bringing it back shares it again
+   * and then assigns them again. */
   private deleteFolder(id: FolderId) {
+    const share = this.d.shares.get(id);
+    if (share) {
+      if (share.owner !== this.cx.me) throw new Rejected("forbidden", "只有共享人能改名、移动或删除共享的文件夹");
+      for (const t of this.subtreeTasks(id)) if (t.assignees.length) this.push({ kind: "task", before: t, after: { ...t, assignees: [] } });
+      this.push({ kind: "share", before: share, after: null });
+    } else if (!this.root(id)) {
+      for (const f of this.subtree(id)) if (this.d.shares.has(f.id)) this.deleteFolder(f.id);
+    }
     const depth = new Map<FolderId, number>([[id, 0]]);
     for (let grew = true; grew; ) {
       grew = false;
@@ -335,14 +480,24 @@ class Applier {
 
   private createTask(t: Task) {
     checkTask(t);
-    this.push({ kind: "task", before: null, after: t });
+    const space = this.space(t.folder_id);
+    this.push({ kind: "task", before: null, after: { ...t, assignees: t.assignees.filter((u) => space.root && sees(space, u)) } });
   }
 
+  /** Changes a task. One moved into or out of a shared folder loses its dependencies and the
+   * assignees who can't see it now, and belongs to the owner of where it is. */
   private updateTask(before: Task, after: Task) {
     if (same(before, after)) return;
     checkTask(after);
     if (after.folder_id !== before.folder_id && after.folder_id !== null) this.folder(after.folder_id);
-    this.push({ kind: "task", before, after: { ...after, updated_at: this.cx.now, updated_via: null } });
+    const [from, to] = [this.space(before.folder_id), this.space(after.folder_id)];
+    if (from.root !== to.root) {
+      for (const dep of [...this.d.deps.values()]) if (dep.before === before.id || dep.after === before.id) this.deleteDependency(dep);
+    }
+    const t = { ...after, assignees: after.assignees.filter((u) => to.root && sees(to, u)) };
+    // The number the new owner gives it, or gives back, comes with the server's copy.
+    if (to.owner !== from.owner) t.number = 0;
+    this.push({ kind: "task", before, after: { ...t, updated_at: this.cx.now, updated_by: this.cx.me, updated_via: null } });
   }
 
   private deleteTask(id: TaskId) {
@@ -363,6 +518,28 @@ class Applier {
 
   private deleteDependency(dep: Dependency) {
     this.push({ kind: "dependency", before: dep, after: null });
+  }
+
+  /** Shares the user's folder `root` with `user` too. The first time, its tasks lose their
+   * dependencies on those outside it. */
+  private addMember(root: FolderId, user: string) {
+    const share = this.d.shares.get(root);
+    if (!share) this.cutOff(root);
+    const members = [...(share?.members ?? []), user].sort();
+    this.push({ kind: "share", before: share ?? null, after: { folder_id: root, owner: this.cx.me, members } });
+  }
+
+  /** Takes `user` off the user's shared folder `root`, and off the tasks they were to do. Once nobody
+   * is left, it is no longer shared, and nobody is assigned anything. */
+  private removeMember(root: FolderId, user: string) {
+    const share = this.d.shares.get(root)!;
+    const last = share.members.length === 1;
+    for (const t of this.subtreeTasks(root)) {
+      const assignees = t.assignees.filter((u) => !last && u !== user);
+      if (assignees.length !== t.assignees.length) this.push({ kind: "task", before: t, after: { ...t, assignees } });
+    }
+    const members = share.members.filter((m) => m !== user);
+    this.push({ kind: "share", before: share, after: last ? null : { ...share, members } });
   }
 
   /** A shortest chain of dependencies from `from` to `to`. */
@@ -418,11 +595,17 @@ class Applier {
           if (t.folder_id !== null && !this.d.folders.has(t.folder_id)) {
             throw new Rejected("not_found", `“${t.title}”原所在的文件夹已删除`);
           }
-          this.createTask({ ...t, updated_at: now, updated_via: null });
+          this.createTask({ ...t, updated_at: now, updated_by: this.cx.me, updated_via: null });
         } else {
           const cur = this.d.tasks.get(e.before.id);
           const fields = ["folder_id", "title", "description", "done_at", "start", "completions", "sort_key"] as const;
-          if (cur) this.updateTask(cur, { ...restore(cur, e.before, e.after, fields), due: restoreDue(cur.due, e.before.due, e.after.due) });
+          if (cur) {
+            this.updateTask(cur, {
+              ...restore(cur, e.before, e.after, fields),
+              due: restoreDue(cur.due, e.before.due, e.after.due),
+              assignees: restorePeople(cur.assignees, e.before.assignees, e.after.assignees),
+            });
+          }
         }
       } else if (e.kind === "ai_job") {
         if (!e.before) {
@@ -436,6 +619,18 @@ class Applier {
           this.createJob({ ...back, updated_at: now });
         }
         // Starting, failing and retrying are the job's own course, not undone.
+      } else if (e.kind === "share") {
+        const { folder_id, owner } = (e.before ?? e.after)!;
+        if (owner !== this.cx.me) throw new Rejected("forbidden", "只有共享人能添加或移除成员");
+        if (!this.d.folders.has(folder_id)) continue;
+        // Those it added go, and those it took off come back, as far as nothing has done so since.
+        const [b, a] = [e.before?.members ?? [], e.after?.members ?? []];
+        const now = this.d.shares.get(folder_id)?.members ?? [];
+        for (const u of a.filter((u) => !b.includes(u) && now.includes(u))) this.removeMember(folder_id, u);
+        for (const u of b.filter((u) => !a.includes(u) && !now.includes(u))) this.addMember(folder_id, u);
+        // Names are not undone.
+      } else if (e.kind === "person") {
+        continue;
       } else if (!e.before) {
         const dep = this.d.deps.get(depKey(e.after!.before, e.after!.after));
         if (dep) this.deleteDependency(dep);
@@ -444,10 +639,18 @@ class Applier {
         if (!this.d.tasks.has(dep.before) || !this.d.tasks.has(dep.after)) {
           throw new Rejected("not_found", "要恢复的依赖所关联的事项已删除");
         }
-        if (!this.d.deps.has(depKey(dep.before, dep.after))) this.createDependency(dep);
+        // Moved apart since, they can't be linked again.
+        if (!this.d.deps.has(depKey(dep.before, dep.after)) && this.together(dep.before, dep.after)) this.createDependency(dep);
       }
     }
   }
+}
+
+/** `cur` with the people added between `before` and `after` taken off again and those taken off put
+ * back, leaving those changed since. */
+function restorePeople(cur: string[], before: string[], after: string[]): string[] {
+  const kept = cur.filter((u) => !after.includes(u) || before.includes(u));
+  return [...new Set([...kept, ...before.filter((u) => !after.includes(u))])].sort();
 }
 
 /** `n` keys in order after everything in `keys`, for things new or moved to the end. */

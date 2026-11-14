@@ -1,15 +1,15 @@
 //! Tools that only read.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use nexttodo_core::board::{Board, Status};
-use nexttodo_core::model::{Effect, FolderId, JobState, Task};
+use nexttodo_core::model::{Effect, FolderId, JobState, Share, Task, TaskId};
 use nexttodo_core::ops::Op;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 
 use super::args::{GraphArgs, ListArgs, LogArgs, NextArgs, NoArgs, SearchArgs, ShowArgs};
-use super::text::{self, Names, ago, job_item, mention, status_tag, task_line, task_view};
+use super::text::{self, Names, ago, job_item, mention, status_tag, task_line, task_view, usernames};
 use super::{Cx, Output, find_folder, find_task};
 use crate::error::ApiError;
 use crate::store;
@@ -42,27 +42,49 @@ fn counts(b: &Board, f: Option<FolderId>) -> (String, usize, usize) {
     (text, pending, ready)
 }
 
+/// Who shares a folder with whom, in words and data.
+fn shared(b: &Board, share: &Share) -> (String, Value) {
+    let owner = usernames(b, std::slice::from_ref(&share.owner))[0];
+    let members = usernames(b, &share.members);
+    (format!("共享人 {owner}，成员 {}", members.join("、")), json!({ "owner": owner, "members": members }))
+}
+
 pub fn tree(c: &Connection, cx: &Cx, _: NoArgs) -> Result<Output, ApiError> {
-    let snap = store::snapshot(c, cx.owner)?;
-    let b = Board::new(&snap, cx.today.clone());
+    let snap = store::snapshot(c, cx.user)?;
+    let b = Board::new(&snap, cx.today.clone(), cx.user);
     let (mut lines, mut data) = (Vec::new(), Vec::new());
     for f in b.folder_tree() {
         let name = f.and_then(|id| b.folder(id)).map_or("/", |f| f.name.as_str());
         let depth = std::iter::successors(f, |id| b.folder(*id).and_then(|f| f.parent_id)).count();
         let (text, pending, ready) = counts(&b, f);
-        lines.push(format!("{}{name}{text}", "  ".repeat(depth)));
-        data.push(json!({ "path": b.path(f), "name": name, "depth": depth, "pending": pending, "ready": ready }));
+        let mut v = json!({ "path": b.path(f), "name": name, "depth": depth, "pending": pending, "ready": ready });
+        // Those shared with the user go by their path, which says whose they are.
+        let foreign = b.shared_with_me().iter().any(|s| Some(s.id) == f);
+        let mut line = format!("{}{}{text}", "  ".repeat(depth), if foreign { b.path(f) } else { name.to_owned() });
+        if let Some(share) = b.share(f).filter(|s| Some(s.folder_id) == f) {
+            let (said, share) = shared(&b, share);
+            line += &format!(" · {said}");
+            v["owner"] = share["owner"].clone();
+            v["members"] = share["members"].clone();
+        }
+        lines.push(line);
+        data.push(v);
     }
     Ok(Output { text: lines.join("\n"), data: data.into() })
 }
 
 pub fn list(c: &Connection, cx: &Cx, a: ListArgs) -> Result<Output, ApiError> {
-    let snap = store::snapshot(c, cx.owner)?;
-    let b = Board::new(&snap, cx.today.clone());
+    let snap = store::snapshot(c, cx.user)?;
+    let b = Board::new(&snap, cx.today.clone(), cx.user);
     let f = find_folder(&b, a.folder.as_deref().unwrap_or("/"))?;
     let limit = limit(a.limit)?;
     let mut lines = vec![b.path(f)];
     let mut data = json!({ "folder": b.path(f) });
+    if let Some((said, share)) = b.share(f).map(|s| shared(&b, s)) {
+        lines.push(format!("  {said}"));
+        data["owner"] = share["owner"].clone();
+        data["members"] = share["members"].clone();
+    }
     // The AI jobs here: an agent reading the folder sees that more is on its way, or failed.
     let mut jobs = serde_json::Map::new();
     let mut said = Vec::new();
@@ -102,8 +124,8 @@ pub fn list(c: &Connection, cx: &Cx, a: ListArgs) -> Result<Output, ApiError> {
 
 pub fn next(c: &Connection, cx: &Cx, a: NextArgs) -> Result<Output, ApiError> {
     let limit = limit(a.limit)?;
-    let snap = store::snapshot(c, cx.owner)?;
-    let b = Board::new(&snap, cx.today.clone());
+    let snap = store::snapshot(c, cx.user)?;
+    let b = Board::new(&snap, cx.today.clone(), cx.user);
     let steps = b.steps();
     let mut tasks = b.next();
     let total = tasks.len();
@@ -128,10 +150,13 @@ pub fn next(c: &Connection, cx: &Cx, a: NextArgs) -> Result<Output, ApiError> {
 }
 
 pub fn show(c: &Connection, cx: &Cx, a: ShowArgs) -> Result<Output, ApiError> {
-    let snap = store::snapshot(c, cx.owner)?;
-    let b = Board::new(&snap, cx.today.clone());
-    let t = find_task(&b, a.task)?;
-    let mut lines = vec![format!("#{} {} {}", t.number, status_tag(&b, t), t.title.as_str()), format!("文件夹：{}", b.path(t.folder_id))];
+    let snap = store::snapshot(c, cx.user)?;
+    let b = Board::new(&snap, cx.today.clone(), cx.user);
+    let t = find_task(&b, &a.task)?;
+    let mut lines = vec![format!("{} {} {}", b.label(t), status_tag(&b, t), t.title.as_str()), format!("文件夹：{}", b.path(t.folder_id))];
+    if !t.assignees.is_empty() {
+        lines.push(format!("负责：{}", usernames(&b, &t.assignees).join("、")));
+    }
     if let Some(s) = &t.start {
         lines.push(format!("开始：{}", s.as_str()));
     }
@@ -156,10 +181,10 @@ pub fn show(c: &Connection, cx: &Cx, a: ShowArgs) -> Result<Output, ApiError> {
             lines.extend(list.iter().map(|l| format!("  {}", mention(&b, l, l.folder_id != t.folder_id))));
         }
     }
-    let source = |via: &Option<String>| via.as_deref().unwrap_or("本人").to_owned();
-    lines.push(format!("创建：{}，{}", ago(cx.now, t.created_at), source(&t.created_via)));
+    let source = |by: &str, via: &Option<String>| who(&b, by, via.as_deref());
+    lines.push(format!("创建：{}，{}", ago(cx.now, t.created_at), source(&t.created_by, &t.created_via)));
     if t.updated_at != t.created_at {
-        lines.push(format!("修改：{}，{}", ago(cx.now, t.updated_at), source(&t.updated_via)));
+        lines.push(format!("修改：{}，{}", ago(cx.now, t.updated_at), source(&t.updated_by, &t.updated_via)));
     }
     if !t.description.as_str().is_empty() {
         lines.push(String::new());
@@ -176,6 +201,11 @@ pub fn show(c: &Connection, cx: &Cx, a: ShowArgs) -> Result<Output, ApiError> {
             data[key] = via.as_str().into();
         }
     }
+    for (key, by) in [("created_by", &t.created_by), ("updated_by", &t.updated_by)] {
+        if by != cx.user {
+            data[key] = usernames(&b, std::slice::from_ref(by))[0].into();
+        }
+    }
     for (key, list) in [("before", &before), ("after", &after)] {
         if !list.is_empty() {
             data[key] = list.iter().map(|t| task_view(&b, t)).collect();
@@ -190,8 +220,8 @@ pub fn search(c: &Connection, cx: &Cx, a: SearchArgs) -> Result<Output, ApiError
     if query.is_empty() {
         return Err(ApiError::invalid("关键词不能为空", Some("query".into())));
     }
-    let snap = store::snapshot(c, cx.owner)?;
-    let b = Board::new(&snap, cx.today.clone());
+    let snap = store::snapshot(c, cx.user)?;
+    let b = Board::new(&snap, cx.today.clone(), cx.user);
     let mut found: Vec<&Task> = snap
         .tasks
         .iter()
@@ -214,8 +244,8 @@ pub fn search(c: &Connection, cx: &Cx, a: SearchArgs) -> Result<Output, ApiError
 }
 
 pub fn graph(c: &Connection, cx: &Cx, a: GraphArgs) -> Result<Output, ApiError> {
-    let snap = store::snapshot(c, cx.owner)?;
-    let b = Board::new(&snap, cx.today.clone());
+    let snap = store::snapshot(c, cx.user)?;
+    let b = Board::new(&snap, cx.today.clone(), cx.user);
     let scope = find_folder(&b, a.folder.as_deref().unwrap_or("/"))?;
     let shown = |t: &Task| a.all || t.done_at.is_none();
     let mut nodes: Vec<&Task> = snap.tasks.iter().filter(|t| shown(t) && b.in_subtree(t.folder_id, scope)).collect();
@@ -240,14 +270,16 @@ pub fn graph(c: &Connection, cx: &Cx, a: GraphArgs) -> Result<Output, ApiError> 
             .iter()
             .map(|&t| {
                 let line = task_line(&b, t, t.folder_id != scope, true, None);
-                let before: Vec<String> = edges.iter().filter(|(_, a)| a.id == t.id).map(|(p, _)| format!("#{}", p.number)).collect();
+                let before: Vec<String> = edges.iter().filter(|(_, a)| a.id == t.id).map(|(p, _)| b.label(p)).collect();
                 if before.is_empty() { line } else { format!("{line} ← {}", before.join(", ")) }
             })
             .collect::<Vec<_>>()
             .join("\n")
     };
     let tasks: Vec<Value> = nodes.iter().map(|t| task_view(&b, t)).collect();
-    let edges: Vec<Value> = edges.iter().map(|(p, t)| json!({ "before": p.number, "after": t.number })).collect();
+    // As tasks are given: by number, and those in folders others share as `@alice#42`.
+    let refer = |t: &Task| if b.owner(t) == cx.user { json!(t.number) } else { json!(b.label(t)) };
+    let edges: Vec<Value> = edges.iter().map(|(p, t)| json!({ "before": refer(p), "after": refer(t) })).collect();
     Ok(Output { text, data: json!({ "tasks": tasks, "edges": edges }) })
 }
 
@@ -255,19 +287,21 @@ fn mermaid(b: &Board, nodes: &[&Task], edges: &[(&Task, &Task)], scope: Option<F
     // Mermaid's entities: `#` first, so that a title cannot spell one out itself.
     let escape = |s: &str| s.replace('#', "#35;").replace('"', "#quot;").replace('<', "#lt;").replace('>', "#gt;").replace('`', "#96;");
     let mut lines = vec!["flowchart LR".to_owned()];
-    for t in nodes {
+    // Numbers are each owner's: the nodes go by their place in the list.
+    let node: HashMap<TaskId, usize> = nodes.iter().enumerate().map(|(i, t)| (t.id, i)).collect();
+    for (i, t) in nodes.iter().enumerate() {
         let class = match b.status(t) {
             Status::Ready => "ready",
             Status::Waiting { .. } => "waiting",
             Status::Done => "done",
         };
-        let mut label = format!("#{} {}", t.number, escape(t.title.as_str()));
+        let mut label = format!("{} {}", b.label(t), escape(t.title.as_str()));
         if t.folder_id != scope {
             label += &format!("<br/>{}", escape(&b.path(t.folder_id)));
         }
-        lines.push(format!("  t{}[\"{label}\"]:::{class}", t.number));
+        lines.push(format!("  t{i}[\"{label}\"]:::{class}"));
     }
-    lines.extend(edges.iter().map(|(p, t)| format!("  t{} --> t{}", p.number, t.number)));
+    lines.extend(edges.iter().map(|(p, t)| format!("  t{} --> t{}", node[&p.id], node[&t.id])));
     lines.push("  classDef ready fill:#A6F2D1,stroke:#1B6B51,color:#002116".into());
     lines.push("  classDef waiting fill:#FFFFFF,stroke:#707973,stroke-dasharray:4 3,color:#404944".into());
     lines.push("  classDef done fill:#DEE4DF,stroke:#BFC9C2,color:#707973".into());
@@ -277,11 +311,11 @@ fn mermaid(b: &Board, nodes: &[&Task], edges: &[(&Task, &Task)], scope: Option<F
 /// The AI jobs not done yet, oldest first: done ones are tasks by now, but for tidyings with
 /// suggestions to take.
 pub fn jobs(c: &Connection, cx: &Cx, _: NoArgs) -> Result<Output, ApiError> {
-    let snap = store::snapshot(c, cx.owner)?;
+    let snap = store::snapshot(c, cx.user)?;
     if snap.ai_jobs.is_empty() {
         return Ok(Output { text: "没有 AI 整理请求。".into(), data: json!([]) });
     }
-    let b = Board::new(&snap, cx.today.clone());
+    let b = Board::new(&snap, cx.today.clone(), cx.user);
     let (mut lines, mut data) = (Vec::new(), Vec::new());
     for j in &snap.ai_jobs {
         let state = match j.state {
@@ -308,11 +342,13 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
         return Err(ApiError::invalid("条数要在 1 到 100 之间", Some("limit".into())));
     }
     let mut stmt = c.prepare(
-        "SELECT m.seq, m.actor, t.kind, t.name, m.ops, m.effects, m.created_at FROM mutations m LEFT JOIN tokens t ON t.id = m.token_id
-         WHERE m.owner_id = ?1 AND m.effects IS NOT NULL ORDER BY m.seq DESC LIMIT ?2",
+        "SELECT m.seq, m.owner_id, m.actor, t.kind, t.name, m.ops, coalesce(d.effects, m.effects), m.created_at
+         FROM deliveries d JOIN mutations m ON m.seq = d.seq LEFT JOIN tokens t ON t.id = m.token_id
+         WHERE d.user_id = ?1 AND m.effects IS NOT NULL ORDER BY d.seq DESC LIMIT ?2",
     )?;
     struct Row {
         seq: i64,
+        user: String,
         actor: Option<String>,
         device: Option<String>,
         ops: Vec<Op>,
@@ -320,26 +356,33 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
         created_at: i64,
     }
     let mut rows = Vec::new();
-    for r in stmt.query_map(params![cx.owner, limit], |r| {
-        let kind: Option<String> = r.get(2)?;
-        let name: Option<String> = r.get(3)?;
+    for r in stmt.query_map(params![cx.user, limit], |r| {
+        let kind: Option<String> = r.get(3)?;
+        let name: Option<String> = r.get(4)?;
         Ok((
             r.get(0)?,
             r.get(1)?,
+            r.get(2)?,
             name.filter(|_| kind.as_deref() == Some("session")),
-            r.get::<_, String>(4)?,
             r.get::<_, String>(5)?,
-            r.get(6)?,
+            r.get::<_, String>(6)?,
+            r.get(7)?,
         ))
     })? {
-        let (seq, actor, device, ops, effects, created_at) = r?;
-        rows.push(Row { seq, actor, device, ops: serde_json::from_str(&ops)?, effects: serde_json::from_str(&effects)?, created_at });
+        let (seq, user, actor, device, ops, effects, created_at) = r?;
+        rows.push(Row { seq, user, actor, device, ops: serde_json::from_str(&ops)?, effects: serde_json::from_str(&effects)?, created_at });
     }
     if rows.is_empty() {
         return Ok(Output { text: "暂无改动记录。".into(), data: json!([]) });
     }
-    let snap = store::snapshot(c, cx.owner)?;
-    let mut names = Names::new(&snap);
+    let snap = store::snapshot(c, cx.user)?;
+    let mut others = text::strangers(&snap, rows.iter().flat_map(|r| &r.effects));
+    for r in &rows {
+        if !snap.people.iter().any(|p| p.id == r.user) && !others.contains(&r.user) {
+            others.push(r.user.clone());
+        }
+    }
+    let mut names = Names::new(&snap, cx.user, store::people(c, &others)?);
     let (mut lines, mut data) = (Vec::new(), Vec::new());
     for r in &rows {
         let mut summary = text::changes(&r.effects, &mut names, 3).0.join("；");
@@ -347,19 +390,35 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
             summary = "没有变化".into();
         }
         if let Some(Op::Undo { mutation }) = r.ops.first() {
-            let undone: Option<i64> = c
-                .query_row("SELECT seq FROM mutations WHERE id = ?1 AND owner_id = ?2", params![mutation, cx.owner], |r| r.get(0))
-                .optional()?;
+            let undone: Option<i64> = c.query_row("SELECT seq FROM mutations WHERE id = ?1", [mutation], |r| r.get(0)).optional()?;
             summary = format!("撤销{}：{summary}", undone.map_or(String::new(), |s| format!("批次 {s}")));
         }
-        let who = match (&r.actor, &r.device) {
-            (Some(token), _) => token.clone(),
-            (None, Some(device)) => format!("本人（{device}）"),
-            (None, None) => "本人".into(),
+        let source = match (&r.device, r.user == cx.user) {
+            (Some(device), true) if r.actor.is_none() => format!("本人（{device}）"),
+            (_, true) => r.actor.clone().unwrap_or_else(|| "本人".into()),
+            (_, false) => source(&names.person(&r.user), r.actor.as_deref()),
         };
-        lines.push(format!("批次 {} · {} · {who}", r.seq, ago(cx.now, r.created_at)));
+        lines.push(format!("批次 {} · {} · {source}", r.seq, ago(cx.now, r.created_at)));
         lines.push(format!("  {summary}"));
-        data.push(json!({ "batch": r.seq, "actor": r.actor, "created_at": r.created_at, "summary": summary }));
+        let user = (r.user != cx.user).then(|| names.username(&r.user));
+        data.push(json!({ "batch": r.seq, "user": user, "actor": r.actor, "created_at": r.created_at, "summary": summary }));
     }
     Ok(Output { text: lines.join("\n"), data: data.into() })
+}
+
+/// Who made a change: `本人`, the token's name, or someone else by name, with their token's:
+/// `Bob 的 Claude Code`.
+fn who(b: &Board, user: &str, via: Option<&str>) -> String {
+    if user == b.me() {
+        return via.unwrap_or("本人").to_owned();
+    }
+    source(b.person(user).map_or(user, |p| p.display_name.as_str()), via)
+}
+
+/// Someone else's change, by name: `Bob`, or by their token: `Bob 的 Claude Code`.
+fn source(name: &str, via: Option<&str>) -> String {
+    match via {
+        Some(token) => format!("{name} 的 {token}"),
+        None => name.to_owned(),
+    }
 }

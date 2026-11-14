@@ -17,8 +17,8 @@ use uuid::Uuid;
 use super::llm::Prompt;
 use super::organize::{chat, due_text, unwrap};
 use crate::error::from_value;
-use crate::tools::args::{DueText, EditArgs, PlanRef, RepeatText};
-use crate::tools::{Edit, edit_fields, new_due, number};
+use crate::tools::args::{DueText, EditArgs, PlanRef, RepeatText, TaskRef, task_ref};
+use crate::tools::{Edit, edit_fields, new_due};
 
 /// How many of the folder's open tasks the model is shown, and of its done ones, the latest.
 const SHOWN: usize = 50;
@@ -82,9 +82,11 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
    - 把建议应用到事项上（没写的字段沿用原值），原标题和原描述的每一处都要能在改好后的标题或描述里找到，找不到的补上。
    - requires 写在后做的那一项上，里面是先做的事项；写反的改过来。"#;
 
-/// What the model was shown: the data as it was then, the folder, and which of its tasks.
+/// What the model was shown: the data as it was then, as the job's user sees it, the folder, and
+/// which of its tasks.
 pub struct Shown {
     snap: Snapshot,
+    user: String,
     /// The day the board is as of: the job's in UTC, since tidying reads no task's status.
     day: Date,
     folder: Option<FolderId>,
@@ -101,9 +103,9 @@ enum Seen {
 }
 
 /// The chat for `job`, a tidying of its folder in `snap`, and what was shown in it.
-pub fn prompt(job: &AiJob, snap: Snapshot) -> (Prompt, Shown) {
+pub fn prompt(job: &AiJob, snap: Snapshot, user: &str) -> (Prompt, Shown) {
     let day = Date::utc(job.created_at);
-    let board = Board::new(&snap, day.clone());
+    let board = Board::new(&snap, day.clone(), user);
     let all = board.tasks_in(job.folder_id);
     let open: Vec<&Task> = all.iter().copied().filter(|t| t.done_at.is_none()).take(SHOWN).collect();
     // Listed most recently done first.
@@ -165,7 +167,7 @@ pub fn prompt(job: &AiJob, snap: Snapshot) -> (Prompt, Shown) {
         "open_tasks": open_tasks,
         "done_tasks": done_tasks,
     });
-    (chat(SYSTEM, &input), Shown { snap, day, folder: job.folder_id, tasks })
+    (chat(SYSTEM, &input), Shown { snap, user: user.to_owned(), day, folder: job.folder_id, tasks })
 }
 
 /// `1d`, `2w`, `3m`, `1w:1,3,5`, `1m:1,15`, as the tools take a repeat.
@@ -303,10 +305,12 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             None => suggestions.push(s),
         }
     }
-    let board = Board::new(&shown.snap, shown.day.clone());
+    let board = Board::new(&shown.snap, shown.day.clone(), &shown.user);
+    // The folder's tasks all have its owner's numbers.
+    let owner = board.owner_of(shown.folder);
     let task = |n: i64| -> Result<(&Task, Seen), String> {
         let seen = *shown.tasks.get(&n).ok_or_else(|| format!("结果引用了不在这个文件夹里的事项 #{n}"))?;
-        Ok((board.task_by_number(n).expect("shown tasks are in the snapshot"), seen))
+        Ok((board.task_by_number(owner, n).expect("shown tasks are in the snapshot"), seen))
     };
     // New tasks get their ids first: suggestions before them may refer to them.
     let mut refs = HashMap::new();
@@ -315,7 +319,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
         suggestions.iter().map(|s| (s.number.is_none() && s.order.is_none()).then(|| TaskId(Uuid::now_v7()))).collect();
     for (s, id) in suggestions.iter().zip(&ids) {
         let (Some(id), Some(name)) = (id, &s.name) else { continue };
-        if number(name).is_some() {
+        if task_ref(name).is_some() {
             return Err(format!("新事项的 ref“{name}”会被当成事项编号"));
         }
         if refs.insert(name.clone(), *id).is_some() {
@@ -325,8 +329,9 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
     let resolve = |r: &PlanRef| -> Result<TaskId, String> {
         match r {
             PlanRef::Number(n) => Ok(task(*n)?.0.id),
-            PlanRef::Name(s) => match number(s) {
-                Some(n) => Ok(task(n)?.0.id),
+            PlanRef::Name(s) => match task_ref(s) {
+                Some((None, n)) => Ok(task(n)?.0.id),
+                Some((Some(_), _)) => Err(format!("“{s}”不是这个文件夹里的事项")),
                 None => refs.get(s).copied().ok_or_else(|| format!("结果里没有 ref 为“{s}”的新事项")),
             },
         }
@@ -390,7 +395,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
         let Edit { title, description, due, .. } = if fields {
             let clear = |x| s.clear.contains(&x);
             let args = EditArgs {
-                task: n,
+                task: TaskRef { user: None, number: n },
                 title,
                 description,
                 replace: Vec::new(),
@@ -400,10 +405,12 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
                 remind: if clear(Setting::Remind) { Some(None) } else { s.remind.map(Some) },
                 repeat: if clear(Setting::Repeat) { Some(None) } else { s.repeat.map(Some) },
                 repeat_from: s.repeat_from,
+                assign: Vec::new(),
+                unassign: Vec::new(),
             };
-            edit_fields(&board, args).map_err(|e| format!("事项 #{n}：{}", e.describe()))?
+            edit_fields(&board, t, args).map_err(|e| format!("事项 #{n}：{}", e.describe()))?
         } else {
-            Edit { id: t.id, title: None, description: None, start: None, due: None }
+            Edit { id: t.id, title: None, description: None, start: None, due: None, assign: Vec::new(), unassign: Vec::new() }
         };
         let folder = match s.folder.as_deref().map(|p| (p, board.find_folder(p))) {
             None => None,
@@ -544,7 +551,7 @@ mod tests {
     fn task(n: i64, title: &str, extra: Value) -> Task {
         let mut v = json!({
             "id": id(n), "number": n, "folder_id": id(100), "title": title, "description": "", "done_at": null, "due": null,
-            "sort_key": format!("a{n:02}1"), "created_at": 0, "updated_at": 0, "created_via": null, "updated_via": null,
+            "sort_key": format!("a{n:02}1"), "assignees": [], "created_at": 0, "updated_at": 0, "created_by": "me", "updated_by": "me", "created_via": null, "updated_via": null,
         });
         v.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
         serde_json::from_value(v).unwrap()
@@ -590,7 +597,7 @@ mod tests {
 
     #[test]
     fn shows_the_folder() {
-        let (prompt, shown) = prompt(&job(), snap());
+        let (prompt, shown) = prompt(&job(), snap(), "me");
         let input: Value = serde_json::from_str(&prompt.user).unwrap();
         assert_eq!(input["folder"], "/官网");
         assert_eq!(input["request"], "整理一下");
@@ -611,7 +618,7 @@ mod tests {
 
     #[test]
     fn reads_each_kind() {
-        let (_, shown) = prompt(&job(), snap());
+        let (_, shown) = prompt(&job(), snap(), "me");
         let ok = r#"{"suggestions": [
             {"number": 1, "title": "建好官网", "description": "做一个官网。", "due": "2026-11-20", "requires": ["a"], "reason": "标题以动作开头"},
             {"number": 2, "due": "2026-11-21 09:00", "folder": "/官网/文档", "requires": [1], "drop_requires": [4], "reason": "推迟一天"},
@@ -667,7 +674,7 @@ mod tests {
 
     #[test]
     fn refuses_what_could_not_be_applied() {
-        let (_, shown) = prompt(&job(), snap());
+        let (_, shown) = prompt(&job(), snap(), "me");
         let err = |s: &str| parse(&format!(r#"{{"suggestions": [{s}]}}"#), &shown).err().unwrap();
         assert_eq!(err(r#"{"number": 6, "title": "x", "reason": ""}"#), "结果引用了不在这个文件夹里的事项 #6");
         assert_eq!(err(r#"{"number": 1, "requires": [2], "reason": ""}"#), "建议把 #2 设为 #1 的前置，但这样依赖会成环");
@@ -702,7 +709,7 @@ mod tests {
     #[test]
     fn suggests_no_more_than_one_change_takes() {
         let tasks: Vec<Task> = (1..=50).map(|n| task(n, &format!("t{n}"), json!({}))).collect();
-        let (_, shown) = prompt(&job(), Snapshot { tasks, folders: snap().folders, ..Default::default() });
+        let (_, shown) = prompt(&job(), Snapshot { tasks, folders: snap().folders, ..Default::default() }, "me");
         // Each task after every one before it: 1225 links, a DAG still.
         let all: Vec<Value> = (2..=50).map(|n| json!({ "number": n, "requires": (1..n).collect::<Vec<_>>(), "reason": "" })).collect();
         assert_eq!(

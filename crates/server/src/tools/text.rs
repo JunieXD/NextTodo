@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use nexttodo_core::board::{Board, Snapshot, Status};
 use nexttodo_core::model::{
-    AiJob, Change, Date, Due, Effect, FolderId, JobState, Link, Period, Repeat, RepeatFrom, Task, TaskId, Weekdays,
+    AiJob, Change, Date, Due, Effect, FolderId, JobState, Link, Period, Person, Repeat, RepeatFrom, Task, TaskId, Weekdays,
 };
 use serde_json::{Value, json};
 
@@ -66,16 +66,19 @@ pub fn repeat(r: Repeat) -> String {
     }
 }
 
-/// `#12 [可做] 出设计稿 · /工作 · 截止 2026-11-20 18:00 · 第 1/3 步 · 解锁 1 项`, with the step
-/// where it is given.
+/// `#12 [可做] 出设计稿 · /工作 · 负责 bob · 截止 2026-11-20 18:00 · 第 1/3 步 · 解锁 1 项`, with the
+/// step where it is given.
 pub fn task_line(b: &Board, t: &Task, folder: bool, status: bool, step: Option<(usize, usize)>) -> String {
-    let mut line = format!("#{}", t.number);
+    let mut line = b.label(t);
     if status {
         line += &format!(" {}", status_tag(b, t));
     }
     line += &format!(" {}", t.title.as_str());
     if folder {
         line += &format!(" · {}", b.path(t.folder_id));
+    }
+    if !t.assignees.is_empty() {
+        line += &format!(" · 负责 {}", usernames(b, &t.assignees).join("、"));
     }
     if let Some(d) = &t.due {
         line += &format!(" · 截止 {}", due(d));
@@ -90,9 +93,14 @@ pub fn task_line(b: &Board, t: &Task, folder: bool, status: bool, step: Option<(
     line
 }
 
+/// The usernames of people by user id.
+pub fn usernames<'a>(b: &Board<'a>, ids: &'a [String]) -> Vec<&'a str> {
+    ids.iter().map(|id| b.person(id).map_or(id.as_str(), |p| p.username.as_str())).collect()
+}
+
 /// `#12 [可做] 出设计稿 · /工作`: a task mentioned, by its title shortened.
 pub fn mention(b: &Board, t: &Task, folder: bool) -> String {
-    let mut line = format!("#{} {} {}", t.number, status_tag(b, t), excerpt(t.title.as_str(), SHORT));
+    let mut line = format!("{} {} {}", b.label(t), status_tag(b, t), excerpt(t.title.as_str(), SHORT));
     if folder {
         line += &format!(" · {}", b.path(t.folder_id));
     }
@@ -106,6 +114,12 @@ pub fn task_view(b: &Board, t: &Task) -> Value {
         "id": t.id, "number": t.number, "title": t.title, "folder": b.path(t.folder_id),
         "status": match status { Status::Ready => "ready", Status::Waiting { .. } => "waiting", Status::Done => "done" },
     });
+    if let Some(owner) = foreign(b, t) {
+        v["owner"] = owner.into();
+    }
+    if !t.assignees.is_empty() {
+        v["assignees"] = usernames(b, &t.assignees).into();
+    }
     if let Status::Waiting { on, .. } = status
         && on > 0
     {
@@ -130,6 +144,12 @@ pub fn task_view(b: &Board, t: &Task) -> Value {
     v
 }
 
+/// The username of whose a task is, when it is someone else's.
+fn foreign<'a>(b: &Board<'a>, t: &Task) -> Option<&'a str> {
+    let owner = b.owner(t);
+    (owner != b.me()).then(|| b.person(owner).map_or(owner, |p| p.username.as_str()))
+}
+
 /// The first line of `s`, cut to `max` characters, with `…` when anything was left out.
 pub fn excerpt(s: &str, max: usize) -> String {
     let s = s.trim();
@@ -148,23 +168,81 @@ pub fn ago(now: i64, then: i64) -> String {
     }
 }
 
-/// Folder paths and task numbers as they were at one point in the change log.
+/// Folder paths, task numbers and people as they were at one point in the change log, for the user
+/// `me`.
 pub struct Names {
+    me: String,
+    people: HashMap<String, Person>,
     folders: HashMap<FolderId, (Option<FolderId>, String)>,
-    /// Numbers never change, so this keeps every task it has seen.
-    tasks: HashMap<TaskId, i64>,
+    /// The shared folders, by whose they are.
+    shares: HashMap<FolderId, String>,
+    /// A task's number changes only as it moves into or out of a folder someone else shares, so
+    /// this keeps every task it has seen, by its latest number and whose it was then.
+    tasks: HashMap<TaskId, (i64, Option<String>)>,
 }
 
 impl Names {
-    /// The names now.
-    pub fn new(snap: &Snapshot) -> Self {
-        Names {
+    /// The names now, in `snap`, also of the `others` the changes to read mention whom it doesn't
+    /// know (`strangers`).
+    pub fn new(snap: &Snapshot, me: &str, others: Vec<Person>) -> Self {
+        let mut names = Names {
+            me: me.to_owned(),
+            people: snap.people.iter().cloned().chain(others).map(|p| (p.id.clone(), p)).collect(),
             folders: snap.folders.iter().map(|f| (f.id, (f.parent_id, f.name.as_str().to_owned()))).collect(),
-            tasks: snap.tasks.iter().map(|t| (t.id, t.number)).collect(),
+            shares: snap.shares.iter().map(|sh| (sh.folder_id, sh.owner.clone())).collect(),
+            tasks: HashMap::new(),
+        };
+        for t in &snap.tasks {
+            names.seen(t);
+        }
+        names
+    }
+
+    fn seen(&mut self, t: &Task) {
+        let owner = self.foreign(t.folder_id);
+        self.tasks.insert(t.id, (t.number, owner));
+    }
+
+    /// The username of whose what is in folder `f` is, when that is someone else.
+    fn foreign(&self, f: Option<FolderId>) -> Option<String> {
+        let mut cur = f;
+        while let Some(id) = cur {
+            if let Some(owner) = self.shares.get(&id) {
+                return (*owner != self.me).then(|| self.username(owner));
+            }
+            cur = self.folders.get(&id).and_then(|(parent, _)| *parent);
+        }
+        None
+    }
+
+    pub fn username(&self, id: &str) -> String {
+        self.people.get(id).map_or_else(|| id.to_owned(), |p| p.username.clone())
+    }
+
+    /// Someone's display name.
+    pub fn person(&self, id: &str) -> String {
+        self.people.get(id).map_or_else(|| id.to_owned(), |p| p.display_name.clone())
+    }
+
+    /// A task's number in data, with whose it is when it is someone else's.
+    fn task(&self, t: &Task) -> Value {
+        match self.foreign(t.folder_id) {
+            Some(owner) => json!({ "task": t.number, "owner": owner }),
+            None => json!({ "task": t.number }),
         }
     }
 
-    /// Steps back over one change, to the names from before it.
+    /// `#12 出设计稿`, or `@alice#12 出设计稿`.
+    fn item(&self, t: &Task) -> String {
+        let label = match self.foreign(t.folder_id) {
+            Some(owner) => format!("@{owner}#{}", t.number),
+            None => format!("#{}", t.number),
+        };
+        format!("{label} {}", excerpt(t.title.as_str(), SHORT))
+    }
+
+    /// Steps back over one change, to the names from before it. Sharing is stepped over a change at a
+    /// time, by `changes`.
     fn undo(&mut self, e: &Effect) {
         match e {
             Effect::Folder(Change::Created(f)) => {
@@ -173,35 +251,60 @@ impl Names {
             Effect::Folder(Change::Updated { before: f, .. } | Change::Deleted(f)) => {
                 self.folders.insert(f.id, (f.parent_id, f.name.as_str().to_owned()));
             }
-            Effect::Task(Change::Created(t) | Change::Updated { after: t, .. } | Change::Deleted(t)) => {
-                self.tasks.insert(t.id, t.number);
-            }
-            Effect::Dependency(_) | Effect::AiJob(_) => {}
+            Effect::Task(Change::Created(t) | Change::Deleted(t)) | Effect::Task(Change::Updated { before: t, .. }) => self.seen(t),
+            Effect::Dependency(_) | Effect::AiJob(_) | Effect::Share(_) | Effect::Person(_) => {}
         }
     }
 
     fn path(&self, f: Option<FolderId>) -> String {
-        let mut parts = Vec::new();
-        let mut cur = f;
-        while let Some((parent, name)) = cur.and_then(|id| self.folders.get(&id)) {
-            parts.push(name.as_str());
-            cur = *parent;
+        match f.and_then(|id| self.folders.get(&id)) {
+            Some((parent, name)) => self.path_of(f.expect("a folder"), *parent, name),
+            None => "/".into(),
         }
-        parts.reverse();
-        format!("/{}", parts.join("/"))
     }
 
-    /// The path a folder had under `parent` with `name`.
-    fn path_in(&self, parent: Option<FolderId>, name: &str) -> String {
-        match self.path(parent).as_str() {
-            "/" => format!("/{name}"),
-            p => format!("{p}/{name}"),
+    /// The path folder `id` had under `parent` with `name`: `/工作/网站改版`, or `@alice/装修/水电`.
+    fn path_of(&self, id: FolderId, parent: Option<FolderId>, name: &str) -> String {
+        let mut parts = vec![name];
+        let mut cur = parent;
+        while let Some((up, name)) = cur.and_then(|id| self.folders.get(&id)) {
+            parts.push(name.as_str());
+            cur = *up;
+        }
+        parts.reverse();
+        let owner = if self.shares.contains_key(&id) { self.foreign(Some(id)) } else { self.foreign(parent) };
+        match owner {
+            Some(owner) => format!("@{owner}/{}", parts.join("/")),
+            None => format!("/{}", parts.join("/")),
         }
     }
 
     fn number(&self, id: TaskId) -> String {
-        self.tasks.get(&id).map_or_else(|| "已删除的事项".into(), |n| format!("#{n}"))
+        match self.tasks.get(&id) {
+            None => "已删除的事项".into(),
+            Some((n, None)) => format!("#{n}"),
+            Some((n, Some(owner))) => format!("@{owner}#{n}"),
+        }
     }
+}
+
+/// The people `effects` mention whom `snap` doesn't know, as when they no longer share a folder
+/// with the user: `Names` needs them too.
+pub fn strangers<'a>(snap: &Snapshot, effects: impl IntoIterator<Item = &'a Effect>) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for e in effects {
+        let shares = match e {
+            Effect::Share(Change::Created(sh) | Change::Deleted(sh)) => vec![sh],
+            Effect::Share(Change::Updated { before, after }) => vec![before, after],
+            _ => continue,
+        };
+        for id in shares.into_iter().flat_map(|sh| std::iter::once(&sh.owner).chain(&sh.members)) {
+            if !snap.people.iter().any(|p| p.id == *id) && !found.contains(id) {
+                found.push(id.clone());
+            }
+        }
+    }
+    found
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -226,6 +329,9 @@ enum Kind {
     JobReady,
     JobRetried,
     JobDeleted,
+    MemberAdded,
+    MemberRemoved,
+    PersonRenamed,
 }
 
 impl Kind {
@@ -252,6 +358,9 @@ impl Kind {
             Kind::JobReady => ("AI 整理建议就绪", "AI 整理建议就绪", "条"),
             Kind::JobRetried => ("重试 AI 整理", "重试 AI 整理", "条"),
             Kind::JobDeleted => ("移除 AI 整理请求", "移除 AI 整理请求", "条"),
+            Kind::MemberAdded => ("添加成员", "添加成员", "人"),
+            Kind::MemberRemoved => ("移除成员", "移除成员", "人"),
+            Kind::PersonRenamed => ("用户改名", "改名", "人"),
         }
     }
 
@@ -278,13 +387,16 @@ impl Kind {
             Kind::JobReady => "job_ready",
             Kind::JobRetried => "job_retried",
             Kind::JobDeleted => "job_deleted",
+            Kind::MemberAdded => "member_added",
+            Kind::MemberRemoved => "member_removed",
+            Kind::PersonRenamed => "person_renamed",
         }
     }
 }
 
 /// `#12 出设计稿`, the title shortened.
-pub fn item(t: &Task) -> String {
-    format!("#{} {}", t.number, excerpt(t.title.as_str(), SHORT))
+pub fn item(b: &Board, t: &Task) -> String {
+    format!("{} {}", b.label(t), excerpt(t.title.as_str(), SHORT))
 }
 
 /// An AI job by the start of its text.
@@ -308,6 +420,7 @@ fn edited(before: &Task, after: &Task) -> Vec<&'static str> {
         ("title", before.title != after.title),
         ("description", before.description != after.description),
         ("due", before.due != after.due && moved_on(before, after).is_none()),
+        ("assignees", before.assignees != after.assignees),
         ("order", before.sort_key != after.sort_key && before.folder_id == after.folder_id),
     ]
     .into_iter()
@@ -321,17 +434,17 @@ fn edited(before: &Task, after: &Task) -> Vec<&'static str> {
 fn describe(e: &Effect, n: &Names) -> Vec<(Kind, String, Value)> {
     match e {
         Effect::Folder(Change::Created(f)) => {
-            let path = n.path_in(f.parent_id, f.name.as_str());
+            let path = n.path_of(f.id, f.parent_id, f.name.as_str());
             vec![(Kind::FolderCreated, path.clone(), json!({ "folder": path }))]
         }
         Effect::Folder(Change::Updated { before, after }) => {
-            let old = n.path_in(before.parent_id, before.name.as_str());
+            let old = n.path_of(before.id, before.parent_id, before.name.as_str());
             let mut found = Vec::new();
             if before.name != after.name {
                 found.push((Kind::FolderRenamed, format!("{old} → {}", after.name.as_str()), json!({ "folder": old, "name": after.name })));
             }
             if before.parent_id != after.parent_id {
-                let to = n.path_in(after.parent_id, after.name.as_str());
+                let to = n.path_of(after.id, after.parent_id, after.name.as_str());
                 found.push((Kind::FolderMoved, format!("{old} → {to}"), json!({ "folder": old, "to": to })));
             }
             // Its place among the same folders; a move puts it somewhere in the new one anyway.
@@ -341,36 +454,71 @@ fn describe(e: &Effect, n: &Names) -> Vec<(Kind, String, Value)> {
             found
         }
         Effect::Folder(Change::Deleted(f)) => {
-            let path = n.path_in(f.parent_id, f.name.as_str());
+            let path = n.path_of(f.id, f.parent_id, f.name.as_str());
             vec![(Kind::FolderDeleted, path.clone(), json!({ "folder": path }))]
         }
-        Effect::Task(Change::Created(t)) => vec![(Kind::TaskCreated, item(t), json!({ "task": t.number }))],
+        Effect::Task(Change::Created(t)) => vec![(Kind::TaskCreated, n.item(t), n.task(t))],
         Effect::Task(Change::Updated { before, after: t }) => {
             let mut found = Vec::new();
+            let with = |mut v: Value, key: &str, value: Value| {
+                v[key] = value;
+                v
+            };
             match (before.done_at, t.done_at) {
-                (None, Some(_)) => found.push((Kind::TaskDone, item(t), json!({ "task": t.number }))),
-                (Some(_), None) => found.push((Kind::TaskReopened, item(t), json!({ "task": t.number }))),
+                (None, Some(_)) => found.push((Kind::TaskDone, n.item(t), n.task(t))),
+                (Some(_), None) => found.push((Kind::TaskReopened, n.item(t), n.task(t))),
                 _ => {}
             }
             if let Some(date) = moved_on(before, t) {
-                found.push((Kind::TaskRepeated, format!("{} → {}", item(t), date.as_str()), json!({ "task": t.number, "due": date })));
+                found.push((Kind::TaskRepeated, format!("{} → {}", n.item(t), date.as_str()), with(n.task(t), "due", json!(date))));
             }
             if before.folder_id != t.folder_id {
                 let to = n.path(t.folder_id);
-                found.push((Kind::TaskMoved, format!("{} → {to}", item(t)), json!({ "task": t.number, "to": to })));
+                let mut v = with(n.task(before), "to", json!(to));
+                if t.number != before.number {
+                    v["number"] = t.number.into();
+                }
+                found.push((Kind::TaskMoved, format!("{} → {to}", n.item(before)), v));
             }
             let fields = edited(before, t);
             if !fields.is_empty() {
-                found.push((Kind::TaskEdited, item(t), json!({ "task": t.number, "fields": fields })));
+                found.push((Kind::TaskEdited, n.item(t), with(n.task(t), "fields", json!(fields))));
             }
             found
         }
-        Effect::Task(Change::Deleted(t)) => vec![(Kind::TaskDeleted, item(t), json!({ "task": t.number }))],
+        Effect::Task(Change::Deleted(t)) => vec![(Kind::TaskDeleted, n.item(t), n.task(t))],
         Effect::Dependency(link @ (Link::Added(d) | Link::Removed(d))) => {
             let kind = if matches!(link, Link::Added(_)) { Kind::DepAdded } else { Kind::DepRemoved };
             let text = format!("{} → {}", n.number(d.before), n.number(d.after));
-            vec![(kind, text, json!({ "before": n.tasks.get(&d.before), "after": n.tasks.get(&d.after) }))]
+            let number = |id| n.tasks.get(&id).map(|(number, _)| *number);
+            let mut v = json!({ "before": number(d.before), "after": number(d.after) });
+            if let Some((_, Some(owner))) = n.tasks.get(&d.before) {
+                v["owner"] = owner.as_str().into();
+            }
+            vec![(kind, text, v)]
         }
+        Effect::Share(change) => {
+            let (folder, before, after) = match change {
+                Change::Created(a) => (a.folder_id, &[][..], &a.members[..]),
+                Change::Updated { before, after } => (before.folder_id, &before.members[..], &after.members[..]),
+                Change::Deleted(b) => (b.folder_id, &b.members[..], &[][..]),
+            };
+            let path = n.path(Some(folder));
+            let mut found = Vec::new();
+            for (kind, people, other) in [(Kind::MemberAdded, after, before), (Kind::MemberRemoved, before, after)] {
+                for u in people.iter().filter(|u| !other.contains(u)) {
+                    found.push((kind, format!("{}（{path}）", n.person(u)), json!({ "folder": path, "user": n.username(u) })));
+                }
+            }
+            found
+        }
+        Effect::Person(Change::Updated { before, after }) => vec![(
+            Kind::PersonRenamed,
+            format!("{} → {}", before.display_name, after.display_name),
+            json!({ "user": after.username, "name": after.display_name }),
+        )],
+        // Someone met in a folder shared since: what is new is the sharing.
+        Effect::Person(_) => Vec::new(),
         Effect::AiJob(Change::Created(j)) => vec![(Kind::JobCreated, job_item(j), json!({ "job": j.id }))],
         Effect::AiJob(Change::Updated { after: j, .. }) => vec![match j.state {
             JobState::Running => (Kind::JobStarted, job_item(j), json!({ "job": j.id })),
@@ -388,9 +536,9 @@ fn describe(e: &Effect, n: &Names) -> Vec<(Kind, String, Value)> {
 /// The task to list a change by.
 fn number(e: &Effect, n: &Names) -> Option<i64> {
     match e {
-        Effect::Folder(_) | Effect::AiJob(_) => None,
+        Effect::Folder(_) | Effect::AiJob(_) | Effect::Share(_) | Effect::Person(_) => None,
         Effect::Task(Change::Created(t) | Change::Updated { after: t, .. } | Change::Deleted(t)) => Some(t.number),
-        Effect::Dependency(Link::Added(d) | Link::Removed(d)) => n.tasks.get(&d.before).copied(),
+        Effect::Dependency(Link::Added(d) | Link::Removed(d)) => n.tasks.get(&d.before).map(|(number, _)| *number),
     }
 }
 
@@ -399,10 +547,22 @@ fn number(e: &Effect, n: &Names) -> Option<i64> {
 /// it, one change at a time, so that every change reads with the folders as they were right after
 /// it, also in the middle of a batch and going through the log newest first.
 pub fn changes(effects: &[Effect], names: &mut Names, limit: usize) -> (Vec<String>, Vec<Value>) {
+    // Sharing changes nothing of whose what is: what a change that stops sharing a folder did in it
+    // is its owner's, as before it.
+    for e in effects {
+        if let Effect::Share(Change::Created(sh) | Change::Deleted(sh) | Change::Updated { before: sh, .. }) = e {
+            names.shares.insert(sh.folder_id, sh.owner.clone());
+        }
+    }
     let mut described = Vec::with_capacity(effects.len());
     for e in effects.iter().rev() {
         described.push((number(e, names), describe(e, names)));
         names.undo(e);
+    }
+    for e in effects {
+        if let Effect::Share(Change::Created(sh)) = e {
+            names.shares.remove(&sh.folder_id);
+        }
     }
     described.reverse();
     let mut groups: BTreeMap<Kind, Vec<(Option<i64>, String)>> = BTreeMap::new();

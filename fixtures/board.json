@@ -200,5 +200,34 @@
         "solo": null
       }
     }
+    },
+  {
+    "name": "共享的文件夹：接下来只列交给我的和没指定负责人的，别人共享的文件夹路径以 @ 开头、排在自己的后面",
+    "folders": [
+      { "id": "work", "name": "工作", "key": "a0" },
+      { "id": "proj", "name": "项目", "key": "a1" },
+      { "id": "reno", "name": "装修", "key": "a0" },
+      { "id": "plumb", "name": "水电", "parent": "reno", "key": "a0" },
+      { "id": "garden", "name": "花园", "key": "a0" }
+    ],
+    "tasks": [
+      { "id": "own", "folder": "work", "key": "a0" },
+      { "id": "forbob", "folder": "proj", "key": "a0", "assignees": ["bob"] },
+      { "id": "anyone", "folder": "proj", "key": "a1" },
+      { "id": "free", "folder": "reno", "key": "a0" },
+      { "id": "bobs", "folder": "reno", "key": "a1", "assignees": ["bob"] },
+      { "id": "mine", "folder": "plumb", "key": "a0", "assignees": ["bob", "me"] },
+      { "id": "weed", "folder": "garden", "key": "a0" }
+    ],
+    "deps": [],
+    "shares": [
+      { "folder": "proj", "owner": "me", "members": ["bob"] },
+      { "folder": "reno", "owner": "alice", "members": ["me", "bob"] },
+      { "folder": "garden", "owner": "abby", "members": ["me"] }
+    ],
+    "expect": {
+      "next": ["own", "anyone", "weed", "free", "mine"],
+      "paths": { "work": "/工作", "proj": "/项目", "reno": "@alice/装修", "plumb": "@alice/装修/水电", "garden": "@abby/花园" }
+    }
   }
 ]

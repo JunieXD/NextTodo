@@ -6,22 +6,20 @@ import type { Board } from "./board";
 import { deadline, formatDue } from "./dates";
 
 export interface Reminder {
-  /** The task's number, which the server gives out: unique per user and an integer. */
-  number: number;
   at: Date;
   title: string;
   body: string;
   task: Task;
 }
 
-/** The reminder of an unfinished task with one. Tasks not synced yet have no number and wait. */
+/** The reminder of an unfinished task of the user's with one (docs/design.md#共享). */
 export function reminder(board: Board, t: Task): Reminder | null {
   const remind = t.due?.remind_before;
-  if (t.done_at !== null || t.number === 0 || !t.due || remind === undefined) return null;
+  if (t.done_at !== null || !board.mine(t) || !t.due || remind === undefined) return null;
   const at = new Date(deadline(t.due).getTime() - remind * 60_000);
   const where = t.folder_id ? ` · ${board.place(t.folder_id)}` : "";
   const times = t.due.repeat && t.completions ? ` · 已完成 ${t.completions.count} 次` : "";
-  return { number: t.number, at, title: t.title, body: `${formatDue(t.due, at)} 截止${where}${times}`, task: t };
+  return { at, title: t.title, body: `${formatDue(t.due, at)} 截止${where}${times}`, task: t };
 }
 
 /** Every reminder there is, those past too, earliest first. */

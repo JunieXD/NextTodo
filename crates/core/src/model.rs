@@ -560,11 +560,37 @@ pub struct Task {
     #[ts(optional)]
     pub completions: Option<Completions>,
     pub sort_key: SortKey,
+    /// Who is to do it, by user id in order: in a shared folder, some of the people it is shared
+    /// with; none means any of them. Elsewhere none.
+    pub assignees: Vec<String>,
     pub created_at: i64,
     pub updated_at: i64,
+    /// The user who added it and who changed it last.
+    pub created_by: String,
+    pub updated_by: String,
     /// Name of the API token that created the task; `None` when created by the user on a device.
     pub created_via: Option<String>,
     pub updated_via: Option<String>,
+}
+
+/// Someone the user shares folders with, or the user.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Person {
+    pub id: String,
+    pub username: String,
+    pub display_name: String,
+}
+
+/// A folder its owner shares with others, who see and change everything in it as the owner does
+/// (docs/design.md#共享). One with no members is not shared.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Share {
+    pub folder_id: FolderId,
+    pub owner: String,
+    /// User ids in order.
+    pub members: Vec<String>,
 }
 
 /// `before` must be done before `after` can start.
@@ -728,6 +754,9 @@ pub enum Effect {
     Task(Change<Box<Task>>),
     Dependency(Link<Dependency>),
     AiJob(Change<Box<AiJob>>),
+    Share(Change<Share>),
+    /// Someone's name changed: only ever updated.
+    Person(Change<Person>),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]

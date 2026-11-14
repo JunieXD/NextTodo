@@ -26,7 +26,7 @@ import org.json.JSONObject
 
 /** A task's reminder, as the app hands them over (`apps/web/src/android.ts`): at `at`, in
  * milliseconds; `waiting`, how many of its prerequisites are not done; `start`, its start date. */
-data class Reminder(val task: String, val number: Int, val at: Long, val title: String, val body: String, val waiting: Int, val start: LocalDate?) {
+data class Reminder(val task: String, val at: Long, val title: String, val body: String, val waiting: Int, val start: LocalDate?) {
     /** Whether it can be done straight from the reminder on `today`: it waits for nothing. */
     fun ready(today: LocalDate) = waiting == 0 && (start == null || !start.isAfter(today))
 
@@ -43,7 +43,6 @@ data class Reminder(val task: String, val number: Int, val at: Long, val title: 
     companion object {
         fun from(o: JSONObject) = Reminder(
             o.getString("task"),
-            o.getInt("number"),
             o.getLong("at"),
             o.getString("title"),
             o.getString("body"),
@@ -134,7 +133,11 @@ object Reminders {
             val task = extras.getString(TASK) ?: continue
             val r = wanted[task]
             if (r == null || r.at != extras.getLong(AT)) {
-                manager.cancel(shown.id)
+                manager.cancel(shown.tag, shown.id)
+            } else if (shown.tag != task) {
+                // Shown by an earlier version, by the task's number: again by its id, without a sound.
+                manager.cancel(shown.tag, shown.id)
+                post(context, r, true)
             } else if (
                 extras.getCharSequence(Notification.EXTRA_TITLE).toString() != r.title ||
                 extras.getCharSequence(Notification.EXTRA_TEXT).toString() != r.body ||
@@ -168,7 +171,7 @@ object Reminders {
         val r = find(context, task) ?: return
         val snoozed = snoozed(context).put(task, JSONObject().put("at", r.at).put("until", System.currentTimeMillis() + minutes * 60_000L))
         prefs(context).edit().putString(SNOOZED, snoozed.toString()).commit()
-        context.getSystemService(NotificationManager::class.java).cancel(r.number)
+        withdraw(context, r.task)
         schedule(context)
     }
 
@@ -179,7 +182,7 @@ object Reminders {
         keep(context, JSONArray(list(context).filter { it.task != task || it.at != at }.map(::json)).toString())
     }
 
-    private fun json(r: Reminder) = JSONObject().put("task", r.task).put("number", r.number).put("at", r.at).put("title", r.title)
+    private fun json(r: Reminder) = JSONObject().put("task", r.task).put("at", r.at).put("title", r.title)
         .put("body", r.body).put("waiting", r.waiting).put("start", r.start?.toString())
 
     /** Signed out, or the data is gone: no reminders, none put off, none shown. */
@@ -200,7 +203,7 @@ object Reminders {
             // Only reminders carry a task. The summary the system groups several under has none:
             // cancelling it would take them all, and it goes with the last of them anyway.
             val task = shown.notification.extras.getString(TASK) ?: continue
-            if (which(task)) manager.cancel(shown.id)
+            if (which(task)) manager.cancel(shown.tag, shown.id)
         }
     }
 
@@ -252,7 +255,8 @@ object Reminders {
         return true
     }
 
-    /** Shows `r`; `quiet` while the card shows it, without a banner. Its id is the task's number. */
+    /** Shows `r`; `quiet` while the card shows it, without a banner. Its tag is the task's id: numbers are
+     * each owner's, and those in shared folders may be the same as the user's own. */
     private fun post(context: Context, r: Reminder, quiet: Boolean) {
         val uri = Uri.parse("nexttodo://task/${r.task}")
         val open = PendingIntent.getActivity(context, 0, Intent(Intent.ACTION_VIEW, uri, context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
@@ -277,6 +281,6 @@ object Reminders {
         }
         val snooze = Intent(context, SnoozeActivity::class.java).setData(uri)
         builder.addAction(Notification.Action.Builder(null, "稍后提醒", PendingIntent.getActivity(context, 0, snooze, PendingIntent.FLAG_IMMUTABLE)).build())
-        context.getSystemService(NotificationManager::class.java).notify(r.number, builder.build())
+        context.getSystemService(NotificationManager::class.java).notify(r.task, 0, builder.build())
     }
 }

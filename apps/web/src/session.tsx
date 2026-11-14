@@ -119,7 +119,7 @@ export class Session {
       console.error(e);
       this.listeners.unsaved();
     });
-    this.store = new Store(saved, {
+    this.store = new Store(user.id, saved, {
       save: (copy, queued, settled) => this.saver.save(copy, queued, settled),
       send: (m) => this.socket.send(m),
       rejected: (m, e) => {
@@ -218,7 +218,7 @@ export class Session {
         return null;
       }
       const login = cachedLogin();
-      const saved = login && (await load(login.user.id, copy));
+      const saved = login && (await load(login.user, copy));
       if (saved) return new Session(login.user, login.id, copy, saved);
       // Nothing to open: ask the server who is signed in, in turn too, so that the answer still
       // holds when acted on.
@@ -316,17 +316,17 @@ async function claim(user: User, copy: string): Promise<Session | Login> {
   localStorage.removeItem(SIGNED_OUT);
   tabs.postMessage({ signedIn: login } satisfies Message);
   await forgetOthers(user.id);
-  const saved = await load(user.id, copy);
+  const saved = await load(user, copy);
   return saved ? new Session(user, login.id, copy, saved) : login;
 }
 
 /** A session in `login` with a fresh copy from the server, unless the device has signed out, or in
  * as someone else, while it downloaded. */
 async function fresh({ id, user }: Login, copy: string): Promise<Session> {
-  const { seq, folders, tasks, dependencies, ai_jobs } = await download(user.id);
+  const { seq, folders, tasks, dependencies, ai_jobs, shares, people } = await download(user.id);
   return turn(async () => {
     if (pendingSignOut() || cachedLogin()?.user.id !== user.id) throw new ApiError(401, "unauthenticated", "本机的登录状态已变更，请重新登录");
-    return new Session(user, id, copy, { ...Store.empty(), seq, base: { folders, tasks, dependencies, ai_jobs } });
+    return new Session(user, id, copy, { ...Store.empty(), seq, base: { folders, tasks, dependencies, ai_jobs, shares, people } });
   });
 }
 

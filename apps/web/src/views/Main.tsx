@@ -5,6 +5,8 @@ import { useLocalRunner } from "../ai";
 import { useLocation, useSearchParams } from "wouter";
 import { app } from "../api/http";
 import type { LogEntry } from "../api/types/LogEntry";
+import type { Task } from "../api/types/Task";
+import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
 import { type Session, SessionContext, useSession, useUndo } from "../session";
 import { forUser, useFeedback } from "../ui/feedback";
@@ -17,7 +19,7 @@ import { BatchProvider } from "./batch";
 import { Desktop } from "./Desktop";
 import { MarksProvider } from "./marks";
 import { Phone } from "./Phone";
-import { settingsUrl } from "./nav";
+import { settingsUrl, useSelection } from "./nav";
 
 export function Main({ session, onSignedOut }: { session: Session; onSignedOut(notice?: string): void }) {
   const wide = useWide();
@@ -59,12 +61,14 @@ const AI_ACTOR = "AI 整理";
 /** How long ago an agent's change may be to still be announced when it arrives. */
 const RECENT_MS = 2 * 60_000;
 
-/** Tells the user about changes the server turned down and changes agents made, and notices when
- * the session has ended elsewhere. */
+/** Tells the user about changes the server turned down, changes their agents made, and changes
+ * others made that concern them; and notices when the session has ended elsewhere. */
 function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
   const session = useSession();
   const { snack } = useFeedback();
   const undo = useUndo();
+  const { select } = useSelection();
+  const [, navigate] = useLocation();
   useLocalRunner(session.store, session.user.id);
   useEffect(() => {
     session.listen({
@@ -73,10 +77,18 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
       unsaved: () => snack("无法保存到本机，关闭页面前请保持联网"),
       appFailed: (e) => snack(forUser(app === "android" ? "更新提醒和小组件" : "更新提醒", e)),
       arrived(entries) {
+        const board = session.store.getView().board;
         // Not a job starting or failing: its row shows that.
         const told = (e: LogEntry) => e.effects.some((x) => !(x.kind === "ai_job" && x.before && x.after));
-        const last = entries.findLast((e) => e.actor !== null && told(e) && e.created_at > Date.now() - RECENT_MS);
-        if (last) snack({ text: describe(last, session.store.getView().board), action: "撤销", onAction: () => undo(last.id), ms: 8000 });
+        // The latest worth telling.
+        for (const e of entries.filter((e) => e.created_at > Date.now() - RECENT_MS).reverse()) {
+          if (e.user === board.me) {
+            if (e.actor === null || !told(e)) continue;
+            return snack({ text: describe(e, board), action: "撤销", onAction: () => undo(e.id), ms: 8000 });
+          }
+          const notice = concerning(e, board);
+          if (notice) return snack({ text: notice.text, action: "查看", onAction: () => (notice.open ? select(notice.open) : navigate("/")), ms: 8000 });
+        }
       },
     });
   });
@@ -137,6 +149,28 @@ function ServerUpdates() {
     snack({ text: `服务器可升级到 ${latest}`, action: "查看", onAction: () => navigate(settingsUrl("about")), ms: 8000 });
   }, [versions, snack, navigate]);
   return null;
+}
+
+/** What someone else did that concerns the user, which their other changes don't (docs/design.md#共享):
+ * assigning them a task, or completing tasks that leave some of the user's ready; and the task to
+ * open, when it is one. */
+function concerning(entry: LogEntry, board: Board): { text: string; open: TaskId | null } | null {
+  const who = entry.actor ? `${board.name(entry.user)} 的 ${entry.actor}` : board.name(entry.user);
+  const changed = entry.effects.flatMap((x) => (x.kind === "task" && x.after ? [{ before: x.before, after: x.after }] : []));
+  /** `“装灯具”`, or ` 3 项`. */
+  const which = (tasks: Task[]) => (tasks.length > 1 ? ` ${tasks.length} 项` : `“${tasks[0].title}”`);
+  const open = (tasks: Task[]) => (tasks.length > 1 ? null : tasks[0].id);
+  const assigned = changed.filter(({ before, after }) => after.assignees.includes(board.me) && !before?.assignees.includes(board.me)).map((c) => c.after);
+  if (assigned.length) return { text: `${who} 将${which(assigned)}指派给我`, open: open(assigned) };
+  const done = changed.filter(({ before, after }) => before?.done_at === null && after.done_at !== null).map((c) => c.after);
+  const ready = new Map(
+    done
+      .flatMap((t) => board.after(t))
+      .filter((t) => board.mine(t) && board.status(t) === "ready")
+      .map((t) => [t.id, t]),
+  );
+  const unlocked = [...ready.values()];
+  return unlocked.length ? { text: `${who} 完成了${which(done)}，解锁了${which(unlocked)}`, open: open(unlocked) } : null;
 }
 
 /** `Claude Code 在“求职”中添加了 4 项` */

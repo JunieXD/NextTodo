@@ -16,7 +16,16 @@ start: Date | null, due: Due | null,
 /**
  * None until a repeating task is first done.
  */
-completions?: Completions, sort_key: SortKey, created_at: number, updated_at: number, 
+completions?: Completions, sort_key: SortKey, 
+/**
+ * Who is to do it, by user id in order: in a shared folder, some of the people it is shared
+ * with; none means any of them. Elsewhere none.
+ */
+assignees: Array<string>, created_at: number, updated_at: number, 
+/**
+ * The user who added it and who changed it last.
+ */
+created_by: string, updated_by: string, 
 /**
  * Name of the API token that created the task; `None` when created by the user on a device.
  */

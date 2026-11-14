@@ -326,7 +326,7 @@ async fn undoing_the_deletion_of_a_job_being_organized_brings_it_back_failed() {
         .call(move |c| {
             set_job_state(
                 c,
-                &Actor { owner: &owner, token_id: "", via: Some(ACTOR) },
+                &Actor { user: &owner, token_id: "", via: Some(ACTOR) },
                 job_id,
                 JobState::Waiting,
                 JobState::Running,
@@ -357,7 +357,7 @@ async fn a_restart_fails_the_jobs_it_cut_short() {
         .call(move |c| {
             set_job_state(
                 c,
-                &Actor { owner: &owner, token_id: "", via: Some(ACTOR) },
+                &Actor { user: &owner, token_id: "", via: Some(ACTOR) },
                 job_id,
                 JobState::Waiting,
                 JobState::Running,
@@ -463,4 +463,31 @@ async fn an_answer_too_big_for_one_change_fails() {
     let snap = until(&t, &s, |s| job_state(s, &job).is_some_and(|(state, _)| state == "failed")).await;
     assert_eq!(job_state(&snap, &job).unwrap().1, "每次最多 1000 个操作，本次有 1001 个");
     assert!(titles(&snap).is_empty());
+}
+
+#[tokio::test]
+async fn the_tasks_the_model_saw_are_kept_to_when_their_numbers_change_meanwhile() {
+    let (t, fake) = server();
+    let alice = t.admin().await;
+    let bob = t.user(&alice, "bob").await;
+    t.call("PUT", "/ai/settings", Some(&bob), Some(config())).await;
+    // Alice's #1 in the folder she shares with Bob, and Bob's #1 in a folder of his own.
+    t.ok(&alice, "add", json!({ "title": "无关", "folder": "/装修" })).await;
+    t.ok(&alice, "share", json!({ "folder": "/装修", "users": ["bob"] })).await;
+    t.ok(&bob, "add", json!({ "title": "量尺寸", "folder": "/灯具" })).await;
+    let lamps = t.snapshot(&bob).await["folders"].as_array().unwrap().iter().find(|f| f["name"] == "灯具").unwrap()["id"].clone();
+    let release = fake.hold();
+    fake.answer(Ok(r#"{"tasks": [{"title": "买灯", "after": [1]}]}"#));
+    let job = id();
+    t.mutate(&bob, json!([create(&job, "量好尺寸再买灯", lamps.as_str())])).await;
+    until(&t, &bob, |s| job_state(s, &job).is_some_and(|(state, _)| state == "running")).await;
+    // Bob's #1 becomes Alice's #2 while the model answers.
+    t.ok(&bob, "move", json!({ "folders": ["/灯具"], "to": "@alice/装修" })).await;
+    release.send(()).unwrap();
+    let snap = until(&t, &bob, |s| job_state(s, &job).is_none()).await;
+    let id_of = |title: &str| snap["tasks"].as_array().unwrap().iter().find(|t| t["title"] == title).unwrap()["id"].clone();
+    assert_eq!(
+        snap["dependencies"].as_array().unwrap().iter().map(|d| (d["before"].clone(), d["after"].clone())).collect::<Vec<_>>(),
+        [(id_of("量尺寸"), id_of("买灯"))]
+    );
 }

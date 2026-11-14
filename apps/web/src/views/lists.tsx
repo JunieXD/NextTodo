@@ -24,6 +24,7 @@ import { Seg } from "../ui/controls";
 import { Icon } from "../ui/icons";
 import { composing } from "../ui/keys";
 import { useLeave } from "../ui/leave";
+import { useWide } from "../ui/hooks";
 import { useTaskActions } from "./actions";
 import { useListed } from "./batch";
 import { useRowDrag } from "./drag";
@@ -105,6 +106,10 @@ export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date
   );
   const done = finished.filter((t) => !shown.has(t.id));
   const jobs = board.snapshot.ai_jobs.filter((j) => j.folder_id === folder);
+  // On a computer, the folders others share are in the sidebar.
+  const wide = useWide();
+  const theirs = folder === null && !wide ? board.sharedWithMe() : [];
+  const [, navigate] = useLocation();
   useListed(doneOpen ? [...open, ...done] : open);
   return (
     <>
@@ -112,6 +117,16 @@ export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date
         <>
           <h2 className="group-title">文件夹</h2>
           <FolderList folder={folder} folders={subs} />
+        </>
+      )}
+      {theirs.length > 0 && (
+        <>
+          <h2 className="group-title">共享给我</h2>
+          <div className="group">
+            {theirs.map((f) => (
+              <FolderRow key={f.id} folder={f} board={board} onOpen={() => navigate(folderUrl(f.id))} />
+            ))}
+          </div>
         </>
       )}
       {open.length + done.length + jobs.length > 0 ? (
@@ -158,7 +173,7 @@ function FolderList({ folder, folders }: { folder: FolderId | null; folders: Fol
   useRowDrag(list, ".folder-row", {
     range: () => ({ min: 0, max: folders.length - 1 }),
     drop: (from, to) => place(folders[from].id, folder, folders.filter((_, i) => i !== from)[to]?.id ?? null),
-    canInto: (from, into) => into !== folder && !board.inSubtree(into, folders[from].id),
+    canInto: (from, into) => into !== folder && board.canMove(folders[from].id, into),
     into: (from, into) => place(folders[from].id, into, null),
   });
   return (
@@ -204,13 +219,13 @@ export function FolderGraph(props: { folder: FolderId | null; across: boolean; n
   );
 }
 
-/** Completed tasks from every folder, the latest first, by the day they were completed. */
+/** The user's completed tasks from every folder, the latest first, by the day they were completed. */
 export function DoneBody({ now }: { now: Date }) {
   const { board } = useView();
   const { selected } = useSelection();
   const actions = useTaskActions();
   const days = new Map<string, Task[]>();
-  const done = board.snapshot.tasks.filter((t) => t.done_at !== null).sort((a, b) => b.done_at! - a.done_at!);
+  const done = board.snapshot.tasks.filter((t) => t.done_at !== null && board.mine(t)).sort((a, b) => b.done_at! - a.done_at!);
   useListed(done);
   for (const t of done) {
     const day = formatDay(t.done_at!, now);

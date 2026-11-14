@@ -72,6 +72,8 @@ export class Store {
   private readonly listeners = new Set<() => void>();
 
   constructor(
+    /** Whose data this is. */
+    private readonly me: string,
     saved: Saved,
     private readonly hooks: Hooks,
   ) {
@@ -83,7 +85,7 @@ export class Store {
   }
 
   static empty(): Saved {
-    return { seq: 0, base: { folders: [], tasks: [], dependencies: [], ai_jobs: [] }, outbox: [], log: [] };
+    return { seq: 0, base: { folders: [], tasks: [], dependencies: [], ai_jobs: [], shares: [], people: [] }, outbox: [], log: [] };
   }
 
   subscribe = (listener: () => void) => {
@@ -193,18 +195,14 @@ export class Store {
 
   /** A fresh copy of everything from the server; changes not yet confirmed stay queued. */
   resync(snapshot: SeqSnapshot) {
-    const fresh = fromSnapshot(snapshot);
-    this.base.folders = fresh.folders;
-    this.base.tasks = fresh.tasks;
-    this.base.deps = fresh.deps;
-    this.base.jobs = fresh.jobs;
+    Object.assign(this.base, fromSnapshot(snapshot));
     this.seq = snapshot.seq;
     this.log.clear();
     this.changed();
   }
 
   private context(now: number) {
-    return { now, effectsOf: this.effectsOf };
+    return { me: this.me, now, effectsOf: this.effectsOf };
   }
 
   private remember(id: MutationId, effects: Effect[]) {
@@ -233,7 +231,7 @@ export class Store {
       }
     }
     this.data = d;
-    this.view = { board: new Board(toSnapshot(d), this.today), stuck, pending: this.outbox.length };
+    this.view = { board: new Board(toSnapshot(d), this.today, this.me), stuck, pending: this.outbox.length };
   }
 }
 

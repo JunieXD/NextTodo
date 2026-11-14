@@ -21,6 +21,7 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/008_completions.sql"),
     include_str!("../migrations/009_repeat_monthdays.sql"),
     include_str!("../migrations/010_start_date.sql"),
+    include_str!("../migrations/011_share.sql"),
 ];
 
 #[derive(Clone)]
@@ -103,21 +104,18 @@ pub fn epoch(conn: &Connection) -> rusqlite::Result<String> {
     conn.query_row("SELECT value FROM epoch", [], |r| r.get(0))
 }
 
-/// Clears the operations and effects of mutations older than `cutoff`. The rows stay, so that a
-/// resubmitted old mutation is recognised instead of applied again. Per user the log is cut at a
-/// sequence number, which only moves forward: everything up to it is cleared, nothing after it.
+/// Clears the operations and effects of mutations older than `cutoff`, and what each user saw of
+/// them. The rows stay, so that a resubmitted old mutation is recognised instead of applied again.
+/// The log is cut at a sequence number: everything up to it is cleared, nothing after it. Each
+/// user's cut only moves forward.
 pub fn prune(conn: &mut Connection, cutoff: i64) -> rusqlite::Result<usize> {
     let tx = conn.transaction()?;
-    tx.execute(
-        "UPDATE users SET pruned_seq = max(pruned_seq, coalesce(
-             (SELECT max(seq) FROM mutations WHERE owner_id = users.id AND created_at < ?1 AND effects IS NOT NULL), 0))",
-        [cutoff],
-    )?;
-    let cleared = tx.execute(
-        "UPDATE mutations SET ops = NULL, effects = NULL, reply = NULL
-         WHERE effects IS NOT NULL AND seq <= (SELECT pruned_seq FROM users WHERE id = mutations.owner_id)",
-        [],
-    )?;
+    let cut: i64 =
+        tx.query_row("SELECT coalesce(max(seq), 0) FROM mutations WHERE created_at < ?1 AND effects IS NOT NULL", [cutoff], |r| r.get(0))?;
+    tx.execute("UPDATE users SET pruned_seq = max(pruned_seq, ?1)", [cut])?;
+    tx.execute("DELETE FROM deliveries WHERE seq <= ?1", [cut])?;
+    let cleared =
+        tx.execute("UPDATE mutations SET ops = NULL, effects = NULL, reply = NULL WHERE effects IS NOT NULL AND seq <= ?1", [cut])?;
     tx.commit()?;
     Ok(cleared)
 }
@@ -250,6 +248,7 @@ pub fn restore(db: &Path, from: &Path, now_ms: i64) -> anyhow::Result<Option<Pat
     // Cleared up to the cut, as `prune` leaves it.
     tx.execute("UPDATE users SET pruned_seq = ?1", [cut])?;
     tx.execute("UPDATE mutations SET ops = NULL, effects = NULL, reply = NULL WHERE effects IS NOT NULL", [])?;
+    tx.execute("DELETE FROM deliveries", [])?;
     tx.execute("UPDATE epoch SET value = lower(hex(randomblob(16)))", [])?;
     tx.commit()?;
     // One file, without a -wal beside it.

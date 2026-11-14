@@ -9,9 +9,11 @@ import { checkTitle } from "../domain/text";
 import { useView } from "../session";
 import { Modal } from "../ui/feedback";
 import { Icon } from "../ui/icons";
+import { FolderName, folderIcon } from "./share";
 
 /** Picks a folder or the root, checking `current`: to add to, the one picked so far; to move to, where
- * what is moved is now, which cannot be picked, nor can `exclude`, a folder moved, or a folder in it. */
+ * what is moved is now, which cannot be picked, nor can where `exclude`, a folder moved, may not go.
+ * The folders others share with the user follow, apart. */
 export function FolderPicker({
   mode,
   current,
@@ -26,36 +28,48 @@ export function FolderPicker({
   onClose(): void;
 }) {
   const { board } = useView();
+  const row = (f: FolderId | null) => {
+    const disabled = (mode === "move" && f === current) || (exclude !== undefined && !board.canMove(exclude, f));
+    return (
+      <button key={f ?? "root"} className="row" disabled={disabled} onClick={() => (onPick(f), onClose())}>
+        <div className="row-inner" style={{ paddingLeft: 16 + Math.max(0, board.depth(f) - 1) * 22 }}>
+          <span className="folder-ic">
+            <Icon of={folderIcon(board, f)} size={18} />
+          </span>
+          <span className="folder-main">
+            <span>
+              <FolderName board={board} id={f} />
+            </span>
+          </span>
+          {current === f && (
+            <span className="text-primary">
+              <Icon of={Check} />
+            </span>
+          )}
+        </div>
+      </button>
+    );
+  };
+  const tree = board.folderTree();
+  const theirs = tree.filter((f) => board.ownerOf(f) !== board.me);
   return (
     <Modal title={mode === "add" ? "添加到" : "移动到"} onClose={onClose}>
-      <div className="group picker">
-        {board.folderTree().map((f) => {
-          const disabled = (mode === "move" && f === current) || (exclude !== undefined && board.inSubtree(f, exclude));
-          return (
-            <button key={f ?? "root"} className="row" disabled={disabled} onClick={() => (onPick(f), onClose())}>
-              <div className="row-inner" style={{ paddingLeft: 16 + Math.max(0, board.depth(f) - 1) * 22 }}>
-                <span className="folder-ic">
-                  <Icon of={FolderIcon} size={18} />
-                </span>
-                <span className="folder-main">{board.folderName(f)}</span>
-                {current === f && (
-                  <span className="text-primary">
-                    <Icon of={Check} />
-                  </span>
-                )}
-              </div>
-            </button>
-          );
-        })}
-      </div>
+      <div className="group picker">{tree.filter((f) => board.ownerOf(f) === board.me).map(row)}</div>
+      {theirs.length > 0 && (
+        <>
+          <h2 className="group-title">共享给我</h2>
+          <div className="group picker">{theirs.map(row)}</div>
+        </>
+      )}
     </Modal>
   );
 }
 
-/** Picks a task to come before (`pred`) or after (`succ`) `task`: folder by folder, as the folders page
- * has them, starting in the task's own, or by searching them all. Tasks that would close a loop are
- * shown but cannot be picked. One not there yet is created from the search, in the folder the panel
- * is at. */
+/** Picks a task to come before (`pred`) or after (`succ`) `task`, of those it can be linked to, in the
+ * same place (docs/design.md#依赖): folder by folder, as the folders page has them, starting in the
+ * task's own and up to the shared folder it is in, if any; or by searching them all. Tasks that would
+ * close a loop are shown but cannot be picked. One not there yet is created from the search, in the
+ * folder the panel is at. */
 export function TaskPicker({
   task,
   dir,
@@ -73,8 +87,9 @@ export function TaskPicker({
   const [query, setQuery] = useState("");
   // `move`: the last step, into a subfolder or up, whose way the folder's page slides in.
   const [nav, setNav] = useState<{ folder: FolderId | null; move?: "forth" | "back" }>({ folder: task.folder_id });
-  // Deleted meanwhile, on another device say: from the root.
-  const at = board.hasFolder(nav.folder) ? nav.folder : null;
+  const top = board.sharedRoot(task.folder_id) ?? null;
+  // Deleted meanwhile, on another device say: from the top.
+  const at = board.hasFolder(nav.folder) ? nav.folder : top;
   const go = (folder: FolderId | null, move: "forth" | "back") => setNav({ folder, move });
   const field = useRef<HTMLLabelElement>(null);
   const searching = query.trim() !== "";
@@ -84,7 +99,7 @@ export function TaskPicker({
     field.current!.parentElement!.scrollTo(0, 0);
   }, [at, searching]);
   const linked = new Set([task.id, ...(dir === "pred" ? board.before(task) : board.after(task)).map((t) => t.id)]);
-  const choice = (t: Task) => t.done_at === null && !linked.has(t.id);
+  const choice = (t: Task) => t.done_at === null && !linked.has(t.id) && board.together(t, task);
   const choices = board.snapshot.tasks.filter(choice);
   const row = (t: Task, path: boolean) => {
     const loop = dir === "pred" ? board.chain(task.id, t.id) : board.chain(t.id, task.id);
@@ -140,7 +155,7 @@ export function TaskPicker({
       <div key={at ?? "root"} className={at === nav.folder && nav.move ? `page-${nav.move}` : undefined}>
         <h2 className="group-title">{board.place(at)}</h2>
         <div className="group picker">
-          {at !== null && (
+          {at !== null && at !== top && (
             <button className="row" onClick={() => go(board.parent(at), "back")}>
               <div className="row-inner">
                 <span className="chev">
@@ -168,7 +183,7 @@ export function TaskPicker({
           ))}
           {here.map((t) => row(t, false))}
         </div>
-        {subs.length + here.length === 0 && <p className="empty">{at === null ? "暂无可选的事项。" : "这里没有可选的事项。"}</p>}
+        {subs.length + here.length === 0 && <p className="empty">{at === top ? "暂无可选的事项。" : "这里没有可选的事项。"}</p>}
       </div>
     );
   }

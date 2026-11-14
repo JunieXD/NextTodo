@@ -298,6 +298,11 @@ label.row { cursor: pointer; }
 .n-title { font-size: 14px; font-weight: 500; line-height: 1.3; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .node.has-meta .n-title { -webkit-line-clamp: 1; }
 .n-meta, .n-folder { font-size: 12px; display: flex; align-items: center; gap: 3px; opacity: .85; white-space: nowrap; overflow: hidden; }
+.n-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.n-line .people { margin-left: auto; }
+.node { --ring: var(--group-bg); }
+.node.ready { --ring: var(--primary-container); }
+.node.done { --ring: var(--surface-container); }
 .node.ready .n-meta { opacity: .75; }
 .connect-banner { position: absolute; z-index: 5; top: 8px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 20px;
   background: var(--inverse-surface); color: var(--inverse-on-surface); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: var(--shadow-3); }
@@ -337,6 +342,7 @@ label.row { cursor: pointer; }
 .prop .row-inner { min-height: 50px; gap: 12px; }
 .prop svg { color: var(--on-surface-variant); }
 .prop .value { margin-left: auto; color: var(--on-surface-variant); text-align: right; }
+.prop .value .people { margin-right: 8px; vertical-align: middle; }
 .d-sec { margin: 22px 32px 8px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .d-sec h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--on-surface-variant); }
 .d-sec p { margin: 2px 0 0; font-size: 12px; color: var(--outline); }
@@ -414,12 +420,13 @@ a.text-btn { display: inline-flex; align-items: center; }
 .copy-value:active { background: var(--press); }
 .text-btn:active { background: var(--press); }
 
-.snackbar { position: absolute; z-index: 50; left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 72px); min-height: 48px; padding: 6px 8px 6px 16px; border-radius: 12px;
+/* Above a panel too, which leaves nothing else to take a click. */
+.snackbar { pointer-events: auto; position: absolute; z-index: 50; left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 72px); min-height: 48px; padding: 6px 8px 6px 16px; border-radius: 12px;
   display: flex; align-items: center; gap: 8px; background: var(--inverse-surface); color: var(--inverse-on-surface); font-size: 14px; box-shadow: var(--shadow-3);
   touch-action: pan-y; transition: transform .2s var(--ease), opacity .2s var(--ease); }
 .snackbar.swiping { transition: none; }
 .snackbar.enter { animation: snack-in .3s var(--ease); }
-.snackbar.leave { animation: fade-out .16s var(--ease-exit) forwards; }
+.snackbar.leave { animation: fade-out .16s var(--ease-exit) forwards; pointer-events: none; }
 @keyframes snack-in { from { transform: translateY(16px); opacity: 0; } }
 .snackbar span { flex: 1; }
 .snackbar button { height: 36px; padding: 0 12px; border-radius: 18px; color: var(--inverse-primary); font-weight: 600; }
@@ -667,4 +674,23 @@ a.text-btn { display: inline-flex; align-items: center; }
 /* The Android app's first-start tip. */
 .tip-card { margin: 8px 16px 4px; padding: 14px 16px 6px; border-radius: 14px; background: var(--secondary-container); color: var(--on-secondary-container); font-size: 14px; line-height: 1.5; }
 .tip-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 4px; }
+
+/* Sharing (docs/ui.md#共享): people's avatars, overlapping, each ringed in the colour of what is
+   behind them; the share panel and the assignee picker. */
+.people { --size: 22px; display: inline-flex; flex: none; }
+.person { width: var(--size); height: var(--size); border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--surface-highest); color: var(--on-surface-variant);
+  font-size: calc(var(--size) * .45); font-weight: 600; line-height: 1; box-shadow: 0 0 0 2px var(--ring, var(--group-bg)); }
+.person + .person { margin-left: calc(var(--size) / -3); }
+.person.more { font-size: calc(var(--size) * .38); font-variant-numeric: tabular-nums; }
+.share-add { display: flex; align-items: center; gap: 8px; }
+.share-add input { flex: 1; min-width: 0; }
+.share-note { margin: 0 20px 14px; font-size: 14px; line-height: 1.55; color: var(--on-surface-variant); }
+.share-people { --sep-left: 60px; }
+.share-role { font-size: 13px; color: var(--on-surface-variant); }
+.row.selected .people, .row.chosen .people { --ring: var(--secondary-container); }
+.shared-with { --ring: var(--surface); height: 40px; padding: 0 4px; border-radius: 20px; display: inline-flex; align-items: center; }
+.shared-with:active { opacity: .7; }
+.shared-by { color: var(--on-surface-variant); font-weight: 400; }
+.hero-actions { display: flex; align-items: center; flex: none; }
+.over-title { margin: 2px 20px -2px; font-size: 13px; color: var(--on-surface-variant); }
 }

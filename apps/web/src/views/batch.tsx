@@ -1,7 +1,7 @@
 // Batch operations (docs/ui.md#批量操作): tasks chosen on a folder's page or on what is done, then
-// completed, reopened, moved or deleted together, as one change that one undo takes back.
+// completed, reopened, moved, assigned or deleted together, as one change that one undo takes back.
 
-import { Check as CheckIcon, FolderInput, type LucideIcon, RotateCcw, Trash2, X } from "lucide-react";
+import { Check as CheckIcon, FolderInput, type LucideIcon, RotateCcw, Trash2, Users, X } from "lucide-react";
 import { type Dispatch, type ReactNode, type SetStateAction, createContext, useContext, useEffect, useLayoutEffect, useState } from "react";
 import { useLocation } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
@@ -18,6 +18,7 @@ import { Icon } from "../ui/icons";
 import { useMarking } from "./marks";
 import { useFolderView, useSelection } from "./nav";
 import { FolderPicker } from "./pickers";
+import { AssigneePicker, lost, sharers } from "./share";
 
 const them = (n: number) => (n === 1 ? "它" : "它们");
 
@@ -126,7 +127,7 @@ interface BatchAction {
 }
 
 /** What can be done to the tasks chosen on `place`, each asked first; and the panel to pick a folder
- * in. Done, the batch ends. */
+ * or people in. Done, the batch ends. */
 function useBatchActions(place: Place, chosen: Task[], end: () => void): { actions: BatchAction[]; panel: ReactNode } {
   const { store } = useSession();
   const commit = useCommit();
@@ -134,6 +135,7 @@ function useBatchActions(place: Place, chosen: Task[], end: () => void): { actio
   const { confirm, snack } = useFeedback();
   const marking = useMarking();
   const [moving, setMoving] = useState(false);
+  const [assigning, setAssigning] = useState(false);
   const board = () => store.getView().board;
   const fits = (n: number) => n <= MAX_OPS || (snack(`每次最多处理 ${MAX_OPS} 项`), false);
   /** `tasks` as they are now that the dialog is answered, those still on the page: another device may
@@ -189,7 +191,21 @@ function useBatchActions(place: Place, chosen: Task[], end: () => void): { actio
       chosen.length,
     );
     const r = commit(chosen.map((t, i): Op => ({ op: "task.update", id: t.id, folder_id: folder, sort_key: keys[i] })));
-    if (r) done(r, `已将 ${chosen.length} 项移至“${board().folderName(folder)}”`);
+    if (r) done(r, `已将 ${chosen.length} 项移至“${board().folderName(folder)}”${lost(r.effects)}`);
+  };
+
+  /** Makes `users` the assignees of each, in place of those it had. */
+  const assign = (users: string[]) => {
+    if (!fits(chosen.length)) return;
+    const going = still(chosen);
+    const ops = going.flatMap((t): Op[] => {
+      const assign = users.filter((u) => !t.assignees.includes(u));
+      const unassign = t.assignees.filter((u) => !users.includes(u));
+      return assign.length || unassign.length ? [{ op: "task.update", id: t.id, ...(assign.length > 0 && { assign }), ...(unassign.length > 0 && { unassign }) }] : [];
+    });
+    if (!ops.length) return end();
+    const r = commit(ops);
+    if (r) done(r, `已设置 ${going.length} 项的负责人`);
   };
 
   const remove = async () => {
@@ -206,9 +222,28 @@ function useBatchActions(place: Place, chosen: Task[], end: () => void): { actio
   const deleting: BatchAction = { icon: Trash2, label: "删除", danger: true, run: remove };
   if (place === "done") return { actions: [reopening, deleting], panel: null };
   const allDone = chosen.length > 0 && chosen.every((t) => t.done_at !== null);
+  const shared = board().sharedRoot(place);
   return {
-    actions: [allDone ? reopening : { icon: CheckIcon, label: "完成", run: complete }, { icon: FolderInput, label: "移动到", run: () => setMoving(true) }, deleting],
-    panel: moving && <FolderPicker mode="move" current={place} onPick={move} onClose={() => setMoving(false)} />,
+    actions: [
+      allDone ? reopening : { icon: CheckIcon, label: "完成", run: complete },
+      { icon: FolderInput, label: "移动到", run: () => setMoving(true) },
+      ...(shared ? [{ icon: Users, label: "负责人", run: () => setAssigning(true) }] : []),
+      deleting,
+    ],
+    panel: (
+      <>
+        {moving && <FolderPicker mode="move" current={place} onPick={move} onClose={() => setMoving(false)} />}
+        {assigning && shared && (
+          <AssigneePicker
+            folder={shared}
+            // Those each of them has.
+            chosen={sharers(board(), shared).filter((u) => chosen.every((t) => t.assignees.includes(u)))}
+            onDone={assign}
+            onClose={() => setAssigning(false)}
+          />
+        )}
+      </>
+    ),
   };
 }
 

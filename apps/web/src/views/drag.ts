@@ -311,7 +311,9 @@ type Spot = { parent: FolderId | null; before: FolderId | null } & ({ into: HTML
  * stays put), with `data-parent`, `data-depth` and, folded away with folders inside, `data-closed`.
  * Let go on a row's middle half, a folder goes into it; between two rows, before the one below, at its
  * depth; under them all, last at the top. The rows stay put, the one dragged follows the pointer up
- * or down. Gone meanwhile, deleted on another device say, it is dropped nowhere. */
+ * or down. Gone meanwhile, deleted on another device say, it is dropped nowhere. The folders others
+ * share with the user come after the user's own, inside an element with `data-theirs`: their rows,
+ * `data-fixed`, stay put too and take folders in only. */
 export function useTreeDrag(tree: RefObject<HTMLElement | null>, drag: TreeDrag) {
   const latest = useRef(drag);
   useEffect(() => {
@@ -336,20 +338,22 @@ export function useTreeDrag(tree: RefObject<HTMLElement | null>, drag: TreeDrag)
 
     /** Where the folder would go, let go at the pointer over `row` of `rows`, whose bottom is `end` down
      * the tree; nowhere it may not. */
-    const spotAt = (rows: HTMLElement[], end: number, row: HTMLElement | null, x: number, y: number): Spot | null => {
+    const spotAt = (rows: HTMLElement[], end: number, own: number, row: HTMLElement | null, x: number, y: number): Spot | null => {
       const box = el.getBoundingClientRect();
       if (x < box.left || x > box.right) return null;
-      const atEnd: Spot = { parent: null, before: null, line: { top: end, depth: 1 } };
+      const atEnd: Spot = { parent: null, before: null, line: { top: own, depth: 1 } };
       let spot: Spot;
       if (row) {
         const r = row.getBoundingClientRect();
         const part = (y - r.top) / r.height;
         const below = part <= 0.25 ? row : rows[rows.indexOf(row) + 1];
-        // Nothing goes before the root: it takes the folder in anywhere.
-        if (!row.dataset.into || (part > 0.25 && part < 0.75)) spot = { parent: intoOf(row), before: null, into: row };
-        else if (below) spot = { parent: below.dataset.parent || null, before: intoOf(below), line: { top: below.offsetTop, depth: Number(below.dataset.depth) } };
-        else spot = atEnd;
-      } else if (y - box.top - el.clientTop + el.scrollTop > end) spot = atEnd;
+        // Nothing goes before the root, or among the folders others share: they take the folder in anywhere.
+        if (!row.dataset.into || "fixed" in row.dataset || (part > 0.25 && part < 0.75)) spot = { parent: intoOf(row), before: null, into: row };
+        else if (below && !("fixed" in below.dataset))
+          spot = { parent: below.dataset.parent || null, before: intoOf(below), line: { top: below.offsetTop, depth: Number(below.dataset.depth) } };
+        else if (!row.closest("[data-theirs]")) spot = atEnd;
+        else return null;
+      } else if (own === end && y - box.top - el.clientTop + el.scrollTop > end) spot = atEnd;
       else return null;
       // Into the folder it is in already, it would only go last: that is not going into it. Right
       // before itself, it stays where it is.
@@ -375,20 +379,21 @@ export function useTreeDrag(tree: RefObject<HTMLElement | null>, drag: TreeDrag)
       const step = edgeStep(el, x, y);
       if (step) el.scrollTop += step;
       const rows = [...el.querySelectorAll<HTMLElement>(".sb-item[data-into]")];
-      // Where the rows end, as laid out: the one dragged moves, not its place.
-      const last = rows.at(-1)!;
-      const end = last.offsetTop + last.offsetHeight;
+      // Where the rows end, as laid out: the one dragged moves, not its place; and the user's own.
+      const bottom = (row: HTMLElement) => row.offsetTop + row.offsetHeight;
+      const end = bottom(rows.at(-1)!);
+      const own = bottom(rows.filter((r) => !r.closest("[data-theirs]")).at(-1)!);
       // Not much further than the rows, which would make the tree longer, to scroll on and on.
       const dy = Math.min(y - s!.startY + el.scrollTop - s!.startScroll, end - row.offsetTop);
       row.style.transform = `translateY(${dy}px)`;
       const under = intoUnder(x, y, row);
       const over = under && el.contains(under) ? under : null;
       spring.over(over);
-      show(spotAt(rows, end, over, x, y));
+      show(spotAt(rows, end, own, over, x, y));
       s!.frame = requestAnimationFrame(frame);
     };
     const drags = hearDrags(el, ".sb-item[data-into]", {
-      can: (row) => !!row.dataset.into,
+      can: (row) => !!row.dataset.into && !("fixed" in row.dataset),
       lift(row, x, y) {
         s = { row, folder: intoOf(row)!, parent: row.dataset.parent || null, startY: y, startScroll: el.scrollTop, x, y, spot: null, frame: 0 };
         row.dataset.lifted = "";

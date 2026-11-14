@@ -3,12 +3,15 @@ import type { Effect } from "../api/types/Effect";
 import type { Op } from "../api/types/Op";
 import { type Data, Rejected, apply, fromSnapshot, revert } from "./apply";
 
+/** The user whose data it is. */
+const ME = "019a4b2c-0000-7000-8000-0000000000ee";
+
 const id = (n: number) => `019a4b2c-0000-7000-8000-${String(n).padStart(12, "0")}`;
 const log = new Map<string, Effect[]>();
-const cx = { now: 1000, effectsOf: (m: string) => log.get(m) };
+const cx = { me: ME, now: 1000, effectsOf: (m: string) => log.get(m) };
 
 function empty(): Data {
-  return fromSnapshot({ folders: [], tasks: [], dependencies: [], ai_jobs: [] });
+  return fromSnapshot({ folders: [], tasks: [], dependencies: [], ai_jobs: [], shares: [], people: [] });
 }
 
 /** Applies a mutation and remembers its effects under `mutation`, for undo. */
@@ -169,4 +172,81 @@ test("AI jobs: a tidying with suggestions is tidied again from scratch, and come
   expect(d.jobs.get(id(2))).toMatchObject({ state: "ready", suggestions: ready.suggestions });
   run(d, 123, [{ op: "ai_job.retry", id: id(2) }]);
   expect(d.jobs.get(id(2))).toMatchObject({ state: "waiting", suggestions: null });
+});
+
+const [ALICE, BOB, CAROL] = ["0000000000aa", "0000000000bb", "0000000000cc"].map((n) => `019a4b2c-0000-7000-8000-${n}`);
+
+/** The user's folder 装修 (1), shared with Bob, with 量尺寸 (3) and 买瓷砖 (4) in it; their private
+ * folder 私人 (2) with 日记 (5); and Alice's folder 新家 (6), shared with the user, with 选灯 (7). */
+function sharing(): Data {
+  const d = empty();
+  run(d, 200, [
+    { op: "folder.create", id: id(1), name: "装修" },
+    { op: "folder.create", id: id(2), name: "私人" },
+    { op: "task.create", id: id(3), title: "量尺寸", folder_id: id(1) },
+    { op: "task.create", id: id(4), title: "买瓷砖", folder_id: id(1) },
+    { op: "task.create", id: id(5), title: "日记", folder_id: id(2) },
+    { op: "folder.create", id: id(6), name: "新家" },
+    { op: "task.create", id: id(7), title: "选灯", folder_id: id(6) },
+  ]);
+  d.shares.set(id(1), { folder_id: id(1), owner: ME, members: [BOB] });
+  d.shares.set(id(6), { folder_id: id(6), owner: ALICE, members: [ME] });
+  for (const t of d.tasks.values()) d.tasks.set(t.id, { ...t, number: 5 });
+  return d;
+}
+
+test("sharing: tasks link only within one place, and only those a shared folder is shared with are assigned", () => {
+  const d = sharing();
+  run(d, 201, [{ op: "dep.add", before: id(3), after: id(4) }]);
+  const apart = "只能连同一处的事项：私人的事项之间，或同一个共享的文件夹里的事项之间";
+  expect(() => apply(d, [{ op: "dep.add", before: id(3), after: id(5) }], cx)).toThrow(apart);
+  expect(() => apply(d, [{ op: "dep.add", before: id(7), after: id(4) }], cx)).toThrow(apart);
+  expect(() => apply(d, [{ op: "task.update", id: id(5), assign: [ME] }], cx)).toThrow("只有共享的文件夹里的事项能设负责人");
+  expect(() => apply(d, [{ op: "task.update", id: id(3), assign: [CAROL] }], cx)).toThrow("负责人须是这个文件夹的共享人或成员");
+  run(d, 202, [{ op: "task.update", id: id(3), assign: [BOB, ME] }]);
+  expect(d.tasks.get(id(3))!.assignees).toEqual([BOB, ME]);
+});
+
+test("sharing: moving in or out cuts the links and the assignees that don't fit, and leaves the number to the server", () => {
+  const d = sharing();
+  run(d, 210, [
+    { op: "dep.add", before: id(3), after: id(4) },
+    { op: "task.update", id: id(3), assign: [BOB] },
+  ]);
+  // Out to the user's own, still theirs: the number stays.
+  const out = run(d, 211, [{ op: "task.update", id: id(3), folder_id: id(2) }]);
+  expect(out.map((e) => e.kind)).toEqual(["dependency", "task"]);
+  expect(d.tasks.get(id(3))).toMatchObject({ assignees: [], number: 5 });
+  run(d, 212, [{ op: "undo", mutation: id(211) }]);
+  expect(d.tasks.get(id(3))).toMatchObject({ folder_id: id(1), assignees: [BOB], number: 5 });
+  expect(d.deps.size).toBe(1);
+  // Into Alice's: hers, numbered by the server; and back, the user's again, numbered by it too.
+  run(d, 213, [{ op: "task.update", id: id(5), folder_id: id(6) }]);
+  expect(d.tasks.get(id(5))!.number).toBe(0);
+  run(d, 214, [{ op: "undo", mutation: id(213) }]);
+  expect(d.tasks.get(id(5))).toMatchObject({ folder_id: id(2), number: 0 });
+});
+
+test("sharing: undoing a move links nothing again that has been moved to another place since", () => {
+  const d = sharing();
+  run(d, 230, [
+    { op: "task.create", id: id(8), title: "设计" },
+    { op: "task.create", id: id(9), title: "开发" },
+    { op: "dep.add", before: id(8), after: id(9) },
+  ]);
+  run(d, 231, [{ op: "task.update", id: id(9), folder_id: id(1) }]);
+  run(d, 232, [{ op: "task.update", id: id(8), folder_id: id(6) }]);
+  run(d, 233, [{ op: "undo", mutation: id(231) }]);
+  expect([d.tasks.get(id(9))!.folder_id, d.deps.size]).toEqual([null, 0]);
+});
+
+test("sharing: a shared folder is its owner's to change, goes into no other, and people are added online", () => {
+  const d = sharing();
+  const owners = "只有共享人能改名、移动或删除共享的文件夹";
+  expect(() => apply(d, [{ op: "folder.update", id: id(6), name: "旧家" }], cx)).toThrow(owners);
+  expect(() => apply(d, [{ op: "folder.delete", id: id(6) }], cx)).toThrow(owners);
+  expect(() => apply(d, [{ op: "folder.update", id: id(1), parent_id: id(6) }], cx)).toThrow("共享的文件夹不能放进另一个共享的文件夹");
+  run(d, 220, [{ op: "folder.update", id: id(1), parent_id: id(2) }]);
+  expect(() => apply(d, [{ op: "folder.update", id: id(2), parent_id: id(6) }], cx)).toThrow("共享的文件夹不能放进另一个共享的文件夹");
+  expect(() => apply(d, [{ op: "share.add", folder_id: id(1), username: "carol" }], cx)).toThrow("添加、移除成员需要联网");
 });

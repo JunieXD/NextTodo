@@ -12,6 +12,7 @@ import { useFeedback } from "../ui/feedback";
 import { useMarking } from "./marks";
 import { useSelection } from "./nav";
 import type { RowActions } from "./rows";
+import { lost } from "./share";
 
 export function useTaskActions(): RowActions & {
   link(before: TaskId, after: TaskId): void;
@@ -97,7 +98,7 @@ export function useTaskActions(): RowActions & {
           .map((x) => x.sort_key),
       );
       const r = commit([{ op: "task.update", id: t.id, folder_id: folder, sort_key }]);
-      if (r) snack({ text: `已移至“${board().folderName(folder)}”`, action: "撤销", onAction: () => undo(r.id) });
+      if (r) snack({ text: `已移至“${board().folderName(folder)}”${lost(r.effects)}`, action: "撤销", onAction: () => undo(r.id) });
     },
 
     remove(t) {

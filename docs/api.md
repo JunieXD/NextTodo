@@ -30,7 +30,7 @@
 | POST | `/invites` | 管理员：生成一个邀请码 |
 | GET | `/admin/upgrade` | 管理员：[在设置里升级](deploy.md#在设置里升级)的状态 `{state, …}`。`state` 是 `idle`；`downloading`，带 `version`、`received`、`total`（字节数）；`switching`，带 `version`；`failed`，带 `version` 和给用户看的 `message`；不能这样升级的（开发版）是 `unsupported` |
 | POST | `/admin/upgrade` | 管理员：开始升级到 `{version}`，返回状态；正在下载或切换时只返回当前的状态。版本号要比服务端的新，否则 400 |
-| GET | `/snapshot` | 完整数据：`{user, seq, folders, tasks, dependencies, ai_jobs}`，`user` 是数据所属用户的 ID |
+| GET | `/snapshot` | 完整数据：`{user, seq, folders, tasks, dependencies, ai_jobs, shares, people}`，`user` 是数据所属用户的 ID。包括共享给这个用户的文件夹和其中的一切，见[共享](#共享) |
 | GET | `/changes?since=<seq>` | 增量：`{seq, changes}`；`since` 早于保留期时返回 410 |
 | POST | `/mutations` | 提交一个改动，见下文 |
 | GET | `/sync` | WebSocket，见[同步协议](#同步协议) |
@@ -41,6 +41,14 @@
 MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp)。
 
 `seq` 是这个用户能看到的最新改动序号；`/snapshot` 和 `/changes` 返回的数据都截止到这个序号。
+
+## 共享
+
+一个用户看得到的是自己的数据，加上别人[共享](design.md#共享)给自己的文件夹和其中的一切。共享的文件夹里的东西属于共享人，事项编号也是共享人的。
+
+- `/snapshot` 的 `shares` 是这个用户共享出去的和共享给这个用户的文件夹，`people` 是这个用户自己、这些文件夹里的人，和这个用户看得到的事项的添加人、最后修改人（可能已经离开）。
+- 别人共享的文件夹在这个用户的数据里没有上级：`parent_id` 为空，共享人把它放在哪里都一样，也不会暴露共享人别的文件夹。
+- 加入、退出或被移出共享的人，设备收到 `resync`，重新下载完整数据。
 
 ## 实体
 
@@ -54,12 +62,18 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
   // 没有截止时间时为 null；time、remind_before、repeat 可省略；按周的 repeat 可以带 "days": [1, 3, 5]，在周几（1 是周一，7 是周日）；按月的 days 是几号（1–31）。每年是 every 12、unit month
   "completions": { "count": 12, "last": "2026-11-01" },
   // 重复的事项完成过几次、最近一次的日期；没完成过时没有这一项。只随完成改变，改动里不能直接写
-  "sort_key": "a1", "created_at": …, "updated_at": …, "created_via": "Claude Code", "updated_via": null }
+  "sort_key": "a1", "assignees": ["<用户 id>"],
+  // 负责人，只有共享的文件夹里的事项能有
+  "created_at": …, "updated_at": …, "created_by": "<用户 id>", "updated_by": "<用户 id>", "created_via": "Claude Code", "updated_via": null }
 // 依赖
 { "before": "<前置 id>", "after": "<后续 id>", "created_at": … }
 // AI 整理请求
 { "id": "…", "folder_id": "…", "text": "…", "local_time": "2026-11-04 16:30 星期三", "state": "failed", "error": "API 密钥无效（接口返回 401：…）",
   "created_at": …, "updated_at": … }
+// 共享的文件夹：共享人和成员的用户 id
+{ "folder_id": "…", "owner": "<用户 id>", "members": ["<用户 id>"] }
+// 人：自己，和共享的文件夹里的其他人
+{ "id": "…", "username": "bob", "display_name": "Bob" }
 // 用户
 { "id": "…", "username": "alice", "display_name": "Alice", "is_admin": true }
 // 邀请码
@@ -84,12 +98,14 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | `folder.create` | `id`、`name`，可选 `parent_id`、`sort_key` | 不给 `sort_key` 时排在同一层最后 |
 | `folder.update` | `id`，可选 `name`、`parent_id`、`sort_key` | `parent_id: null` 表示移到根目录 |
 | `folder.delete` | `id` | 连同子文件夹、事项和相关依赖 |
-| `task.create` | `id`、`title`，可选 `folder_id`、`description`、`start`、`due`、`sort_key`、`done` | |
-| `task.update` | `id`，可选 `folder_id`、`title`、`description`、`start`、`due`、`sort_key`、`done`、`today` | 只带要改的字段；`start: null` 清除开始日期；`due: null` 清除截止时间（连同重复）；`done: true/false` 完成或重新打开 |
+| `task.create` | `id`、`title`，可选 `folder_id`、`description`、`start`、`due`、`sort_key`、`done`、`assignees` | `assignees` 是负责人的用户 ID |
+| `task.update` | `id`，可选 `folder_id`、`title`、`description`、`start`、`due`、`sort_key`、`done`、`today`、`assign`、`unassign` | 只带要改的字段；`start: null` 清除开始日期；`due: null` 清除截止时间（连同重复）；`done: true/false` 完成或重新打开；`assign`、`unassign` 是要加上、去掉的负责人，两个人同时指派时都算数 |
 | `task.delete` | `id` | 连同相关依赖 |
 | `dep.add` | `before`、`after` | |
 | `dep.remove` | `before`、`after` | |
 | `ai_job.create`、`ai_job.retry`、`ai_job.delete` | | 提交、重试、删除 AI 整理请求，见 [AI 整理](ai.md#接口) |
+| `share.add` | `folder_id`、`username` | 共享人按用户名添加成员 |
+| `share.remove` | `folder_id`、`user_id` | 共享人移除成员，或成员自己退出。最后一个成员离开时文件夹回到私人的 |
 | `undo` | `mutation` | 撤销一个改动：按相反顺序把它的变化恢复回去，恢复时同样要通过所有规则。要改回去的东西已经不存在的跳过；要恢复的事项或文件夹原来所在的文件夹、要恢复的依赖连着的事项已经被删除时，整个撤销不生效 |
 
 `task.update` 把有[重复](design.md#重复)的事项标为完成（`done: true`）时不记完成时间，而是按 `today`（发出改动的设备上的当天，`YYYY-MM-DD`）把截止日期顺延到下一次，`completions` 的次数加一、日期记为 `today`；这时缺了 `today` 返回 400。同一个改动里的 `due` 先生效，所以去掉重复的同时 `done: true` 就是结束重复并完成：记完成时间，不动 `completions`，也不看 `today`。别的事项不看 `today`。已完成的事项不能有重复，新建或修改出这样的事项返回 400。
@@ -105,7 +121,9 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
   { "kind": "dependency", "before": null, "after": { "before": "…", "after": "…", "created_at": … } } ]
 ```
 
-`kind` 是 `folder`、`task`、`dependency` 或 `ai_job`。`before` 为空表示新建，`after` 为空表示删除，都不为空表示修改。客户端按顺序应用 `after` 就能得到最新状态。`/changes` 和同步推送里的每条记录是 `{seq, id, actor, effects, created_at}`，`id` 是改动 ID，`actor` 是 API 令牌名（会话为空，AI 整理是“AI 整理”）。
+`kind` 是 `folder`、`task`、`dependency`、`ai_job`、`share` 或 `person`。`before` 为空表示新建，`after` 为空表示删除，都不为空表示修改。客户端按顺序应用 `after` 就能得到最新状态。`share` 是一个文件夹的共享人和成员，有了成员是新建，最后一个成员离开是删除；`person` 是这个用户的数据里新出现的人（新建：加入了共享的文件夹，或者添加、修改过一个刚看得到的事项）或改了显示名的人（修改）。
+
+每个人收到的是自己看得到的那部分：事项移出共享的文件夹，留下的成员收到的是它被删除，移进来时是新建。`/changes` 和同步推送里的每条记录是 `{seq, id, user, actor, effects, created_at}`，`id` 是改动 ID，`user` 是提交改动的用户 ID，`actor` 是 API 令牌名（会话为空，AI 整理是“AI 整理”）。
 
 ## 错误
 
@@ -115,8 +133,8 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 |---|---|---|
 | 400 | `invalid` | 字段格式、长度不对，`details.field` 指出哪一项；改动里的操作只定位到第几个，如 `ops[2]` |
 | 401 | `unauthenticated` | 没有令牌、令牌无效，或用户名密码不对 |
-| 403 | `forbidden` | 只读令牌提交改动，或非管理员管理邀请码、升级服务端 |
-| 404 | `not_found` | 引用的实体不存在或不属于当前用户 |
+| 403 | `forbidden` | 只读令牌提交改动，非管理员管理邀请码、升级服务端，成员改名、移动、删除共享的文件夹或管理成员，或撤销看不全的改动 |
+| 404 | `not_found` | 引用的实体不存在或当前用户看不到 |
 | 409 | `cycle` | 依赖会成环，`details.path` 是环上的事项 ID，首尾相同 |
 | 409 | `folder_cycle` | 文件夹移到了自己的子孙下面 |
 | 409 | `conflict` | 用户名已被占用、邀请码已用过、依赖已存在、同一层已有同名文件夹 |

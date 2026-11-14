@@ -3,10 +3,14 @@ import type { Effect } from "./Effect";
 import type { MutationId } from "./MutationId";
 
 /**
- * One mutation in the log, as clients receive it.
+ * One mutation in the log, as a user receives it: what they see of it.
  */
 export type LogEntry = { seq: number, id: MutationId, 
 /**
- * The API token's name; `null` for the user's own devices.
+ * Who made it.
+ */
+user: string, 
+/**
+ * The API token's name; `null` for a user's own devices.
  */
 actor: string | null, effects: Array<Effect>, created_at: number, };

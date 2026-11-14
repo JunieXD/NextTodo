@@ -20,6 +20,8 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::error::{ApiError, Json};
+use crate::mutate::{self, Actor};
+use crate::store;
 
 const COOKIE: &str = "nt_session";
 const BASE62: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -413,12 +415,25 @@ pub struct Profile {
     display_name: DisplayName,
 }
 
+/// Changes the user's display name, which the people they share folders with see too.
 pub async fn update_me(State(st): State<AppState>, auth: Auth, Json(req): Json<Profile>) -> Result<Json<User>, ApiError> {
     auth.require_session()?;
+    let (hub, now) = (st.hub.clone(), st.clock.now());
     st.db
         .call(move |c| {
-            c.execute("UPDATE users SET display_name = ?1 WHERE id = ?2", params![req.display_name.0, auth.user_id])?;
-            Ok(load_user(c, &auth.user_id)?)
+            let tx = c.transaction()?;
+            let before = store::person(&tx, &auth.user_id)?;
+            if before.display_name == req.display_name.0 {
+                return Ok(load_user(&tx, &auth.user_id)?);
+            }
+            tx.execute("UPDATE users SET display_name = ?1 WHERE id = ?2", params![req.display_name.0, auth.user_id])?;
+            let after = store::person(&tx, &auth.user_id)?;
+            let actor = Actor { user: &auth.user_id, token_id: &auth.token_id, via: None };
+            let recorded = mutate::renamed(&tx, &actor, before, after, now)?;
+            let user = load_user(&tx, &auth.user_id)?;
+            tx.commit()?;
+            hub.notify(&recorded.to);
+            Ok(user)
         })
         .await
         .map(Json)

@@ -60,8 +60,8 @@ enum Command {
     },
     #[command(about = "事项详情")]
     Show {
-        #[arg(value_parser = number, help = "事项编号")]
-        task: i64,
+        #[arg(value_parser = task, help = TASK)]
+        task: String,
     },
     #[command(about = "搜索事项的标题和描述")]
     Search {
@@ -107,15 +107,17 @@ enum Command {
         repeat: Option<String>,
         #[arg(long, requires = "repeat", value_parser = ["due", "done"], help = "下一次从哪天算：due 按截止日期（默认），done 从完成那天")]
         repeat_from: Option<String>,
-        #[arg(long, num_args = 1.., value_parser = number, help = "前置事项的编号")]
-        after: Vec<i64>,
-        #[arg(long, num_args = 1.., value_parser = number, help = "后续事项的编号")]
-        before: Vec<i64>,
+        #[arg(long, num_args = 1.., value_name = "用户名", help = "负责人：共享的文件夹里的共享人或成员")]
+        assign: Vec<String>,
+        #[arg(long, num_args = 1.., value_parser = task, help = "前置事项的编号")]
+        after: Vec<String>,
+        #[arg(long, num_args = 1.., value_parser = task, help = "后续事项的编号")]
+        before: Vec<String>,
     },
     #[command(about = "修改事项")]
     Edit {
-        #[arg(value_parser = number)]
-        task: i64,
+        #[arg(value_parser = task, help = TASK)]
+        task: String,
         #[arg(long)]
         title: Option<String>,
         #[arg(short, long, allow_hyphen_values = true, help = "描述，整段替换")]
@@ -154,18 +156,22 @@ enum Command {
         repeat_from: Option<String>,
         #[arg(long, help = "不再重复")]
         no_repeat: bool,
+        #[arg(long, num_args = 1.., value_name = "用户名", help = "加上负责人")]
+        assign: Vec<String>,
+        #[arg(long, num_args = 1.., value_name = "用户名", help = "去掉负责人")]
+        unassign: Vec<String>,
     },
     #[command(about = "标为完成")]
     Done {
-        #[arg(required = true, value_parser = number)]
-        tasks: Vec<i64>,
+        #[arg(required = true, value_parser = task, help = TASK)]
+        tasks: Vec<String>,
         #[arg(long, help = "重复的事项结束重复、直接完成，如读完一本书时")]
         end_repeat: bool,
     },
     #[command(about = "重新打开")]
     Reopen {
-        #[arg(required = true, value_parser = number)]
-        tasks: Vec<i64>,
+        #[arg(required = true, value_parser = task, help = TASK)]
+        tasks: Vec<String>,
     },
     #[command(about = "新建文件夹，缺的上级一起建")]
     Mkdir { path: String },
@@ -193,6 +199,18 @@ enum Command {
         #[arg(long, help = "只预览，不保存")]
         dry_run: bool,
     },
+    #[command(about = "把自己的文件夹共享给别人，或添加成员")]
+    Share {
+        folder: String,
+        #[arg(required = true, value_name = "用户名")]
+        users: Vec<String>,
+    },
+    #[command(about = "共享人移除成员，不写用户名就是停止共享；成员不写用户名就是自己退出")]
+    Unshare {
+        folder: String,
+        #[arg(value_name = "用户名")]
+        users: Vec<String>,
+    },
     #[command(about = "撤销一个批次")]
     Undo { batch: i64 },
     #[command(about = "MCP 服务器（stdio），转接到 NEXTTODO_URL 的服务器；本机模式的 App 用它接入 agent")]
@@ -217,36 +235,37 @@ enum Skill {
 enum Dep {
     #[command(about = "加依赖：前置完成后才能做后续")]
     Add {
-        #[arg(value_parser = number)]
-        before: i64,
-        #[arg(value_parser = number)]
-        after: i64,
+        #[arg(value_parser = task)]
+        before: String,
+        #[arg(value_parser = task)]
+        after: String,
     },
     #[command(about = "删依赖")]
     Rm {
-        #[arg(value_parser = number)]
-        before: i64,
-        #[arg(value_parser = number)]
-        after: i64,
+        #[arg(value_parser = task)]
+        before: String,
+        #[arg(value_parser = task)]
+        after: String,
     },
 }
 
-/// A task number, written `12` or `#12`.
-fn number(s: &str) -> Result<i64, String> {
-    s.strip_prefix('#').unwrap_or(s).parse().map_err(|_| format!("“{s}”不是事项编号"))
+const TASK: &str = "事项编号：12 或 #12；别人共享的文件夹里的写成 @alice#42";
+
+/// A task by number: `12`, `#12`, or `@alice#42` in a folder someone else shares.
+fn task(s: &str) -> Result<String, String> {
+    let number = match s.strip_prefix('@') {
+        Some(rest) => rest.split_once('#').map(|(_, n)| n),
+        None => Some(s.strip_prefix('#').unwrap_or(s)),
+    };
+    match number.map(str::parse::<i64>) {
+        Some(Ok(_)) => Ok(s.to_owned()),
+        _ => Err(format!("“{s}”不是事项编号")),
+    }
 }
 
-/// Splits arguments into task numbers and folder paths.
-fn items(items: &[String]) -> (Vec<i64>, Vec<&str>) {
-    let mut tasks = Vec::new();
-    let mut folders = Vec::new();
-    for item in items {
-        match number(item) {
-            Ok(n) => tasks.push(n),
-            Err(_) => folders.push(item.as_str()),
-        }
-    }
-    (tasks, folders)
+/// Splits arguments into tasks and folder paths.
+fn items(items: &[String]) -> (Vec<&str>, Vec<&str>) {
+    items.iter().map(String::as_str).partition(|item| task(item).is_ok())
 }
 
 #[derive(Serialize, Deserialize)]
@@ -646,11 +665,11 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Graph { folder, all, mermaid } => call("graph", json!({ "folder": folder, "all": all, "mermaid": mermaid }), j),
         Command::Log { limit } => call("log", json!({ "limit": limit }), j),
         Command::Jobs => call("jobs", json!({}), j),
-        Command::Add { title, folder, description, start, due, remind, repeat, repeat_from, after, before } => call(
+        Command::Add { title, folder, description, start, due, remind, repeat, repeat_from, assign, after, before } => call(
             "add",
             json!({
                 "title": title, "folder": folder, "description": description, "start": start, "due": due, "remind": remind,
-                "repeat": repeat, "repeat_from": repeat_from, "after": after, "before": before
+                "repeat": repeat, "repeat_from": repeat_from, "assign": assign, "after": after, "before": before
             }),
             j,
         ),
@@ -669,6 +688,8 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             repeat,
             repeat_from,
             no_repeat,
+            assign,
+            unassign,
         } => {
             let mut args = Map::new();
             args.insert("task".into(), task.into());
@@ -699,6 +720,12 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             if let Some(from) = repeat_from {
                 args.insert("repeat_from".into(), from.into());
             }
+            if !assign.is_empty() {
+                args.insert("assign".into(), assign.into());
+            }
+            if !unassign.is_empty() {
+                args.insert("unassign".into(), unassign.into());
+            }
             call("edit", args.into(), j)
         }
         Command::Done { tasks, end_repeat } => call("done", json!({ "tasks": tasks, "end_repeat": end_repeat }), j),
@@ -717,6 +744,8 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Dep { command: Dep::Add { before, after } } => call("dep_add", json!({ "before": before, "after": after }), j),
         Command::Dep { command: Dep::Rm { before, after } } => call("dep_remove", json!({ "before": before, "after": after }), j),
         Command::Apply { file, dry_run } => call("apply", json!({ "plan": plan(&file)?, "dry_run": dry_run }), j),
+        Command::Share { folder, users } => call("share", json!({ "folder": folder, "users": users }), j),
+        Command::Unshare { folder, users } => call("unshare", json!({ "folder": folder, "users": users }), j),
         Command::Undo { batch } => call("undo", json!({ "batch": batch }), j),
         Command::Mcp => mcp(),
         Command::Skill { command: Skill::Install { dir } } => install_skill(dir),

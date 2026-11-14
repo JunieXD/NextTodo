@@ -17,7 +17,11 @@ export type Op = { "op": "folder.create", id: FolderId, name: Name, parent_id?: 
 /**
  * `null` moves the folder to the root.
  */
-parent_id?: FolderId | null, sort_key?: SortKey, } | { "op": "folder.delete", id: FolderId, } | { "op": "task.create", id: TaskId, title: Title, folder_id?: FolderId, description?: Description, start?: Date, due?: Due, sort_key?: SortKey, done?: boolean, } | { "op": "task.update", id: TaskId, 
+parent_id?: FolderId | null, sort_key?: SortKey, } | { "op": "folder.delete", id: FolderId, } | { "op": "task.create", id: TaskId, title: Title, folder_id?: FolderId, description?: Description, start?: Date, due?: Due, sort_key?: SortKey, done?: boolean, 
+/**
+ * User ids, in a shared folder only.
+ */
+assignees?: Array<string>, } | { "op": "task.update", id: TaskId, 
 /**
  * `null` moves the task to the root.
  */
@@ -34,7 +38,12 @@ due?: Due | null, sort_key?: SortKey, done?: boolean,
  * The day on the device that marks a task done: a repeating task's next due date counts
  * from it, so it must be given for one.
  */
-today?: Date, } | { "op": "task.delete", id: TaskId, } | { "op": "dep.add", before: TaskId, after: TaskId, } | { "op": "dep.remove", before: TaskId, after: TaskId, } | { "op": "ai_job.create", id: AiJobId, 
+today?: Date, 
+/**
+ * User ids to add to its assignees and to take off them, those it has then: two people
+ * assigning at once both count.
+ */
+assign?: Array<string>, unassign?: Array<string>, } | { "op": "task.delete", id: TaskId, } | { "op": "dep.add", before: TaskId, after: TaskId, } | { "op": "dep.remove", before: TaskId, after: TaskId, } | { "op": "ai_job.create", id: AiJobId, 
 /**
  * Organizing when not given.
  */
@@ -42,4 +51,4 @@ kind?: JobKind, text: JobText, local_time: LocalTime, folder_id?: FolderId, } | 
 /**
  * `null` is the root.
  */
-folder_id?: FolderId | null, } | { "op": "ai_job.delete", id: AiJobId, } | { "op": "undo", mutation: MutationId, };
+folder_id?: FolderId | null, } | { "op": "ai_job.delete", id: AiJobId, } | { "op": "share.add", folder_id: FolderId, username: string, } | { "op": "share.remove", folder_id: FolderId, user_id: string, } | { "op": "undo", mutation: MutationId, };

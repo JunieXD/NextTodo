@@ -2,6 +2,8 @@
 import type { AiJob } from "./AiJob";
 import type { Dependency } from "./Dependency";
 import type { Folder } from "./Folder";
+import type { Person } from "./Person";
+import type { Share } from "./Share";
 import type { Task } from "./Task";
 
 export type SeqSnapshot = { 
@@ -9,4 +11,12 @@ export type SeqSnapshot = {
  * Whose data this is: a browser that switched accounts meanwhile must not take it for the
  * previous account's.
  */
-user: string, seq: number, folders: Array<Folder>, tasks: Array<Task>, dependencies: Array<Dependency>, ai_jobs: Array<AiJob>, };
+user: string, seq: number, folders: Array<Folder>, tasks: Array<Task>, dependencies: Array<Dependency>, ai_jobs: Array<AiJob>, 
+/**
+ * The folders shared by the user or with them.
+ */
+shares: Array<Share>, 
+/**
+ * The user, everyone in those folders, and whoever made or last changed a task the user sees.
+ */
+people: Array<Person>, };

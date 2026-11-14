@@ -330,6 +330,9 @@ export function Modal({
           aria-describedby={undefined}
           // Without scrolling: the panel is still sliding in, and the app would scroll to where it is now.
           onOpenAutoFocus={focus && ((e) => (e.preventDefault(), focus.current!.focus({ preventScroll: true })))}
+          // The snackbar over it tells of what was done in it, such as adding someone in the share panel,
+          // and its undo leaves the panel open.
+          onInteractOutside={(e) => (e.target as Element).closest(".snackbar") && e.preventDefault()}
         >
           <div className="modal-head">
             <Dialog.Title asChild>

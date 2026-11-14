@@ -30,6 +30,7 @@ export default defineConfig({
       {
         text: "进阶",
         items: [
+          { text: "共享文件夹", link: "/guide/share" },
           { text: "AI 整理", link: "/guide/ai" },
           { text: "接入 agent", link: "/guide/agent" },
         ],

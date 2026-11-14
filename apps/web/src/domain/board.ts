@@ -4,6 +4,8 @@
 
 import type { Folder } from "../api/types/Folder";
 import type { FolderId } from "../api/types/FolderId";
+import type { Person } from "../api/types/Person";
+import type { Share } from "../api/types/Share";
 import type { Snapshot } from "../api/types/Snapshot";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
@@ -21,12 +23,18 @@ export const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 /** Whether a task's title or description has `q`, given trimmed and in lower case. */
 export const matches = (t: Task, q: string) => t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q);
 
-/** A snapshot indexed for lookups, as of a day, the user's today (`YYYY-MM-DD`). `null` as a folder
- * means the root. */
+/** A snapshot indexed for lookups, as of a day, the user's today (`YYYY-MM-DD`), for the user `me`.
+ * `null` as a folder means the root, the user's own. */
 export class Board {
   private readonly tasks = new Map<TaskId, Task>();
-  private readonly numbers = new Map<number, Task>();
+  /** By owner and number: `${owner}#${number}`. */
+  private readonly numbers = new Map<string, Task>();
   private readonly folders = new Map<FolderId, Folder>();
+  private readonly people = new Map<string, Person>();
+  /** The share each folder in a shared folder is in, the shared folder itself too. */
+  private readonly shared = new Map<FolderId, Share>();
+  /** The folders others share with the user, by who shares them and name. */
+  private readonly foreign: Folder[] = [];
   private readonly prerequisites = new Map<TaskId, TaskId[]>();
   private readonly dependents = new Map<TaskId, TaskId[]>();
   /** Subfolders in manual order. */
@@ -40,21 +48,30 @@ export class Board {
   constructor(
     readonly snapshot: Snapshot,
     readonly today: string,
+    readonly me: string,
   ) {
+    for (const p of snapshot.people) this.people.set(p.id, p);
+    const shares = new Map(snapshot.shares.map((sh) => [sh.folder_id, sh]));
     for (const f of snapshot.folders) {
       this.folders.set(f.id, f);
-      push(this.children, f.parent_id, f);
+      if (shares.get(f.id) && shares.get(f.id)!.owner !== me) this.foreign.push(f);
+      else push(this.children, f.parent_id, f);
     }
     for (const list of this.children.values()) list.sort((a, b) => cmp(a.sort_key, b.sort_key) || cmp(a.id, b.id));
-    const stack: (FolderId | null)[] = [null];
+    const username = (f: Folder) => this.username(shares.get(f.id)!.owner);
+    this.foreign.sort((a, b) => cmp(username(a), username(b)) || cmp(a.name, b.name) || cmp(a.id, b.id));
+    const stack: [FolderId | null, Share | undefined][] = [...this.foreign].reverse().map((f) => [f.id, undefined]);
+    stack.push([null, undefined]);
     while (stack.length) {
-      const f = stack.pop()!;
+      const [f, outer] = stack.pop()!;
       this.rank.set(f, this.rank.size);
-      stack.push(...this.subfolders(f).map((c) => c.id).reverse());
+      const within = (f ? shares.get(f) : undefined) ?? outer;
+      if (f && within) this.shared.set(f, within);
+      stack.push(...this.subfolders(f).map((c): [FolderId, Share | undefined] => [c.id, within]).reverse());
     }
     for (const t of snapshot.tasks) {
       this.tasks.set(t.id, t);
-      this.numbers.set(t.number, t);
+      this.numbers.set(`${this.owner(t)}#${t.number}`, t);
       push(this.direct, t.folder_id, t);
     }
     for (const d of snapshot.dependencies) {
@@ -67,8 +84,64 @@ export class Board {
     return this.tasks.get(id);
   }
 
-  taskByNumber(n: number): Task | undefined {
-    return this.numbers.get(n);
+  /** The task with `number` among those of `owner`, a user id. */
+  taskByNumber(owner: string, number: number): Task | undefined {
+    return this.numbers.get(`${owner}#${number}`);
+  }
+
+  person(id: string): Person | undefined {
+    return this.people.get(id);
+  }
+
+  /** Someone's display name; their id if this copy doesn't know them yet. */
+  name(id: string): string {
+    return this.people.get(id)?.display_name ?? id;
+  }
+
+  private username(id: string): string {
+    return this.people.get(id)?.username ?? id;
+  }
+
+  /** The share a folder is in: its own, or that of the shared folder it is in. */
+  share(f: FolderId | null): Share | undefined {
+    return f ? this.shared.get(f) : undefined;
+  }
+
+  /** The shared folder `f` is, or is in. */
+  sharedRoot(f: FolderId | null): FolderId | undefined {
+    return this.share(f)?.folder_id;
+  }
+
+  /** Whose what is in folder `f` is: the owner of the shared folder it is in, or the user's. */
+  ownerOf(f: FolderId | null): string {
+    return this.share(f)?.owner ?? this.me;
+  }
+
+  /** Whose a task is. */
+  owner(t: Task): string {
+    return this.ownerOf(t.folder_id);
+  }
+
+  /** `#42`, or `@alice#42` for a task in a folder someone else shares. */
+  label(t: Task): string {
+    const owner = this.owner(t);
+    return owner === this.me ? `#${t.number}` : `@${this.username(owner)}#${t.number}`;
+  }
+
+  /** Whether the user is to do it: in a shared folder, if it is assigned to them or to nobody. */
+  mine(t: Task): boolean {
+    return !this.share(t.folder_id) || !t.assignees.length || t.assignees.includes(this.me);
+  }
+
+  /** Whether `a` and `b` are in the same place, where tasks can be linked: both private, or in the
+   * same shared folder (docs/design.md#共享). */
+  together(a: Task, b: Task): boolean {
+    return this.sharedRoot(a.folder_id) === this.sharedRoot(b.folder_id);
+  }
+
+  /** The folders others share with the user. */
+  sharedWithMe(): Folder[] {
+    return this.foreign;
   }
 
   folder(id: FolderId): Folder | undefined {
@@ -190,20 +263,41 @@ export class Board {
     }
   }
 
-  /** `/` for the root, otherwise `/工作/网站改版`. */
+  /** Whether `f` is a shared folder or has one inside. */
+  sharesWithin(f: FolderId): boolean {
+    return this.snapshot.shares.some((sh) => this.inSubtree(sh.folder_id, f));
+  }
+
+  /** Whether folder `f` may move into `parent`: not into itself or a folder inside it, nor into a
+   * shared folder when it is one or has one inside (docs/design.md#共享). */
+  canMove(f: FolderId, parent: FolderId | null): boolean {
+    return !this.inSubtree(parent, f) && !(this.sharedRoot(parent) && this.sharesWithin(f));
+  }
+
+  /** `/` for the root, otherwise `/工作/网站改版`; `@alice/装修/水电` in a folder Alice shares. */
   folderPath(f: FolderId | null): string {
+    const names = this.names(f);
+    const share = this.share(f);
+    return share && share.owner !== this.me ? `@${this.username(share.owner)}/${names.join("/")}` : `/${names.join("/")}`;
+  }
+
+  private names(f: FolderId | null): string[] {
     const names = [];
     for (let cur = f; cur !== null; ) {
       const folder = this.folders.get(cur)!;
       names.unshift(folder.name);
       cur = folder.parent_id;
     }
-    return `/${names.join("/")}`;
+    return names;
   }
 
-  /** Where a folder is, as people read it: `学习 / 毕业论文`, or `根目录`. */
+  /** Where a folder is, as people read it: `学习 / 毕业论文`, `根目录`, or `Alice 的装修 / 水电` in a
+   * folder Alice shares. */
   place(f: FolderId | null): string {
-    return f ? this.folderPath(f).slice(1).replaceAll("/", " / ") : this.folderName(null);
+    if (!f) return this.folderName(null);
+    const share = this.share(f);
+    const place = this.names(f).join(" / ");
+    return share && share.owner !== this.me ? `${this.name(share.owner)} 的${place}` : place;
   }
 
   /** A folder's name, or `根目录`. */
@@ -211,10 +305,17 @@ export class Board {
     return f ? this.folders.get(f)!.name : "根目录";
   }
 
-  /** The folder at a path such as `/工作/网站改版` (the leading `/` is optional). */
+  /** The folder at a path such as `/工作/网站改版` (the leading `/` is optional) or `@alice/装修`. */
   findFolder(path: string): FolderId | null | undefined {
     let cur: FolderId | null = null;
-    for (const name of path.split("/").map((s) => s.trim()).filter(Boolean)) {
+    const names = path.split("/").map((s) => s.trim()).filter(Boolean);
+    if (path.trimStart().startsWith("@")) {
+      const [user, name] = [names.shift()!.slice(1).trim().toLowerCase(), names.shift()];
+      const found = this.foreign.find((f) => f.name === name && this.username(this.shared.get(f.id)!.owner).toLowerCase() === user);
+      if (!found) return undefined;
+      cur = found.id;
+    }
+    for (const name of names) {
       const found: Folder | undefined = this.subfolders(cur).find((f) => f.name === name);
       if (!found) return undefined;
       cur = found.id;
@@ -235,9 +336,9 @@ export class Board {
     return [...this.order(tasks.filter((t) => t.done_at === null), (t) => t.done_at === null), ...done];
   }
 
-  /** Ready tasks, in the order of `byDue`. */
+  /** Ready tasks of the user's, in the order of `byDue`. */
   next(): Task[] {
-    return this.byDue([...this.tasks.values()].filter((t) => this.status(t) === "ready"));
+    return this.byDue([...this.tasks.values()].filter((t) => this.mine(t) && this.status(t) === "ready"));
   }
 
   /** Tasks with a due date first, earliest first (a date without a time counts as the end of that

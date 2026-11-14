@@ -1,7 +1,7 @@
 // The desktop layout: folders on the left, which can be folded away, the list in the middle, and the
 // open task's details on the right.
 
-import { ChevronLeft, ChevronRight, CircleCheck, Folder as FolderIcon, FolderRoot, History, ListChecks, PanelLeft, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, CircleCheck, FolderRoot, History, ListChecks, PanelLeft, Search } from "lucide-react";
 import { Fragment, type ReactNode, useRef, useState } from "react";
 import { Link, Redirect, useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
@@ -19,6 +19,7 @@ import { FolderContextMenu, FolderMenu, usePlaceFolder } from "./FolderMenu";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, SearchResults } from "./lists";
 import { folderUrl, settingsUrl, useFolderView, useSelection } from "./nav";
 import { SettingsHome, SettingsPage, settingsTitle, useSectionAt } from "./Settings";
+import { FolderName, SharedWith, folderIcon, sharer } from "./share";
 
 export function Desktop({ onSignOut }: { onSignOut(): void }) {
   const [location] = useLocation();
@@ -81,7 +82,7 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
         </Page>
       );
   } else if (at === "done") {
-    const any = board.snapshot.tasks.some((t) => t.done_at !== null);
+    const any = board.snapshot.tasks.some((t) => t.done_at !== null && board.mine(t));
     const actions = batch.on ? (
       <BatchTools />
     ) : (
@@ -110,11 +111,13 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
       <BatchTools />
     ) : (
       <div className="head-actions">
+        <SharedWith folder={id} />
         <FolderViewSeg />
         <FolderMenu folder={id} />
       </div>
     );
-    const crumbs = f ? board.place(f.parent_id) : "";
+    const by = f && sharer(board, f.id);
+    const crumbs = by ? `${board.name(by)} 共享` : f ? board.place(f.parent_id) : "";
     main =
       view === "graph" ? (
         <Page title={title} crumbs={crumbs} actions={actions} scroll={false}>
@@ -189,7 +192,7 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ro
   const scroll = useRef<HTMLDivElement>(null);
   const place = usePlaceFolder();
   useTreeDrag(scroll, {
-    canPlace: (folder, parent) => !board.inSubtree(parent, folder),
+    canPlace: (folder, parent) => board.canMove(folder, parent),
     place,
     unfold: (id) =>
       setCollapsed((c) => {
@@ -198,11 +201,13 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ro
         return next;
       }),
   });
-  // The root first, with the folders inside it.
+  // The root first, with the folders inside it; then each folder others share with the user, which
+  // stays where it is, with who shares it.
   const tree = (id: FolderId | null, parent: FolderId | null, depth: number): ReactNode => {
     const kids = board.subfolders(id);
     const open = !collapsed.has(id);
     const count = board.contents(id).filter((t) => t.done_at === null).length;
+    const theirs = id && sharer(board, id);
     return (
       <div key={id ?? "root"}>
         <FolderContextMenu folder={id}>
@@ -212,6 +217,7 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ro
             data-into={id ?? ""}
             data-parent={parent ?? ""}
             data-depth={depth}
+            data-fixed={theirs ? "" : undefined}
             data-closed={kids.length && !open ? "" : undefined}
             onClick={() => go(folderUrl(id))}
           >
@@ -225,8 +231,10 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ro
             >
               {kids.length > 0 && <Icon of={ChevronRight} size={14} width={2.2} />}
             </span>
-            <Icon of={id ? FolderIcon : FolderRoot} size={18} />
-            <span className="truncate">{board.folderName(id)}</span>
+            <Icon of={id ? folderIcon(board, id) : FolderRoot} size={18} />
+            <span className="truncate">
+              <FolderName board={board} id={id} />
+            </span>
             <span className="count">{count || ""}</span>
           </button>
         </FolderContextMenu>
@@ -261,6 +269,12 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ro
           </button>
           <div className="sb-label">文件夹</div>
           {tree(null, null, 0)}
+          {board.sharedWithMe().length > 0 && (
+            <div data-theirs>
+              <div className="sb-label">共享给我</div>
+              {board.sharedWithMe().map((f) => tree(f.id, null, 0))}
+            </div>
+          )}
         </div>
         <div className="sb-foot">
           <button className={`sb-user${at === "settings" ? " on" : ""}`} onClick={() => go(settingsUrl())}>

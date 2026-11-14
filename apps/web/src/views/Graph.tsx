@@ -34,12 +34,13 @@ import { type Layout, type Size, edgeKey, layout, widest } from "./graph-layout"
 import { useMarks } from "./marks";
 import { useSelection } from "./nav";
 import { dueClass } from "./rows";
+import { Avatars } from "./share";
 
 const NODE_HEIGHT = 60;
 /** How far the first view may zoom out to show everything, while titles stay readable. */
 const MIN_START_ZOOM = 0.8;
 
-type TaskNode = Node<{ task: Task; className: string; folder?: string; meta?: ReactNode; onClick(): void }, "task">;
+type TaskNode = Node<{ task: Task; className: string; folder?: string; meta?: ReactNode; people?: ReactNode; onClick(): void }, "task">;
 type DepEdge = FlowEdge<{ d: string; marker: string }, "dep">;
 
 const nodeTypes = { task: TaskNodeView };
@@ -160,11 +161,13 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
         </span>
       );
     }
-    const className = ["node", outside ? "ghost" : status, (meta || outside) && "has-meta", t.id === hl && "sel", !inChain(t.id) && "dim", source === t.id && "source", flash.has(t.id) && "unlocked"]
+    // Who is to do it, at the end of that line.
+    const people = !outside && t.assignees.length > 0 && <Avatars board={board} ids={t.assignees} size={16} max={2} />;
+    const className = ["node", outside ? "ghost" : status, (meta || outside || people) && "has-meta", t.id === hl && "sel", !inChain(t.id) && "dim", source === t.id && "source", flash.has(t.id) && "unlocked"]
       .filter(Boolean)
       .join(" ");
     const folder = outside ? board.folderName(t.folder_id) : undefined;
-    nodes.push({ id: t.id, type: "task", position: at, ...laid!.node, handles, data: { task: t, className, folder, meta, onClick: () => tap(t) } });
+    nodes.push({ id: t.id, type: "task", position: at, ...laid!.node, handles, data: { task: t, className, folder, meta, people, onClick: () => tap(t) } });
   }
   const edges: DepEdge[] = s.edges.flatMap((e) => {
     const d = laid?.paths.get(edgeKey(e));
@@ -263,7 +266,12 @@ function TaskNodeView({ data, width, height }: NodeProps<TaskNode>) {
           </span>
         )}
         <span className="n-title">{data.task.title}</span>
-        {data.meta}
+        {(data.meta || data.people) && (
+          <span className="n-line">
+            {data.meta}
+            {data.people}
+          </span>
+        )}
       </button>
       <Handle type="source" position={Position.Bottom} isConnectable={false} />
     </>

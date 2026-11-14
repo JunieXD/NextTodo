@@ -13,6 +13,7 @@
 
 import { type IDBPDatabase, openDB } from "idb";
 import type { MutationId } from "../api/types/MutationId";
+import type { User } from "../api/types/User";
 import { forgetAiConfig, forgetOtherAiConfigs } from "../ai";
 import { forgetDrafts, forgetOtherDrafts } from "./drafts";
 import type { Copy, Pending, Saved } from "./store";
@@ -43,17 +44,27 @@ const others = (userId: string) => [IDBKeyRange.upperBound([userId], true), IDBK
 /** The user's data saved on this device: the newest copy, and the outbox in the order the changes
  * were made (mutation ids are UUIDv7). The newest copy becomes `copyId`, in place of the others; a
  * session still open in another tab saves its own again with its next change. */
-export async function load(userId: string, copyId: string): Promise<Saved | undefined> {
+export async function load(user: User, copyId: string): Promise<Saved | undefined> {
   const tx = (await db()).transaction(["copies", "outbox"], "readwrite");
   const copies = tx.objectStore("copies");
-  const found: Copy[] = await copies.getAll(all(userId));
+  const found: Copy[] = await copies.getAll(all(user.id));
   if (!found.length) return undefined;
-  const newest = found.reduce((a, b) => (b.seq > a.seq ? b : a));
-  const outbox: Pending[] = await tx.objectStore("outbox").getAll(all(userId));
-  await copies.delete(all(userId));
-  await copies.put(newest, [userId, copyId]);
+  const newest = current(found.reduce((a, b) => (b.seq > a.seq ? b : a)), user);
+  const outbox: Pending[] = await tx.objectStore("outbox").getAll(all(user.id));
+  await copies.delete(all(user.id));
+  await copies.put(newest, [user.id, copyId]);
   await tx.done;
   return { ...newest, outbox };
+}
+
+/** A copy saved by an earlier version, as one is now. Before folders could be shared, nothing was,
+ * every task was the user's, and the user was the only one in it; its log of changes goes, being of
+ * tasks as they were then. Before AI organizing there were no jobs. */
+function current(c: Copy, { id, username, display_name }: User): Copy {
+  if (c.base.people) return c;
+  const tasks = c.base.tasks.map((t) => ({ ...t, assignees: [], created_by: id, updated_by: id }));
+  const people = [{ id, username, display_name }];
+  return { ...c, base: { ...c.base, tasks, ai_jobs: c.base.ai_jobs ?? [], shares: [], people }, log: [] };
 }
 
 export interface Saver {

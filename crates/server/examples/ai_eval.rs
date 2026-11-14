@@ -131,6 +131,9 @@ const SPOKEN: &[&str] = &[
 ];
 /// Runs of this many Chinese characters shared with the text count as copied. Only these: names,
 /// terms and links in other scripts stay as they are anyway.
+/// The user the cases' data is of: no folder in them is shared.
+const ME: &str = "me";
+
 const RUN: usize = 6;
 /// Particles that end spoken sentences, when they do: before a stop or at the end.
 const PARTICLES: &[&str] = &["吧", "呢", "啊", "嘛"];
@@ -216,7 +219,7 @@ fn main() -> anyhow::Result<()> {
             let expect = if c.input.get("request").is_some() {
                 let data = tidy_data(&c.input);
                 // So that the case is what the server would send.
-                let sent: Value = serde_json::from_str(&tidy::prompt(&data.1, data.0.clone()).0.user)?;
+                let sent: Value = serde_json::from_str(&tidy::prompt(&data.1, data.0.clone(), ME).0.user)?;
                 anyhow::ensure!(sent == c.input, "{}：服务端发给模型的会是\n{}", c.id, serde_json::to_string_pretty(&sent)?);
                 Kind::Tidy(serde_json::from_value(c.expect).map_err(|e| anyhow::anyhow!("{}：{e}", c.id))?, Box::new(data))
             } else {
@@ -281,7 +284,7 @@ fn main() -> anyhow::Result<()> {
 
 /// The checks read no task's status, which is all a board's day is for.
 fn board(snap: &Snapshot) -> Board<'_> {
-    Board::new(snap, Date::utc(0))
+    Board::new(snap, Date::utc(0), ME)
 }
 
 fn ask(config: &Config, system: Option<&str>, case: &Case, index: usize, run: usize) -> Outcome {
@@ -290,7 +293,7 @@ fn ask(config: &Config, system: Option<&str>, case: &Case, index: usize, run: us
         Kind::Tidy(e, data) => return ask_tidy(config, system, e, data, index, run),
     };
     let snap = snapshot(&case.input);
-    let shown: HashSet<i64> = snap.tasks.iter().map(|t| t.number).collect();
+    let shown: organize::Shown = snap.tasks.iter().map(|t| (t.number, t.id)).collect();
     let prompt = organize::chat(system.unwrap_or(organize::SYSTEM), &case.input);
     let (answer, seconds) = chat(config, &prompt);
     let facts = e.facts.len();
@@ -299,7 +302,7 @@ fn ask(config: &Config, system: Option<&str>, case: &Case, index: usize, run: us
         Ok(text) => {
             // As the server adds them: what it refuses fails the job.
             let planned = organize::parse(&text, &shown)
-                .and_then(|tasks| tools::plan_into(&board(&snap), None, tasks).map_err(|e| e.describe()))
+                .and_then(|tasks| tools::plan_into(&board(&snap), None, tasks, &shown).map_err(|e| e.describe()))
                 .and_then(|ops| accepted(&snap, &ops).map(|()| ops));
             let checked = match planned {
                 Err(e) => Err(format!("出错：{e}")),
@@ -344,7 +347,7 @@ fn snapshot(input: &Value) -> Snapshot {
         .map(|t| {
             let n = t["number"].as_i64().expect("open tasks have numbers");
             json!({ "id": id(n), "number": n, "folder_id": null, "title": t["title"], "description": "", "done_at": null, "due": null,
-                "sort_key": "a0", "created_at": 0, "updated_at": 0, "created_via": null, "updated_via": null })
+                "sort_key": "a0", "assignees": [], "created_at": 0, "updated_at": 0, "created_by": ME, "updated_by": ME, "created_via": null, "updated_via": null })
         })
         .collect();
     let dependencies: Vec<Value> = open
@@ -603,7 +606,7 @@ fn tidy_data(input: &Value) -> (Snapshot, AiJob) {
             "id": task_id(n), "number": n, "folder_id": folder, "title": t["title"], "description": t["description"].as_str().unwrap_or_default(),
             // Listed latest first.
             "done_at": (i >= open.len()).then(|| 10_000 - i), "due": due, "sort_key": format!("a{i:02}1"),
-            "created_at": 0, "updated_at": 0, "created_via": null, "updated_via": null,
+            "assignees": [], "created_at": 0, "updated_at": 0, "created_by": ME, "updated_by": ME, "created_via": null, "updated_via": null,
         }));
         for b in t["requires"].as_array().into_iter().flatten() {
             dependencies.push(json!({ "before": task_id(b.as_i64().expect("numbers")), "after": task_id(n), "created_at": 0 }));
@@ -621,7 +624,7 @@ fn tidy_data(input: &Value) -> (Snapshot, AiJob) {
 
 fn ask_tidy(config: &Config, system: Option<&str>, e: &TidyExpect, data: &(Snapshot, AiJob), index: usize, run: usize) -> Outcome {
     let (snap, job) = data;
-    let (mut prompt, shown) = tidy::prompt(job, snap.clone());
+    let (mut prompt, shown) = tidy::prompt(job, snap.clone(), ME);
     if let Some(s) = system {
         prompt.system = s.to_owned();
     }
@@ -762,7 +765,7 @@ fn check_tidy(e: &TidyExpect, snap: &Snapshot, s: &[Suggestion]) -> (Vec<String>
     // The tasks a word names: those there once everything is taken with it in their titles.
     let who = |w: &Who| -> Vec<TaskId> {
         match w {
-            Who::Number(n) => b.task_by_number(*n).map(|t| t.id).into_iter().collect(),
+            Who::Number(n) => b.task_by_number(ME, *n).map(|t| t.id).into_iter().collect(),
             Who::Words(w) => texts.iter().filter(|(_, (t, _))| squash(t).contains(&squash(w))).map(|(id, _)| *id).collect(),
         }
     };
@@ -788,7 +791,7 @@ fn check_tidy(e: &TidyExpect, snap: &Snapshot, s: &[Suggestion]) -> (Vec<String>
         }
     }
     for (x, y) in &e.unlinked {
-        if matches!((b.task_by_number(*x), b.task_by_number(*y)), (Some(x), Some(y)) if edges.contains(&(x.id, y.id))) {
+        if matches!((b.task_by_number(ME, *x), b.task_by_number(ME, *y)), (Some(x), Some(y)) if edges.contains(&(x.id, y.id))) {
             problems.push(format!("#{x} 仍是 #{y} 的前置"));
         }
     }

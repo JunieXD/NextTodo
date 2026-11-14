@@ -89,6 +89,7 @@ impl AppState {
 
 /// Tells open sync connections that a user has new changes. It carries only the user id: each
 /// connection reads what it has not sent yet from the database, so nothing is missed or reordered.
+/// Called from inside the database call that commits the change, so a connection reads after it.
 #[derive(Clone)]
 pub struct Hub(tokio::sync::broadcast::Sender<Arc<str>>);
 
@@ -99,9 +100,16 @@ impl Default for Hub {
 }
 
 impl Hub {
-    pub fn changed(&self, owner: &str) {
+    pub fn changed(&self, user: &str) {
         // An error only means no connection is listening.
-        let _ = self.0.send(owner.into());
+        let _ = self.0.send(user.into());
+    }
+
+    /// Tells everyone a change went to.
+    pub fn notify(&self, users: &[String]) {
+        for user in users {
+            self.changed(user);
+        }
     }
 
     pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<Arc<str>> {

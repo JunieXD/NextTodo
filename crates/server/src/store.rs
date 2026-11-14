@@ -1,19 +1,34 @@
-//! Reading and writing entities. Every lookup is scoped to the owner.
+//! Reading and writing entities. Lookups by id find whatever has it; who can see it is for the caller
+//! to decide, by its owner and the folder it is in (docs/design.md#共享). Lists are those of a user.
 
 use nexttodo_core::board::Snapshot;
 use nexttodo_core::model::{
-    AiJob, AiJobId, Completions, Date, Dependency, Due, DueAt, Every, Folder, FolderId, Monthdays, Period, Repeat, RepeatFrom, RepeatUnit,
-    SortKey, Task, TaskId, Time, Weekdays,
+    AiJob, AiJobId, Completions, Date, Dependency, Due, DueAt, Every, Folder, FolderId, Monthdays, Period, Person, Repeat, RepeatFrom,
+    RepeatUnit, Share, SortKey, Task, TaskId, Time, Weekdays,
 };
 use rusqlite::{Connection, OptionalExtension, Params, Row, params};
 
 const FOLDER_COLUMNS: &str = "id, parent_id, name, sort_key, created_at, updated_at";
 const JOB_COLUMNS: &str = "id, folder_id, kind, text, local_time, state, error, suggestions, created_at, updated_at";
-const TASK_COLUMNS: &str = "id, number, folder_id, title, description, done_at, due_date, due_time, remind_before, sort_key, created_at, updated_at, created_via, updated_via, repeat_every, repeat_unit, repeat_from, repeat_days, completion_count, last_completed, repeat_monthdays, start_date";
+macro_rules! task_columns {
+    () => {
+        "id, number, folder_id, title, description, done_at, due_date, due_time, remind_before, sort_key, created_at, updated_at, created_via, updated_via, repeat_every, repeat_unit, repeat_from, repeat_days, completion_count, last_completed, repeat_monthdays, start_date, created_by, updated_by"
+    };
+}
+const TASK_COLUMNS: &str = task_columns!();
+/// A task's columns and its assignees, from `tasks`.
+const TASK_SELECT: &str = concat!(
+    task_columns!(),
+    ", (SELECT json_group_array(user_id) FROM (SELECT user_id FROM assignees WHERE task_id = tasks.id ORDER BY user_id))"
+);
 
 /// Folder ids in the subtree rooted at `?1`, including the root.
 const SUBTREE: &str = "WITH RECURSIVE sub(id, depth) AS (
     SELECT ?1, 0 UNION ALL SELECT f.id, sub.depth + 1 FROM folders f JOIN sub ON f.parent_id = sub.id)";
+
+/// The folders shared with user `?1` and everything in them.
+const SHARED: &str = "WITH RECURSIVE shared(id) AS (
+    SELECT folder_id FROM members WHERE user_id = ?1 UNION ALL SELECT f.id FROM folders f JOIN shared ON f.parent_id = shared.id)";
 
 fn folder_row(r: &Row) -> rusqlite::Result<Folder> {
     Ok(Folder { id: r.get(0)?, parent_id: r.get(1)?, name: r.get(2)?, sort_key: r.get(3)?, created_at: r.get(4)?, updated_at: r.get(5)? })
@@ -39,6 +54,7 @@ fn task_row(r: &Row) -> rusqlite::Result<Task> {
         (Some(count), Some(last)) => Some(Completions { count, last }),
         _ => None,
     };
+    let assignees: String = r.get(24)?;
     Ok(Task {
         id: r.get(0)?,
         number: r.get(1)?,
@@ -50,8 +66,12 @@ fn task_row(r: &Row) -> rusqlite::Result<Task> {
         due: date.map(|date| Due { date, at: time.map(|time| DueAt { time, remind_before }), repeat }),
         completions,
         sort_key: r.get(9)?,
+        assignees: serde_json::from_str(&assignees)
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(24, rusqlite::types::Type::Text, Box::new(e)))?,
         created_at: r.get(10)?,
         updated_at: r.get(11)?,
+        created_by: r.get(22)?,
+        updated_by: r.get(23)?,
         created_via: r.get(12)?,
         updated_via: r.get(13)?,
     })
@@ -114,8 +134,10 @@ fn due_columns(due: &Option<Due>) -> DueColumns<'_> {
     (Some(&d.date), at.map(|at| &at.time), at.and_then(|at| at.remind_before), every, unit, from, days, monthdays)
 }
 
-pub fn load_folder(c: &Connection, owner: &str, id: FolderId) -> rusqlite::Result<Option<Folder>> {
-    c.query_row(&format!("SELECT {FOLDER_COLUMNS} FROM folders WHERE id = ?1 AND owner_id = ?2"), params![id, owner], folder_row).optional()
+/// A folder and its owner.
+pub fn load_folder(c: &Connection, id: FolderId) -> rusqlite::Result<Option<(Folder, String)>> {
+    c.query_row(&format!("SELECT {FOLDER_COLUMNS}, owner_id FROM folders WHERE id = ?1"), [id], |r| Ok((folder_row(r)?, r.get(6)?)))
+        .optional()
 }
 
 /// Whether another folder next to `f` already has its name.
@@ -132,6 +154,7 @@ pub fn folder_id_taken(c: &Connection, id: FolderId) -> rusqlite::Result<bool> {
 }
 
 pub fn insert_folder(c: &Connection, owner: &str, f: &Folder) -> rusqlite::Result<()> {
+    // Its owner's, as is everything in it: one shared with others too.
     c.execute(
         "INSERT INTO folders (owner_id, id, parent_id, name, sort_key, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![owner, f.id, f.parent_id, f.name, f.sort_key, f.created_at, f.updated_at],
@@ -167,7 +190,7 @@ pub fn subtree_folders(c: &Connection, id: FolderId) -> rusqlite::Result<Vec<Fol
 }
 
 pub fn subtree_tasks(c: &Connection, id: FolderId) -> rusqlite::Result<Vec<Task>> {
-    all(c, &format!("{SUBTREE} SELECT {TASK_COLUMNS} FROM tasks WHERE folder_id IN (SELECT id FROM sub)"), [id], task_row)
+    all(c, &format!("{SUBTREE} SELECT {TASK_SELECT} FROM tasks WHERE folder_id IN (SELECT id FROM sub)"), [id], task_row)
 }
 
 pub fn subtree_dependencies(c: &Connection, id: FolderId) -> rusqlite::Result<Vec<Dependency>> {
@@ -182,6 +205,20 @@ pub fn subtree_dependencies(c: &Connection, id: FolderId) -> rusqlite::Result<Ve
     )
 }
 
+/// Gives everything in the subtree rooted at `id` to `owner`: the folders, and the dependencies
+/// between the tasks there. The tasks go one by one, as their numbers change.
+pub fn give_subtree(c: &Connection, id: FolderId, owner: &str) -> rusqlite::Result<()> {
+    c.execute(&format!("{SUBTREE} UPDATE folders SET owner_id = ?2 WHERE id IN (SELECT id FROM sub)"), params![id, owner])?;
+    c.execute(
+        &format!(
+            "{SUBTREE}, t AS (SELECT id FROM tasks WHERE folder_id IN (SELECT id FROM sub))
+             UPDATE dependencies SET owner_id = ?2 WHERE before_id IN t AND after_id IN t"
+        ),
+        params![id, owner],
+    )?;
+    Ok(())
+}
+
 pub fn in_subtree(c: &Connection, root: FolderId, id: FolderId) -> rusqlite::Result<bool> {
     c.query_row(&format!("{SUBTREE} SELECT EXISTS (SELECT 1 FROM sub WHERE id = ?2)"), params![root, id], |r| r.get(0))
 }
@@ -190,8 +227,19 @@ pub fn last_folder_key(c: &Connection, owner: &str, parent: Option<FolderId>) ->
     c.query_row("SELECT max(sort_key) FROM folders WHERE owner_id = ?1 AND parent_id IS ?2", params![owner, parent], |r| r.get(0))
 }
 
-pub fn load_task(c: &Connection, owner: &str, id: TaskId) -> rusqlite::Result<Option<Task>> {
-    c.query_row(&format!("SELECT {TASK_COLUMNS} FROM tasks WHERE id = ?1 AND owner_id = ?2"), params![id, owner], task_row).optional()
+/// A task and its owner.
+pub fn load_task(c: &Connection, id: TaskId) -> rusqlite::Result<Option<(Task, String)>> {
+    c.query_row(&format!("SELECT {TASK_SELECT}, owner_id FROM tasks WHERE id = ?1"), [id], |r| Ok((task_row(r)?, r.get(25)?))).optional()
+}
+
+/// Whether `owner` has another task than `id` numbered `number`.
+/// Whether `owner` has given out `number` before and no task of theirs but `id` has it now.
+pub fn number_free(c: &Connection, owner: &str, number: i64, id: TaskId) -> rusqlite::Result<bool> {
+    c.query_row(
+        "SELECT ?2 < next_task_number AND NOT EXISTS (SELECT 1 FROM tasks WHERE owner_id = ?1 AND number = ?2 AND id <> ?3) FROM users WHERE id = ?1",
+        params![owner, number, id],
+        |r| r.get(0),
+    )
 }
 
 pub fn task_id_taken(c: &Connection, id: TaskId) -> rusqlite::Result<bool> {
@@ -202,7 +250,7 @@ pub fn insert_task(c: &Connection, owner: &str, t: &Task) -> rusqlite::Result<()
     let (date, time, remind, every, unit, from, days, monthdays) = due_columns(&t.due);
     c.execute(
         &format!(
-            "INSERT INTO tasks (owner_id, {TASK_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)"
+            "INSERT INTO tasks (owner_id, {TASK_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)"
         ),
         params![
             owner,
@@ -227,19 +275,21 @@ pub fn insert_task(c: &Connection, owner: &str, t: &Task) -> rusqlite::Result<()
             t.completions.as_ref().map(|c| c.count),
             t.completions.as_ref().map(|c| &c.last),
             monthdays,
-            t.start
+            t.start,
+            t.created_by,
+            t.updated_by
         ],
     )?;
-    Ok(())
+    set_assignees(c, t)
 }
 
-pub fn update_task(c: &Connection, t: &Task) -> rusqlite::Result<()> {
+pub fn update_task(c: &Connection, owner: &str, t: &Task) -> rusqlite::Result<()> {
     let (date, time, remind, every, unit, from, days, monthdays) = due_columns(&t.due);
     c.execute(
         "UPDATE tasks SET folder_id = ?2, title = ?3, description = ?4, done_at = ?5, due_date = ?6, due_time = ?7,
          remind_before = ?8, sort_key = ?9, updated_at = ?10, updated_via = ?11, repeat_every = ?12, repeat_unit = ?13,
          repeat_from = ?14, repeat_days = ?15, completion_count = ?16, last_completed = ?17, repeat_monthdays = ?18,
-         start_date = ?19 WHERE id = ?1",
+         start_date = ?19, updated_by = ?20, owner_id = ?21, number = ?22 WHERE id = ?1",
         params![
             t.id,
             t.folder_id,
@@ -259,9 +309,20 @@ pub fn update_task(c: &Connection, t: &Task) -> rusqlite::Result<()> {
             t.completions.as_ref().map(|c| c.count),
             t.completions.as_ref().map(|c| &c.last),
             monthdays,
-            t.start
+            t.start,
+            t.updated_by,
+            owner,
+            t.number
         ],
     )?;
+    set_assignees(c, t)
+}
+
+fn set_assignees(c: &Connection, t: &Task) -> rusqlite::Result<()> {
+    c.execute("DELETE FROM assignees WHERE task_id = ?1", [t.id])?;
+    for user in &t.assignees {
+        c.execute("INSERT INTO assignees (task_id, user_id) VALUES (?1, ?2)", params![t.id, user])?;
+    }
     Ok(())
 }
 
@@ -281,10 +342,10 @@ pub fn take_task_number(c: &Connection, owner: &str) -> rusqlite::Result<i64> {
     })
 }
 
-pub fn load_dependency(c: &Connection, owner: &str, before: TaskId, after: TaskId) -> rusqlite::Result<Option<Dependency>> {
+pub fn load_dependency(c: &Connection, before: TaskId, after: TaskId) -> rusqlite::Result<Option<Dependency>> {
     c.query_row(
-        "SELECT before_id, after_id, created_at FROM dependencies WHERE before_id = ?1 AND after_id = ?2 AND owner_id = ?3",
-        params![before, after, owner],
+        "SELECT before_id, after_id, created_at FROM dependencies WHERE before_id = ?1 AND after_id = ?2",
+        params![before, after],
         dep_row,
     )
     .optional()
@@ -311,6 +372,13 @@ pub fn insert_dependency(c: &Connection, owner: &str, d: &Dependency) -> rusqlit
 pub fn delete_dependency(c: &Connection, d: &Dependency) -> rusqlite::Result<()> {
     c.execute("DELETE FROM dependencies WHERE before_id = ?1 AND after_id = ?2", params![d.before, d.after])?;
     Ok(())
+}
+
+/// The AI jobs in the subtree rooted at `id`, with whose they are.
+pub fn subtree_jobs(c: &Connection, id: FolderId) -> rusqlite::Result<Vec<(AiJob, String)>> {
+    c.prepare_cached(&format!("{SUBTREE} SELECT {JOB_COLUMNS}, owner_id FROM ai_jobs WHERE folder_id IN (SELECT id FROM sub)"))?
+        .query_map([id], |r| Ok((job_row(r)?, r.get(10)?)))?
+        .collect()
 }
 
 pub fn load_job(c: &Connection, owner: &str, id: AiJobId) -> rusqlite::Result<Option<AiJob>> {
@@ -342,30 +410,140 @@ pub fn delete_job(c: &Connection, id: AiJobId) -> rusqlite::Result<()> {
     Ok(())
 }
 
-pub fn subtree_jobs(c: &Connection, id: FolderId) -> rusqlite::Result<Vec<AiJob>> {
-    all(c, &format!("{SUBTREE} SELECT {JOB_COLUMNS} FROM ai_jobs WHERE folder_id IN (SELECT id FROM sub)"), [id], job_row)
+/// The shared folder `id` is in, or is.
+pub fn shared_root(c: &Connection, id: FolderId) -> rusqlite::Result<Option<FolderId>> {
+    c.query_row(
+        "WITH RECURSIVE up(id, depth) AS (
+             SELECT ?1, 0 UNION ALL SELECT f.parent_id, up.depth + 1 FROM folders f JOIN up ON f.id = up.id WHERE f.parent_id IS NOT NULL)
+         SELECT id FROM up WHERE EXISTS (SELECT 1 FROM members WHERE folder_id = up.id) ORDER BY depth LIMIT 1",
+        [id],
+        |r| r.get(0),
+    )
+    .optional()
 }
 
-/// All of a user's data, in id order.
-pub fn snapshot(c: &Connection, owner: &str) -> rusqlite::Result<Snapshot> {
+/// The shared folders in the subtree rooted at `id`, it included.
+pub fn shared_within(c: &Connection, id: FolderId) -> rusqlite::Result<Vec<FolderId>> {
+    let mut stmt =
+        c.prepare_cached(&format!("{SUBTREE} SELECT id FROM sub WHERE EXISTS (SELECT 1 FROM members WHERE folder_id = sub.id)"))?;
+    stmt.query_map([id], |r| r.get(0))?.collect()
+}
+
+/// Whether `owner` shares another folder than `id` named `name`.
+pub fn shared_name_taken(c: &Connection, owner: &str, name: &str, id: FolderId) -> rusqlite::Result<bool> {
+    c.query_row(
+        "SELECT EXISTS (SELECT 1 FROM folders f WHERE owner_id = ?1 AND name = ?2 AND id <> ?3
+             AND EXISTS (SELECT 1 FROM members WHERE folder_id = f.id))",
+        params![owner, name, id],
+        |r| r.get(0),
+    )
+}
+
+/// Who a folder is shared with, by user id in order.
+pub fn members(c: &Connection, id: FolderId) -> rusqlite::Result<Vec<String>> {
+    c.prepare_cached("SELECT user_id FROM members WHERE folder_id = ?1 ORDER BY user_id")?.query_map([id], |r| r.get(0))?.collect()
+}
+
+pub fn insert_member(c: &Connection, id: FolderId, user: &str) -> rusqlite::Result<()> {
+    c.execute("INSERT INTO members (folder_id, user_id) VALUES (?1, ?2)", params![id, user])?;
+    Ok(())
+}
+
+pub fn delete_member(c: &Connection, id: FolderId, user: &str) -> rusqlite::Result<()> {
+    c.execute("DELETE FROM members WHERE folder_id = ?1 AND user_id = ?2", params![id, user])?;
+    Ok(())
+}
+
+fn person_row(r: &Row) -> rusqlite::Result<Person> {
+    Ok(Person { id: r.get(0)?, username: r.get(1)?, display_name: r.get(2)? })
+}
+
+/// The people with these ids.
+pub fn people(c: &Connection, ids: &[String]) -> rusqlite::Result<Vec<Person>> {
+    ids.iter().map(|id| person(c, id)).collect()
+}
+
+pub fn person(c: &Connection, id: &str) -> rusqlite::Result<Person> {
+    c.query_row("SELECT id, username, display_name FROM users WHERE id = ?1", [id], person_row)
+}
+
+/// Someone by the username they sign in with, whatever its case.
+pub fn person_named(c: &Connection, username: &str) -> rusqlite::Result<Option<Person>> {
+    c.query_row("SELECT id, username, display_name FROM users WHERE username = ?1", [username.trim()], person_row).optional()
+}
+
+/// Who else has `user` among the people of their snapshot: those sharing a folder with `user`, and
+/// those who see a task `user` made or last changed.
+pub fn known_by(c: &Connection, user: &str) -> rusqlite::Result<Vec<String>> {
+    c.prepare_cached(
+        "WITH RECURSIVE s(id, owner) AS (SELECT m.folder_id, f.owner_id FROM members m JOIN folders f ON f.id = m.folder_id
+             WHERE f.owner_id = ?1 OR m.user_id = ?1),
+         made(owner, folder) AS (SELECT owner_id, folder_id FROM tasks WHERE created_by = ?1 OR updated_by = ?1),
+         up(id) AS (SELECT folder FROM made WHERE folder IS NOT NULL
+             UNION SELECT f.parent_id FROM folders f JOIN up ON f.id = up.id WHERE f.parent_id IS NOT NULL)
+         SELECT owner FROM s UNION SELECT m.user_id FROM members m JOIN s ON m.folder_id = s.id
+         UNION SELECT owner FROM made UNION SELECT m.user_id FROM members m JOIN up ON m.folder_id = up.id
+         EXCEPT SELECT ?1",
+    )?
+    .query_map([user], |r| r.get(0))?
+    .collect()
+}
+
+/// All a user can see, in id order: their own data, and the folders shared with them, which there
+/// have no parent.
+pub fn snapshot(c: &Connection, user: &str) -> rusqlite::Result<Snapshot> {
+    let shares: Vec<(FolderId, String)> = c
+        .prepare_cached(
+            "SELECT DISTINCT m.folder_id, f.owner_id FROM members m JOIN folders f ON f.id = m.folder_id
+             WHERE f.owner_id = ?1 OR m.folder_id IN (SELECT folder_id FROM members WHERE user_id = ?1) ORDER BY m.folder_id",
+        )?
+        .query_map([user], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    let shares = shares
+        .into_iter()
+        .map(|(folder_id, owner)| Ok(Share { members: members(c, folder_id)?, folder_id, owner }))
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let visible = "owner_id = ?1 OR folder_id IN shared";
+    let tasks: Vec<Task> = all(c, &format!("{SHARED} SELECT {TASK_SELECT} FROM tasks WHERE {visible} ORDER BY id"), [user], task_row)?;
+    let mut people: Vec<&str> = shares
+        .iter()
+        .flat_map(|s| std::iter::once(&s.owner).chain(&s.members))
+        .chain(tasks.iter().flat_map(|t| [&t.created_by, &t.updated_by]))
+        .map(String::as_str)
+        .collect();
+    people.push(user);
+    people.sort();
+    people.dedup();
+    let people = people.into_iter().map(|id| person(c, id)).collect::<rusqlite::Result<_>>()?;
     Ok(Snapshot {
-        folders: all(c, &format!("SELECT {FOLDER_COLUMNS} FROM folders WHERE owner_id = ?1 ORDER BY id"), [owner], folder_row)?,
-        tasks: all(c, &format!("SELECT {TASK_COLUMNS} FROM tasks WHERE owner_id = ?1 ORDER BY id"), [owner], task_row)?,
+        folders: all(
+            c,
+            &format!(
+                "{SHARED} SELECT id, CASE WHEN id IN (SELECT folder_id FROM members WHERE user_id = ?1) THEN NULL ELSE parent_id END,
+                     name, sort_key, created_at, updated_at
+                 FROM folders WHERE owner_id = ?1 OR id IN shared ORDER BY id"
+            ),
+            [user],
+            folder_row,
+        )?,
+        tasks,
         dependencies: all(
             c,
-            "SELECT before_id, after_id, created_at FROM dependencies WHERE owner_id = ?1 ORDER BY before_id, after_id",
-            [owner],
+            &format!(
+                "{SHARED} SELECT before_id, after_id, created_at FROM dependencies
+                 WHERE before_id IN (SELECT id FROM tasks WHERE {visible}) ORDER BY before_id, after_id"
+            ),
+            [user],
             dep_row,
         )?,
-        ai_jobs: all(c, &format!("SELECT {JOB_COLUMNS} FROM ai_jobs WHERE owner_id = ?1 ORDER BY id"), [owner], job_row)?,
+        ai_jobs: all(c, &format!("SELECT {JOB_COLUMNS} FROM ai_jobs WHERE owner_id = ?1 ORDER BY id"), [user], job_row)?,
+        shares,
+        people,
     })
 }
 
-/// The latest mutation sequence number the user can see.
-pub fn latest_seq(c: &Connection, owner: &str) -> rusqlite::Result<i64> {
-    c.query_row(
-        "SELECT max(pruned_seq, coalesce((SELECT max(seq) FROM mutations WHERE owner_id = ?1), 0)) FROM users WHERE id = ?1",
-        [owner],
-        |r| r.get(0),
-    )
+/// The latest mutation sequence number: every change a user is to see up to it has been sent to them,
+/// or will download with their data.
+pub fn latest_seq(c: &Connection, user: &str) -> rusqlite::Result<i64> {
+    c.query_row("SELECT max(pruned_seq, coalesce((SELECT max(seq) FROM mutations), 0)) FROM users WHERE id = ?1", [user], |r| r.get(0))
 }

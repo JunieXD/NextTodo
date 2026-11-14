@@ -6,6 +6,9 @@ import type { Mutation } from "../api/types/Mutation";
 import type { Task } from "../api/types/Task";
 import { type Pending, type Saved, Store } from "./store";
 
+/** The user whose data it is. */
+const ME = "019a4b2c-0000-7000-8000-0000000000ee";
+
 const id = (n: number) => `019a4b2c-0000-7000-8000-${String(n).padStart(12, "0")}`;
 
 function task(n: number, title: string, extra: Partial<Task> = {}): Task {
@@ -21,6 +24,9 @@ function task(n: number, title: string, extra: Partial<Task> = {}): Task {
     sort_key: `a${n}`,
     created_at: 0,
     updated_at: 0,
+    assignees: [],
+    created_by: ME,
+    updated_by: ME,
     created_via: null,
     updated_via: null,
     ...extra,
@@ -35,7 +41,7 @@ function setup(saved: Saved = Store.empty()) {
   const arrived: LogEntry[][] = [];
   let last = saved;
   const outbox = new Map(saved.outbox.map((p) => [p.mutation.id, p]));
-  const store = new Store(saved, {
+  const store = new Store(ME, saved, {
     save(copy, queued: Pending[], settled) {
       for (const p of queued) outbox.set(p.mutation.id, p);
       for (const id of settled) outbox.delete(id);
@@ -59,7 +65,7 @@ function setup(saved: Saved = Store.empty()) {
 const settle = () => new Promise((r) => setTimeout(r));
 
 /** How the server echoes a change back. */
-const echo = (m: Mutation, seq: number, effects: LogEntry["effects"]): LogEntry => ({ seq, id: m.id, actor: null, effects, created_at: 0 });
+const echo = (m: Mutation, seq: number, effects: LogEntry["effects"]): LogEntry => ({ seq, id: m.id, user: ME, actor: null, effects, created_at: 0 });
 
 test("a change shows at once, is sent once saved, and leaves the queue when the server confirms it", async () => {
   const { store, sent, titles, hold, saved } = setup();
@@ -83,7 +89,7 @@ test("a change shows at once, is sent once saved, and leaves the queue when the 
 });
 
 test("changes the Android widget could not send join the queue in the order made, and are sent once saved", async () => {
-  const { store, sent, hold, saved } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "交房租")], dependencies: [], ai_jobs: [] } });
+  const { store, sent, hold, saved } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "交房租")], dependencies: [], ai_jobs: [], shares: [], people: [] } });
   const mine = store.commit([{ op: "task.create", id: id(2), title: "买菜", sort_key: "a2" }]);
   await settle();
   const earlier = { id: uuidv7({ msecs: 1 }), ops: [{ op: "task.update" as const, id: id(1), done: true }] };
@@ -98,10 +104,10 @@ test("changes the Android widget could not send join the queue in the order made
 });
 
 test("changes from elsewhere merge under the ones still queued", () => {
-  const { store, titles, arrived } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "写初稿")], dependencies: [], ai_jobs: [] } });
+  const { store, titles, arrived } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "写初稿")], dependencies: [], ai_jobs: [], shares: [], people: [] } });
   store.commit([{ op: "task.update", id: id(1), title: "写终稿" }]);
   const other = { kind: "task" as const, before: null, after: task(2, "投稿") };
-  store.receive([{ seq: 5, id: id(50), actor: "Claude Code", effects: [other], created_at: 0 }], 5);
+  store.receive([{ seq: 5, id: id(50), user: ME, actor: "Claude Code", effects: [other], created_at: 0 }], 5);
   expect(titles()).toEqual(["写终稿", "投稿"]);
   expect(arrived.flat().map((e) => e.actor)).toEqual(["Claude Code"]);
 });
@@ -123,9 +129,9 @@ test("a change another tab heard turned down leaves the view without being repor
 });
 
 test("a change that no longer applies waits for the server instead of breaking the view", () => {
-  const { store, titles } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "旧")], dependencies: [], ai_jobs: [] } });
+  const { store, titles } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "旧")], dependencies: [], ai_jobs: [], shares: [], people: [] } });
   const { id: change } = store.commit([{ op: "task.update", id: id(1), title: "新" }]);
-  store.receive([{ seq: 1, id: id(60), actor: null, effects: [{ kind: "task", before: task(1, "旧"), after: null }], created_at: 0 }], 1);
+  store.receive([{ seq: 1, id: id(60), user: ME, actor: null, effects: [{ kind: "task", before: task(1, "旧"), after: null }], created_at: 0 }], 1);
   expect(titles()).toEqual([]);
   expect(store.getView().stuck.has(change)).toBe(true);
 });
@@ -146,9 +152,9 @@ test("a refused change is not queued", () => {
 });
 
 test("a fresh copy keeps the queued changes on top", () => {
-  const { store, titles } = setup({ ...Store.empty(), seq: 3, base: { folders: [], tasks: [task(1, "旧")], dependencies: [], ai_jobs: [] } });
+  const { store, titles } = setup({ ...Store.empty(), seq: 3, base: { folders: [], tasks: [task(1, "旧")], dependencies: [], ai_jobs: [], shares: [], people: [] } });
   store.commit([{ op: "task.create", id: id(2), title: "新", sort_key: "a2" }]);
-  store.resync({ user: "u", seq: 90, folders: [], tasks: [task(3, "服务器上的")], dependencies: [], ai_jobs: [] });
+  store.resync({ user: "u", seq: 90, folders: [], tasks: [task(3, "服务器上的")], dependencies: [], ai_jobs: [], shares: [], people: [] });
   expect(titles()).toEqual(["新", "服务器上的"]);
   expect(store.since).toBe(90);
 });
@@ -158,7 +164,7 @@ test("a change the fresh copy already has leaves the queue when the server ackno
   store.commit([{ op: "task.create", id: id(1), title: "交电费", sort_key: "a1" }]);
   await settle();
   // The server applied it at 5, but the reply was lost; later the copy was too old and downloaded afresh.
-  store.resync({ user: "u", seq: 9, folders: [], tasks: [task(1, "交电费")], dependencies: [], ai_jobs: [] });
+  store.resync({ user: "u", seq: 9, folders: [], tasks: [task(1, "交电费")], dependencies: [], ai_jobs: [], shares: [], people: [] });
   expect(store.getView().stuck.has(sent[0].id)).toBe(true);
   store.acked(sent[0].id, 12);
   expect(store.unconfirmed).toHaveLength(1);

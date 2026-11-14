@@ -90,6 +90,10 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         #[ts(as = "Option<bool>", optional)]
         done: bool,
+        /// User ids, in a shared folder only.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[ts(as = "Option<Vec<String>>", optional)]
+        assignees: Vec<String>,
     },
     #[serde(rename = "task.update")]
     TaskUpdate {
@@ -123,6 +127,14 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         today: Option<Date>,
+        /// User ids to add to its assignees and to take off them, those it has then: two people
+        /// assigning at once both count.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[ts(as = "Option<Vec<String>>", optional)]
+        assign: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[ts(as = "Option<Vec<String>>", optional)]
+        unassign: Vec<String>,
     },
     #[serde(rename = "task.delete")]
     TaskDelete { id: TaskId },
@@ -158,6 +170,12 @@ pub enum Op {
     },
     #[serde(rename = "ai_job.delete")]
     AiJobDelete { id: AiJobId },
+    /// Shares a folder with someone, by the username they sign in with; only its owner can.
+    #[serde(rename = "share.add")]
+    ShareAdd { folder_id: FolderId, username: String },
+    /// Takes someone off a shared folder: its owner anyone, a member themselves.
+    #[serde(rename = "share.remove")]
+    ShareRemove { folder_id: FolderId, user_id: String },
     #[serde(rename = "undo")]
     Undo { mutation: MutationId },
 }

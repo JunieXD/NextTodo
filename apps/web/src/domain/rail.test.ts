@@ -3,6 +3,9 @@ import type { Snapshot } from "../api/types/Snapshot";
 import { Board } from "./board";
 import { railLayout } from "./rail";
 
+/** The user whose data it is. */
+const ME = "019a4b2c-0000-7000-8000-0000000000ee";
+
 const id = (n: number) => `00000000-0000-7000-8000-${String(n + 1).padStart(12, "0")}`;
 
 /** `n` tasks in the root, in this order, with dependencies between them by index. */
@@ -21,13 +24,18 @@ function board(n: number, deps: [number, number][]) {
       sort_key: `a${String(i).padStart(3, "0")}`,
       created_at: 0,
       updated_at: 0,
+      assignees: [],
+      created_by: ME,
+      updated_by: ME,
       created_via: null,
       updated_via: null,
     })),
     dependencies: deps.map(([b, a]) => ({ before: id(b), after: id(a), created_at: 0 })),
     ai_jobs: [],
+    shares: [],
+    people: [],
   };
-  const b = new Board(snapshot, "2026-11-12");
+  const b = new Board(snapshot, "2026-11-12", ME);
   return { board: b, list: b.tasksIn(null) };
 }
 

@@ -4,7 +4,7 @@
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
-use nexttodo_core::board::{Board, Snapshot, Status};
+use nexttodo_core::board::{Board, Status};
 use nexttodo_core::model::{Change, Date, Description, Due, Effect, FolderId, MutationId, Name, Repeat, RepeatFrom, Task, TaskId, Title};
 use nexttodo_core::ops::Op;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -13,10 +13,10 @@ use uuid::Uuid;
 
 use super::args::{
     AddArgs, ApplyArgs, DeleteArgs, DepArgs, DoneArgs, EditArgs, MkdirArgs, MoveArgs, Plan, PlanRef, PlanTask, RenameArgs, RepeatText,
-    Replace, TasksArgs, UndoArgs,
+    Replace, ShareArgs, TaskRef, TasksArgs, UndoArgs, UnshareArgs, task_ref,
 };
 use super::text::{self, Names, task_view};
-use super::{Output, WriteFn, find_folder, find_task};
+use super::{Output, WriteFn, find_folder, find_task, person};
 use crate::auth::Auth;
 use crate::error::ApiError;
 use crate::mutate::{self, Actor};
@@ -25,7 +25,7 @@ use crate::store;
 /// What write tools build from.
 pub struct WriteCx<'a> {
     pub c: &'a Connection,
-    pub owner: &'a str,
+    pub user: &'a str,
     pub board: &'a Board<'a>,
     /// As the user gave it: a repeating task done needs it.
     pub today: Option<Date>,
@@ -44,6 +44,7 @@ impl From<Vec<Op>> for Write {
     }
 }
 
+/// Runs a write tool: its output, and the users its change went to.
 pub fn run(
     c: &mut Connection,
     auth: &Auth,
@@ -51,45 +52,47 @@ pub fn run(
     now: i64,
     today: Option<Date>,
     build: WriteFn,
-) -> Result<Output, ApiError> {
-    let actor = Actor { owner: &auth.user_id, token_id: &auth.token_id, via: auth.via() };
+) -> Result<(Output, Vec<String>), ApiError> {
+    let actor = Actor { user: &auth.user_id, token_id: &auth.token_id, via: auth.via() };
     let id = id.unwrap_or_else(|| MutationId(Uuid::now_v7()));
     let tx = c.transaction()?;
     if let Some(done) = mutate::earlier(&tx, &actor, id)? {
         // A retry gets the first answer again, not one made from what has changed since.
         let reply: Option<String> = tx.query_row("SELECT reply FROM mutations WHERE seq = ?1", [done.seq], |r| r.get(0))?;
-        return match reply {
-            Some(reply) => Ok(serde_json::from_str(&reply)?),
+        let output = match reply {
+            Some(reply) => serde_json::from_str(&reply)?,
             // Past the retention period, or sent by an app rather than through a tool. Only the
             // receipt is given: the old effects cannot be read against today's folders.
-            None => {
-                Ok(Output { text: format!("批次 {} 已保存，本次未重复生效", done.seq), data: json!({ "batch": done.seq }) })
-            }
+            None => Output { text: format!("批次 {} 已保存，本次未重复生效", done.seq), data: json!({ "batch": done.seq }) },
         };
+        return Ok((output, Vec::new()));
     }
     let snap = store::snapshot(&tx, &auth.user_id)?;
     let day = today.clone().unwrap_or_else(|| Date::utc(now));
-    let write = build(&WriteCx { c: &tx, owner: &auth.user_id, board: &Board::new(&snap, day.clone()), today })?;
-    let effects = mutate::run(&tx, &actor, &write.ops, now)?;
+    let write = build(&WriteCx { c: &tx, user: &auth.user_id, board: &Board::new(&snap, day.clone(), &auth.user_id), today })?;
+    let done = mutate::run(&tx, &actor, &write.ops, now)?;
+    let effects = done.view(&auth.user_id);
     // Rendered inside the transaction, so a preview still sees what it would have made.
     let after = store::snapshot(&tx, &auth.user_id)?;
+    let b = Board::new(&after, day, &auth.user_id);
+    let names = Names::new(&after, &auth.user_id, store::people(&tx, &text::strangers(&after, &effects))?);
     if write.preview {
-        return Ok(report(&after, &day, None, &effects));
+        return Ok((report(&b, names, None, &effects), Vec::new()));
     }
-    let batch = mutate::record(&tx, &actor, id, &write.ops, &effects, now)?;
-    let output = report(&after, &day, Some(batch), &effects);
-    tx.execute("UPDATE mutations SET reply = ?1 WHERE seq = ?2", params![serde_json::to_string(&output)?, batch])?;
+    let recorded = mutate::record(&tx, &actor, id, &write.ops, &done, now)?;
+    let output = report(&b, names, Some(recorded.seq), &effects);
+    tx.execute("UPDATE mutations SET reply = ?1 WHERE seq = ?2", params![serde_json::to_string(&output)?, recorded.seq])?;
     tx.commit()?;
-    Ok(output)
+    Ok((output, recorded.to))
 }
 
-fn report(after: &Snapshot, today: &Date, batch: Option<i64>, effects: &[Effect]) -> Output {
-    let b = Board::new(after, today.clone());
+/// What a change did, read with the `names` from after it.
+fn report(b: &Board, mut names: Names, batch: Option<i64>, effects: &[Effect]) -> Output {
     let mut lines = Vec::new();
     if batch.is_none() {
         lines.push("预览（未保存）：".to_owned());
     }
-    let (said, changes) = text::changes(effects, &mut Names::new(after), 20);
+    let (said, changes) = text::changes(effects, &mut names, 20);
     lines.extend(said);
     if effects.is_empty() {
         lines.push("没有变化".into());
@@ -112,11 +115,11 @@ fn report(after: &Snapshot, today: &Date, batch: Option<i64>, effects: &[Effect]
     let mut data = json!({ "batch": batch, "changes": changes });
     match unlocked.as_slice() {
         [] => {}
-        [t] => lines.push(format!("解锁 {}", text::item(t))),
-        list => lines.push(format!("解锁 {} 项：{}", list.len(), list.iter().map(|t| text::item(t)).collect::<Vec<_>>().join("、"))),
+        [t] => lines.push(format!("解锁 {}", text::item(b, t))),
+        list => lines.push(format!("解锁 {} 项：{}", list.len(), list.iter().map(|t| text::item(b, t)).collect::<Vec<_>>().join("、"))),
     }
     if !unlocked.is_empty() {
-        data["unlocked"] = unlocked.iter().map(|t| task_view(&b, t)).collect();
+        data["unlocked"] = unlocked.iter().map(|t| task_view(b, t)).collect();
     }
     if let Some(batch) = batch {
         lines.push(format!("批次 {batch}，可撤销"));
@@ -131,10 +134,16 @@ struct Folders<'a, 'b> {
 }
 
 impl Folders<'_, '_> {
-    /// The folder at `path` and its path written out in full.
+    /// The folder at `path` and its path written out in full. In a folder someone else shares, made
+    /// in there: that folder itself has to be there.
     fn ensure(&mut self, ops: &mut Vec<Op>, path: &str) -> Result<(Option<FolderId>, String), ApiError> {
         let (mut cur, mut full) = (None, String::new());
-        for name in path.split('/').map(str::trim).filter(|s| !s.is_empty()) {
+        let mut names = path.split('/').map(str::trim).filter(|s| !s.is_empty());
+        if path.trim_start().starts_with('@') {
+            full = format!("{}/{}", names.next().unwrap_or_default(), names.next().unwrap_or_default());
+            cur = find_folder(self.board, &full)?;
+        }
+        for name in names {
             full = format!("{full}/{name}");
             let existing =
                 self.made.get(&full).copied().or_else(|| self.board.subfolders(cur).iter().find(|f| f.name.as_str() == name).map(|f| f.id));
@@ -182,17 +191,24 @@ fn repeat(repeat: Option<RepeatText>, from: Option<RepeatFrom>) -> Result<Option
     }
 }
 
-/// A task number written as text in a plan: `"42"` or `"#42"`.
-pub(crate) fn number(s: &str) -> Option<i64> {
-    s.strip_prefix('#').unwrap_or(s).parse().ok()
+/// The operations adding `tasks` to `folder` as those of a plan for it: what AI organizing adds. The
+/// numbers in it are those of the tasks the model was `shown`, which must still be there.
+pub fn plan_into(b: &Board, folder: Option<FolderId>, tasks: Vec<PlanTask>, shown: &HashMap<i64, TaskId>) -> Result<Vec<Op>, ApiError> {
+    plan_ops(b, Plan { folder: Some(b.path(folder)), tasks }, &|n| shown.get(&n).copied().filter(|&id| b.task(id).is_some()))
 }
 
-/// The operations adding `tasks` to `folder` as those of a plan for it: what AI organizing adds.
-pub fn plan_into(b: &Board, folder: Option<FolderId>, tasks: Vec<PlanTask>) -> Result<Vec<Op>, ApiError> {
-    plan_ops(b, Plan { folder: Some(b.path(folder)), tasks })
+/// The user's own tasks by number, as tools take them.
+fn mine<'a>(b: &'a Board) -> impl Fn(i64) -> Option<TaskId> + 'a {
+    |n| b.task_by_number(b.me(), n).map(|t| t.id)
 }
 
-fn plan_ops(b: &Board, plan: Plan) -> Result<Vec<Op>, ApiError> {
+/// The user ids of people in shared folders given by username.
+fn people(b: &Board, usernames: &[String]) -> Result<Vec<String>, ApiError> {
+    usernames.iter().map(|u| Ok(person(b, u)?.id.clone())).collect()
+}
+
+/// The operations a plan amounts to; `number` finds the tasks plain numbers in it stand for.
+fn plan_ops(b: &Board, plan: Plan, number: &dyn Fn(i64) -> Option<TaskId>) -> Result<Vec<Op>, ApiError> {
     let mut ops = Vec::new();
     let mut folders = Folders { board: b, made: HashMap::new() };
     let (base, base_path) = folders.ensure(&mut ops, plan.folder.as_deref().unwrap_or("/"))?;
@@ -200,26 +216,40 @@ fn plan_ops(b: &Board, plan: Plan) -> Result<Vec<Op>, ApiError> {
     let mut refs = HashMap::new();
     for (t, &id) in plan.tasks.iter().zip(&ids) {
         let Some(name) = &t.name else { continue };
-        if number(name).is_some() {
+        if task_ref(name).is_some() {
             return Err(ApiError::invalid(format!("ref“{name}”会被识别为事项编号，请改用非数字的名称"), None));
         }
         if refs.insert(name.clone(), id).is_some() {
             return Err(ApiError::invalid(format!("计划中有多个事项的 ref 均为“{name}”"), None));
         }
     }
+    let own = |n: i64| number(n).ok_or_else(|| ApiError::not_found(format!("不存在事项 #{n}")));
     let resolve = |r: &PlanRef| -> Result<TaskId, ApiError> {
         match r {
-            PlanRef::Number(n) => Ok(find_task(b, *n)?.id),
-            PlanRef::Name(s) => match number(s) {
-                Some(n) => Ok(find_task(b, n)?.id),
+            PlanRef::Number(n) => own(*n),
+            PlanRef::Name(s) => match task_ref(s) {
+                Some((None, n)) => own(n),
+                Some((Some(user), number)) => Ok(find_task(b, &TaskRef { user: Some(user.to_owned()), number })?.id),
                 None => refs.get(s).copied().ok_or_else(|| ApiError::invalid(format!("计划中没有 ref 为“{s}”的事项"), None)),
             },
         }
     };
     let mut links = Vec::new();
     for (t, &id) in plan.tasks.into_iter().zip(&ids) {
-        let PlanTask { name: _, title, description, folder, start, due: due_text, remind, repeat: repeat_text, repeat_from, after, before } =
-            t;
+        let PlanTask {
+            name: _,
+            title,
+            description,
+            folder,
+            start,
+            due: due_text,
+            remind,
+            repeat: repeat_text,
+            repeat_from,
+            assign,
+            after,
+            before,
+        } = t;
         let folder_id = match folder {
             None => base,
             Some(p) if p.trim_start().starts_with('/') => folders.ensure(&mut ops, &p)?.0,
@@ -234,6 +264,7 @@ fn plan_ops(b: &Board, plan: Plan) -> Result<Vec<Op>, ApiError> {
             due: new_due(due_text, remind, repeat_text, repeat_from)?,
             sort_key: None,
             done: false,
+            assignees: people(b, &assign)?,
         });
         for r in &after {
             links.push((resolve(r)?, id));
@@ -259,10 +290,16 @@ pub fn add(w: &WriteCx, a: AddArgs) -> Result<Write, ApiError> {
         remind: a.remind,
         repeat: a.repeat,
         repeat_from: a.repeat_from,
-        after: a.after.into_iter().map(PlanRef::Number).collect(),
-        before: a.before.into_iter().map(PlanRef::Number).collect(),
+        assign: a.assign,
+        after: plan_refs(a.after),
+        before: plan_refs(a.before),
     };
-    plan_ops(b, Plan { folder: a.folder, tasks: vec![task] }).map(Write::from)
+    plan_ops(b, Plan { folder: a.folder, tasks: vec![task] }, &mine(b)).map(Write::from)
+}
+
+/// Tasks given by number, as a plan has them.
+fn plan_refs(refs: Vec<TaskRef>) -> Vec<PlanRef> {
+    refs.iter().map(|r| PlanRef::Name(r.to_string())).collect()
 }
 
 pub fn apply(w: &WriteCx, a: ApplyArgs) -> Result<Write, ApiError> {
@@ -270,25 +307,31 @@ pub fn apply(w: &WriteCx, a: ApplyArgs) -> Result<Write, ApiError> {
     if a.plan.tasks.is_empty() {
         return Err(ApiError::invalid("计划至少包含一个事项", Some("plan.tasks".into())));
     }
-    Ok(Write { ops: plan_ops(b, a.plan)?, preview: a.dry_run })
+    Ok(Write { ops: plan_ops(b, a.plan, &mine(b))?, preview: a.dry_run })
 }
 
 pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
-    let Edit { id, title, description, start, due } = edit_fields(w.board, a)?;
-    Ok(vec![Op::TaskUpdate { id, folder_id: None, title, description, start, due, sort_key: None, done: None, today: None }].into())
+    let t = find_task(w.board, &a.task)?;
+    let Edit { id, title, description, start, due, assign, unassign } = edit_fields(w.board, t, a)?;
+    let op =
+        Op::TaskUpdate { id, folder_id: None, title, description, start, due, sort_key: None, done: None, today: None, assign, unassign };
+    Ok(vec![op].into())
 }
 
-/// The fields `edit` sets on a task, the due date in full; `None` where it leaves one as it is.
+/// The fields `edit` sets on a task, the due date in full; `None` where it leaves one as it is; and
+/// who is to do it as well or no longer, by user id.
 pub(crate) struct Edit {
     pub id: TaskId,
     pub title: Option<Title>,
     pub description: Option<Description>,
     pub start: Option<Option<Date>>,
     pub due: Option<Option<Due>>,
+    pub assign: Vec<String>,
+    pub unassign: Vec<String>,
 }
 
-/// What `edit` changes: also what AI tidying suggests changing in a task.
-pub(crate) fn edit_fields(b: &Board, a: EditArgs) -> Result<Edit, ApiError> {
+/// What `edit` changes in task `t`: also what AI tidying suggests changing in a task.
+pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiError> {
     let revising = !a.replace.is_empty() || a.append.is_some();
     let changes_repeat = a.repeat.is_some() || a.repeat_from.is_some();
     if a.title.is_none()
@@ -298,13 +341,14 @@ pub(crate) fn edit_fields(b: &Board, a: EditArgs) -> Result<Edit, ApiError> {
         && a.due.is_none()
         && a.remind.is_none()
         && !changes_repeat
+        && a.assign.is_empty()
+        && a.unassign.is_empty()
     {
         return Err(ApiError::invalid("未指定要修改的内容", None));
     }
     if a.description.is_some() && revising {
         return Err(ApiError::invalid("description 是整段替换，不能和 replace、append 同时给", Some("description".into())));
     }
-    let t = find_task(b, a.task)?;
     let description = if revising { Some(revise(t.description.as_str(), a.replace, a.append)?) } else { a.description };
     let current = t.due.as_ref();
     let current_remind = current.and_then(|d| d.at.as_ref()).and_then(|at| at.remind_before);
@@ -347,7 +391,15 @@ pub(crate) fn edit_fields(b: &Board, a: EditArgs) -> Result<Edit, ApiError> {
             None => None,
         },
     };
-    Ok(Edit { id: t.id, title: a.title, description, start: a.start, due: new_due })
+    Ok(Edit {
+        id: t.id,
+        title: a.title,
+        description,
+        start: a.start,
+        due: new_due,
+        assign: people(b, &a.assign)?,
+        unassign: people(b, &a.unassign)?,
+    })
 }
 
 /// The description as it is now with each `old` replaced by its `new` in turn, then `append` on a
@@ -385,14 +437,14 @@ fn revise(current: &str, replace: Vec<Replace>, append: Option<String>) -> Resul
 
 /// Marks `tasks` done or open again; a repeating task done is due next time, counted from `today`,
 /// unless `end_repeat`, which stops it repeating so that it is done.
-fn set_done(b: &Board, tasks: Vec<i64>, done: bool, today: Option<Date>, end_repeat: bool) -> Result<Write, ApiError> {
+fn set_done(b: &Board, tasks: Vec<TaskRef>, done: bool, today: Option<Date>, end_repeat: bool) -> Result<Write, ApiError> {
     if tasks.is_empty() {
         return Err(ApiError::invalid("至少需要指定一个事项", Some("tasks".into())));
     }
     let mut seen = HashSet::new();
     let mut ops = Vec::new();
-    for n in tasks {
-        let t = find_task(b, n)?;
+    for r in &tasks {
+        let t = find_task(b, r)?;
         if seen.insert(t.id) {
             let due = t.due.as_ref().filter(|d| end_repeat && d.repeat.is_some()).map(|d| Some(Due { repeat: None, ..d.clone() }));
             ops.push(Op::TaskUpdate {
@@ -405,6 +457,8 @@ fn set_done(b: &Board, tasks: Vec<i64>, done: bool, today: Option<Date>, end_rep
                 sort_key: None,
                 done: Some(done),
                 today: today.clone(),
+                assign: Vec::new(),
+                unassign: Vec::new(),
             });
         }
     }
@@ -449,8 +503,8 @@ pub fn move_to(w: &WriteCx, a: MoveArgs) -> Result<Write, ApiError> {
     }
     let to = find_folder(b, &a.to)?;
     let mut ops = Vec::new();
-    for n in a.tasks {
-        let t = find_task(b, n)?;
+    for r in &a.tasks {
+        let t = find_task(b, r)?;
         ops.push(Op::TaskUpdate {
             id: t.id,
             folder_id: Some(to),
@@ -461,6 +515,8 @@ pub fn move_to(w: &WriteCx, a: MoveArgs) -> Result<Write, ApiError> {
             sort_key: None,
             done: None,
             today: None,
+            assign: Vec::new(),
+            unassign: Vec::new(),
         });
     }
     for path in &a.folders {
@@ -476,8 +532,8 @@ pub fn delete(w: &WriteCx, a: DeleteArgs) -> Result<Write, ApiError> {
     }
     let mut ops = Vec::new();
     let mut seen = HashSet::new();
-    for n in a.tasks {
-        let id = find_task(b, n)?.id;
+    for r in &a.tasks {
+        let id = find_task(b, r)?.id;
         if seen.insert(id) {
             ops.push(Op::TaskDelete { id });
         }
@@ -497,20 +553,44 @@ pub fn delete(w: &WriteCx, a: DeleteArgs) -> Result<Write, ApiError> {
 
 pub fn dep_add(w: &WriteCx, a: DepArgs) -> Result<Write, ApiError> {
     let b = w.board;
-    Ok(vec![Op::DepAdd { before: find_task(b, a.before)?.id, after: find_task(b, a.after)?.id }].into())
+    Ok(vec![Op::DepAdd { before: find_task(b, &a.before)?.id, after: find_task(b, &a.after)?.id }].into())
 }
 
 pub fn dep_remove(w: &WriteCx, a: DepArgs) -> Result<Write, ApiError> {
     let b = w.board;
-    Ok(vec![Op::DepRemove { before: find_task(b, a.before)?.id, after: find_task(b, a.after)?.id }].into())
+    Ok(vec![Op::DepRemove { before: find_task(b, &a.before)?.id, after: find_task(b, &a.after)?.id }].into())
+}
+
+pub fn share(w: &WriteCx, a: ShareArgs) -> Result<Write, ApiError> {
+    let folder_id = folder_id(w.board, &a.folder, "共享")?;
+    if a.users.is_empty() {
+        return Err(ApiError::invalid("至少需要指定一个用户", Some("users".into())));
+    }
+    Ok(a.users.into_iter().map(|username| Op::ShareAdd { folder_id, username }).collect::<Vec<_>>().into())
+}
+
+pub fn unshare(w: &WriteCx, a: UnshareArgs) -> Result<Write, ApiError> {
+    let b = w.board;
+    let folder_id = folder_id(b, &a.folder, "共享")?;
+    let share = b
+        .share(Some(folder_id))
+        .filter(|s| s.folder_id == folder_id)
+        .ok_or_else(|| ApiError::invalid(format!("{} 没有共享", b.path(Some(folder_id))), None))?;
+    let users = match (a.users.is_empty(), share.owner == w.user) {
+        (true, true) => share.members.clone(),
+        (true, false) => vec![w.user.to_owned()],
+        (false, _) => people(b, &a.users)?,
+    };
+    Ok(users.into_iter().map(|user_id| Op::ShareRemove { folder_id, user_id }).collect::<Vec<_>>().into())
 }
 
 pub fn undo(w: &WriteCx, a: UndoArgs) -> Result<Write, ApiError> {
-    let mutation: MutationId = w
-        .c
-        .query_row("SELECT id FROM mutations WHERE seq = ?1 AND owner_id = ?2 AND effects IS NOT NULL", params![a.batch, w.owner], |r| {
-            r.get(0)
-        })
+    let mutation: MutationId =
+        w.c.query_row(
+            "SELECT m.id FROM deliveries d JOIN mutations m ON m.seq = d.seq WHERE d.seq = ?1 AND d.user_id = ?2 AND m.effects IS NOT NULL",
+            params![a.batch, w.user],
+            |r| r.get(0),
+        )
         .optional()?
         .ok_or_else(|| ApiError::not_found(format!("批次 {} 不存在或已过期", a.batch)))?;
     Ok(vec![Op::Undo { mutation }].into())

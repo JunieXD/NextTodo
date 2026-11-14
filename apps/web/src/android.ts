@@ -142,7 +142,6 @@ export const widgetTasks = (board: Board) =>
 export const deviceReminders = (board: Board) =>
   reminders(board).map((r) => ({
     task: r.task.id,
-    number: r.number,
     at: r.at.getTime(),
     title: r.title,
     body: r.body,
@@ -154,7 +153,7 @@ export const deviceReminders = (board: Board) =>
  * each is. */
 export const calendarEvents = (board: Board) =>
   board.snapshot.tasks.flatMap((t) =>
-    t.done_at === null && t.due
+    t.done_at === null && t.due && board.mine(t)
       ? [{ task: t.id, title: t.title, due: t.due, description: t.folder_id ? `${board.place(t.folder_id)}\n来自 NextTodo` : "来自 NextTodo" }]
       : [],
   );

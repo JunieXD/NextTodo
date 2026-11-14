@@ -221,8 +221,8 @@ async fn apply(st: &AppState, secret: &str, mutation: Value) -> Result<i64, ApiE
     let hub = st.hub.clone();
     st.db
         .call(move |c| {
-            let applied = mutate::apply(c, &Actor { owner: &auth.user_id, token_id: &auth.token_id, via: auth.via() }, &m, now)?;
-            hub.changed(&auth.user_id);
+            let (applied, to) = mutate::apply(c, &Actor { user: &auth.user_id, token_id: &auth.token_id, via: auth.via() }, &m, now)?;
+            hub.notify(&to);
             Ok(applied.seq)
         })
         .await

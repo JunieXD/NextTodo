@@ -1,6 +1,6 @@
 // Rows in lists: tasks, folders, and the folder view's tasks with the dependency rail on the left.
 
-import { CalendarClock, CheckCheck, ChevronRight, Clock, Folder as FolderIcon, FolderInput, Check as CheckIcon, PanelRightOpen, Repeat, RotateCcw, Trash2 } from "lucide-react";
+import { CalendarClock, CheckCheck, ChevronRight, Clock, FolderInput, Check as CheckIcon, PanelRightOpen, Repeat, RotateCcw, Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FolderId } from "../api/types/FolderId";
 import type { Op } from "../api/types/Op";
@@ -23,6 +23,7 @@ import { FolderContextMenu } from "./FolderMenu";
 import { useFolderView } from "./nav";
 import { useMarks } from "./marks";
 import { FolderPicker } from "./pickers";
+import { Avatars, FolderName, folderIcon } from "./share";
 
 export interface RowActions {
   open(t: Task): void;
@@ -173,7 +174,7 @@ export function TaskRow({
               </span>
               {meta.length > 0 && <span className="task-meta">{meta}</span>}
             </button>
-            {choosing && <Box checked={chosen} />}
+            {choosing ? <Box checked={chosen} /> : t.assignees.length > 0 && <Avatars board={board} ids={t.assignees} size={22} max={3} />}
           </div>
         </div>
       </ContextMenu>
@@ -244,10 +245,12 @@ export function FolderRow({ folder, board, onOpen }: { folder: Folder; board: Bo
       <button className="row folder-row" data-into={folder.id} onClick={onOpen}>
         <div className="row-inner">
           <span className="folder-ic">
-            <Icon of={FolderIcon} size={18} />
+            <Icon of={folderIcon(board, folder.id)} size={18} />
           </span>
           <span className="folder-main">
-            <span>{folder.name}</span>
+            <span>
+              <FolderName board={board} id={folder.id} />
+            </span>
             <span className="folder-sub">{sub}</span>
           </span>
           <span className="chev">

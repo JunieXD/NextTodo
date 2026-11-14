@@ -2,9 +2,20 @@
 import type { AiJob } from "./AiJob";
 import type { Dependency } from "./Dependency";
 import type { Folder } from "./Folder";
+import type { Person } from "./Person";
+import type { Share } from "./Share";
 import type { Task } from "./Task";
 
 /**
- * All of a user's data.
+ * All a user can see: their own data and the folders shared with them, where a folder someone else
+ * shares has no parent (docs/design.md#共享).
  */
-export type Snapshot = { folders: Array<Folder>, tasks: Array<Task>, dependencies: Array<Dependency>, ai_jobs: Array<AiJob>, };
+export type Snapshot = { folders: Array<Folder>, tasks: Array<Task>, dependencies: Array<Dependency>, ai_jobs: Array<AiJob>, 
+/**
+ * The folders shared by the user or with them.
+ */
+shares: Array<Share>, 
+/**
+ * The user, everyone in those folders, and whoever made or last changed a task the user sees.
+ */
+people: Array<Person>, };

@@ -42,7 +42,7 @@ const TEST_TIMEOUT: Duration = Duration::from_secs(60);
 const SLOTS: usize = 4;
 
 fn actor(owner: &str) -> Actor<'_> {
-    Actor { owner, token_id: "", via: Some(ACTOR) }
+    Actor { user: owner, token_id: "", via: Some(ACTOR) }
 }
 
 pub struct Ai {
@@ -244,13 +244,13 @@ enum Ended {
 
 /// What a job's model was shown, to read its answer by.
 enum Shown {
-    Organize(HashSet<i64>),
-    Tidy(tidy::Shown),
+    Organize(organize::Shown),
+    Tidy(Box<tidy::Shown>),
 }
 
 /// What a job's model answered.
 enum Answer {
-    Tasks(Vec<PlanTask>),
+    Tasks(Vec<PlanTask>, organize::Shown),
     Suggestions(Vec<Suggestion>),
 }
 
@@ -267,12 +267,12 @@ async fn organize(st: AppState, turn: Turn, job: AiJobId, config: Config) {
             Ok(Some(match j.kind {
                 JobKind::Organize => {
                     // Organizing reads no task's status, for which the board needs the user's day.
-                    let (prompt, shown) = organize::prompt(&j, &Board::new(&snap, Date::utc(j.created_at)));
+                    let (prompt, shown) = organize::prompt(&j, &Board::new(&snap, Date::utc(j.created_at), &owner));
                     (prompt, Shown::Organize(shown))
                 }
                 JobKind::Tidy => {
-                    let (prompt, shown) = tidy::prompt(&j, snap);
-                    (prompt, Shown::Tidy(shown))
+                    let (prompt, shown) = tidy::prompt(&j, snap, &owner);
+                    (prompt, Shown::Tidy(Box::new(shown)))
                 }
             }))
         })
@@ -286,7 +286,7 @@ async fn organize(st: AppState, turn: Turn, job: AiJobId, config: Config) {
                 Ok(text) => (
                     None,
                     match shown {
-                        Shown::Organize(shown) => organize::parse(&text, &shown).map(Answer::Tasks),
+                        Shown::Organize(shown) => organize::parse(&text, &shown).map(|tasks| Answer::Tasks(tasks, shown)),
                         Shown::Tidy(shown) => tidy::parse(&text, &shown).map(Answer::Suggestions),
                     },
                 ),
@@ -302,8 +302,8 @@ async fn organize(st: AppState, turn: Turn, job: AiJobId, config: Config) {
     let ended = st
         .db
         .call(move |c| {
-            let ended = finish(c, &owner, job, outcome, now)?;
-            hub.changed(&owner);
+            let (ended, to) = finish(c, &owner, job, outcome, now)?;
+            hub.notify(&to);
             Ok(ended)
         })
         .await;
@@ -311,29 +311,38 @@ async fn organize(st: AppState, turn: Turn, job: AiJobId, config: Config) {
 }
 
 /// Ends a job being organized: its tasks added and the job deleted, in one change; a tidying ready,
-/// with its suggestions; or the job failed.
-fn finish(c: &mut Connection, owner: &str, id: AiJobId, outcome: Result<Answer, String>, now: i64) -> Result<Ended, ApiError> {
+/// with its suggestions; or the job failed. Also who is to be told of it.
+fn finish(
+    c: &mut Connection,
+    owner: &str,
+    id: AiJobId,
+    outcome: Result<Answer, String>,
+    now: i64,
+) -> Result<(Ended, Vec<String>), ApiError> {
     let actor = actor(owner);
+    let to = vec![owner.to_owned()];
     let failure = match outcome {
         Err(message) => message,
         Ok(Answer::Suggestions(suggestions)) => {
             let ready = mutate::suggest(c, &actor, id, suggestions, now)?;
-            return Ok(if ready.is_some() { Ended::Done } else { Ended::Dropped });
+            return Ok((if ready.is_some() { Ended::Done } else { Ended::Dropped }, to));
         }
-        Ok(Answer::Tasks(tasks)) => {
+        Ok(Answer::Tasks(tasks, shown)) => {
             let tx = c.transaction()?;
-            let Some(job) = store::load_job(&tx, owner, id)?.filter(|j| j.state == JobState::Running) else { return Ok(Ended::Dropped) };
+            let Some(job) = store::load_job(&tx, owner, id)?.filter(|j| j.state == JobState::Running) else {
+                return Ok((Ended::Dropped, to));
+            };
             let snap = store::snapshot(&tx, owner)?;
-            let applied = tools::plan_into(&Board::new(&snap, Date::utc(now)), job.folder_id, tasks).and_then(|mut ops| {
+            let applied = tools::plan_into(&Board::new(&snap, Date::utc(now), owner), job.folder_id, tasks, &shown).and_then(|mut ops| {
                 ops.push(Op::AiJobDelete { id });
-                let effects = mutate::run(&tx, &actor, &ops, now)?;
-                Ok((ops, effects))
+                let done = mutate::run(&tx, &actor, &ops, now)?;
+                Ok((ops, done))
             });
             match applied {
-                Ok((ops, effects)) => {
-                    mutate::record(&tx, &actor, MutationId(Uuid::now_v7()), &ops, &effects, now)?;
+                Ok((ops, done)) => {
+                    let recorded = mutate::record(&tx, &actor, MutationId(Uuid::now_v7()), &ops, &done, now)?;
                     tx.commit()?;
-                    return Ok(Ended::Done);
+                    return Ok((Ended::Done, recorded.to));
                 }
                 Err(e) if e.code() == "internal" => return Err(e),
                 // What the plan did so far goes as the transaction is dropped.
@@ -342,7 +351,7 @@ fn finish(c: &mut Connection, owner: &str, id: AiJobId, outcome: Result<Answer, 
         }
     };
     let failed = mutate::set_job_state(c, &actor, id, JobState::Running, JobState::Failed, Some(failure), now)?;
-    Ok(if failed.is_some() { Ended::Failed } else { Ended::Dropped })
+    Ok((if failed.is_some() { Ended::Failed } else { Ended::Dropped }, to))
 }
 
 // The API.

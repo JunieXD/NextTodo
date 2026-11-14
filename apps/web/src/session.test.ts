@@ -53,7 +53,7 @@ vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
     return new Response(null, { status: 204 });
   }
   if (path === "/me") return json(sent.user);
-  if (path === "/snapshot") return json({ user: sent.user.id, seq: 0, folders: [], tasks: [], dependencies: [] });
+  if (path === "/snapshot") return json({ user: sent.user.id, seq: 0, folders: [], tasks: [], dependencies: [], ai_jobs: [], shares: [], people: [] });
   throw new Error(`${init.method} ${path}`);
 });
 

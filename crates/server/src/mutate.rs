@@ -1,12 +1,20 @@
 //! The mutation pipeline: validate and apply operations in one transaction, record the resulting
 //! entity changes in the mutation log. Resubmitting a mutation id returns the first result.
+//!
+//! What a user can see and change is their own and what is in the folders shared with them
+//! (docs/design.md#共享). Everything in a shared folder is its owner's, so the owner of what is made
+//! somewhere is the owner of where it is: the folder's, or at the root the user's. Each part of a
+//! change goes to whoever sees it, before or after; someone who sees only one side of it sees
+//! something made or deleted.
 
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroU32;
 
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
-    AiJob, AiJobId, Change, Completions, Dependency, Due, Effect, Folder, FolderId, JobState, Link, MutationId, SortKey, Suggestion, Task,
-    TaskId,
+    AiJob, AiJobId, Change, Completions, Dependency, Due, Effect, Folder, FolderId, JobKind, JobState, Link, MutationId, Person, Share,
+    SortKey, Suggestion, Task, TaskId,
 };
 use nexttodo_core::ops::{MAX_OPS, Mutation, Op};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -19,12 +27,13 @@ use crate::store;
 
 /// Who is making the change.
 pub struct Actor<'a> {
-    pub owner: &'a str,
+    pub user: &'a str,
     pub token_id: &'a str,
     /// API token name, recorded as the source; `None` for the user's own devices.
     pub via: Option<&'a str>,
 }
 
+/// A change as its maker sees it.
 #[derive(Debug, Serialize, TS)]
 #[ts(export)]
 pub struct Applied {
@@ -32,24 +41,35 @@ pub struct Applied {
     pub effects: Vec<Effect>,
 }
 
-pub fn apply(conn: &mut Connection, actor: &Actor, m: &Mutation, now: i64) -> Result<Applied, ApiError> {
+/// A change in the log, and the users it went to, to be told of it once it is committed.
+pub struct Recorded {
+    pub seq: i64,
+    pub to: Vec<String>,
+}
+
+pub fn apply(conn: &mut Connection, actor: &Actor, m: &Mutation, now: i64) -> Result<(Applied, Vec<String>), ApiError> {
     let tx = conn.transaction()?;
     if let Some(applied) = earlier(&tx, actor, m.id)? {
-        return Ok(applied);
+        return Ok((applied, Vec::new()));
     }
-    let effects = run(&tx, actor, &m.ops, now)?;
-    let seq = record(&tx, actor, m.id, &m.ops, &effects, now)?;
+    let done = run(&tx, actor, &m.ops, now)?;
+    let recorded = record(&tx, actor, m.id, &m.ops, &done, now)?;
     tx.commit()?;
-    Ok(Applied { seq, effects })
+    Ok((Applied { seq: recorded.seq, effects: done.view(actor.user) }, recorded.to))
 }
 
 /// The result of a mutation that was already applied.
 pub fn earlier(c: &Connection, actor: &Actor, id: MutationId) -> Result<Option<Applied>, ApiError> {
     let row: Option<(String, i64, Option<String>)> = c
-        .query_row("SELECT owner_id, seq, effects FROM mutations WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .query_row(
+            "SELECT m.owner_id, m.seq, coalesce(d.effects, m.effects) FROM mutations m
+             LEFT JOIN deliveries d ON d.seq = m.seq AND d.user_id = m.owner_id WHERE m.id = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
         .optional()?;
-    let Some((owner, seq, effects)) = row else { return Ok(None) };
-    if owner != actor.owner {
+    let Some((user, seq, effects)) = row else { return Ok(None) };
+    if user != actor.user {
         return Err(ApiError::conflict("改动 ID 重复"));
     }
     // past the retention period only the receipt is left
@@ -59,24 +79,41 @@ pub fn earlier(c: &Connection, actor: &Actor, id: MutationId) -> Result<Option<A
 
 /// Applies the operations inside the caller's transaction and returns what changed. At most
 /// `MAX_OPS` at once, however they were made: one change is one transaction on the one connection.
-pub fn run(c: &Connection, actor: &Actor, ops: &[Op], now: i64) -> Result<Vec<Effect>, ApiError> {
+pub fn run(c: &Connection, actor: &Actor, ops: &[Op], now: i64) -> Result<Done, ApiError> {
     if ops.len() > MAX_OPS {
         return Err(ApiError::invalid(format!("每次最多 {MAX_OPS} 个操作，本次有 {} 个", ops.len()), None));
     }
-    let mut cx = Cx { c, owner: actor.owner, via: actor.via.map(str::to_owned), now, effects: Vec::new() };
+    let mut cx = Cx::new(c, actor, now);
     for op in ops {
         cx.op(op)?;
     }
-    Ok(cx.effects)
+    cx.introduce()?;
+    Ok(cx.done)
 }
 
-/// Adds the mutation to the log and returns its sequence number.
-pub fn record(c: &Connection, actor: &Actor, id: MutationId, ops: &[Op], effects: &[Effect], now: i64) -> Result<i64, ApiError> {
+/// Adds the mutation to the log, with what each user it concerns sees of it, and returns its
+/// sequence number. Those who joined or left a shared folder download everything again from it on.
+pub fn record(c: &Connection, actor: &Actor, id: MutationId, ops: &[Op], done: &Done, now: i64) -> Result<Recorded, ApiError> {
+    let effects = done.effects();
     c.execute(
         "INSERT INTO mutations (id, owner_id, token_id, actor, ops, effects, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![id, actor.owner, actor.token_id, actor.via, serde_json::to_string(ops)?, serde_json::to_string(effects)?, now],
+        params![id, actor.user, actor.token_id, actor.via, serde_json::to_string(ops)?, serde_json::to_string(&effects)?, now],
     )?;
-    Ok(c.last_insert_rowid())
+    let seq = c.last_insert_rowid();
+    let mut to = Vec::new();
+    for user in done.users(actor.user) {
+        let view = done.view(user);
+        if view.is_empty() && user != actor.user {
+            continue;
+        }
+        let own = (view != effects).then(|| serde_json::to_string(&view)).transpose()?;
+        c.execute("INSERT INTO deliveries (user_id, seq, effects) VALUES (?1, ?2, ?3)", params![user, seq, own])?;
+        to.push(user.to_owned());
+    }
+    for user in &done.resync {
+        c.execute("UPDATE users SET pruned_seq = max(pruned_seq, ?2) WHERE id = ?1", params![user, seq])?;
+    }
+    Ok(Recorded { seq, to })
 }
 
 /// Moves a job from state `from` to `to`, as the server does when it starts organizing one and when
@@ -114,20 +151,166 @@ fn change_job(
     now: i64,
 ) -> Result<Option<(AiJob, i64)>, ApiError> {
     let tx = c.transaction()?;
-    let Some(before) = store::load_job(&tx, actor.owner, id)? else { return Ok(None) };
+    let Some(before) = store::load_job(&tx, actor.user, id)? else { return Ok(None) };
     if before.state != from {
         return Ok(None);
     }
-    let mut cx = Cx { c: &tx, owner: actor.owner, via: actor.via.map(str::to_owned), now, effects: Vec::new() };
+    let mut cx = Cx::new(&tx, actor, now);
     let after = change(before.clone());
-    cx.update_job(before, after.clone())?;
-    let seq = record(&tx, actor, MutationId(Uuid::now_v7()), &[], &cx.effects, now)?;
+    cx.update_job(before, after.clone(), actor.user)?;
+    let seq = record(&tx, actor, MutationId(Uuid::now_v7()), &[], &cx.done, now)?.seq;
     tx.commit()?;
     Ok(Some((after, seq)))
 }
 
-/// `cur` with the fields that changed from `before` to `after` set back to `before`, so that undoing
-/// a change leaves later changes to other fields alone.
+/// Tells everyone who knows a user that the user's name changed, as a change of its own.
+pub fn renamed(c: &Connection, actor: &Actor, before: Person, after: Person, now: i64) -> Result<Recorded, ApiError> {
+    let mut users = store::known_by(c, actor.user)?;
+    users.push(actor.user.to_owned());
+    let mut done = Done::default();
+    let side = Side { users, root_of: None };
+    done.seen.push(Seen { effect: Effect::Person(Change::Updated { before, after }), before: side.clone(), after: side, kept: false });
+    record(c, actor, MutationId(Uuid::now_v7()), &[], &done, now)
+}
+
+/// What a change did, and who sees each part of it.
+#[derive(Default)]
+pub struct Done {
+    seen: Vec<Seen>,
+    /// Who is to download everything again: those who joined or left a shared folder.
+    resync: Vec<String>,
+}
+
+/// One part of a change, with who saw it before and who sees it after.
+struct Seen {
+    effect: Effect,
+    before: Side,
+    after: Side,
+    /// Nothing changed but who sees it: something moved into or out of a shared folder along with
+    /// the folder it is in.
+    kept: bool,
+}
+
+#[derive(Clone, Default)]
+struct Side {
+    users: Vec<String>,
+    /// The owner, when this is a shared folder: the only one who sees where it is; to the others it
+    /// is at the top.
+    root_of: Option<String>,
+}
+
+impl Side {
+    fn of(users: Vec<String>) -> Side {
+        Side { users, root_of: None }
+    }
+
+    fn has(&self, user: &str) -> bool {
+        self.users.iter().any(|u| u == user)
+    }
+
+    /// The folder as `user` sees it.
+    fn folder(&self, f: &Folder, user: &str) -> Folder {
+        match &self.root_of {
+            Some(owner) if owner != user => Folder { parent_id: None, ..f.clone() },
+            _ => f.clone(),
+        }
+    }
+}
+
+impl Done {
+    /// Everything it did.
+    pub fn effects(&self) -> Vec<Effect> {
+        self.seen.iter().filter(|s| !s.kept).map(|s| s.effect.clone()).collect()
+    }
+
+    /// Everyone it concerns, `actor` too.
+    fn users<'a>(&'a self, actor: &'a str) -> BTreeSet<&'a str> {
+        let mut users: BTreeSet<&str> =
+            self.seen.iter().flat_map(|s| s.before.users.iter().chain(&s.after.users)).map(String::as_str).collect();
+        users.insert(actor);
+        users
+    }
+
+    /// What `user` sees of it.
+    pub fn view(&self, user: &str) -> Vec<Effect> {
+        self.seen
+            .iter()
+            .filter_map(|s| {
+                let (b, a) = (s.before.has(user), s.after.has(user));
+                match &s.effect {
+                    Effect::Folder(change) => {
+                        let seen = sided(change, b, a, s.kept)?;
+                        let masked = match seen {
+                            Change::Created(f) => Change::Created(s.after.folder(&f, user)),
+                            Change::Deleted(f) => Change::Deleted(s.before.folder(&f, user)),
+                            Change::Updated { before, after } => {
+                                let (before, after) = (s.before.folder(&before, user), s.after.folder(&after, user));
+                                if before == after {
+                                    return None;
+                                }
+                                Change::Updated { before, after }
+                            }
+                        };
+                        Some(Effect::Folder(masked))
+                    }
+                    Effect::Task(change) => sided(change, b, a, s.kept).map(Effect::Task),
+                    Effect::AiJob(change) => sided(change, b, a, s.kept).map(Effect::AiJob),
+                    Effect::Share(change) => sided(change, b, a, s.kept).map(Effect::Share),
+                    Effect::Person(change) => sided(change, b, a, s.kept).map(Effect::Person),
+                    Effect::Dependency(link) => {
+                        let shown = match (link, s.kept, b, a) {
+                            (Link::Added(d), true, false, true) | (Link::Added(d), false, _, true) => Some(Link::Added(d.clone())),
+                            (Link::Added(d), true, true, false) | (Link::Removed(d), false, true, _) => Some(Link::Removed(d.clone())),
+                            _ => None,
+                        };
+                        shown.map(Effect::Dependency)
+                    }
+                }
+            })
+            .collect()
+    }
+}
+
+/// A change as someone sees it who saw what it changed (`before`) or sees what it made (`after`).
+fn sided<T: Clone>(c: &Change<T>, before: bool, after: bool, kept: bool) -> Option<Change<T>> {
+    match (c, before, after) {
+        (Change::Updated { .. }, true, true) if kept => None,
+        (Change::Updated { before: b, after: a }, true, true) => Some(Change::Updated { before: b.clone(), after: a.clone() }),
+        (Change::Updated { before: b, .. }, true, false) => Some(Change::Deleted(b.clone())),
+        (Change::Updated { after: a, .. }, false, true) => Some(Change::Created(a.clone())),
+        (Change::Created(x), _, true) => Some(Change::Created(x.clone())),
+        (Change::Deleted(x), true, _) => Some(Change::Deleted(x.clone())),
+        _ => None,
+    }
+}
+
+/// Where something is, as far as who can see it: its owner's own data, or a folder its owner shares.
+#[derive(Clone, PartialEq, Eq)]
+struct Space {
+    owner: String,
+    /// The shared folder.
+    root: Option<FolderId>,
+    members: Vec<String>,
+}
+
+impl Space {
+    fn shared(&self) -> bool {
+        self.root.is_some()
+    }
+
+    fn sees(&self, user: &str) -> bool {
+        self.owner == user || self.members.iter().any(|m| m == user)
+    }
+
+    fn people(&self) -> Vec<String> {
+        std::iter::once(&self.owner).chain(&self.members).cloned().collect()
+    }
+
+    fn side(&self) -> Side {
+        Side::of(self.people())
+    }
+}
+
 /// `cur`'s due date with what changed from `b` to `a` set back to `b`, part by part: the date, the
 /// time with its reminder, and the repeat. Undoing moving a repeating task on so keeps a reminder or
 /// a repeat changed since, or cleared since with the due date; without a date to go on, the other
@@ -141,6 +324,14 @@ fn restore_due(cur: &Option<Due>, b: &Option<Due>, a: &Option<Due>) -> Option<Du
         at: if b.at != a.at { b.at.clone() } else { cur.and_then(|c| c.at.clone()) },
         repeat: if b.repeat != a.repeat { b.repeat } else { cur.and_then(|c| c.repeat) },
     })
+}
+
+/// `cur` with the people added between `b` and `a` taken off again and those taken off put back,
+/// leaving those changed since.
+fn restore_people(cur: &[String], b: &[String], a: &[String]) -> Vec<String> {
+    let mut people: BTreeSet<String> = cur.iter().filter(|u| !a.contains(u) || b.contains(u)).cloned().collect();
+    people.extend(b.iter().filter(|u| !a.contains(u)).cloned());
+    people.into_iter().collect()
 }
 
 /// A repeating task is never done: done, it moves on (docs/design.md#重复). It does not start after it
@@ -157,6 +348,20 @@ fn check_task(t: &Task) -> Result<(), ApiError> {
     Ok(())
 }
 
+/// The people `users` may be assigned to a task in `space`: some of those it is shared with.
+fn check_assignees(space: &Space, users: &[String]) -> Result<(), ApiError> {
+    if users.is_empty() {
+        return Ok(());
+    }
+    if !space.shared() {
+        return Err(ApiError::invalid("只有共享的文件夹里的事项能设负责人", Some("assignees".into())));
+    }
+    if !users.iter().all(|u| space.sees(u)) {
+        return Err(ApiError::invalid("负责人须是这个文件夹的共享人或成员", Some("assignees".into())));
+    }
+    Ok(())
+}
+
 macro_rules! restore {
     ($cur:expr, $before:expr, $after:expr, $($field:ident),*) => {{
         let mut restored = $cur.clone();
@@ -169,37 +374,69 @@ macro_rules! restore {
 
 struct Cx<'a> {
     c: &'a Connection,
-    owner: &'a str,
+    user: &'a str,
     via: Option<String>,
     now: i64,
-    effects: Vec<Effect>,
+    done: Done,
+    /// The shared folder each folder looked at is in, known so far in this change.
+    roots: RefCell<HashMap<FolderId, Option<FolderId>>>,
+    /// While undoing a change, the numbers its tasks had before it: those carried back along with a
+    /// folder to someone else's get theirs again, when still free there.
+    numbers: HashMap<TaskId, i64>,
 }
 
-impl Cx<'_> {
+impl<'a> Cx<'a> {
+    fn new(c: &'a Connection, actor: &Actor<'a>, now: i64) -> Self {
+        Cx {
+            c,
+            user: actor.user,
+            via: actor.via.map(str::to_owned),
+            now,
+            done: Done::default(),
+            roots: RefCell::default(),
+            numbers: HashMap::new(),
+        }
+    }
+
+    fn push(&mut self, effect: Effect, before: Side, after: Side, kept: bool) {
+        self.done.seen.push(Seen { effect, before, after, kept });
+    }
+
+    /// Those a task comes into view for meet who made it and who changed it last, when those are not
+    /// among the people who see it: someone who has left, or who shares another folder it came
+    /// from. Everyone who sees a task otherwise knows the others (docs/api.md#共享).
+    fn introduce(&mut self) -> Result<(), ApiError> {
+        let mut met: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for s in &self.done.seen {
+            let Effect::Task(Change::Created(t) | Change::Updated { after: t, .. }) = &s.effect else { continue };
+            let new = s.after.users.iter().filter(|u| !s.before.has(u));
+            for author in [&t.created_by, &t.updated_by].into_iter().filter(|a| !s.after.has(a)) {
+                met.entry(author.clone()).or_default().extend(new.clone().cloned());
+            }
+        }
+        for (id, users) in met.into_iter().filter(|(_, users)| !users.is_empty()) {
+            let person = store::person(self.c, &id)?;
+            self.push(Effect::Person(Change::Created(person)), Side::default(), Side::of(users.into_iter().collect()), false);
+        }
+        Ok(())
+    }
+
     fn op(&mut self, op: &Op) -> Result<(), ApiError> {
         match op {
             Op::FolderCreate { id, name, parent_id, sort_key } => {
                 if store::folder_id_taken(self.c, *id)? {
                     return Err(ApiError::conflict("文件夹 ID 已存在"));
                 }
-                if let Some(p) = parent_id {
-                    self.folder(*p)?;
-                }
+                let owner = self.owner_in(*parent_id)?;
                 let sort_key = match sort_key {
                     Some(k) => k.clone(),
-                    None => SortKey::after(store::last_folder_key(self.c, self.owner, *parent_id)?.as_ref()),
+                    None => SortKey::after(store::last_folder_key(self.c, &owner, *parent_id)?.as_ref()),
                 };
-                self.create_folder(Folder {
-                    id: *id,
-                    parent_id: *parent_id,
-                    name: name.clone(),
-                    sort_key,
-                    created_at: self.now,
-                    updated_at: self.now,
-                })
+                let f = Folder { id: *id, parent_id: *parent_id, name: name.clone(), sort_key, created_at: self.now, updated_at: self.now };
+                self.create_folder(f, &owner)
             }
             Op::FolderUpdate { id, name, parent_id, sort_key } => {
-                let before = self.folder(*id)?;
+                let (before, owner) = self.folder(*id)?;
                 let mut f = before.clone();
                 if let Some(name) = name {
                     f.name = name.clone();
@@ -210,26 +447,28 @@ impl Cx<'_> {
                 if let Some(k) = sort_key {
                     f.sort_key = k.clone();
                 }
-                self.update_folder(before, f)
+                self.update_folder(before, &owner, f)
             }
             Op::FolderDelete { id } => {
-                self.folder(*id)?;
-                self.delete_folder(*id)
+                let (_, owner) = self.folder(*id)?;
+                self.delete_folder(*id, &owner)
             }
-            Op::TaskCreate { id, title, folder_id, description, start, due, sort_key, done } => {
+            Op::TaskCreate { id, title, folder_id, description, start, due, sort_key, done, assignees } => {
                 if store::task_id_taken(self.c, *id)? {
                     return Err(ApiError::conflict("事项 ID 已存在"));
                 }
-                if let Some(f) = folder_id {
-                    self.folder(*f)?;
-                }
+                let owner = self.owner_in(*folder_id)?;
+                let mut assignees = assignees.clone();
+                assignees.sort();
+                assignees.dedup();
+                check_assignees(&self.space(&owner, *folder_id)?, &assignees)?;
                 let sort_key = match sort_key {
                     Some(k) => k.clone(),
-                    None => SortKey::after(store::last_task_key(self.c, self.owner, *folder_id)?.as_ref()),
+                    None => SortKey::after(store::last_task_key(self.c, &owner, *folder_id)?.as_ref()),
                 };
                 let task = Task {
                     id: *id,
-                    number: store::take_task_number(self.c, self.owner)?,
+                    number: store::take_task_number(self.c, &owner)?,
                     folder_id: *folder_id,
                     title: title.clone(),
                     description: description.clone(),
@@ -238,15 +477,18 @@ impl Cx<'_> {
                     due: due.clone(),
                     completions: None,
                     sort_key,
+                    assignees,
                     created_at: self.now,
                     updated_at: self.now,
+                    created_by: self.user.to_owned(),
+                    updated_by: self.user.to_owned(),
                     created_via: self.via.clone(),
                     updated_via: self.via.clone(),
                 };
-                self.create_task(task)
+                self.create_task(task, &owner)
             }
-            Op::TaskUpdate { id, folder_id, title, description, start, due, sort_key, done, today } => {
-                let before = self.task(*id)?;
+            Op::TaskUpdate { id, folder_id, title, description, start, due, sort_key, done, today, assign, unassign } => {
+                let (before, owner) = self.task(*id)?;
                 let mut t = before.clone();
                 if let Some(folder_id) = folder_id {
                     t.folder_id = *folder_id;
@@ -265,6 +507,13 @@ impl Cx<'_> {
                 }
                 if let Some(k) = sort_key {
                     t.sort_key = k.clone();
+                }
+                if !assign.is_empty() || !unassign.is_empty() {
+                    let target = if t.folder_id == before.folder_id { owner.clone() } else { self.owner_in(t.folder_id)? };
+                    check_assignees(&self.space(&target, t.folder_id)?, assign)?;
+                    let mut people: BTreeSet<String> = t.assignees.iter().chain(assign).cloned().collect();
+                    people.retain(|u| !unassign.contains(u));
+                    t.assignees = people.into_iter().collect();
                 }
                 if let Some(done) = done
                     && *done != t.done_at.is_some()
@@ -285,7 +534,7 @@ impl Cx<'_> {
                         _ => t.done_at = done.then_some(self.now),
                     }
                 }
-                self.update_task(before, t)
+                self.update_task(before, &owner, t, None)
             }
             Op::TaskDelete { id } => {
                 self.task(*id)?;
@@ -295,16 +544,22 @@ impl Cx<'_> {
                 if before == after {
                     return Err(ApiError::invalid("事项不能依赖自己", None));
                 }
-                self.task(*before)?;
-                self.task(*after)?;
-                if store::load_dependency(self.c, self.owner, *before, *after)?.is_some() {
+                let (b, b_owner) = self.task(*before)?;
+                let (a, a_owner) = self.task(*after)?;
+                let space = self.space(&b_owner, b.folder_id)?;
+                if space != self.space(&a_owner, a.folder_id)? {
+                    return Err(ApiError::invalid("只能连同一处的事项：私人的事项之间，或同一个共享的文件夹里的事项之间", None));
+                }
+                if store::load_dependency(self.c, *before, *after)?.is_some() {
                     return Err(ApiError::conflict("该依赖已存在"));
                 }
-                self.create_dependency(Dependency { before: *before, after: *after, created_at: self.now })
+                self.create_dependency(Dependency { before: *before, after: *after, created_at: self.now }, &space)
             }
             Op::DepRemove { before, after } => {
-                let d = store::load_dependency(self.c, self.owner, *before, *after)?.ok_or_else(|| ApiError::not_found("该依赖不存在"))?;
-                self.delete_dependency(d)
+                let (b, owner) = self.task(*before)?;
+                let d = store::load_dependency(self.c, *before, *after)?.ok_or_else(|| ApiError::not_found("该依赖不存在"))?;
+                let space = self.space(&owner, b.folder_id)?;
+                self.delete_dependency(d, &space)
             }
             Op::AiJobCreate { id, kind, text, local_time, folder_id } => {
                 if store::job_id_taken(self.c, *id)? {
@@ -343,237 +598,542 @@ impl Cx<'_> {
                     }
                     j.folder_id = *folder_id;
                 }
-                self.update_job(before, j)
+                let user = self.user;
+                self.update_job(before, j, user)
             }
             Op::AiJobDelete { id } => {
                 let j = self.job(*id)?;
-                self.delete_job(j)
+                let user = self.user;
+                self.delete_job(j, user)
+            }
+            Op::ShareAdd { folder_id, username } => {
+                let (f, owner) = self.folder(*folder_id)?;
+                if owner != self.user {
+                    return Err(ApiError::forbidden("只有共享人能添加成员"));
+                }
+                let person =
+                    store::person_named(self.c, username)?.ok_or_else(|| ApiError::not_found(format!("没有用户“{}”", username.trim())))?;
+                if person.id == owner {
+                    return Err(ApiError::invalid("不能共享给自己", Some("username".into())));
+                }
+                self.add_member(&f, &owner, person)
+            }
+            Op::ShareRemove { folder_id, user_id } => {
+                let (f, owner) = self.folder(*folder_id)?;
+                if self.user != owner && self.user != user_id {
+                    return Err(ApiError::forbidden("只有共享人能移除成员"));
+                }
+                self.remove_member(&f, &owner, user_id)
             }
             Op::Undo { mutation } => self.undo(*mutation),
         }
     }
 
-    fn folder(&self, id: FolderId) -> Result<Folder, ApiError> {
-        store::load_folder(self.c, self.owner, id)?.ok_or_else(|| ApiError::not_found("文件夹不存在"))
+    /// The shared folder `id` is in, or is.
+    fn root(&self, id: FolderId) -> Result<Option<FolderId>, ApiError> {
+        if let Some(root) = self.roots.borrow().get(&id) {
+            return Ok(*root);
+        }
+        let root = store::shared_root(self.c, id)?;
+        self.roots.borrow_mut().insert(id, root);
+        Ok(root)
     }
 
-    fn task(&self, id: TaskId) -> Result<Task, ApiError> {
-        store::load_task(self.c, self.owner, id)?.ok_or_else(|| ApiError::not_found("事项不存在"))
+    /// Where something of `owner`'s in `folder` is.
+    fn space(&self, owner: &str, folder: Option<FolderId>) -> Result<Space, ApiError> {
+        let root = match folder {
+            Some(f) => self.root(f)?,
+            None => None,
+        };
+        let members = match root {
+            Some(r) => store::members(self.c, r)?,
+            None => Vec::new(),
+        };
+        Ok(Space { owner: owner.to_owned(), root, members })
+    }
+
+    /// A folder the user can see, and its owner.
+    fn folder(&self, id: FolderId) -> Result<(Folder, String), ApiError> {
+        let found = store::load_folder(self.c, id)?;
+        match found {
+            Some((f, owner)) if owner == self.user || self.space(&owner, Some(id))?.sees(self.user) => Ok((f, owner)),
+            _ => Err(ApiError::not_found("文件夹不存在")),
+        }
+    }
+
+    /// A task the user can see, and its owner.
+    fn task(&self, id: TaskId) -> Result<(Task, String), ApiError> {
+        let found = store::load_task(self.c, id)?;
+        match found {
+            Some((t, owner)) if owner == self.user || self.space(&owner, t.folder_id)?.sees(self.user) => Ok((t, owner)),
+            _ => Err(ApiError::not_found("事项不存在")),
+        }
     }
 
     fn job(&self, id: AiJobId) -> Result<AiJob, ApiError> {
-        store::load_job(self.c, self.owner, id)?.ok_or_else(|| ApiError::not_found("AI 整理请求不存在"))
+        store::load_job(self.c, self.user, id)?.ok_or_else(|| ApiError::not_found("AI 整理请求不存在"))
     }
 
-    fn check_name(&self, f: &Folder) -> Result<(), ApiError> {
-        if store::folder_name_taken(self.c, self.owner, f)? {
+    /// Whose what is put in `folder` is: the folder's owner's, or at the root the user's.
+    fn owner_in(&self, folder: Option<FolderId>) -> Result<String, ApiError> {
+        match folder {
+            Some(f) => Ok(self.folder(f)?.1),
+            None => Ok(self.user.to_owned()),
+        }
+    }
+
+    /// Who sees a folder, it being in `space`.
+    fn folder_side(f: &Folder, space: &Space) -> Side {
+        Side { users: space.people(), root_of: (space.root == Some(f.id)).then(|| space.owner.clone()) }
+    }
+
+    fn check_name(&self, owner: &str, f: &Folder) -> Result<(), ApiError> {
+        if store::folder_name_taken(self.c, owner, f)? {
             return Err(ApiError::conflict(format!("同一层级已有名为“{}”的文件夹", f.name.as_str())));
         }
         Ok(())
     }
 
-    fn create_folder(&mut self, f: Folder) -> Result<(), ApiError> {
-        self.check_name(&f)?;
-        store::insert_folder(self.c, self.owner, &f)?;
-        self.effects.push(Effect::Folder(Change::Created(f)));
+    fn create_folder(&mut self, f: Folder, owner: &str) -> Result<(), ApiError> {
+        self.check_name(owner, &f)?;
+        let space = self.space(owner, f.parent_id)?;
+        store::insert_folder(self.c, owner, &f)?;
+        self.roots.borrow_mut().insert(f.id, space.root);
+        self.push(Effect::Folder(Change::Created(f)), Side::default(), space.side(), false);
         Ok(())
     }
 
-    fn update_folder(&mut self, before: Folder, mut after: Folder) -> Result<(), ApiError> {
+    /// Changes a folder. One moved into or out of a shared folder takes along everything in it; its
+    /// tasks lose the dependencies on what stays behind, and the assignees who can't see them now.
+    fn update_folder(&mut self, before: Folder, owner: &str, mut after: Folder) -> Result<(), ApiError> {
         if after == before {
             return Ok(());
         }
-        if after.parent_id != before.parent_id
-            && let Some(p) = after.parent_id
-        {
-            self.folder(p)?;
-            if store::in_subtree(self.c, after.id, p)? {
+        let from = self.space(owner, Some(before.id))?;
+        let shared = from.root == Some(before.id);
+        if shared && owner != self.user {
+            return Err(ApiError::forbidden("只有共享人能改名、移动或删除共享的文件夹"));
+        }
+        let (new_owner, to) = if after.parent_id == before.parent_id {
+            (owner.to_owned(), from.clone())
+        } else {
+            let new_owner = self.owner_in(after.parent_id)?;
+            if let Some(p) = after.parent_id
+                && store::in_subtree(self.c, after.id, p)?
+            {
                 return Err(ApiError::folder_cycle());
             }
-        }
+            let there = self.space(&new_owner, after.parent_id)?;
+            if there.shared() && !store::shared_within(self.c, before.id)?.is_empty() {
+                return Err(ApiError::invalid("共享的文件夹不能放进另一个共享的文件夹", None));
+            }
+            (new_owner, if shared { from.clone() } else { there })
+        };
         if after.parent_id != before.parent_id || after.name != before.name {
-            self.check_name(&after)?;
+            self.check_name(&new_owner, &after)?;
+        }
+        if shared && after.name != before.name && store::shared_name_taken(self.c, owner, after.name.as_str(), after.id)? {
+            return Err(ApiError::conflict(format!("已共享过名为“{}”的文件夹", after.name.as_str())));
+        }
+        let before_side = Self::folder_side(&before, &from);
+        let across = to != from;
+        if across {
+            self.cut_off(before.id, &from)?;
         }
         after.updated_at = self.now;
         store::update_folder(self.c, &after)?;
-        self.effects.push(Effect::Folder(Change::Updated { before, after }));
+        if new_owner != owner {
+            store::give_subtree(self.c, after.id, &new_owner)?;
+        }
+        self.roots.borrow_mut().clear();
+        if across {
+            self.carry(after.id, &from, &to)?;
+        }
+        let after_side = Self::folder_side(&after, &to);
+        self.push(Effect::Folder(Change::Updated { before, after }), before_side, after_side, false);
         Ok(())
+    }
+
+    /// Removes the dependencies between the tasks in the subtree rooted at `id` and those outside it.
+    fn cut_off(&mut self, id: FolderId, space: &Space) -> Result<(), ApiError> {
+        let inside: BTreeSet<TaskId> = store::subtree_tasks(self.c, id)?.into_iter().map(|t| t.id).collect();
+        for d in store::subtree_dependencies(self.c, id)? {
+            if !(inside.contains(&d.before) && inside.contains(&d.after)) {
+                self.delete_dependency(d, space)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Makes what is in the subtree rooted at `id`, moved from `from` to `to`, belong there: its
+    /// tasks to `to`'s owner, numbered anew if that is someone else, assigned only to people there;
+    /// AI jobs of people who no longer see their folder go to their root, or go, if tidying it. The
+    /// folders and the dependencies inside stay as they are, for those who now see them or don't.
+    fn carry(&mut self, id: FolderId, from: &Space, to: &Space) -> Result<(), ApiError> {
+        for t in store::subtree_tasks(self.c, id)? {
+            let mut after = t.clone();
+            after.assignees.retain(|u| to.shared() && to.sees(u));
+            // Its new number may be the one it had: it is someone else's still.
+            let kept = after == t && to.owner == from.owner;
+            if to.owner != from.owner {
+                after.number = self.number(&to.owner, t.id, self.numbers.get(&t.id).copied())?;
+            }
+            if !kept {
+                store::update_task(self.c, &to.owner, &after)?;
+            }
+            self.push(Effect::Task(Change::Updated { before: Box::new(t), after: Box::new(after) }), from.side(), to.side(), kept);
+        }
+        for (j, owner) in store::subtree_jobs(self.c, id)? {
+            if !to.sees(&owner) {
+                self.drop_job(j, &owner)?;
+            }
+        }
+        for f in store::subtree_folders(self.c, id)? {
+            if f.id != id {
+                self.push(Effect::Folder(Change::Updated { before: f.clone(), after: f }), from.side(), to.side(), true);
+            }
+        }
+        for d in store::subtree_dependencies(self.c, id)? {
+            self.push(Effect::Dependency(Link::Added(d)), from.side(), to.side(), true);
+        }
+        Ok(())
+    }
+
+    /// Takes a job of `owner`'s out of a folder they no longer see: organizing goes on at their root,
+    /// tidying it is over.
+    fn drop_job(&mut self, j: AiJob, owner: &str) -> Result<(), ApiError> {
+        match j.kind {
+            JobKind::Organize => self.update_job(j.clone(), AiJob { folder_id: None, ..j }, owner),
+            JobKind::Tidy => self.delete_job(j, owner),
+        }
     }
 
     /// Records the removal of everything in the subtree (dependencies, tasks, folders deepest first)
     /// so that undo can bring it all back in reverse order. Folders are deleted one by one, deepest
     /// first, because a single cascade through a deep tree would hit SQLite's trigger depth limit.
-    fn delete_folder(&mut self, id: FolderId) -> Result<(), ApiError> {
+    /// Shared folders inside go first, as their members see them. A shared folder stops being
+    /// shared first, its tasks assigned to nobody before, so that bringing it back shares it again
+    /// and then assigns them again.
+    fn delete_folder(&mut self, id: FolderId, owner: &str) -> Result<(), ApiError> {
+        let space = self.space(owner, Some(id))?;
+        if space.root == Some(id) {
+            if owner != self.user {
+                return Err(ApiError::forbidden("只有共享人能改名、移动或删除共享的文件夹"));
+            }
+            for t in store::subtree_tasks(self.c, id)?.into_iter().filter(|t| !t.assignees.is_empty()) {
+                let after = Task { assignees: Vec::new(), ..t.clone() };
+                store::update_task(self.c, owner, &after)?;
+                self.push(Effect::Task(Change::Updated { before: Box::new(t), after: Box::new(after) }), space.side(), space.side(), false);
+            }
+            let share = Share { folder_id: id, owner: owner.to_owned(), members: space.members.clone() };
+            self.push(Effect::Share(Change::Deleted(share)), space.side(), Side::default(), false);
+        } else if space.root.is_none() {
+            for shared in store::shared_within(self.c, id)? {
+                self.delete_folder(shared, owner)?;
+            }
+        }
         for d in store::subtree_dependencies(self.c, id)? {
-            self.effects.push(Effect::Dependency(Link::Removed(d)));
+            self.push(Effect::Dependency(Link::Removed(d)), space.side(), Side::default(), false);
         }
         for t in store::subtree_tasks(self.c, id)? {
-            self.effects.push(Effect::Task(Change::Deleted(Box::new(t))));
+            self.push(Effect::Task(Change::Deleted(Box::new(t))), space.side(), Side::default(), false);
         }
-        for j in store::subtree_jobs(self.c, id)? {
-            self.effects.push(Effect::AiJob(Change::Deleted(Box::new(j))));
+        for (j, owner) in store::subtree_jobs(self.c, id)? {
+            self.push(Effect::AiJob(Change::Deleted(Box::new(j))), Side::of(vec![owner]), Side::default(), false);
         }
         for f in store::subtree_folders(self.c, id)? {
             store::delete_folder(self.c, f.id)?;
-            self.effects.push(Effect::Folder(Change::Deleted(f)));
+            let side = Self::folder_side(&f, &space);
+            self.push(Effect::Folder(Change::Deleted(f)), side, Side::default(), false);
         }
+        self.roots.borrow_mut().clear();
         Ok(())
     }
 
-    fn create_task(&mut self, t: Task) -> Result<(), ApiError> {
+    fn create_task(&mut self, mut t: Task, owner: &str) -> Result<(), ApiError> {
         check_task(&t)?;
-        store::insert_task(self.c, self.owner, &t)?;
-        self.effects.push(Effect::Task(Change::Created(Box::new(t))));
+        let space = self.space(owner, t.folder_id)?;
+        t.assignees.retain(|u| space.shared() && space.sees(u));
+        store::insert_task(self.c, owner, &t)?;
+        self.push(Effect::Task(Change::Created(Box::new(t))), Side::default(), space.side(), false);
         Ok(())
     }
 
-    fn update_task(&mut self, before: Task, mut after: Task) -> Result<(), ApiError> {
+    /// Changes a task. One moved into or out of a shared folder loses its dependencies, which were
+    /// all on what stays behind, and the assignees who can't see it now, and belongs to the owner of
+    /// where it is: numbered anew if that is someone else, or with the number it had there, when that
+    /// is `had`, undoing such a move, and still free.
+    fn update_task(&mut self, before: Task, owner: &str, mut after: Task, had: Option<i64>) -> Result<(), ApiError> {
         if after == before {
             return Ok(());
         }
         check_task(&after)?;
-        if after.folder_id != before.folder_id
-            && let Some(f) = after.folder_id
-        {
-            self.folder(f)?;
+        let from = self.space(owner, before.folder_id)?;
+        let (new_owner, to) = if after.folder_id == before.folder_id {
+            (owner.to_owned(), from.clone())
+        } else {
+            let new_owner = self.owner_in(after.folder_id)?;
+            let to = self.space(&new_owner, after.folder_id)?;
+            (new_owner, to)
+        };
+        if to != from {
+            for d in store::task_dependencies(self.c, before.id)? {
+                self.delete_dependency(d, &from)?;
+            }
+        }
+        after.assignees.retain(|u| to.shared() && to.sees(u));
+        if new_owner != owner {
+            after.number = self.number(&new_owner, after.id, had)?;
         }
         after.updated_at = self.now;
+        after.updated_by = self.user.to_owned();
         after.updated_via = self.via.clone();
-        store::update_task(self.c, &after)?;
-        self.effects.push(Effect::Task(Change::Updated { before: Box::new(before), after: Box::new(after) }));
+        store::update_task(self.c, &new_owner, &after)?;
+        self.push(Effect::Task(Change::Updated { before: Box::new(before), after: Box::new(after) }), from.side(), to.side(), false);
         Ok(())
     }
 
-    fn delete_task(&mut self, id: TaskId) -> Result<(), ApiError> {
-        for d in store::task_dependencies(self.c, id)? {
-            self.effects.push(Effect::Dependency(Link::Removed(d)));
+    /// The number task `id` gets as it goes to `owner`: `had`, the one it had there, undoing the
+    /// change that took it away, when `owner` still has it free; otherwise the next one.
+    fn number(&self, owner: &str, id: TaskId, had: Option<i64>) -> Result<i64, ApiError> {
+        match had {
+            Some(n) if store::number_free(self.c, owner, n, id)? => Ok(n),
+            _ => Ok(store::take_task_number(self.c, owner)?),
         }
-        let t = self.task(id)?;
+    }
+
+    fn delete_task(&mut self, id: TaskId) -> Result<(), ApiError> {
+        let (t, owner) = self.task(id)?;
+        let space = self.space(&owner, t.folder_id)?;
+        for d in store::task_dependencies(self.c, id)? {
+            self.push(Effect::Dependency(Link::Removed(d)), space.side(), Side::default(), false);
+        }
         store::delete_task(self.c, id)?;
-        self.effects.push(Effect::Task(Change::Deleted(Box::new(t))));
+        self.push(Effect::Task(Change::Deleted(Box::new(t))), space.side(), Side::default(), false);
         Ok(())
     }
 
     fn create_job(&mut self, j: AiJob) -> Result<(), ApiError> {
-        store::insert_job(self.c, self.owner, &j)?;
-        self.effects.push(Effect::AiJob(Change::Created(Box::new(j))));
+        store::insert_job(self.c, self.user, &j)?;
+        let side = Side::of(vec![self.user.to_owned()]);
+        self.push(Effect::AiJob(Change::Created(Box::new(j))), Side::default(), side, false);
         Ok(())
     }
 
-    fn update_job(&mut self, before: AiJob, mut after: AiJob) -> Result<(), ApiError> {
+    /// Changes a job of `owner`'s.
+    fn update_job(&mut self, before: AiJob, mut after: AiJob, owner: &str) -> Result<(), ApiError> {
         if after == before {
             return Ok(());
         }
         after.updated_at = self.now;
         store::update_job(self.c, &after)?;
-        self.effects.push(Effect::AiJob(Change::Updated { before: Box::new(before), after: Box::new(after) }));
+        let side = Side::of(vec![owner.to_owned()]);
+        self.push(Effect::AiJob(Change::Updated { before: Box::new(before), after: Box::new(after) }), side.clone(), side, false);
         Ok(())
     }
 
-    fn delete_job(&mut self, j: AiJob) -> Result<(), ApiError> {
+    fn delete_job(&mut self, j: AiJob, owner: &str) -> Result<(), ApiError> {
         store::delete_job(self.c, j.id)?;
-        self.effects.push(Effect::AiJob(Change::Deleted(Box::new(j))));
+        self.push(Effect::AiJob(Change::Deleted(Box::new(j))), Side::of(vec![owner.to_owned()]), Side::default(), false);
         Ok(())
     }
 
-    fn create_dependency(&mut self, d: Dependency) -> Result<(), ApiError> {
-        let edges = store::dependency_edges(self.c, self.owner)?;
+    fn create_dependency(&mut self, d: Dependency, space: &Space) -> Result<(), ApiError> {
+        let edges = store::dependency_edges(self.c, &space.owner)?;
         if let Some(path) = find_path(&edges, d.after, d.before) {
             let path: Vec<TaskId> = [d.before].into_iter().chain(path).collect();
-            let titles = path.iter().map(|&id| Ok(format!("“{}”", self.task(id)?.title.as_str()))).collect::<Result<Vec<_>, ApiError>>()?;
+            let titles =
+                path.iter().map(|&id| Ok(format!("“{}”", self.task(id)?.0.title.as_str()))).collect::<Result<Vec<_>, ApiError>>()?;
             return Err(ApiError::cycle(path, &titles.join(" → ")));
         }
-        store::insert_dependency(self.c, self.owner, &d)?;
-        self.effects.push(Effect::Dependency(Link::Added(d)));
+        store::insert_dependency(self.c, &space.owner, &d)?;
+        self.push(Effect::Dependency(Link::Added(d)), Side::default(), space.side(), false);
         Ok(())
     }
 
-    fn delete_dependency(&mut self, d: Dependency) -> Result<(), ApiError> {
+    fn delete_dependency(&mut self, d: Dependency, space: &Space) -> Result<(), ApiError> {
         store::delete_dependency(self.c, &d)?;
-        self.effects.push(Effect::Dependency(Link::Removed(d)));
+        self.push(Effect::Dependency(Link::Removed(d)), space.side(), Side::default(), false);
+        Ok(())
+    }
+
+    /// Shares folder `f` of `owner`'s with `person`. The first time, its tasks lose their
+    /// dependencies on those outside it, as only what is in it is shared.
+    fn add_member(&mut self, f: &Folder, owner: &str, person: Person) -> Result<(), ApiError> {
+        let space = self.space(owner, Some(f.id))?;
+        if space.root.is_some_and(|r| r != f.id) {
+            return Err(ApiError::invalid("共享的文件夹里的文件夹不能再共享", None));
+        }
+        if !space.shared() && !store::shared_within(self.c, f.id)?.is_empty() {
+            return Err(ApiError::invalid(format!("“{}”里已有共享的文件夹，不能再共享", f.name.as_str()), None));
+        }
+        if space.members.contains(&person.id) {
+            return Err(ApiError::conflict(format!("{} 已是成员", person.display_name)));
+        }
+        if !space.shared() {
+            if store::shared_name_taken(self.c, owner, f.name.as_str(), f.id)? {
+                return Err(ApiError::conflict(format!("已共享过名为“{}”的文件夹，请先改名", f.name.as_str())));
+            }
+            self.cut_off(f.id, &space)?;
+        }
+        store::insert_member(self.c, f.id, &person.id)?;
+        self.roots.borrow_mut().clear();
+        let mut members = space.members.clone();
+        members.push(person.id.clone());
+        members.sort();
+        let before = Share { folder_id: f.id, owner: owner.to_owned(), members: space.members.clone() };
+        let after = Share { members, ..before.clone() };
+        let side = share_side(&after);
+        self.done.resync.push(person.id.clone());
+        self.push(Effect::Person(Change::Created(person)), Side::default(), side.clone(), false);
+        let change = if space.shared() { Change::Updated { before, after } } else { Change::Created(after) };
+        self.push(Effect::Share(change), space.side(), side, false);
+        Ok(())
+    }
+
+    /// Takes `user` off folder `f`, shared by `owner`: off the tasks they were to do, and their AI
+    /// jobs out of it. Once nobody is left, it is no longer shared, and nobody is assigned anything.
+    fn remove_member(&mut self, f: &Folder, owner: &str, user: &str) -> Result<(), ApiError> {
+        let space = self.space(owner, Some(f.id))?;
+        if space.root != Some(f.id) || !space.members.iter().any(|m| m == user) {
+            return Err(ApiError::not_found("不是这个文件夹的成员"));
+        }
+        let last = space.members.len() == 1;
+        for t in store::subtree_tasks(self.c, f.id)? {
+            let mut after = t.clone();
+            after.assignees.retain(|u| !last && u != user);
+            if after != t {
+                store::update_task(self.c, owner, &after)?;
+                self.push(Effect::Task(Change::Updated { before: Box::new(t), after: Box::new(after) }), space.side(), space.side(), false);
+            }
+        }
+        for (j, by) in store::subtree_jobs(self.c, f.id)? {
+            if by == user {
+                self.drop_job(j, &by)?;
+            }
+        }
+        store::delete_member(self.c, f.id, user)?;
+        self.roots.borrow_mut().clear();
+        let before = Share { folder_id: f.id, owner: owner.to_owned(), members: space.members.clone() };
+        let after = Share { members: before.members.iter().filter(|m| *m != user).cloned().collect(), ..before.clone() };
+        self.done.resync.push(user.to_owned());
+        let change = if last { Change::Deleted(before) } else { Change::Updated { before, after: after.clone() } };
+        self.push(Effect::Share(change), space.side(), share_side(&after), false);
         Ok(())
     }
 
     /// Restores what a mutation changed, newest change first. Entities that were removed come back
-    /// unchanged (same id and number). Changes whose target is already gone or back are skipped;
-    /// bringing something back into a folder or onto a task that is gone fails.
+    /// unchanged (same id, and number unless it is taken). Changes whose target is already gone or
+    /// back are skipped; bringing something back into a folder or onto a task that is gone fails.
+    ///
+    /// Only a change the user saw all of can be undone, someone else's in a shared folder too, the
+    /// AI jobs in it aside: those are each their owner's, who undoes their own.
     fn undo(&mut self, id: MutationId) -> Result<(), ApiError> {
-        let effects: String = self
+        let row: Option<(Option<String>, Option<String>)> = self
             .c
-            .query_row("SELECT effects FROM mutations WHERE id = ?1 AND owner_id = ?2", params![id, self.owner], |r| r.get(0))
-            .optional()?
-            .flatten()
-            .ok_or_else(|| ApiError::not_found("要撤销的改动不存在或已过期"))?;
-        let effects: Vec<Effect> = serde_json::from_str(&effects)?;
-        for effect in effects.into_iter().rev() {
+            .query_row(
+                "SELECT m.effects, d.effects FROM mutations m JOIN deliveries d ON d.seq = m.seq AND d.user_id = ?2 WHERE m.id = ?1",
+                params![id, self.user],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let Some((Some(all), own)) = row else { return Err(ApiError::not_found("要撤销的改动不存在或已过期")) };
+        let all: Vec<Effect> = serde_json::from_str(&all)?;
+        let seen: Vec<Effect> = match own {
+            Some(own) => serde_json::from_str(&own)?,
+            None => all.clone(),
+        };
+        let owner = |c: &Change<Share>| match c {
+            Change::Created(s) | Change::Deleted(s) | Change::Updated { before: s, .. } => s.owner.clone(),
+        };
+        if all.iter().any(|e| matches!(e, Effect::Share(c) if owner(c) != self.user)) {
+            return Err(ApiError::forbidden("只有共享人能添加或移除成员"));
+        }
+        let shared = |list: &[Effect]| -> Vec<Effect> {
+            list.iter().filter(|e| !matches!(e, Effect::AiJob(_) | Effect::Person(_))).cloned().collect()
+        };
+        if shared(&all) != shared(&seen) {
+            return Err(ApiError::forbidden("这个批次里有看不到的改动，无法撤销"));
+        }
+        // For the tasks carried back with a folder, the numbers they had: while undoing this only.
+        for e in &seen {
+            if let Effect::Task(Change::Updated { before, .. }) = e {
+                self.numbers.entry(before.id).or_insert(before.number);
+            }
+        }
+        for effect in seen.into_iter().rev() {
             match effect {
                 Effect::Folder(Change::Created(f)) => {
-                    if store::load_folder(self.c, self.owner, f.id)?.is_some() {
-                        self.delete_folder(f.id)?;
+                    if let Some((_, owner)) = self.visible_folder(f.id)? {
+                        self.delete_folder(f.id, &owner)?;
                     }
                 }
                 Effect::Folder(Change::Deleted(f)) => {
-                    if store::load_folder(self.c, self.owner, f.id)?.is_none() {
-                        if let Some(p) = f.parent_id
-                            && store::load_folder(self.c, self.owner, p)?.is_none()
-                        {
-                            return Err(ApiError::not_found(format!("文件夹“{}”原所在的文件夹已删除", f.name.as_str())));
-                        }
-                        self.create_folder(Folder { updated_at: self.now, ..f })?;
+                    if store::load_folder(self.c, f.id)?.is_none() {
+                        let owner = self
+                            .owner_in(f.parent_id)
+                            .map_err(|_| ApiError::not_found(format!("文件夹“{}”原所在的文件夹已删除", f.name.as_str())))?;
+                        self.create_folder(Folder { updated_at: self.now, ..f }, &owner)?;
                     }
                 }
                 Effect::Folder(Change::Updated { before: b, after: a }) => {
-                    if let Some(cur) = store::load_folder(self.c, self.owner, b.id)? {
+                    if let Some((cur, owner)) = self.visible_folder(b.id)? {
                         let restored = restore!(cur, b, a, parent_id, name, sort_key);
-                        self.update_folder(cur, restored)?;
+                        self.update_folder(cur, &owner, restored)?;
                     }
                 }
                 Effect::Task(Change::Created(t)) => {
-                    if store::load_task(self.c, self.owner, t.id)?.is_some() {
+                    if self.visible_task(t.id)?.is_some() {
                         self.delete_task(t.id)?;
                     }
                 }
                 Effect::Task(Change::Deleted(t)) => {
-                    if store::load_task(self.c, self.owner, t.id)?.is_none() {
-                        if let Some(f) = t.folder_id
-                            && store::load_folder(self.c, self.owner, f)?.is_none()
-                        {
-                            return Err(ApiError::not_found(format!("“{}”原所在的文件夹已删除", t.title.as_str())));
-                        }
-                        self.create_task(Task { updated_at: self.now, updated_via: self.via.clone(), ..*t })?;
+                    if store::load_task(self.c, t.id)?.is_none() {
+                        let owner = self
+                            .owner_in(t.folder_id)
+                            .map_err(|_| ApiError::not_found(format!("“{}”原所在的文件夹已删除", t.title.as_str())))?;
+                        let number = self.number(&owner, t.id, Some(t.number))?;
+                        let restored =
+                            Task { number, updated_at: self.now, updated_by: self.user.to_owned(), updated_via: self.via.clone(), ..*t };
+                        self.create_task(restored, &owner)?;
                     }
                 }
                 Effect::Task(Change::Updated { before: b, after: a }) => {
-                    if let Some(cur) = store::load_task(self.c, self.owner, b.id)? {
+                    if let Some((cur, owner)) = self.visible_task(b.id)? {
                         let mut restored = restore!(cur, b, a, folder_id, title, description, done_at, start, completions, sort_key);
                         restored.due = restore_due(&cur.due, &b.due, &a.due);
-                        self.update_task(cur, restored)?;
+                        restored.assignees = restore_people(&cur.assignees, &b.assignees, &a.assignees);
+                        self.update_task(cur, &owner, restored, Some(b.number))?;
                     }
                 }
                 Effect::Dependency(Link::Added(d)) => {
-                    if let Some(d) = store::load_dependency(self.c, self.owner, d.before, d.after)? {
-                        self.delete_dependency(d)?;
+                    if let Some(d) = store::load_dependency(self.c, d.before, d.after)?
+                        && let Some((t, owner)) = self.visible_task(d.before)?
+                    {
+                        let space = self.space(&owner, t.folder_id)?;
+                        self.delete_dependency(d, &space)?;
                     }
                 }
                 Effect::Dependency(Link::Removed(d)) => {
-                    for end in [d.before, d.after] {
-                        if store::load_task(self.c, self.owner, end)?.is_none() {
-                            return Err(ApiError::not_found("要恢复的依赖所关联的事项已删除"));
-                        }
-                    }
-                    if store::load_dependency(self.c, self.owner, d.before, d.after)?.is_none() {
-                        self.create_dependency(d)?;
+                    let (Some((b, b_owner)), Some((a, a_owner))) = (self.visible_task(d.before)?, self.visible_task(d.after)?) else {
+                        return Err(ApiError::not_found("要恢复的依赖所关联的事项已删除"));
+                    };
+                    let space = self.space(&b_owner, b.folder_id)?;
+                    // Moved apart since, they can't be linked again.
+                    if store::load_dependency(self.c, d.before, d.after)?.is_none() && space == self.space(&a_owner, a.folder_id)? {
+                        self.create_dependency(d, &space)?;
                     }
                 }
                 Effect::AiJob(Change::Created(j)) => {
-                    if let Some(cur) = store::load_job(self.c, self.owner, j.id)? {
-                        self.delete_job(cur)?;
+                    if let Some(cur) = store::load_job(self.c, self.user, j.id)? {
+                        let user = self.user;
+                        self.delete_job(cur, user)?;
                     }
                 }
                 Effect::AiJob(Change::Deleted(j)) => {
-                    if store::load_job(self.c, self.owner, j.id)?.is_none() {
+                    if store::load_job(self.c, self.user, j.id)?.is_none() {
                         if let Some(f) = j.folder_id
-                            && store::load_folder(self.c, self.owner, f)?.is_none()
+                            && self.visible_folder(f)?.is_none()
                         {
                             return Err(ApiError::not_found("AI 整理请求原所在的文件夹已删除"));
                         }
@@ -586,10 +1146,49 @@ impl Cx<'_> {
                         self.create_job(AiJob { updated_at: self.now, ..j })?;
                     }
                 }
-                // Starting, failing and retrying are the job's own course, not undone.
-                Effect::AiJob(Change::Updated { .. }) => {}
+                // Starting, failing and retrying are the job's own course, not undone; nor are names.
+                Effect::AiJob(Change::Updated { .. }) | Effect::Person(_) => {}
+                Effect::Share(change) => {
+                    let (folder, b, a) = match change {
+                        Change::Created(a) => (a.folder_id, Vec::new(), a.members),
+                        Change::Updated { before, after } => (before.folder_id, before.members, after.members),
+                        Change::Deleted(b) => (b.folder_id, b.members, Vec::new()),
+                    };
+                    let Some((f, owner)) = self.visible_folder(folder)? else { continue };
+                    // Those it added go, and those it took off come back, as far as nothing has done so since.
+                    let now = store::members(self.c, folder)?;
+                    for user in a.iter().filter(|u| !b.contains(u) && now.contains(u)) {
+                        self.remove_member(&f, &owner, user)?;
+                    }
+                    for user in b.iter().filter(|u| !a.contains(u) && !now.contains(u)) {
+                        let person = store::person(self.c, user)?;
+                        self.add_member(&f, &owner, person)?;
+                    }
+                }
             }
         }
+        self.numbers.clear();
         Ok(())
     }
+
+    fn visible_folder(&self, id: FolderId) -> Result<Option<(Folder, String)>, ApiError> {
+        match self.folder(id) {
+            Ok(found) => Ok(Some(found)),
+            Err(e) if e.code() == "not_found" => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn visible_task(&self, id: TaskId) -> Result<Option<(Task, String)>, ApiError> {
+        match self.task(id) {
+            Ok(found) => Ok(Some(found)),
+            Err(e) if e.code() == "not_found" => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+}
+
+/// Who sees a share: its owner and members.
+fn share_side(s: &Share) -> Side {
+    Side::of(std::iter::once(&s.owner).chain(&s.members).cloned().collect())
 }

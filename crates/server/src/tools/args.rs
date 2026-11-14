@@ -27,11 +27,60 @@ pub struct NextArgs {
     pub limit: Option<u32>,
 }
 
+/// A task by number: `42` or `"#42"`, `"@alice#42"` in a folder someone else shares, which is
+/// alice's #42.
+#[derive(Deserialize, JsonSchema)]
+#[serde(try_from = "TaskRefArg")]
+pub struct TaskRef {
+    pub user: Option<String>,
+    pub number: i64,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[schemars(description = "事项编号：42 或 \"#42\"；别人共享给我的文件夹里的事项写成 \"@alice#42\"")]
+enum TaskRefArg {
+    Number(i64),
+    Text(String),
+}
+
+impl TryFrom<TaskRefArg> for TaskRef {
+    type Error = String;
+
+    fn try_from(r: TaskRefArg) -> Result<Self, String> {
+        match r {
+            TaskRefArg::Number(number) => Ok(TaskRef { user: None, number }),
+            TaskRefArg::Text(s) => {
+                task_ref(&s).map(|(user, number)| TaskRef { user: user.map(str::to_owned), number }).ok_or(format!("“{s}”不是事项编号"))
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for TaskRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match &self.user {
+            Some(user) => write!(f, "@{user}#{}", self.number),
+            None => write!(f, "#{}", self.number),
+        }
+    }
+}
+
+/// A task number written as text: `"42"` or `"#42"`, or `"@alice#42"` with whose it is.
+pub fn task_ref(s: &str) -> Option<(Option<&str>, i64)> {
+    let s = s.trim();
+    let (user, number) = match s.strip_prefix('@') {
+        Some(rest) => rest.split_once('#').map(|(user, n)| (Some(user.trim()), n))?,
+        None => (None, s.strip_prefix('#').unwrap_or(s)),
+    };
+    Some((user, number.trim().parse().ok()?))
+}
+
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ShowArgs {
     #[schemars(description = "事项编号")]
-    pub task: i64,
+    pub task: TaskRef,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -86,18 +135,21 @@ pub struct AddArgs {
     #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
     pub repeat_from: Option<RepeatFrom>,
     #[serde(default)]
+    #[schemars(description = "负责人的用户名：共享的文件夹里才能设，须是共享人或成员；不设就是谁都可以做")]
+    pub assign: Vec<String>,
+    #[serde(default)]
     #[schemars(description = "前置事项的编号：它们完成后才能做这一项")]
-    pub after: Vec<i64>,
+    pub after: Vec<TaskRef>,
     #[serde(default)]
     #[schemars(description = "后续事项的编号：这一项完成后才能做它们")]
-    pub before: Vec<i64>,
+    pub before: Vec<TaskRef>,
 }
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EditArgs {
     #[schemars(description = "事项编号")]
-    pub task: i64,
+    pub task: TaskRef,
     #[schemars(with = "Option<String>", description = "新标题")]
     pub title: Option<Title>,
     #[schemars(with = "Option<String>", description = "新描述，Markdown，整段替换；只改其中一段时用 replace 或 append")]
@@ -129,6 +181,12 @@ pub struct EditArgs {
     pub repeat: Option<Option<RepeatText>>,
     #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
     pub repeat_from: Option<RepeatFrom>,
+    #[serde(default)]
+    #[schemars(description = "加为负责人的用户名，在服务端当时的负责人上加；须是共享人或成员")]
+    pub assign: Vec<String>,
+    #[serde(default)]
+    #[schemars(description = "不再负责的用户名，从服务端当时的负责人里去掉")]
+    pub unassign: Vec<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -144,14 +202,14 @@ pub struct Replace {
 #[serde(deny_unknown_fields)]
 pub struct TasksArgs {
     #[schemars(description = "事项编号", length(min = 1))]
-    pub tasks: Vec<i64>,
+    pub tasks: Vec<TaskRef>,
 }
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DoneArgs {
     #[schemars(description = "事项编号", length(min = 1))]
-    pub tasks: Vec<i64>,
+    pub tasks: Vec<TaskRef>,
     #[schemars(description = "重复的事项结束重复、直接完成，如读完一本书时；默认 false")]
     #[serde(default)]
     pub end_repeat: bool,
@@ -178,7 +236,7 @@ pub struct RenameArgs {
 pub struct MoveArgs {
     #[serde(default)]
     #[schemars(description = "要移动的事项编号")]
-    pub tasks: Vec<i64>,
+    pub tasks: Vec<TaskRef>,
     #[serde(default)]
     #[schemars(description = "要移动的文件夹路径")]
     pub folders: Vec<String>,
@@ -191,7 +249,7 @@ pub struct MoveArgs {
 pub struct DeleteArgs {
     #[serde(default)]
     #[schemars(description = "要删除的事项编号")]
-    pub tasks: Vec<i64>,
+    pub tasks: Vec<TaskRef>,
     #[serde(default)]
     #[schemars(description = "要删除的文件夹路径，其中的内容一并删除")]
     pub folders: Vec<String>,
@@ -201,9 +259,28 @@ pub struct DeleteArgs {
 #[serde(deny_unknown_fields)]
 pub struct DepArgs {
     #[schemars(description = "前置事项的编号")]
-    pub before: i64,
+    pub before: TaskRef,
     #[schemars(description = "后续事项的编号")]
-    pub after: i64,
+    pub after: TaskRef,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ShareArgs {
+    #[schemars(description = "自己的文件夹的路径")]
+    pub folder: String,
+    #[schemars(description = "共享给这些人：他们登录用的用户名", length(min = 1))]
+    pub users: Vec<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UnshareArgs {
+    #[schemars(description = "共享的文件夹的路径")]
+    pub folder: String,
+    #[serde(default)]
+    #[schemars(description = "要移除的成员的用户名；共享人不写就是停止共享，成员不写就是自己退出")]
+    pub users: Vec<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -250,6 +327,9 @@ pub struct PlanTask {
     #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
     pub repeat_from: Option<RepeatFrom>,
     #[serde(default)]
+    #[schemars(description = "负责人的用户名：共享的文件夹里才能设")]
+    pub assign: Vec<String>,
+    #[serde(default)]
     #[schemars(description = "前置：计划里的 ref，或已有事项的编号")]
     pub after: Vec<PlanRef>,
     #[serde(default)]
@@ -257,7 +337,8 @@ pub struct PlanTask {
     pub before: Vec<PlanRef>,
 }
 
-/// A task in a plan: an existing task by number (`42` or `"#42"`), or a planned one by `ref`.
+/// A task in a plan: an existing task by number (`42`, `"#42"` or `"@alice#42"`), or a planned one by
+/// `ref`.
 #[derive(Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum PlanRef {

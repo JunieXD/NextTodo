@@ -34,6 +34,20 @@ function edgeStep(scroller: HTMLElement, x: number, y: number): number {
   return y < box.top + EDGE ? -SCROLL_STEP : y > box.bottom - EDGE ? SCROLL_STEP : 0;
 }
 
+/** Unfolds the row of the folder tree folded away (`data-closed`) that a drag, about the tree or from
+ * elsewhere, rests on for a moment: the row sends its tree an `unfold` event. */
+function springs() {
+  let at: HTMLElement | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const over = (row: HTMLElement | null) => {
+    if (row === at) return;
+    at = row;
+    clearTimeout(timer);
+    if (row && "closed" in row.dataset) timer = setTimeout(() => row.dispatchEvent(new Event("unfold", { bubbles: true })), UNFOLD_MS);
+  };
+  return { over, stop: () => over(null) };
+}
+
 /** Lights up the row a drag would go into, `now`, rather than `was`. */
 function light(was: HTMLElement | null, now: HTMLElement | null) {
   if (was === now) return;
@@ -164,6 +178,7 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, rows: string,
   useEffect(() => {
     const el = list.current!;
     const scroller = el.closest<HTMLElement>(".scroll, .main-scroll")!;
+    const spring = springs();
     let l: {
       row: HTMLElement;
       rows: HTMLElement[];
@@ -185,8 +200,8 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, rows: string,
       frame: number;
     } | null = null;
 
-    // The other rows make way where the row may go, or stay put while it is over a folder it would go
-    // into; its copy follows the pointer anyway.
+    // The other rows make way where the row may go, or stay put while it is over a folder; its copy
+    // follows the pointer anyway.
     const layout = () => {
       const s = l!;
       const dy = s.y - s.startY + scroller.scrollTop - s.startScroll;
@@ -194,10 +209,14 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, rows: string,
       const at = s.from + 0.5 + dy / s.height;
       const i = Math.floor(at);
       const part = at - i;
-      const elsewhere = intoUnder(s.x, s.y, s.row);
-      const here = s.nests && i !== s.from && part > 0.25 && part < 0.75 ? s.rows[i] : undefined;
-      const into = elsewhere && !el.contains(elsewhere) ? elsewhere : here && "into" in here.dataset ? here : null;
-      const taken = into && latest.current.canInto(s.from, intoOf(into)) ? into : null;
+      const under = intoUnder(s.x, s.y, s.row);
+      const elsewhere = under && !el.contains(under) ? under : null;
+      const box = el.getBoundingClientRect();
+      const here = s.nests && i !== s.from && part > 0.25 && part < 0.75 && s.x >= box.left && s.x <= box.right ? s.rows[i] : undefined;
+      // A folder, whether or not the row may go into it: let go on one it may not, it goes back.
+      const over = elsewhere ?? (here && "into" in here.dataset ? here : null);
+      const taken = over && latest.current.canInto(s.from, intoOf(over)) ? over : null;
+      spring.over(elsewhere);
       light(s.into, taken);
       s.into = taken;
       s.ghost.classList.toggle("into", !!taken);
@@ -205,8 +224,8 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, rows: string,
       // Before row `i` by its top half, after it by its bottom half; as places in the list without the
       // row lifted, those below it are one further up.
       const beside = i === s.from || !s.nests ? i : i - Number(i > s.from) + Number(part >= 0.5);
-      s.target = Math.min(Math.max(beside, 0), s.rows.length - 1);
-      const to = taken ? s.from : Math.min(Math.max(s.target, s.min), s.max);
+      s.target = over ? s.from : Math.min(Math.max(beside, 0), s.rows.length - 1);
+      const to = Math.min(Math.max(s.target, s.min), s.max);
       s.rows.forEach((r, k) => {
         const shift = s.from < k && k <= to ? -s.height : to <= k && k < s.from ? s.height : 0;
         r.style.transform = shift ? `translateY(${shift}px)` : "";
@@ -250,6 +269,7 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, rows: string,
         const { row, rows, from, target, into, ghost, frame } = l!;
         l = null;
         cancelAnimationFrame(frame);
+        spring.stop();
         ghost.remove();
         delete row.dataset.lifted;
         light(into, null);
@@ -267,6 +287,7 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, rows: string,
         cancelAnimationFrame(l.frame);
         l.ghost.remove();
       }
+      spring.stop();
       rowsChanged.disconnect();
       drags.stop();
     };
@@ -278,6 +299,7 @@ export interface TreeDrag {
   canPlace(folder: FolderId, parent: FolderId | null): boolean;
   /** `folder` was let go in `parent`, before the folder `before` there, or last. */
   place(folder: FolderId, parent: FolderId | null, before: FolderId | null): void;
+  /** A drag, this one or one from elsewhere, rested on `folder`, folded away. */
   unfold(folder: FolderId | null): void;
 }
 
@@ -289,7 +311,7 @@ type Spot = { parent: FolderId | null; before: FolderId | null } & ({ into: HTML
  * stays put), with `data-parent`, `data-depth` and, folded away with folders inside, `data-closed`.
  * Let go on a row's middle half, a folder goes into it; between two rows, before the one below, at its
  * depth; under them all, last at the top. The rows stay put, the one dragged follows the pointer up
- * or down. */
+ * or down. Gone meanwhile, deleted on another device say, it is dropped nowhere. */
 export function useTreeDrag(tree: RefObject<HTMLElement | null>, drag: TreeDrag) {
   const latest = useRef(drag);
   useEffect(() => {
@@ -299,6 +321,7 @@ export function useTreeDrag(tree: RefObject<HTMLElement | null>, drag: TreeDrag)
     const el = tree.current!;
     const line = document.createElement("div");
     line.className = "sb-line";
+    const spring = springs();
     let s: {
       row: HTMLElement;
       folder: FolderId;
@@ -308,19 +331,17 @@ export function useTreeDrag(tree: RefObject<HTMLElement | null>, drag: TreeDrag)
       x: number;
       y: number;
       spot: Spot | null;
-      unfold?: ReturnType<typeof setTimeout>;
       frame: number;
     } | null = null;
 
-    /** Where the folder would go, let go at the pointer over `rows`, whose bottom is `end` down the
-     * tree; nowhere it may not. */
-    const spotAt = (rows: HTMLElement[], end: number, x: number, y: number): Spot | null => {
+    /** Where the folder would go, let go at the pointer over `row` of `rows`, whose bottom is `end` down
+     * the tree; nowhere it may not. */
+    const spotAt = (rows: HTMLElement[], end: number, row: HTMLElement | null, x: number, y: number): Spot | null => {
       const box = el.getBoundingClientRect();
       if (x < box.left || x > box.right) return null;
-      const row = intoUnder(x, y, s!.row);
       const atEnd: Spot = { parent: null, before: null, line: { top: end, depth: 1 } };
       let spot: Spot;
-      if (row && el.contains(row)) {
+      if (row) {
         const r = row.getBoundingClientRect();
         const part = (y - r.top) / r.height;
         const below = part <= 0.25 ? row : rows[rows.indexOf(row) + 1];
@@ -338,10 +359,6 @@ export function useTreeDrag(tree: RefObject<HTMLElement | null>, drag: TreeDrag)
     const show = (spot: Spot | null) => {
       const was = s!.spot;
       const into = spot && "into" in spot ? spot.into : null;
-      if (!was || !("into" in was) || was.into !== into) {
-        clearTimeout(s!.unfold);
-        if (into && "closed" in into.dataset) s!.unfold = setTimeout(() => latest.current.unfold(intoOf(into)), UNFOLD_MS);
-      }
       light(was && "into" in was ? was.into : null, into);
       if (spot && "line" in spot) {
         line.style.top = `${spot.line.top}px`;
@@ -354,6 +371,7 @@ export function useTreeDrag(tree: RefObject<HTMLElement | null>, drag: TreeDrag)
     // have moved under it, a folder unfolding.
     const frame = () => {
       const { row, x, y } = s!;
+      if (!row.isConnected) return drags.cancel();
       const step = edgeStep(el, x, y);
       if (step) el.scrollTop += step;
       const rows = [...el.querySelectorAll<HTMLElement>(".sb-item[data-into]")];
@@ -363,7 +381,10 @@ export function useTreeDrag(tree: RefObject<HTMLElement | null>, drag: TreeDrag)
       // Not much further than the rows, which would make the tree longer, to scroll on and on.
       const dy = Math.min(y - s!.startY + el.scrollTop - s!.startScroll, end - row.offsetTop);
       row.style.transform = `translateY(${dy}px)`;
-      show(spotAt(rows, end, x, y));
+      const under = intoUnder(x, y, row);
+      const over = under && el.contains(under) ? under : null;
+      spring.over(over);
+      show(spotAt(rows, end, over, x, y));
       s!.frame = requestAnimationFrame(frame);
     };
     const drags = hearDrags(el, ".sb-item[data-into]", {
@@ -378,23 +399,24 @@ export function useTreeDrag(tree: RefObject<HTMLElement | null>, drag: TreeDrag)
         s!.y = y;
       },
       end(drop) {
-        const { row, folder, spot, unfold } = s!;
+        const { row, folder, spot, frame } = s!;
         show(null);
-        cancelAnimationFrame(s!.frame);
-        clearTimeout(unfold);
+        cancelAnimationFrame(frame);
+        spring.stop();
         s = null;
         delete row.dataset.lifted;
         row.style.transform = "";
         if (drop && spot) latest.current.place(folder, spot.parent, spot.before);
       },
     });
+    const unfold = (e: Event) => latest.current.unfold(intoOf(e.target as HTMLElement));
+    el.addEventListener("unfold", unfold);
     return () => {
-      if (s) {
-        cancelAnimationFrame(s.frame);
-        clearTimeout(s.unfold);
-      }
+      if (s) cancelAnimationFrame(s.frame);
+      spring.stop();
       line.remove();
       drags.stop();
+      el.removeEventListener("unfold", unfold);
     };
   }, [tree]);
 }

@@ -65,6 +65,15 @@ describe("range", () => {
     const done = board(tasks, deps);
     expect(range(done, list(done), 1)).toMatchObject({ min: 0, above: undefined });
   });
+
+  test("finished tasks kept in the list hold others back as they are held, as in its order", () => {
+    // t0 (done) → t1, both listed, as in a folder keeping the latest done; keys alone would swap them
+    const b = board([{ key: "a1", done: true }, { key: "a0" }], [[0, 1]]);
+    const l = b.order(b.contents(FOLDER), (t) => t.done_at === null);
+    expect(titles(l)).toEqual(["t0", "t1"]);
+    expect(range(b, l, 1)).toMatchObject({ min: 1, above: { title: "t0" } });
+    expect(range(b, l, 0)).toMatchObject({ max: 0, below: { title: "t1" } });
+  });
 });
 
 describe("rekey", () => {

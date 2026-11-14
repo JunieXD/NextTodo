@@ -10,8 +10,9 @@ export interface Range {
   /** The first and last places `list[from]` may take in the list without it. */
   min: number;
   max: number;
-  /** The closest task it waits for, directly or through unfinished tasks, and the closest one
-   * waiting for it: what stops it going further. */
+  /** The closest task it waits for, directly or through tasks in the list or unfinished ones, as
+   * `Board.order` has it, and the closest one waiting for it: what stops it going further. Finished
+   * itself, in a folder keeping the latest done, it holds others back all the same. */
   above?: Task;
   below?: Task;
 }
@@ -19,12 +20,13 @@ export interface Range {
 export function range(board: Board, list: Task[], from: number): Range {
   const t = list[from];
   const rest = list.filter((_, i) => i !== from);
+  const listed = new Set(list.map((x) => x.id));
   const linked = (next: (t: Task) => Task[]) => {
     const found = new Set<TaskId>();
     const stack = [t];
     while (stack.length) {
       for (const n of next(stack.pop()!)) {
-        if (n.done_at === null && !found.has(n.id)) {
+        if ((listed.has(n.id) || n.done_at === null) && !found.has(n.id)) {
           found.add(n.id);
           stack.push(n);
         }

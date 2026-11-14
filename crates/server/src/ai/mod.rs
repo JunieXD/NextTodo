@@ -29,7 +29,7 @@ use crate::error::{ApiError, Json};
 use crate::mutate::{self, Actor};
 use crate::tools::args::PlanTask;
 use crate::{store, tools};
-use llm::{Api, Config, PROVIDERS, Provider, Thinking};
+use llm::{Api, Config, Endpoint, PROVIDERS, Provider, Thinking};
 use secret::SecretKey;
 
 /// Who the changes made for jobs are by.
@@ -399,20 +399,23 @@ fn checked(c: Config) -> Result<Config, ApiError> {
     Ok(c)
 }
 
+/// The key `given`, or the one kept on the server when none is.
+async fn key(st: &AppState, owner: String, given: Option<String>) -> Result<String, ApiError> {
+    if let Some(key) = given {
+        return Ok(key);
+    }
+    let ai = st.ai.clone();
+    st.db
+        .call(move |c| {
+            let k = kept(c, &owner)?.ok_or_else(|| ApiError::invalid("请填写 API 密钥", Some("api_key".into())))?;
+            k.key(ai.secret.as_ref(), &owner).ok_or_else(|| ApiError::conflict(UNOPENED))
+        })
+        .await
+}
+
 /// The config `input` gives, with the key kept on the server when it gives none.
 async fn resolve(st: &AppState, owner: String, input: SettingsInput) -> Result<Config, ApiError> {
-    let api_key = match input.api_key {
-        Some(key) => key,
-        None => {
-            let ai = st.ai.clone();
-            st.db
-                .call(move |c| {
-                    let k = kept(c, &owner)?.ok_or_else(|| ApiError::invalid("请填写 API 密钥", Some("api_key".into())))?;
-                    k.key(ai.secret.as_ref(), &owner).ok_or_else(|| ApiError::conflict(UNOPENED))
-                })
-                .await?
-        }
-    };
+    let api_key = key(st, owner, input.api_key).await?;
     checked(Config { provider: input.provider, base_url: input.base_url, model: input.model, thinking: input.thinking, api_key })
 }
 
@@ -500,11 +503,25 @@ pub struct Models {
     models: Vec<String>,
 }
 
-pub async fn models(State(st): State<AppState>, auth: Auth, Json(input): Json<SettingsInput>) -> Result<Json<Models>, ApiError> {
+/// Where to list the models from; without a key, with the one kept. No model: the list is often
+/// what one is picked from.
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export, rename = "AiModelsInput")]
+pub struct ModelsInput {
+    base_url: String,
+    #[ts(optional)]
+    api_key: Option<String>,
+}
+
+pub async fn models(State(st): State<AppState>, auth: Auth, Json(input): Json<ModelsInput>) -> Result<Json<Models>, ApiError> {
     auth.require_device()?;
-    let config = resolve(&st, auth.user_id, input).await?;
+    let api_key = key(&st, auth.user_id, input.api_key).await?;
+    Endpoint { base_url: &input.base_url, api_key: &api_key }.check().map_err(|m| ApiError::invalid(m, None))?;
     let api = st.ai.api.clone();
-    let listed = tokio::task::spawn_blocking(move || api.models(&config)).await.expect("models task panicked");
+    let listed = tokio::task::spawn_blocking(move || api.models(Endpoint { base_url: &input.base_url, api_key: &api_key }))
+        .await
+        .expect("models task panicked");
     listed.map(|models| Json(Models { models })).map_err(|f| ApiError::upstream(f.message))
 }
 

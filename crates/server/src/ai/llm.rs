@@ -121,19 +121,37 @@ impl Config {
     /// The provider, once the rest is checked too.
     pub fn check(&self) -> Result<&'static Provider, String> {
         let p = PROVIDERS.iter().find(|p| p.id == self.provider).ok_or("未知的服务商")?;
-        if !self.base_url.starts_with("https://") || !word(&self.base_url, 300) {
-            return Err("接口地址要以 https:// 开头，不含空格".into());
-        }
+        self.endpoint().check()?;
         if !word(&self.model, 100) {
             return Err("模型名称不能为空，不含空格，最多 100 个字符".into());
-        }
-        if !word(&self.api_key, 500) {
-            return Err("API 密钥不能为空，不含空格".into());
         }
         Ok(p)
     }
 
-    fn url(&self, path: &str) -> String {
+    pub fn endpoint(&self) -> Endpoint<'_> {
+        Endpoint { base_url: &self.base_url, api_key: &self.api_key }
+    }
+}
+
+/// Where a provider's API is, and the key to it: all that listing its models takes.
+#[derive(Clone, Copy)]
+pub struct Endpoint<'a> {
+    pub base_url: &'a str,
+    pub api_key: &'a str,
+}
+
+impl Endpoint<'_> {
+    pub fn check(self) -> Result<(), String> {
+        if !self.base_url.starts_with("https://") || !word(self.base_url, 300) {
+            return Err("接口地址要以 https:// 开头，不含空格".into());
+        }
+        if !word(self.api_key, 500) {
+            return Err("API 密钥不能为空，不含空格".into());
+        }
+        Ok(())
+    }
+
+    fn url(self, path: &str) -> String {
         format!("{}{path}", self.base_url.trim_end_matches('/'))
     }
 }
@@ -167,7 +185,7 @@ impl Failure {
 pub trait Api: Send + Sync {
     /// The model's answer, with `json` when the prompt asks for JSON.
     fn chat(&self, c: &Config, prompt: &Prompt, json: bool, timeout: Duration) -> Result<String, Failure>;
-    fn models(&self, c: &Config) -> Result<Vec<String>, Failure>;
+    fn models(&self, e: Endpoint) -> Result<Vec<String>, Failure>;
 }
 
 /// The request body for `c`'s provider: its way to set the thinking level, and JSON mode where it
@@ -366,7 +384,7 @@ impl Https {
 
     fn answer(&self, c: &Config, prompt: &Prompt, json: bool, timeout: Duration) -> Result<String, Failure> {
         let p = c.check().map_err(Failure::new)?;
-        let body = self.send(c, agent(timeout, self.public_only).post(c.url("/chat/completions")), &body(c, p, prompt, json))?;
+        let body = self.send(c, agent(timeout, self.public_only).post(c.endpoint().url("/chat/completions")), &body(c, p, prompt, json))?;
         let streamed = body.mime_type() == Some("text/event-stream");
         let reader = body.into_with_config().limit(MAX_STREAM).reader();
         let answer = if streamed { read_stream(BufReader::new(reader))? } else { read_whole(reader)? };
@@ -376,11 +394,10 @@ impl Https {
         Ok(answer)
     }
 
-    fn list(&self, c: &Config) -> Result<Vec<String>, Failure> {
-        c.check().map_err(Failure::new)?;
+    fn list(&self, e: Endpoint) -> Result<Vec<String>, Failure> {
         let res = agent(Duration::from_secs(20), self.public_only)
-            .get(c.url("/models"))
-            .header("Authorization", format!("Bearer {}", c.api_key))
+            .get(e.url("/models"))
+            .header("Authorization", format!("Bearer {}", e.api_key))
             .call()
             .map_err(transport)?;
         let text = Self::accepted(res)?.with_config().limit(MAX_ERROR * 16).read_to_string().map_err(transport)?;
@@ -396,8 +413,8 @@ impl Api for Https {
         self.answer(c, prompt, json, timeout).map_err(|f| f.without(&c.api_key))
     }
 
-    fn models(&self, c: &Config) -> Result<Vec<String>, Failure> {
-        self.list(c).map_err(|f| f.without(&c.api_key))
+    fn models(&self, e: Endpoint) -> Result<Vec<String>, Failure> {
+        self.list(e).map_err(|f| f.without(e.api_key))
     }
 }
 
@@ -515,10 +532,10 @@ mod tests {
             assert!(!public(ip.parse().unwrap()), "{ip}");
         }
         for url in ["https://127.0.0.1:9/v1", "https://localhost:9/v1", "https://[::1]:9/v1"] {
-            let c = Config { base_url: url.into(), ..config("custom", Thinking::Off) };
-            assert_eq!(Https { public_only: true }.models(&c).unwrap_err().message, NOT_PUBLIC, "{url}");
+            let e = Endpoint { base_url: url, api_key: "k" };
+            assert_eq!(Https { public_only: true }.models(e).unwrap_err().message, NOT_PUBLIC, "{url}");
             // In local mode it is called: nothing listens there.
-            assert!(Https { public_only: false }.models(&c).unwrap_err().message.starts_with("无法连接接口"), "{url}");
+            assert!(Https { public_only: false }.models(e).unwrap_err().message.starts_with("无法连接接口"), "{url}");
         }
     }
 

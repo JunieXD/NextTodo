@@ -38,7 +38,7 @@
 
 ## 模型配置
 
-设置里的“AI 整理”页：服务商、接口地址、API 密钥、模型、思考程度、保存位置，以及“测试”按钮（用当前配置发一个最小的请求，显示成功或接口返回的错误）。模型可以从接口的 `GET /models` 列表里选，也可以手填。
+设置里的“AI 整理”页：服务商、接口地址、API 密钥、模型、思考程度、保存位置，以及“测试”按钮（用当前配置发一个最小的请求，显示成功或接口返回的错误）。模型可以手填，也可以点“从接口获取列表”，从接口的 `GET /models` 列表里选：只用接口地址和 API 密钥，模型还空着也能获取；获取时这几个字换成“正在获取…”。
 
 只支持 OpenAI 兼容接口（`POST <接口地址>/chat/completions`）。预设的服务商：
 
@@ -181,7 +181,8 @@ cargo run -p nexttodo-server --example ai_eval -- fixtures/ai/organize.json --re
 |---|---|
 | `GET /ai/providers` | 预设的服务商 |
 | `GET` / `PUT` / `DELETE /ai/settings` | 同步到服务器的配置 |
-| `POST /ai/test`、`POST /ai/models` | 用给出的配置（或已同步的配置）测试、列出模型 |
+| `POST /ai/test` | 用给出的配置（或已同步的配置）测试 |
+| `POST /ai/models` | 列出接口的模型：只带接口地址和密钥（不带密钥就用已同步的） |
 | `POST /ai/jobs/{id}/run` | 仅本机：交出配置，开始整理这个等待中的请求；请求不在等待，或这个用户正有一条在整理时返回 409 |
 
 `/snapshot` 增加 `ai_jobs`，变化增加 `ai_job` 一类。数据表见[数据模型](data-model.md#ai_jobs)。agent 用读工具 `jobs` 查看请求和状态，见 [agent 接入](agent.md#工具)。

@@ -6,6 +6,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { ApiError, api, app } from "../api/http";
 import type { AiConfig } from "../api/types/AiConfig";
 import type { AiModels } from "../api/types/AiModels";
+import type { AiModelsInput } from "../api/types/AiModelsInput";
 import type { AiProviders } from "../api/types/AiProviders";
 import type { AiSettings } from "../api/types/AiSettings";
 import type { AiSettingsInput } from "../api/types/AiSettingsInput";
@@ -21,6 +22,9 @@ import { useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
 
 type Place = "local" | "server";
+
+/** What the page is doing, the buttons waiting meanwhile. */
+type Busy = "models" | "test" | "save" | "clear";
 
 /** What the settings row shows: the model and where its settings are, or that there are none. */
 export function useAiSummary(): string {
@@ -47,7 +51,7 @@ export function AiPage() {
   const [models, setModels] = useState<string[]>([]);
   const [result, setResult] = useState<AiTestResult | null>(null);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<Busy | null>(null);
 
   const failed = (e: unknown) => {
     if (!(e instanceof ApiError)) throw e;
@@ -90,26 +94,27 @@ export function AiPage() {
   // The key typed, or none for the one kept on the server.
   const typed = form.api_key?.trim() ?? "";
   const input: AiSettingsInput = { ...form, ...(typed ? { api_key: typed } : { api_key: undefined }) };
-  const run = async (f: () => Promise<void>) => {
-    setBusy(true);
+  const run = async (what: Busy, f: () => Promise<void>) => {
+    setBusy(what);
     try {
       await f();
     } catch (e) {
       failed(e);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
   // Longer than the server waits for the model, a minute, so that its answer comes back.
-  const test = () => run(async () => setResult(await api<AiTestResult>("POST", "/ai/test", input, 70_000)));
+  const test = () => run("test", async () => setResult(await api<AiTestResult>("POST", "/ai/test", input, 70_000)));
   const listModels = () =>
-    run(async () => {
-      const { models } = await api<AiModels>("POST", "/ai/models", input, 30_000);
+    run("models", async () => {
+      const asked: AiModelsInput = { base_url: form.base_url, api_key: input.api_key };
+      const { models } = await api<AiModels>("POST", "/ai/models", asked, 30_000);
       setModels(models);
       if (!models.length) snack("接口没有列出模型，请手动填写");
     });
   const save = () =>
-    run(async () => {
+    run("save", async () => {
       if (place === "local") {
         // The server checks these when they are handed over, which may be much later.
         if (!/^https:\/\/\S+$/.test(form.base_url)) return setError("接口地址要以 https:// 开头，不含空格");
@@ -130,7 +135,7 @@ export function AiPage() {
   const clear = async () => {
     const body = `${inLocalMode() ? "" : "本机和服务器上保存的都会删除，"}等待中的请求要配置后才会整理。`;
     if (!(await confirm({ title: "清除 AI 整理的配置？", body, ok: "清除", danger: true }))) return;
-    await run(async () => {
+    await run("clear", async () => {
       keepAiConfig(user.id, null);
       if (kept) await api("DELETE", "/ai/settings");
       if (app === "android") await setAiReady(false);
@@ -164,8 +169,9 @@ export function AiPage() {
       <div className="field">
         <span>
           模型{" "}
-          <button type="button" className="hint link-btn" onClick={listModels} disabled={busy}>
-            从接口获取列表
+          {/* Saying so where it was asked: the list comes under the field, a while later. */}
+          <button type="button" className="hint link-btn" onClick={listModels} disabled={busy !== null}>
+            {busy === "models" ? "正在获取…" : "从接口获取列表"}
           </button>
         </span>
         <Suggest label="模型" value={form.model} options={models} onChange={(model) => set({ model: model.trim() })} />
@@ -207,14 +213,14 @@ export function AiPage() {
       {error && <p className="form-error">{error}</p>}
       <div className="actions">
         {(kept || localAiConfig(user.id)) && (
-          <button className="text-btn danger-text" onClick={clear} disabled={busy}>
+          <button className="text-btn danger-text" onClick={clear} disabled={busy !== null}>
             清除
           </button>
         )}
-        <button className="tonal-btn" onClick={test} disabled={busy}>
+        <button className="tonal-btn" onClick={test} disabled={busy !== null}>
           测试
         </button>
-        <button className="filled-btn" onClick={save} disabled={busy}>
+        <button className="filled-btn" onClick={save} disabled={busy !== null}>
           保存
         </button>
       </div>

@@ -10,7 +10,7 @@ use std::time::Duration;
 use axum::http::StatusCode;
 use common::{TestApp, id};
 use nexttodo_core::model::{AiJobId, JobState};
-use nexttodo_server::ai::llm::{Api, Config, Failure, Prompt};
+use nexttodo_server::ai::llm::{Api, Config, Endpoint, Failure, Prompt};
 use nexttodo_server::ai::secret::SecretKey;
 use nexttodo_server::ai::{ACTOR, Ai, interrupted, run_queue};
 use nexttodo_server::mutate::{Actor, set_job_state};
@@ -57,7 +57,7 @@ impl Api for Fake {
         answer.map_err(|message| Failure { status: Some(401), message })
     }
 
-    fn models(&self, _: &Config) -> Result<Vec<String>, Failure> {
+    fn models(&self, _: Endpoint) -> Result<Vec<String>, Failure> {
         Ok(vec!["model-a".into(), "model-b".into()])
     }
 }
@@ -395,14 +395,8 @@ async fn settings_are_each_users_own_and_the_key_stays_sealed() {
         kept,
         json!({ "provider": "deepseek", "base_url": "https://api.deepseek.com", "model": "model-b", "thinking": "high", "key_end": "1234" })
     );
-    let models = t
-        .call(
-            "POST",
-            "/ai/models",
-            Some(&alice),
-            Some(json!({ "provider": "deepseek", "base_url": "https://api.deepseek.com", "model": "x", "thinking": "off" })),
-        )
-        .await;
+    // Listed with the key kept, and before a model is picked.
+    let models = t.call("POST", "/ai/models", Some(&alice), Some(json!({ "base_url": "https://api.deepseek.com" }))).await;
     assert_eq!(models.body["models"], json!(["model-a", "model-b"]));
 
     let sealed: Vec<u8> = t.state.db.call(|c| Ok(c.query_row("SELECT api_key FROM ai_settings", [], |r| r.get(0))?)).await.unwrap();

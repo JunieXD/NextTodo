@@ -178,7 +178,7 @@ export function TaskRow({
           </div>
         </div>
       </ContextMenu>
-      {moving && <FolderPicker title="移动到" current={t.folder_id} onPick={(f: FolderId | null) => actions.move(t, f)} onClose={() => setMoving(false)} />}
+      {moving && <FolderPicker mode="move" current={t.folder_id} onPick={(f: FolderId | null) => actions.move(t, f)} onClose={() => setMoving(false)} />}
     </>
   );
 }

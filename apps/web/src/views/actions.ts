@@ -91,7 +91,6 @@ export function useTaskActions(): RowActions & {
 
     /** Moves `t` to the end of `folder`. */
     move(t: Task, folder: FolderId | null) {
-      if (folder === t.folder_id) return;
       const sort_key = lastKey(
         board()
           .contents(folder)

@@ -168,9 +168,6 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
     const name = await prompt({ title: "重命名文件夹", label: "名称", value: f.name, ok: "保存", check: checkFolderName });
     if (name !== null && name !== f.name) commit([{ op: "folder.update", id: f.id, name }]);
   };
-  const move = (parent: FolderId | null) => {
-    if (parent !== f.parent_id) place(f.id, parent, null);
-  };
   const remove = async () => {
     const inside = [...board.snapshot.tasks].filter((t) => t.folder_id && board.inSubtree(t.folder_id, f.id)).length;
     const body = inside ? `其中的子文件夹和 ${inside} 个事项将一并删除，可撤销。` : "其中的子文件夹将一并删除，可撤销。";
@@ -194,7 +191,7 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
     panel: (
       <>
         {tidy.panel}
-        {moving && <FolderPicker title="移动到" current={f.parent_id} exclude={f.id} onPick={move} onClose={() => setMoving(false)} />}
+        {moving && <FolderPicker mode="move" current={f.parent_id} exclude={f.id} onPick={(parent) => place(f.id, parent, null)} onClose={() => setMoving(false)} />}
       </>
     ),
   };

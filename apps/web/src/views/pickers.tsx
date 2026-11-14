@@ -10,15 +10,16 @@ import { useView } from "../session";
 import { Modal } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 
-/** Picks a folder or the root. Folders inside `exclude` (and `exclude` itself) cannot be picked. */
+/** Picks a folder or the root, checking `current`: to add to, the one picked so far; to move to, where
+ * what is moved is now, which cannot be picked, nor can `exclude`, a folder moved, or a folder in it. */
 export function FolderPicker({
-  title,
+  mode,
   current,
   exclude,
   onPick,
   onClose,
 }: {
-  title: string;
+  mode: "add" | "move";
   current: FolderId | null;
   exclude?: FolderId;
   onPick(f: FolderId | null): void;
@@ -26,10 +27,10 @@ export function FolderPicker({
 }) {
   const { board } = useView();
   return (
-    <Modal title={title} onClose={onClose}>
+    <Modal title={mode === "add" ? "添加到" : "移动到"} onClose={onClose}>
       <div className="group picker">
         {board.folderTree().map((f) => {
-          const disabled = exclude !== undefined && f !== null && board.inSubtree(f, exclude);
+          const disabled = (mode === "move" && f === current) || (exclude !== undefined && board.inSubtree(f, exclude));
           return (
             <button key={f ?? "root"} className="row" disabled={disabled} onClick={() => (onPick(f), onClose())}>
               <div className="row-inner" style={{ paddingLeft: 16 + Math.max(0, board.depth(f) - 1) * 22 }}>

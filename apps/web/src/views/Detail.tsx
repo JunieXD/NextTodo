@@ -173,7 +173,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
 
       {panel === "folder" && (
         <FolderPicker
-          title="移动到"
+          mode="move"
           current={t.folder_id}
           onPick={(f) => actions.move(t, f)}
           onClose={() => setPanel(null)}

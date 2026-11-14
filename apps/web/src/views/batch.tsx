@@ -180,17 +180,16 @@ function useBatchActions(place: Place, chosen: Task[], end: () => void): { actio
   };
 
   const move = (folder: FolderId | null) => {
-    const moved = chosen.filter((t) => t.folder_id !== folder);
-    if (!moved.length || !fits(moved.length)) return;
+    if (!chosen.length || !fits(chosen.length)) return;
     // Last there, in the order they were listed.
     const keys = lastKeys(
       board()
         .contents(folder)
         .map((t) => t.sort_key),
-      moved.length,
+      chosen.length,
     );
-    const r = commit(moved.map((t, i): Op => ({ op: "task.update", id: t.id, folder_id: folder, sort_key: keys[i] })));
-    if (r) done(r, `已将 ${moved.length} 项移至“${board().folderName(folder)}”`);
+    const r = commit(chosen.map((t, i): Op => ({ op: "task.update", id: t.id, folder_id: folder, sort_key: keys[i] })));
+    if (r) done(r, `已将 ${chosen.length} 项移至“${board().folderName(folder)}”`);
   };
 
   const remove = async () => {
@@ -209,7 +208,7 @@ function useBatchActions(place: Place, chosen: Task[], end: () => void): { actio
   const allDone = chosen.length > 0 && chosen.every((t) => t.done_at !== null);
   return {
     actions: [allDone ? reopening : { icon: CheckIcon, label: "完成", run: complete }, { icon: FolderInput, label: "移动到", run: () => setMoving(true) }, deleting],
-    panel: moving && <FolderPicker title="移动到" current={place} onPick={move} onClose={() => setMoving(false)} />,
+    panel: moving && <FolderPicker mode="move" current={place} onPick={move} onClose={() => setMoving(false)} />,
   };
 }
 

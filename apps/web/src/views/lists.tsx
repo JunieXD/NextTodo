@@ -402,7 +402,7 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
           {send}
         </Editor>
       )}
-      {picking && <FolderPicker title="添加到" current={into} onPick={setTarget} onClose={() => setPicking(false)} />}
+      {picking && <FolderPicker mode="add" current={into} onPick={setTarget} onClose={() => setPicking(false)} />}
     </>
   );
 }

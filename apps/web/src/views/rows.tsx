@@ -47,7 +47,7 @@ export function TaskRow({
   path,
   step,
   railX,
-  open,
+  leaving,
   batchable,
   selected,
   actions,
@@ -61,8 +61,8 @@ export function TaskRow({
   step?: boolean;
   /** Where the check sits on the rail. */
   railX?: number;
-  /** In a list of open tasks, which a completed one leaves by folding away. */
-  open?: boolean;
+  /** Folding away out of its list, completed (docs/ui.md#交互细节). */
+  leaving?: boolean;
   /** On a page where tasks can be chosen for [batch operations](docs/ui.md#批量操作). */
   batchable?: boolean;
   selected: boolean;
@@ -114,7 +114,6 @@ export function TaskRow({
     );
   }
   const row = useRef<HTMLDivElement>(null);
-  const leaving = open && marks.leaving.has(t.id) && t.done_at !== null;
   // Folding from the height it has.
   useLayoutEffect(() => {
     if (leaving) row.current!.style.setProperty("--h", `${row.current!.offsetHeight}px`);
@@ -263,7 +262,22 @@ export function FolderRow({ folder, board, onOpen }: { folder: Folder; board: Bo
 /** How many lanes the rail may take before the list goes without it: on a phone, on a computer. */
 const MAX_LANES = { narrow: 3, wide: 5 };
 
-export function RailList({ tasks, board, now, selected, actions }: { tasks: Task[]; board: Board; now: Date; selected: TaskId | null; actions: RowActions }) {
+export function RailList({
+  tasks,
+  folding,
+  board,
+  now,
+  selected,
+  actions,
+}: {
+  tasks: Task[];
+  /** Those folding away, completed. */
+  folding: Set<TaskId>;
+  board: Board;
+  now: Date;
+  selected: TaskId | null;
+  actions: RowActions;
+}) {
   // With more lanes the titles get squeezed: the graph view shows them better.
   const layout = railLayout(tasks, board, MAX_LANES[useWide() ? "wide" : "narrow"]);
   const rail = layout ?? { ...plainRail, x: () => plainRail.x };
@@ -308,7 +322,7 @@ export function RailList({ tasks, board, now, selected, actions }: { tasks: Task
           </svg>
         )}
         {tasks.map((t) => (
-          <TaskRow key={t.id} task={t} board={board} now={now} railX={rail.x(t)} open batchable selected={selected === t.id} actions={actions} />
+          <TaskRow key={t.id} task={t} board={board} now={now} railX={rail.x(t)} leaving={folding.has(t.id)} batchable selected={selected === t.id} actions={actions} />
         ))}
       </div>
     </>

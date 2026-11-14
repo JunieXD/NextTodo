@@ -17,7 +17,7 @@ import * as local from "../local";
 import { newer, useServerVersions } from "../server-update";
 import { useSession } from "../session";
 import { type Theme, setTheme, useTheme } from "../theme";
-import { Seg } from "../ui/controls";
+import { Seg, Stepper } from "../ui/controls";
 import { Modal, Tip, forUser, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
 import { Icon } from "../ui/icons";
@@ -25,6 +25,7 @@ import { usePending } from "../updates";
 import { About } from "./About";
 import { AiPage, useAiSummary } from "./AiSettings";
 import { BackgroundSettings } from "./Background";
+import { MAX_KEEP_DONE, setKeepDone, useKeepDone } from "./keep-done";
 import { type SettingsSection, settingsUrl } from "./nav";
 import { StartAtLogin } from "./StartAtLogin";
 
@@ -310,11 +311,24 @@ function Action({ label, onClick }: { label: string; onClick(): void }) {
 
 function Appearance() {
   const theme = useTheme();
+  const keepDone = useKeepDone();
   return (
     <>
       <h2 className="group-title">主题</h2>
       <div style={{ margin: "0 16px" }}>
         <Seg<Theme> label="主题" items={THEMES} value={theme} onChange={setTheme} />
+      </div>
+      <h2 className="group-title">已完成的事项</h2>
+      <div className="group settings">
+        <div className="row">
+          <div className="row-inner">
+            <span className="folder-main">
+              <span>保留最近完成的</span>
+              <span className="folder-sub full">在文件夹里划掉后留在原处，更早的收进“已完成”</span>
+            </span>
+            <Stepper label="保留最近完成的事项数" value={keepDone} min={0} max={MAX_KEEP_DONE} onChange={setKeepDone} />
+          </div>
+        </div>
       </div>
       {app === "android" && <WidgetText />}
     </>

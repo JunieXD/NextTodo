@@ -1,9 +1,9 @@
-import { Check as CheckIcon, ChevronsUpDown, type LucideIcon } from "lucide-react";
+import { Check as CheckIcon, ChevronsUpDown, type LucideIcon, Minus, Plus } from "lucide-react";
 import { Select as Choice, RadioGroup, Switch as Toggle } from "radix-ui";
 import { useContext, useState } from "react";
 import type { Status } from "../domain/board";
 import { useBack } from "./back";
-import { RootContext } from "./feedback";
+import { RootContext, Tip } from "./feedback";
 import { Icon } from "./icons";
 
 /** The round check box of a task: solid ring when ready, dashed while waiting, filled when done. */
@@ -131,5 +131,39 @@ export function Select<T extends string>({
         </Choice.Content>
       </Choice.Portal>
     </Choice.Root>
+  );
+}
+
+/** Typed out of range, it takes the nearest bound rather than refusing it. */
+export function Stepper({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange(n: number): void }) {
+  // While typing, what is typed, empty say.
+  const [typed, setTyped] = useState<string | null>(null);
+  const digits = String(max).length;
+  return (
+    <span className="stepper">
+      <Tip label="减少">
+        <button disabled={value <= min} onClick={() => onChange(value - 1)}>
+          <Icon of={Minus} size={16} />
+        </button>
+      </Tip>
+      <input
+        inputMode="numeric"
+        aria-label={label}
+        style={{ width: `${digits + 1}ch` }}
+        value={typed ?? value}
+        onChange={(e) => {
+          const entered = e.target.value.replace(/\D/g, "");
+          // Too many is the most there can be at once; too few may be the start of more.
+          setTyped(Number(entered) > max ? String(max) : entered);
+          if (entered) onChange(Math.min(max, Math.max(min, Number(entered))));
+        }}
+        onBlur={() => setTyped(null)}
+      />
+      <Tip label="增加">
+        <button disabled={value >= max} onClick={() => onChange(value + 1)}>
+          <Icon of={Plus} size={16} />
+        </button>
+      </Tip>
+    </span>
   );
 }

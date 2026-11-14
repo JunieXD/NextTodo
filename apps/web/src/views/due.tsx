@@ -1,6 +1,6 @@
 // The due date panel: a month to pick the day in, and rows for the time, reminder and repeat.
 
-import { ChevronLeft, ChevronRight, ChevronsUpDown, Minus, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsUpDown } from "lucide-react";
 import { Popover } from "radix-ui";
 import { useContext, useRef, useState } from "react";
 import { flushSync } from "react-dom";
@@ -11,7 +11,7 @@ import type { RepeatUnit } from "../api/types/RepeatUnit";
 import { MAX_REMIND, REMINDERS, REMIND_UNITS, type RemindUnit, day, isoDate, parseTime, remindIn, remindLabel } from "../domain/dates";
 import { WORKDAYS, repeatLabel } from "../domain/repeat";
 import { useBack } from "../ui/back";
-import { Seg, Select } from "../ui/controls";
+import { Seg, Select, Stepper } from "../ui/controls";
 import { Modal, RootContext, Tip } from "../ui/feedback";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
@@ -103,7 +103,7 @@ export function DueEditor({
             <div className="row-inner">
               提前
               <span className="row-value">
-                <Stepper label="提前多少" value={ahead[0]} max={MAX_REMIND / REMIND_UNITS[ahead[1]].minutes} onChange={(n) => setAhead([n, ahead[1]])} />
+                <Stepper label="提前多少" min={1} value={ahead[0]} max={MAX_REMIND / REMIND_UNITS[ahead[1]].minutes} onChange={(n) => setAhead([n, ahead[1]])} />
                 <Seg<RemindUnit>
                   label="提前的单位"
                   small
@@ -142,7 +142,7 @@ export function DueEditor({
             <div className="row-inner">
               间隔
               <span className="row-value">
-                <Stepper label="间隔数" value={every} max={365} onChange={setEvery} />
+                <Stepper label="间隔数" min={1} value={every} max={365} onChange={setEvery} />
                 <Seg<RepeatUnit>
                   label="间隔单位"
                   small
@@ -445,40 +445,6 @@ function Days(p: { label: string; texts: string[]; name(text: string): string; v
           </button>
         );
       })}
-    </span>
-  );
-}
-
-/** Typed out of range, it takes the nearest bound rather than refusing it. */
-function Stepper({ label, value, max, onChange }: { label: string; value: number; max: number; onChange(n: number): void }) {
-  // While typing, what is typed, empty say.
-  const [typed, setTyped] = useState<string | null>(null);
-  const digits = String(max).length;
-  return (
-    <span className="stepper">
-      <Tip label="减少">
-        <button disabled={value <= 1} onClick={() => onChange(value - 1)}>
-          <Icon of={Minus} size={16} />
-        </button>
-      </Tip>
-      <input
-        inputMode="numeric"
-        aria-label={label}
-        style={{ width: `${digits + 1}ch` }}
-        value={typed ?? value}
-        onChange={(e) => {
-          const entered = e.target.value.replace(/\D/g, "");
-          // Too many is the most there can be at once; too few, 0 say, may be the start of more.
-          setTyped(Number(entered) > max ? String(max) : entered);
-          if (entered) onChange(Math.min(max, Math.max(1, Number(entered))));
-        }}
-        onBlur={() => setTyped(null)}
-      />
-      <Tip label="增加">
-        <button disabled={value >= max} onClick={() => onChange(value + 1)}>
-          <Icon of={Plus} size={16} />
-        </button>
-      </Tip>
     </span>
   );
 }

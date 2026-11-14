@@ -10,9 +10,8 @@ import type { Folder } from "../api/types/Folder";
 import type { FolderId } from "../api/types/FolderId";
 import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
-import type { TaskId } from "../api/types/TaskId";
 import { lastKey } from "../domain/apply";
-import { type Board, matches } from "../domain/board";
+import { matches } from "../domain/board";
 import { aiReady, setAiMode, useAiMode } from "../ai";
 import { type DueKind, dueKind, formatDay, localTime } from "../domain/dates";
 import { checkJobText, checkTitle } from "../domain/text";
@@ -31,6 +30,7 @@ import { useNewFolder, usePlaceFolder } from "./FolderMenu";
 import { useMarks } from "./marks";
 import { folderUrl, settingsUrl, useFolderView, useSelection } from "./nav";
 import { JobRows } from "./jobs";
+import { useKeepDone } from "./keep-done";
 import { FolderPicker } from "./pickers";
 import { FolderRow, RailList, TaskRow } from "./rows";
 
@@ -45,7 +45,7 @@ const GROUPS: [DueKind | "none", string, string][] = [
 /** Tasks that can be done now, grouped by when they are due. */
 export function NextBody({ now }: { now: Date }) {
   const { board } = useView();
-  const { linger } = useMarks();
+  const { linger, leaving } = useMarks();
   const { selected } = useSelection();
   const actions = useTaskActions();
   const ready = board.next();
@@ -73,7 +73,7 @@ export function NextBody({ now }: { now: Date }) {
           <h2 className={`group-title ${cls}`}>{label}</h2>
           <div className="group">
             {groups.get(g)!.map((t) => (
-              <TaskRow key={t.id} task={t} board={board} now={now} path step open selected={selected === t.id} actions={actions} />
+              <TaskRow key={t.id} task={t} board={board} now={now} path step leaving={leaving.has(t.id) && t.done_at !== null} selected={selected === t.id} actions={actions} />
             ))}
           </div>
         </section>
@@ -82,24 +82,27 @@ export function NextBody({ now }: { now: Date }) {
   );
 }
 
-/** Pending tasks of a folder in dependency order, with those just completed kept in place for a moment. */
-function openTasks(board: Board, folder: FolderId | null, linger: Set<TaskId>): Task[] {
-  return board.order(
-    board.contents(folder).filter((t) => t.done_at === null || linger.has(t.id)),
-    (t) => t.done_at === null,
-  );
-}
-
 /** A folder's subfolders and tasks. The root always lists its folders, with a row to make one. */
 export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date }) {
   const { board } = useView();
-  const { linger } = useMarks();
+  const { linger, leaving } = useMarks();
+  const keep = useKeepDone();
   const { selected } = useSelection();
   const actions = useTaskActions();
   const [doneOpen, setDoneOpen] = useState(false);
   const subs = board.subfolders(folder);
-  const open = openTasks(board, folder, linger);
-  const done = board.tasksIn(folder).filter((t) => t.done_at !== null && !linger.has(t.id));
+  // Pending tasks in dependency order, with the `keep` most recently completed in place among them.
+  // Those just completed stay a moment besides; when they fold away, as many of the oldest shown fold
+  // instead, which are they themselves when none are kept.
+  const finished = board.tasksIn(folder).filter((t) => t.done_at !== null);
+  const count = keep + finished.filter((t) => linger.has(t.id)).length;
+  const shown = new Set(finished.slice(0, count).map((t) => t.id));
+  const folding = new Set(finished.slice(count - finished.filter((t) => leaving.has(t.id)).length, count).map((t) => t.id));
+  const open = board.order(
+    board.contents(folder).filter((t) => t.done_at === null || shown.has(t.id)),
+    (t) => t.done_at === null,
+  );
+  const done = finished.filter((t) => !shown.has(t.id));
   const jobs = board.snapshot.ai_jobs.filter((j) => j.folder_id === folder);
   useListed(doneOpen ? [...open, ...done] : open);
   return (
@@ -118,7 +121,7 @@ export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date
           </h2>
           <div className="group">
             {jobs.length > 0 && <JobRows jobs={jobs} board={board} />}
-            {open.length > 0 && <RailList tasks={open} board={board} now={now} selected={selected} actions={actions} />}
+            {open.length > 0 && <RailList tasks={open} folding={folding} board={board} now={now} selected={selected} actions={actions} />}
             {done.length > 0 && (
               <button className={`row done-toggle${doneOpen ? " open" : ""}`} onClick={() => setDoneOpen(!doneOpen)}>
                 <div className="row-inner">

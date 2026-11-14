@@ -136,6 +136,9 @@ function useBatchActions(place: Place, chosen: Task[], end: () => void): { actio
   const [moving, setMoving] = useState(false);
   const board = () => store.getView().board;
   const fits = (n: number) => n <= MAX_OPS || (snack(`每次最多处理 ${MAX_OPS} 项`), false);
+  /** `tasks` as they are now that the dialog is answered, those still on the page: another device may
+   * have changed them meanwhile. */
+  const still = (tasks: Task[]) => tasks.flatMap((t) => board().task(t.id) ?? []).filter((t) => (place === "done" ? t.done_at !== null : t.folder_id === place));
   /** Says what was done, with the undo, and ends the batch. */
   const done = (r: { id: MutationId }, text: string) => {
     snack({ text, action: "撤销", onAction: () => undo(r.id) });
@@ -150,26 +153,30 @@ function useBatchActions(place: Place, chosen: Task[], end: () => void): { actio
     const notes = [waiting && `其中 ${waiting} 项还在等待`, repeating && `重复的 ${repeating} 项将顺延到下一次`].filter(Boolean);
     const body = notes.length ? `${notes.join("，")}。` : "可撤销。";
     if (!(await confirm({ title: `将 ${todo.length} 项标为完成？`, body, ok: "标为完成" }))) return;
+    const going = still(todo).filter((t) => t.done_at === null);
+    if (!going.length) return end();
     const readyBefore = new Set(board().next().map((t) => t.id));
     // A repeating task's next due date counts from the day here.
     const today = isoDate(new Date());
-    const r = commit(todo.map((t): Op => ({ op: "task.update", id: t.id, done: true, ...(t.due?.repeat && { today }) })));
+    const r = commit(going.map((t): Op => ({ op: "task.update", id: t.id, done: true, ...(t.due?.repeat && { today }) })));
     if (!r) return;
     const unlocked = board()
       .next()
       .filter((t) => !readyBefore.has(t.id))
       .map((t) => t.id);
     // As one completed alone: each stays a moment before folding away, and what they unlocked flashes.
-    todo.filter((t) => !t.due?.repeat).forEach((t, i) => marking.completed(t.id, i ? [] : unlocked));
-    done(r, unlocked.length ? `已完成 ${todo.length} 项，解锁了 ${unlocked.length} 项` : `已完成 ${todo.length} 项`);
+    going.filter((t) => !t.due?.repeat).forEach((t, i) => marking.completed(t.id, i ? [] : unlocked));
+    done(r, unlocked.length ? `已完成 ${going.length} 项，解锁了 ${unlocked.length} 项` : `已完成 ${going.length} 项`);
   };
 
   const reopen = async () => {
     const todo = chosen.filter((t) => t.done_at !== null);
     if (!fits(todo.length)) return;
     if (!(await confirm({ title: `重新打开 ${todo.length} 项？`, body: `${them(todo.length)}的后续可能因此变回等待中。`, ok: "重新打开" }))) return;
-    const r = commit(todo.map((t): Op => ({ op: "task.update", id: t.id, done: false })));
-    if (r) done(r, `已恢复 ${todo.length} 项`);
+    const going = still(todo).filter((t) => t.done_at !== null);
+    if (!going.length) return end();
+    const r = commit(going.map((t): Op => ({ op: "task.update", id: t.id, done: false })));
+    if (r) done(r, `已恢复 ${going.length} 项`);
   };
 
   const move = (folder: FolderId | null) => {
@@ -190,8 +197,10 @@ function useBatchActions(place: Place, chosen: Task[], end: () => void): { actio
     if (!fits(chosen.length)) return;
     const body = `连着${them(chosen.length)}的依赖一并删除，可撤销。`;
     if (!(await confirm({ title: `删除 ${chosen.length} 项？`, body, ok: "删除", danger: true }))) return;
-    const r = commit(chosen.map((t): Op => ({ op: "task.delete", id: t.id })));
-    if (r) done(r, `已删除 ${chosen.length} 项`);
+    const going = still(chosen);
+    if (!going.length) return end();
+    const r = commit(going.map((t): Op => ({ op: "task.delete", id: t.id })));
+    if (r) done(r, `已删除 ${going.length} 项`);
   };
 
   const reopening: BatchAction = { icon: RotateCcw, label: "重新打开", run: reopen };

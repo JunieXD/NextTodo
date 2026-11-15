@@ -624,6 +624,10 @@ a.text-btn { display: inline-flex; align-items: center; }
 /* Rows of settings in a panel, the value of each on the right; those that open a menu with a chevron. */
 .group.settings { --sep-left: 16px; }
 .settings .row-value { display: flex; align-items: center; gap: 8px; }
+/* Too wide beside their row's name, controls go under it, and onto lines of their own when too wide
+   side by side too, rather than squeeze it, or the words on them, to a character a line. */
+.row-inner.controls { flex-wrap: wrap; row-gap: 8px; }
+.controls .row-value { flex-wrap: wrap; justify-content: flex-end; }
 .row.pick > .row-inner > svg { margin-left: -4px; color: var(--outline); flex: none; }
 /* Rows that only hold controls don't light up as clickable rows do. */
 .desk .settings > div.row:hover > .row-inner { background: var(--group-bg); }

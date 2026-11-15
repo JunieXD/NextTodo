@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight, ChevronsUpDown } from "lucide-react";
 import { Popover } from "radix-ui";
-import { useContext, useRef, useState } from "react";
+import { type ReactNode, useContext, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import type { Due } from "../api/types/Due";
 import type { Repeat } from "../api/types/Repeat";
@@ -99,21 +99,16 @@ export function DueEditor({
           }}
         />
         {time && remind === "custom" && (
-          <div className="row">
-            <div className="row-inner">
-              提前
-              <span className="row-value">
-                <Stepper label="提前多少" min={1} value={ahead[0]} max={MAX_REMIND / REMIND_UNITS[ahead[1]].minutes} onChange={(n) => setAhead([n, ahead[1]])} />
-                <Seg<RemindUnit>
-                  label="提前的单位"
-                  small
-                  items={AHEAD}
-                  value={ahead[1]}
-                  onChange={(u) => setAhead([Math.min(ahead[0], MAX_REMIND / REMIND_UNITS[u].minutes), u])}
-                />
-              </span>
-            </div>
-          </div>
+          <Controls name="提前">
+            <Stepper label="提前多少" min={1} value={ahead[0]} max={MAX_REMIND / REMIND_UNITS[ahead[1]].minutes} onChange={(n) => setAhead([n, ahead[1]])} />
+            <Seg<RemindUnit>
+              label="提前的单位"
+              small
+              items={AHEAD}
+              value={ahead[1]}
+              onChange={(u) => setAhead([Math.min(ahead[0], MAX_REMIND / REMIND_UNITS[u].minutes), u])}
+            />
+          </Controls>
         )}
         <Select<typeof menu>
           label="重复"
@@ -138,63 +133,43 @@ export function DueEditor({
           }}
         />
         {kind === "custom" && (
-          <div className="row">
-            <div className="row-inner">
-              间隔
-              <span className="row-value">
-                <Stepper label="间隔数" min={1} value={every} max={365} onChange={setEvery} />
-                <Seg<RepeatUnit>
-                  label="间隔单位"
-                  small
-                  items={UNITS}
-                  value={unit}
-                  onChange={(u) => {
-                    setUnit(u);
-                    setDays(null);
-                  }}
-                />
-              </span>
-            </div>
-          </div>
+          <Controls name="间隔">
+            <Stepper label="间隔数" min={1} value={every} max={365} onChange={setEvery} />
+            <Seg<RepeatUnit>
+              label="间隔单位"
+              small
+              items={UNITS}
+              value={unit}
+              onChange={(u) => {
+                setUnit(u);
+                setDays(null);
+              }}
+            />
+          </Controls>
         )}
         {on === "week" && (
-          <div className="row">
-            <div className="row-inner">
-              周几
-              <span className="row-value">
-                <Days label="周几" texts={[...WEEKDAYS]} name={(t) => `周${t}`} value={shownDays} onChange={setDays} />
-              </span>
-            </div>
-          </div>
+          <Controls name="周几">
+            <Days label="周几" texts={[...WEEKDAYS]} name={(t) => `周${t}`} value={shownDays} onChange={setDays} />
+          </Controls>
         )}
         {on === "month" && (
-          <div className="row">
-            <div className="row-inner">
-              几号
-              <span className="row-value">
-                <Days label="几号" texts={MONTHDAYS} name={(t) => `${t} 号`} value={shownDays} onChange={setDays} />
-              </span>
-            </div>
-          </div>
+          <Controls name="几号">
+            <Days label="几号" texts={MONTHDAYS} name={(t) => `${t} 号`} value={shownDays} onChange={setDays} />
+          </Controls>
         )}
         {repeat && (
-          <div className="row">
-            <div className="row-inner">
-              下一次从
-              <span className="row-value">
-                <Seg<RepeatFrom>
-                  label="下一次从"
-                  small
-                  items={[
-                    ["due", "截止日期算"],
-                    ["done", "完成那天算"],
-                  ]}
-                  value={from}
-                  onChange={setFrom}
-                />
-              </span>
-            </div>
-          </div>
+          <Controls name="下一次从">
+            <Seg<RepeatFrom>
+              label="下一次从"
+              small
+              items={[
+                ["due", "截止日期算"],
+                ["done", "完成那天算"],
+              ]}
+              value={from}
+              onChange={setFrom}
+            />
+          </Controls>
         )}
       </div>
       <div className="actions">
@@ -425,6 +400,19 @@ function TimeInput({ onChange, onDone }: { onChange(time: string): void; onDone(
 }
 
 const MONTHDAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
+
+/** A row named on the left with controls for its value on the right, or under the name, to the right,
+ * where the two don't fit side by side: a narrow screen, or large text. */
+function Controls({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <div className="row">
+      <div className="row-inner controls">
+        {name}
+        <span className="row-value">{children}</span>
+      </div>
+    </div>
+  );
+}
 
 /** The days a repeat falls on, seven a line: Monday 1 to Sunday 7, or the 1st to the 31st. `texts`
  * are on the buttons, `name` says them in full. The last one picked stays. */

@@ -1,5 +1,5 @@
 // What only the desktop app does: deadline reminders, shown by the app while it runs, the panel of the
-// menu bar or tray icon, and the command line it carries. See docs/desktop.md.
+// menu bar or tray icon and its shortcut, and the command line it carries. See docs/desktop.md.
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen as on } from "@tauri-apps/api/event";
@@ -75,4 +75,15 @@ export type CliStatus = { state: "installed" | "missing" } | { state: "taken"; b
 export const cli = {
   status: () => invoke<CliStatus>("cli_status"),
   install: (replace: boolean) => invoke<void>("install_cli", { replace }),
+};
+
+/** The panel's global shortcut, as `control+alt+KeyK`, and whether another app had it when the app
+ * registered it (`apps/desktop/src-tauri/src/shortcut.rs`). */
+export type Shortcut = { keys: string; taken: boolean };
+
+/** The panel's global shortcut, if any; stopped while the settings take a new one. */
+export const shortcut = {
+  get: () => invoke<Shortcut | null>("shortcut"),
+  set: (keys: string | null) => invoke<void>("set_shortcut", { keys }),
+  pause: (paused: boolean) => invoke<void>("pause_shortcut", { paused }),
 };

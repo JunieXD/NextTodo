@@ -6,6 +6,7 @@ mod cli;
 mod local;
 mod panel;
 mod reminders;
+mod shortcut;
 mod updates;
 
 use std::io::IsTerminal;
@@ -17,7 +18,7 @@ use tauri::webview::NewWindowResponse;
 use tauri::{ActivationPolicy, RunEvent};
 use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
-use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::ShortcutState;
 use tauri_plugin_notification::{Action, ActionType, NotificationExt};
 use tracing_subscriber::EnvFilter;
 
@@ -101,8 +102,6 @@ pub fn run() {
         .with_writer(std::io::stderr)
         .with_ansi(std::io::stderr().is_terminal())
         .init();
-    // ⌃⌥Space on macOS, Ctrl+Alt+Space on Windows, from any app.
-    let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::Space);
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| show(app)))
         .plugin(tauri_plugin_http::init())
@@ -112,8 +111,9 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN])))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(move |app, pressed, event| {
-                    if *pressed == shortcut && event.state == ShortcutState::Pressed {
+                // The panel's, the only one.
+                .with_handler(|app, _, event| {
+                    if event.state == ShortcutState::Pressed {
                         panel::toggle(app);
                     }
                 })
@@ -136,10 +136,12 @@ pub fn run() {
             local::prepare_restore,
             local::commit_restore,
             cli::cli_status,
-            cli::install_cli
+            cli::install_cli,
+            shortcut::shortcut,
+            shortcut::set_shortcut,
+            shortcut::pause_shortcut
         ])
-        .setup(move |app| {
-            use tauri_plugin_global_shortcut::GlobalShortcutExt;
+        .setup(|app| {
             window(app.handle())?;
             panel::build(app.handle())?;
             tray(app.handle())?;
@@ -155,10 +157,8 @@ pub fn run() {
                     open_main(handle.clone(), format!("/?open={task}"));
                 }
             })?;
-            // Taken by another app, the shortcut does nothing; the menu bar or tray icon still works.
-            if let Err(e) = app.global_shortcut().register(shortcut) {
-                eprintln!("全局快捷键注册失败：{e}");
-            }
+            // One that can't be read does nothing, and the settings tell.
+            let _ = shortcut::register(app.handle());
             reminders::start(app.handle().clone());
             if std::env::args().any(|a| a == HIDDEN) {
                 #[cfg(target_os = "macos")]

@@ -628,6 +628,11 @@ a.text-btn { display: inline-flex; align-items: center; }
    side by side too, rather than squeeze it, or the words on them, to a character a line. */
 .row-inner.controls { flex-wrap: wrap; row-gap: 8px; }
 .controls .row-value { flex-wrap: wrap; justify-content: flex-end; }
+/* The panel's shortcut, in a box that takes a new one when clicked. */
+.keys { flex: none; min-width: 88px; height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--outline-variant); font-size: 15px; color: var(--on-surface); }
+.keys.none { color: var(--on-surface-variant); }
+.keys.taking, .keys:focus-visible { border-color: var(--primary); outline: none; }
+.keys.taking { color: var(--primary); }
 .row.pick > .row-inner > svg { margin-left: -4px; color: var(--outline); flex: none; }
 /* Rows that only hold controls don't light up as clickable rows do. */
 .desk .settings > div.row:hover > .row-inner { background: var(--group-bg); }

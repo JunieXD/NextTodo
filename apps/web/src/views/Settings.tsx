@@ -25,9 +25,9 @@ import { usePending } from "../updates";
 import { About } from "./About";
 import { AiPage, useAiSummary } from "./AiSettings";
 import { BackgroundSettings } from "./Background";
+import { DesktopBackground } from "./DesktopBackground";
 import { MAX_KEEP_DONE, setKeepDone, useKeepDone } from "./keep-done";
 import { type SettingsSection, settingsUrl } from "./nav";
-import { StartAtLogin } from "./StartAtLogin";
 
 /** The link that opens registration with an invite code: on the server, which in the app is not
  * where the page comes from. */
@@ -157,7 +157,7 @@ export function SettingsPage({ section, onSignOut }: { section: SettingsSection;
     account: () => <Account onSignOut={onSignOut} />,
     local: () => <LocalMode />,
     appearance: () => <Appearance />,
-    background: () => (app === "android" ? <BackgroundSettings /> : <StartAtLogin />),
+    background: () => (app === "android" ? <BackgroundSettings /> : <DesktopBackground />),
     ai: () => <AiPage />,
     agent: () => <Agent />,
     invites: () => <Invites />,

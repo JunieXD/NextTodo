@@ -155,6 +155,7 @@ Jetpack Glance 写的“接下来”小组件：
 - 需要 Android SDK（`ANDROID_HOME`）和 JDK 21（Capacitor 8 的 Gradle 版本还不支持更新的 JDK）。
 - 本机模式的动态库由 Gradle 在构建前编译（任务 `rust`，调用 `cargo ndk`），还需要 SDK 里的 NDK、`rustup target add aarch64-linux-android` 和 `cargo install cargo-ndk`。
 - `pnpm android:build`（在 `apps/web` 下）：构建网页端、`cap sync android`，再用 Gradle 打 release APK。
+- release 版由 R8 去掉用不到的代码和资源（`minifyEnabled`、`shrinkResources`），APK 从约 20.6 MB 减到 11.7 MB，下载和更新更快。不改类名和方法名（`proguard-rules.pro` 里的 `-dontobfuscate`）：代码本来开源，日志里的调用栈不用映射文件就能读，只多约 0.1 MB。Capacitor、WorkManager、Glance 自带保留规则，本机模式库的 JNI 方法由默认规则保留，不用另加。调试版不压缩，R8 删错东西只在 release 版出现：加了插件、反射或 JNI 后，装 release 版走一遍。
 - 正式版用自签名的密钥签名，直接安装。密钥库和密码不进仓库：路径和密码从环境变量 `NEXTTODO_KEYSTORE`、`NEXTTODO_KEYSTORE_PASSWORD` 读取。
 - 版本号见[更新](#更新)。发布用的 APK 由 `deploy/build.sh` 构建，放进服务端镜像，也上传到 GitHub Releases，见[部署](deploy.md#构建发布)。
 

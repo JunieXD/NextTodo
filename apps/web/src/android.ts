@@ -5,6 +5,7 @@
 import { App } from "@capacitor/app";
 import { type PermissionState, registerPlugin } from "@capacitor/core";
 import { navigate } from "wouter/use-browser-location";
+import type { FolderId } from "./api/types/FolderId";
 import type { Mutation } from "./api/types/Mutation";
 import type { Board } from "./domain/board";
 import { reminders } from "./domain/reminders";
@@ -148,11 +149,11 @@ export const deviceReminders = (board: Board) =>
     start: r.task.start,
   }));
 
-/** What the system calendar shows when it is written to: the open tasks with a deadline, and where
- * each is. */
-export const calendarEvents = (board: Board) =>
+/** What the system calendar shows when it is written to: the open tasks with a deadline in `folders`
+ * (the root is all of them), and where each is. */
+export const calendarEvents = (board: Board, folders: (FolderId | null)[]) =>
   board.snapshot.tasks.flatMap((t) =>
-    t.done_at === null && t.due && board.mine(t)
+    t.done_at === null && t.due && board.mine(t) && folders.some((f) => board.inSubtree(t.folder_id, f))
       ? [{ task: t.id, title: t.title, due: t.due, description: t.folder_id ? `${board.place(t.folder_id)}\n来自 NextTodo` : "来自 NextTodo" }]
       : [],
   );
@@ -168,6 +169,18 @@ export const setCalendar = (target: CalendarTarget | undefined) =>
     await writeCalendar?.();
   });
 
+/** The folders, each with those inside it, whose tasks the calendar gets on this phone, by user: the
+ * root, which is all of them, until others are picked; one that has gone matches nothing. Kept on signing out, as the calendar
+ * is: signing in again would otherwise write the folders left out. */
+const FOLDERS = "calendar-folders:";
+
+export const calendarFolders = (userId: string): (FolderId | null)[] => JSON.parse(localStorage.getItem(FOLDERS + userId) ?? "[null]");
+
+export function setCalendarFolders(userId: string, folders: (FolderId | null)[]) {
+  localStorage.setItem(FOLDERS + userId, JSON.stringify(folders));
+  return inTurn(async () => await writeCalendar?.());
+}
+
 /** Keeps the reminders, the widget and the calendar in step with the local copy of `user`'s data, also
  * when the app comes back to the front: the time has moved on, and the permissions may have changed.
  * Takes in the changes made by the widget and reminders meanwhile. An update that fails is reported to
@@ -181,7 +194,7 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
     await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board)), seq: store.since });
     await NextTodo.setReminders({ reminders: JSON.stringify(deviceReminders(board)) });
   };
-  const calendar = () => NextTodo.updateCalendar({ events: JSON.stringify(calendarEvents(store.getView().board)) });
+  const calendar = () => NextTodo.updateCalendar({ events: JSON.stringify(calendarEvents(store.getView().board, calendarFolders(user))) });
   const takeOver = async () => {
     const { changes } = await NextTodo.takeChanges({ user });
     store.adopt(JSON.parse(changes) as Mutation[]);

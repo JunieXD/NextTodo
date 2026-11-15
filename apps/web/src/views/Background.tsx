@@ -1,10 +1,15 @@
 // In the Android app: what reminders, the widget and the calendar need from the system, and where to
 // grant it.
 
+import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
-import { type CalendarTarget, type DeviceCalendar, NextTodo, type ReminderSettings, setCalendar } from "../android";
+import { type CalendarTarget, type DeviceCalendar, NextTodo, type ReminderSettings, calendarFolders, setCalendar, setCalendarFolders } from "../android";
+import type { FolderId } from "../api/types/FolderId";
+import { useSession, useView } from "../session";
 import { Select, Switch } from "../ui/controls";
 import { forUser, useFeedback } from "../ui/feedback";
+import { Icon } from "../ui/icons";
+import { FolderChecks } from "./pickers";
 
 const TIP_SEEN = "nexttodo.backgroundTip";
 
@@ -128,7 +133,12 @@ function CalendarSettings({ allowed, onAllowed }: { allowed: boolean; onAllowed(
     body = <Row title="写进系统日历" sub="未允许读写日历，日程暂停更新" action={settings} />;
   } else if (calendars) {
     const items: [string, string][] = [["off", "关闭"], ["own", "NextTodo"], ...calendars.map((c): [string, string] => [`${c.id}`, c.name === c.account ? c.name : `${c.name}（${c.account}）`])];
-    body = <Select row label="写进系统日历" items={items} value={`${target}`} onChange={(v) => change(v === "off" || v === "own" ? v : Number(v))} />;
+    body = (
+      <>
+        <Select row label="写进系统日历" items={items} value={`${target}`} onChange={(v) => change(v === "off" || v === "own" ? v : Number(v))} />
+        <CalendarFolders />
+      </>
+    );
   }
   const where = target === "own" ? "写进 App 新建的“NextTodo”日历，只在这台手机上。" : chosen?.synced ? `日程会随账号 ${chosen.account} 同步到云端。` : "这个日历只在这台手机上。";
   return (
@@ -166,5 +176,33 @@ export function BackgroundTip() {
         </button>
       </div>
     </div>
+  );
+}
+
+/** The folders whose tasks the calendar gets (docs/android.md#写进系统日历). */
+function CalendarFolders() {
+  const { snack } = useFeedback();
+  const { user } = useSession();
+  const { board } = useView();
+  const [folders, setFolders] = useState(() => calendarFolders(user.id));
+  const [picking, setPicking] = useState(false);
+  const change = (to: (FolderId | null)[]) => {
+    setFolders(to);
+    setCalendarFolders(user.id, to).catch((e) => snack(forUser("更新系统日历", e)));
+  };
+  // Without those gone, deleted or no longer shared with the user.
+  const live = folders.filter((f) => board.hasFolder(f));
+  const names = live.includes(null) ? "全部" : live.map((f) => board.folderName(f)).join("、") || "未选";
+  return (
+    <>
+      <button className="row pick" onClick={() => setPicking(true)}>
+        <div className="row-inner">
+          <span>写入的文件夹</span>
+          <span className="row-value long">{names}</span>
+          <Icon of={ChevronRight} size={16} />
+        </div>
+      </button>
+      {picking && <FolderChecks title="写入的文件夹" chosen={live} onChange={change} onClose={() => setPicking(false)} />}
+    </>
   );
 }

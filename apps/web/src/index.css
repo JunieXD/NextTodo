@@ -634,6 +634,9 @@ a.text-btn { display: inline-flex; align-items: center; }
 .keys.taking, .keys:focus-visible { border-color: var(--primary); outline: none; }
 .keys.taking { color: var(--primary); }
 .row.pick > .row-inner > svg { margin-left: -4px; color: var(--outline); flex: none; }
+/* The name keeps its width; a long value, such as the names of folders, is cut short instead. */
+.row.pick > .row-inner > span:first-child { flex: none; }
+.row-value.long { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* Rows that only hold controls don't light up as clickable rows do. */
 .desk .settings > div.row:hover > .row-inner { background: var(--group-bg); }
 .row.pick:disabled { cursor: default; }

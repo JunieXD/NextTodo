@@ -1,4 +1,4 @@
-// Panels for choosing: a folder, a task to link.
+// Panels for choosing: a folder or several, a task to link.
 
 import { Check, ChevronLeft, ChevronRight, Folder as FolderIcon, Plus, Search } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -7,6 +7,7 @@ import type { Task } from "../api/types/Task";
 import { matches } from "../domain/board";
 import { checkTitle } from "../domain/text";
 import { useView } from "../session";
+import { Box } from "../ui/controls";
 import { Modal } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { FolderName, folderIcon } from "./share";
@@ -54,6 +55,56 @@ export function FolderPicker({
   const theirs = tree.filter((f) => board.ownerOf(f) !== board.me);
   return (
     <Modal title={mode === "add" ? "添加到" : "移动到"} onClose={onClose}>
+      <div className="group picker">{tree.filter((f) => board.ownerOf(f) === board.me).map(row)}</div>
+      {theirs.length > 0 && (
+        <>
+          <h2 className="group-title">共享给我</h2>
+          <div className="group picker">{theirs.map(row)}</div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+/** Ticks folders, each with the folders inside it; the root is all of them. A folder inside one ticked
+ * is ticked with it, and can't be on its own. The folders others share with the user follow, apart. */
+export function FolderChecks({
+  title,
+  chosen,
+  onChange,
+  onClose,
+}: {
+  title: string;
+  chosen: (FolderId | null)[];
+  onChange(to: (FolderId | null)[]): void;
+  onClose(): void;
+}) {
+  const { board } = useView();
+  const row = (f: FolderId | null) => {
+    const on = chosen.includes(f);
+    const within = chosen.some((c) => c !== f && board.inSubtree(f, c));
+    // Ticked, a folder takes the place of those inside it.
+    const toggle = () => onChange(on ? chosen.filter((c) => c !== f) : [...chosen.filter((c) => !board.inSubtree(c, f)), f]);
+    return (
+      <button key={f ?? "root"} className="row" role="checkbox" aria-checked={on || within} disabled={within} onClick={toggle}>
+        <div className="row-inner" style={{ paddingLeft: 16 + Math.max(0, board.depth(f) - 1) * 22 }}>
+          <span className="folder-ic">
+            <Icon of={folderIcon(board, f)} size={18} />
+          </span>
+          <span className="folder-main">
+            <span>
+              <FolderName board={board} id={f} />
+            </span>
+          </span>
+          <Box checked={on || within} />
+        </div>
+      </button>
+    );
+  };
+  const tree = board.folderTree();
+  const theirs = tree.filter((f) => board.ownerOf(f) !== board.me);
+  return (
+    <Modal title={title} onClose={onClose}>
       <div className="group picker">{tree.filter((f) => board.ownerOf(f) === board.me).map(row)}</div>
       {theirs.length > 0 && (
         <>

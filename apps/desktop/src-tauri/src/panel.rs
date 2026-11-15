@@ -95,6 +95,10 @@ fn place(app: &AppHandle, panel: &tauri::WebviewWindow) {
     let x = (center - width / 2.0).min(right - width).max(left);
     let y = if middle < (top + bottom) / 2.0 { at.y + size.height + gap } else { at.y - height - gap };
     let y = y.min(bottom - height).max(top);
+    // That is where its page goes: on Windows a window's position counts the invisible resize border
+    // around it too, 13 pixels on the left at 200%.
+    let (Ok(page), Ok(window)) = (panel.inner_position(), panel.outer_position()) else { return };
+    let (x, y) = (x - f64::from(page.x - window.x), y - f64::from(page.y - window.y));
     // macOS places windows in points, the same on every screen; Windows in each screen's pixels.
     #[cfg(target_os = "macos")]
     let to = tauri::LogicalPosition::new(x / scale, y / scale);

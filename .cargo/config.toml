@@ -3,3 +3,7 @@
 TS_RS_EXPORT_DIR = { value = "apps/web/src/api/types", relative = true }
 # Timestamps and sequence numbers are i64 but stay far below 2^53, and JSON gives JS plain numbers.
 TS_RS_LARGE_INT = "number"
+# SQLite keeps its temporary files in memory: the server's image has no directory it could write
+# them to (FROM scratch, run as 65534), and a large statement, such as a migration rewriting every
+# mutation, then fails with SQLITE_IOERR_GETTEMPPATH. The bundled SQLite does the same on Android.
+LIBSQLITE3_FLAGS = "-DSQLITE_TEMP_STORE=3"

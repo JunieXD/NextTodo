@@ -78,8 +78,12 @@ object Local {
     fun commit(context: Context) = LocalServer.commit(dir(context))
 }
 
-/** The server's library (`crates/android`), loaded the first time it is used: in local mode only.
- * Its methods throw with a message for the user. */
+/** What an attachment called `name` is called as a file, to open or save (docs/desktop.md#附件): by
+ * the rule the desktop app and the command line follow too. */
+fun fileName(name: String): String = LocalServer.fileName(name)
+
+/** The server's library (`crates/android`), loaded the first time it is used: in local mode, or to
+ * name a file. Its methods throw with a message for the user. */
 private object LocalServer {
     init {
         System.loadLibrary("nexttodo_android")
@@ -95,4 +99,6 @@ private object LocalServer {
     @JvmStatic external fun prepare(dir: String, from: String)
 
     @JvmStatic external fun commit(dir: String)
+
+    @JvmStatic external fun fileName(name: String): String
 }

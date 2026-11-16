@@ -1,7 +1,7 @@
 import "fake-indexeddb/auto";
 import { openDB } from "idb";
 import { expect, test } from "vitest";
-import { draft, keepDraft } from "./drafts";
+import { draft, keepDraft, stagedFiles, withdraw, withdrawn } from "./drafts";
 import { forget, forgetCopy, forgetOthers, load, saver } from "./persist";
 import { type Copy, Store } from "./store";
 
@@ -14,7 +14,7 @@ const fail = (e: unknown) => {
 };
 
 /** The database as another tab would see it; each test first lets `load` set it up. */
-const raw = () => openDB("nexttodo", 1);
+const raw = () => openDB("nexttodo", 2);
 const mine = (u: string) => IDBKeyRange.bound([u], [u, []]);
 const outbox = async (u: string) => (await (await raw()).getAll("outbox", mine(u))).map((p) => p.at);
 
@@ -105,4 +105,22 @@ test("a copy saved before sharing has the user in it, and every task as theirs",
   const { seq, base } = (await load(someone(u), "here"))!;
   expect([seq, base.shares, base.people]).toEqual([7, [], [{ id: u, username: "alice", display_name: "Alice" }]]);
   expect(base.tasks[0]).toMatchObject({ assignees: [], created_by: u, updated_by: u });
+});
+
+test("a change withdrawn into a draft leaves the outbox as the app opens, its text and files back in the box once", async () => {
+  const u = user(7);
+  await load(someone(u), "here");
+  const db = await raw();
+  await db.put("copies", copy(1), [u, "tab-a"]);
+  for (const n of [1, 2]) await db.put("outbox", pending(n), [u, pending(n).mutation.id]);
+  // The tab the server turned the files down in wrote the draft, and closed before taking the change
+  // out; told again, it puts nothing back twice.
+  const file = { id: "019a4b2c-0000-7000-8000-000000000200", name: "图片 1.png", type: "image/png", size: 3, error: "文件超过服务器允许的大小" };
+  const back = { place: "root", text: "买菜", files: [file] };
+  withdraw(u, pending(1).mutation.id, back);
+  withdraw(u, pending(1).mutation.id, back);
+  const opened = await load(someone(u), "here");
+  expect(opened!.outbox.map((p) => p.at)).toEqual([2]);
+  // Still noted: a tab open meanwhile may have it, and is told by the tab that uploads.
+  expect([draft(u, "root"), stagedFiles(u, "root"), withdrawn(u)]).toEqual(["买菜", [file], [pending(1).mutation.id]]);
 });

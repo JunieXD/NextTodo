@@ -1,6 +1,6 @@
 // Rows in lists: tasks, folders, and the folder view's tasks with the dependency rail on the left.
 
-import { CalendarClock, CheckCheck, ChevronRight, Clock, FolderInput, Check as CheckIcon, PanelRightOpen, Repeat, RotateCcw, Trash2 } from "lucide-react";
+import { CalendarClock, CheckCheck, ChevronRight, Clock, FolderInput, Check as CheckIcon, PanelRightOpen, Paperclip, Repeat, RotateCcw, Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FolderId } from "../api/types/FolderId";
 import type { Op } from "../api/types/Op";
@@ -111,6 +111,15 @@ export function TaskRow({
       <span key="unlock" className="m-unlock">
         <Icon of={Outbound} size={14} />
         解锁 {unlocks} 项
+      </span>,
+    );
+  }
+  const files = board.attachments(t.id).length;
+  if (files) {
+    meta.push(
+      <span key="files" aria-label={`${files} 个附件`}>
+        <Icon of={Paperclip} size={14} />
+        {files}
       </span>,
     );
   }

@@ -2,6 +2,7 @@
 // dependencies and folder paths.
 // A twin of `crates/core/src/board.rs`; both are checked against `fixtures/board.json`.
 
+import type { Attachment } from "../api/types/Attachment";
 import type { Folder } from "../api/types/Folder";
 import type { FolderId } from "../api/types/FolderId";
 import type { Person } from "../api/types/Person";
@@ -56,6 +57,7 @@ export class Board {
   private readonly direct = new Map<FolderId | null, Task[]>();
   /** Position of each folder when the tree is listed top to bottom, root first. */
   private readonly rank = new Map<FolderId | null, number>();
+  private readonly attached = new Map<TaskId, Attachment[]>();
 
   private steps?: Map<TaskId, [number, number]>;
 
@@ -92,10 +94,17 @@ export class Board {
       push(this.prerequisites, d.after, d.before);
       push(this.dependents, d.before, d.after);
     }
+    for (const a of snapshot.attachments) if (a.task_id) push(this.attached, a.task_id, a);
+    // Ids are UUIDv7: in the order they were made.
+    for (const list of this.attached.values()) list.sort((a, b) => cmp(a.id, b.id));
   }
 
   task(id: TaskId): Task | undefined {
     return this.tasks.get(id);
+  }
+
+  attachments(t: TaskId): Attachment[] {
+    return this.attached.get(t) ?? [];
   }
 
   /** The task with `number` among those of `owner`, a user id. */

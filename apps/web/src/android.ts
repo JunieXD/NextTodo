@@ -5,6 +5,7 @@
 import { App } from "@capacitor/app";
 import { type PermissionState, registerPlugin } from "@capacitor/core";
 import { navigate } from "wouter/use-browser-location";
+import type { Attachment } from "./api/types/Attachment";
 import type { FolderId } from "./api/types/FolderId";
 import type { Mutation } from "./api/types/Mutation";
 import type { Board } from "./domain/board";
@@ -108,9 +109,44 @@ interface NextTodoPlugin {
   prepareRestore(): Promise<{ picked: boolean }>;
   /** The backup prepared replaces the data at the next start. */
   commitRestore(): Promise<void>;
+  /** Writes the `first` piece of attachment `id`'s file, or the next, base64 `data`, to be opened or
+   * saved as `name` (docs/android.md#附件); the `last` puts it in place. */
+  writeAttachment(o: { id: string; name: string; data: string; first: boolean; last: boolean }): Promise<void>;
+  /** Hands the file written to an app for its `type`. */
+  openAttachment(o: { id: string; name: string; type: string }): Promise<void>;
+  /** Asks where to save the file written and copies it there; `saved` is what the file is called,
+   * nothing when the user cancelled. */
+  saveAttachment(o: { id: string; name: string; type: string }): Promise<{ saved?: string }>;
 }
 
 export const NextTodo = registerPlugin<NextTodoPlugin>("NextTodo");
+
+/** How much of a file goes over the bridge at a time. */
+const PIECE = 512 * 1024;
+
+const base64 = (b: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",", 2)[1]);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(b);
+  });
+
+/** Files handed to the app go one at a time: two of the same, opened twice say, would be written
+ * together. */
+let handing = Promise.resolve();
+
+/** Hands attachment `a`'s file to the app, a piece at a time, to open or save. */
+export function writeAttachment(a: Attachment, file: Blob): Promise<void> {
+  const done = handing.then(async () => {
+    for (let at = 0; at === 0 || at < file.size; at += PIECE) {
+      const data = await base64(file.slice(at, at + PIECE));
+      await NextTodo.writeAttachment({ id: a.id, name: a.name, data, first: at === 0, last: at + PIECE >= file.size });
+    }
+  });
+  handing = done.catch(() => {});
+  return done;
+}
 
 /** Changes coming close together are handled once, at most this long after the first: a stream of
  * them does not hold back a reminder. */

@@ -2,6 +2,7 @@
 //! bar or tray icon and a global shortcut for the panel, deadline reminders while it runs, updates,
 //! the server inside it for local mode, and the command line it carries. See docs/desktop.md.
 
+mod attachments;
 mod cli;
 mod local;
 mod panel;
@@ -135,6 +136,8 @@ pub fn run() {
             local::backup_local,
             local::prepare_restore,
             local::commit_restore,
+            attachments::open_attachment,
+            attachments::save_attachment,
             cli::cli_status,
             cli::install_cli,
             shortcut::shortcut,
@@ -142,6 +145,7 @@ pub fn run() {
             shortcut::pause_shortcut
         ])
         .setup(|app| {
+            attachments::clear();
             window(app.handle())?;
             panel::build(app.handle())?;
             tray(app.handle())?;

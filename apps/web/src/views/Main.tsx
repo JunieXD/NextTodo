@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { useLocalRunner } from "../ai";
 import { useLocation, useSearchParams } from "wouter";
 import { app } from "../api/http";
+import { fetchServerSettings } from "../attach";
 import type { LogEntry } from "../api/types/LogEntry";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
@@ -85,6 +86,7 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
       signedOut: () => onSignedOut("登录已失效，请重新登录"),
       rejected: (_, e) => snack(`保存失败：${e.message}`),
       unsaved: () => snack("无法保存到本机，关闭页面前请保持联网"),
+      told: (text) => snack(text),
       appFailed: (e) => snack(forUser(app === "android" ? "更新提醒和小组件" : "更新提醒", e)),
       arrived(entries) {
         const board = session.store.getView().board;
@@ -104,6 +106,7 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
   });
   useEffect(() => {
     void session.check();
+    void fetchServerSettings();
   }, [session]);
   return null;
 }

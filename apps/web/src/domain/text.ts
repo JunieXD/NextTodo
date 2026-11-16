@@ -31,6 +31,15 @@ export function checkDescription(s: string): Checked {
   return { ok: true, value };
 }
 
+/** An attachment's name, which is the file's name when it is saved: not a path. */
+export function checkFileName(s: string): Checked {
+  const c = line(s, "名称", 200);
+  if (!c.ok) return c;
+  if (/[/\\]/.test(c.value)) return { ok: false, error: "名称不能包含 / 或 \\" };
+  if (c.value === "." || c.value === "..") return { ok: false, error: "名称不能是 . 或 .." };
+  return c;
+}
+
 /** Text for AI to organize: long and on many lines, as written. */
 export function checkJobText(s: string): Checked {
   const value = s.replace(control, "");

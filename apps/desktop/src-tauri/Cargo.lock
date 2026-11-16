@@ -2909,8 +2909,10 @@ name = "nexttodo-desktop"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "nexttodo-core",
  "nexttodo-server",
  "open",
+ "percent-encoding",
  "rustls",
  "serde",
  "serde_json",
@@ -2939,7 +2941,9 @@ dependencies = [
  "chacha20poly1305",
  "clap",
  "flate2",
+ "http-body-util",
  "hyper-util",
+ "mime_guess",
  "nexttodo-core",
  "rand 0.10.3",
  "rcgen",

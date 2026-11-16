@@ -39,6 +39,8 @@ function setup(saved: Saved = Store.empty()) {
   const sent: Mutation[] = [];
   const rejected: [Mutation, ErrorBody][] = [];
   const arrived: LogEntry[][] = [];
+  const uploaded = new Set<string>();
+  const awaited: [string, boolean][] = [];
   let last = saved;
   const outbox = new Map(saved.outbox.map((p) => [p.mutation.id, p]));
   const store = new Store(ME, saved, {
@@ -49,6 +51,12 @@ function setup(saved: Saved = Store.empty()) {
       return written;
     },
     send: (m) => sent.push(m),
+    uploaded: (m) => m.ops.every((op) => op.op !== "attachment.add" || uploaded.has(op.id)),
+    awaiting(m, missing) {
+      awaited.push([m.id, missing]);
+      // As the session's files do: missing, they are not uploaded from then on.
+      if (missing) for (const op of m.ops) if (op.op === "attachment.add") uploaded.delete(op.id);
+    },
     rejected: (m, e) => rejected.push([m, e]),
     arrived: (e) => arrived.push(e),
   });
@@ -58,7 +66,7 @@ function setup(saved: Saved = Store.empty()) {
     written = new Promise((r) => (release = r));
     return release;
   };
-  return { store, sent, rejected, arrived, titles, hold, saved: () => last };
+  return { store, sent, rejected, arrived, titles, hold, uploaded, awaited, saved: () => last };
 }
 
 /** Lets the saves made so far finish. */
@@ -202,4 +210,36 @@ test("a task becomes ready as its start comes, the view moving on then and not b
   vi.setSystemTime(new Date(2026, 10, 12, 19, 30));
   store.tick();
   expect([status(), moved]).toEqual(["waiting", 2]);
+});
+
+test("a change adding attachments goes once its files are uploaded, and those after it once the server has it", async () => {
+  const { store, sent, uploaded, awaited } = setup();
+  store.connected();
+  store.commit([{ op: "task.create", id: id(1), title: "报销", sort_key: "a1" }]);
+  const add = store.commit([{ op: "attachment.add", id: id(2), name: "发票.png", type: "image/png", size: 3, task_id: id(1) }]);
+  store.commit([{ op: "attachment.update", id: id(2), name: "发票 1.png" }]);
+  await settle();
+  expect(sent.map((m) => m.id)).toHaveLength(1);
+  expect(awaited.at(-1)).toEqual([add.id, false]);
+
+  uploaded.add(id(2));
+  store.flush();
+  expect(sent.map((m) => m.id).at(-1)).toBe(add.id);
+  expect(sent).toHaveLength(2);
+
+  // Its file is not on the server after all: it waits to be uploaded again, and what comes after it
+  // with it.
+  store.reject(add.id, { code: "file_missing", message: "附件的文件不在服务器上，请重新上传" });
+  expect(awaited.at(-1)).toEqual([add.id, true]);
+  expect(store.getView().pending).toBe(3);
+  store.flush();
+  expect(sent).toHaveLength(2);
+  uploaded.add(id(2));
+  store.flush();
+  expect(sent).toHaveLength(3);
+  expect(sent.at(-1)!.id).toBe(add.id);
+
+  store.receive([echo(sent[0], 1, []), echo(sent[2], 2, [])], 2);
+  expect(sent).toHaveLength(4);
+  expect(sent.at(-1)!.ops[0].op).toBe("attachment.update");
 });

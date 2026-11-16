@@ -96,13 +96,13 @@ const kick = (socket: FakeSocket) => socket.onmessage!({ data: JSON.stringify({ 
 /** Whether the session's tab went back to signing in. */
 function watch(s: Session) {
   const heard = { signedOut: false };
-  s.listen({ rejected() {}, arrived() {}, unsaved() {}, appFailed() {}, signedOut: () => (heard.signedOut = true) });
+  s.listen({ rejected() {}, arrived() {}, unsaved() {}, appFailed() {}, told() {}, signedOut: () => (heard.signedOut = true) });
   return heard;
 }
 
 /** How many copies and pending changes of the user's are on the device. */
 async function saved(u: User) {
-  const db = await openDB("nexttodo", 1);
+  const db = await openDB("nexttodo", 2);
   const mine = IDBKeyRange.bound([u.id], [u.id, []]);
   return [await db.count("copies", mine), await db.count("outbox", mine)];
 }
@@ -233,7 +233,7 @@ test("a tab left open while the site's storage is cleared leaves a later sign-in
   const a = await signIn(u);
   localStorage.clear();
   server.cookie = null;
-  const db = await openDB("nexttodo", 1);
+  const db = await openDB("nexttodo", 2);
   await Promise.all([db.clear("copies"), db.clear("outbox")]);
   // Signed in again a minute later.
   const now = Date.now;

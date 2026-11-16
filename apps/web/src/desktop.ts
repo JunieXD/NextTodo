@@ -6,6 +6,7 @@ import { listen as on } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { navigate } from "wouter/use-browser-location";
 import { app } from "./api/http";
+import type { Attachment } from "./api/types/Attachment";
 import { reminders } from "./domain/reminders";
 import type { Store } from "./sync/store";
 
@@ -58,6 +59,17 @@ export const inPanel = app === "desktop" && getCurrentWindow().label === "panel"
 export const openMain = (path: string) => invoke<void>("open_main", { path });
 
 export const hidePanel = () => getCurrentWindow().hide();
+
+/** Hands attachment `a`'s file to the app (`src-tauri/src/attachments.rs`): the body is the file, not
+ * JSON. */
+const handOver = async <T>(command: string, a: Attachment, file: Blob) =>
+  invoke<T>(command, new Uint8Array(await file.arrayBuffer()), { headers: { "x-id": a.id, "x-name": encodeURIComponent(a.name) } });
+
+/** Opens the file with the system's default app. */
+export const openAttachment = (a: Attachment, file: Blob) => handOver<void>("open_attachment", a, file);
+
+/** Asks where to save the file; where it went, nothing when the user cancelled. */
+export const saveAttachment = (a: Attachment, file: Blob) => handOver<string | null>("save_attachment", a, file);
 
 /** Listens in the panel for being opened, to quick add; in the main window for what to show, from
  * the panel or a click on a reminder. */

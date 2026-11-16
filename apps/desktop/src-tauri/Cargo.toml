@@ -15,10 +15,14 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
+# Attachments' names as files (src/attachments.rs).
+nexttodo-core = { path = "../../../crates/core" }
 # Local mode: the server, inside the app (src/local.rs).
 nexttodo-server = { path = "../../../crates/server", features = ["agent-port"] }
 # Links from the page, in the default browser or mail app.
 open = "5.4.5"
+# The attachment's name, URL-encoded in a header with its file (src/attachments.rs).
+percent-encoding = "2.3.2"
 # The TLS crypto the updater's downloads need: its client brings none (src/updates.rs).
 rustls = { version = "0.23.46", default-features = false, features = ["ring"] }
 serde = { version = "1", features = ["derive"] }

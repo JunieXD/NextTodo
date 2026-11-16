@@ -47,6 +47,11 @@ export interface Hooks {
    * another tab. Resolves once written, or failed to be. */
   save(copy: Copy, queued: Pending[], settled: MutationId[]): Promise<void>;
   send(m: Mutation): void;
+  /** Whether the files of the attachments `m` adds are on the server. */
+  uploaded(m: Mutation): boolean;
+  /** A change waits for its files to be uploaded; or, `missing`, the server has not got them after
+   * all, to be uploaded again, `uploaded` saying no from now on until they are (docs/web.md#附件). */
+  awaiting(m: Mutation, missing: boolean): void;
   rejected(m: Mutation, e: ErrorBody): void;
   /** Changes that arrived from elsewhere: other devices, or agents with a token. */
   arrived(entries: LogEntry[]): void;
@@ -64,6 +69,8 @@ export class Store {
   private local = new Map<MutationId, Effect[]>();
   /** Changes made here that are not saved yet, and so not sent. */
   private readonly saving = new Set<MutationId>();
+  /** Changes handed to `send` since the connection last caught up. */
+  private released = new Set<MutationId>();
   private view!: View;
   private data!: Data;
   private readonly listeners = new Set<() => void>();
@@ -112,10 +119,46 @@ export class Store {
     return this.seq;
   }
 
-  /** Changes saved and still waiting for the server, in the order they were made. */
+  /** Changes saved and still waiting for the server that can go now, in the order they were made.
+   * One adding attachments goes once their files are uploaded, and those after it once the server has
+   * it: should its files be missing there, it goes again, still before them. */
   get unconfirmed(): Mutation[] {
-    return this.outbox.filter((p) => !this.saving.has(p.mutation.id)).map((p) => p.mutation);
+    return this.sendable().ready;
   }
+
+  /** What can go now, and the change waiting for its files, if any. */
+  private sendable(): { ready: Mutation[]; waiting?: Mutation } {
+    const ready: Mutation[] = [];
+    for (const { mutation: m } of this.outbox) {
+      if (this.saving.has(m.id)) continue;
+      if (!m.ops.some((op) => op.op === "attachment.add")) {
+        ready.push(m);
+        continue;
+      }
+      if (!this.hooks.uploaded(m)) return { ready, waiting: m };
+      ready.push(m);
+      break;
+    }
+    return { ready };
+  }
+
+  /** The connection has caught up: everything still unconfirmed that can go goes again. */
+  connected() {
+    this.released = new Set();
+    this.flush();
+  }
+
+  /** Sends what can go and has not been sent on this connection: after a change is saved, its files
+   * uploaded, or one it waited for confirmed. */
+  flush = () => {
+    const { ready, waiting } = this.sendable();
+    for (const m of ready) {
+      if (this.released.has(m.id)) continue;
+      this.released.add(m.id);
+      this.hooks.send(m);
+    }
+    if (waiting) this.hooks.awaiting(waiting, false);
+  };
 
   /** Makes a change here at once and queues it for the server. Throws `Rejected` when it cannot
    * apply, in which case nothing is queued. */
@@ -129,7 +172,7 @@ export class Store {
     this.saving.add(id);
     void this.changed([pending]).then(() => {
       this.saving.delete(id);
-      if (this.outbox.includes(pending)) this.hooks.send(pending.mutation);
+      this.flush();
     });
     return { id, effects };
   }
@@ -146,10 +189,8 @@ export class Store {
     this.outbox = [...this.outbox, ...fresh].sort((a, b) => cmp(a.mutation.id, b.mutation.id));
     for (const p of fresh) this.saving.add(p.mutation.id);
     void this.changed(fresh).then(() => {
-      for (const p of fresh) {
-        this.saving.delete(p.mutation.id);
-        if (this.outbox.includes(p)) this.hooks.send(p.mutation);
-      }
+      for (const p of fresh) this.saving.delete(p.mutation.id);
+      this.flush();
     });
   }
 
@@ -169,6 +210,7 @@ export class Store {
     this.changed([], [...arrived]);
     const others = entries.filter((e) => !mine.has(e.id));
     if (others.length) this.hooks.arrived(others);
+    this.flush();
   }
 
   /** The server has a change, as of `seq`. Usually the change itself arrives next as `changes`,
@@ -178,22 +220,38 @@ export class Store {
     if (seq > this.seq || !this.outbox.some((p) => p.mutation.id === id)) return;
     this.outbox = this.outbox.filter((p) => p.mutation.id !== id);
     this.changed([], [id]);
+    this.flush();
   }
 
-  /** The server turned a change down: drop it, which takes its effect out of the view. */
+  /** The server turned a change down: drop it, which takes its effect out of the view. One whose
+   * attachments' files it is missing stays, to go again once they are uploaded again. */
   reject(id: MutationId, error: ErrorBody) {
     const pending = this.outbox.find((p) => p.mutation.id === id);
     if (!pending) return;
+    if (error.code === "file_missing") {
+      this.released.delete(id);
+      this.hooks.awaiting(pending.mutation, true);
+      return;
+    }
     this.outbox = this.outbox.filter((p) => p !== pending);
     this.changed([], [id]);
     this.hooks.rejected(pending.mutation, error);
+    this.flush();
   }
 
-  /** Another tab heard the server turn a change down: drop it here too, without telling again. */
-  drop(id: MutationId) {
-    if (!this.outbox.some((p) => p.mutation.id === id)) return;
+  /** Another tab heard the server turn a change down, or this device withdrew it: drop it here too,
+   * without telling again. Resolves once that is saved. */
+  drop(id: MutationId): Promise<void> {
+    if (!this.outbox.some((p) => p.mutation.id === id)) return Promise.resolve();
     this.outbox = this.outbox.filter((p) => p.mutation.id !== id);
-    this.changed([], [id]);
+    const saved = this.changed([], [id]);
+    this.flush();
+    return saved;
+  }
+
+  /** The outbox's changes, in order: those adding attachments are what the files to upload are for. */
+  get queued(): Mutation[] {
+    return this.outbox.map((p) => p.mutation);
   }
 
   /** A fresh copy of everything from the server; changes not yet confirmed stay queued. */

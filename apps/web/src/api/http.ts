@@ -103,6 +103,40 @@ export function fetchServer(path: string, init?: RequestInit): Promise<Response>
   return send(`${server.url}${path}`, init);
 }
 
+/** How long sending or fetching a file may take: 20 MB over a slow line. */
+const FILE_TIMEOUT_MS = 10 * 60_000;
+
+/** Sends or fetches an attachment's file (docs/web.md#附件), the whole of it within the time allowed:
+ * the server's answer. Android's goes by the WebView's own fetch, which the server allows across
+ * origins: CapacitorHttp would pass the whole file over the bridge. Throws `ApiError`: the server's
+ * refusal, or `OFFLINE` when it cannot be reached, the transfer breaks off or takes too long, or `stop`
+ * aborts it. */
+export async function fileRequest(method: "GET" | "PUT", id: string, stop: AbortSignal, body?: { blob: Blob; type: string }): Promise<Blob> {
+  const headers: Record<string, string> = body ? { "Content-Type": body.type } : {};
+  if (server.token) headers.Authorization = `Bearer ${server.token}`;
+  const send = app === "desktop" ? tauriFetch : app === "android" ? window.CapacitorWebFetch : fetch;
+  const abort = new AbortController();
+  const stopped = () => abort.abort();
+  stop.addEventListener("abort", stopped);
+  if (stop.aborted) stopped();
+  const timer = setTimeout(stopped, FILE_TIMEOUT_MS);
+  let res: Response;
+  let answer: Blob;
+  try {
+    const init = { method, headers, body: body?.blob, signal: abort.signal, ...(app === "desktop" && server.local && DIRECT) };
+    res = await send(`${server.url}/api/v1/files/${id}`, init);
+    answer = await res.blob();
+  } catch {
+    throw new ApiError(0, OFFLINE, server.local ? "无法连接 App 内置的服务端，请重试" : "无法连接服务器，请检查网络后重试");
+  } finally {
+    clearTimeout(timer);
+    stop.removeEventListener("abort", stopped);
+  }
+  if (res.ok) return answer;
+  const error = parseError(await answer.text());
+  throw new ApiError(res.status, error.code ?? "error", error.message ?? `服务器错误（${res.status}），请稍后重试`);
+}
+
 export async function api<T>(method: string, path: string, body?: unknown, timeoutMs = TIMEOUT_MS): Promise<T> {
   const headers: Record<string, string> = body === undefined ? {} : { "Content-Type": "application/json" };
   if (server.token) headers.Authorization = `Bearer ${server.token}`;

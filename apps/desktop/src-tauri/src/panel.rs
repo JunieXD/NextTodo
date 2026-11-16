@@ -29,6 +29,8 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         .skip_taskbar(true)
         .visible(false)
         .shadow(true)
+        // Files dragged in reach the page, to be added as attachments (docs/desktop.md#附件).
+        .disable_drag_drop_handler()
         // Rounded: on macOS the page draws the corners, clear outside them; Windows 11 rounds those of
         // a window with a shadow itself.
         .transparent(cfg!(target_os = "macos"));

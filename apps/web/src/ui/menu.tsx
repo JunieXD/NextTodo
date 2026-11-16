@@ -1,10 +1,11 @@
 // Menus of actions, alike whether a "…" button or a right click opens them; and the browser's own menu
 // only where it helps, on text.
 
-import type { LucideIcon } from "lucide-react";
-import { ContextMenu as Context } from "radix-ui";
-import { type ReactElement, useContext, useState } from "react";
-import { RootContext } from "./feedback";
+import { Ellipsis, type LucideIcon } from "lucide-react";
+import { ContextMenu as Context, DropdownMenu } from "radix-ui";
+import { type ReactElement, type ReactNode, useContext, useRef, useState } from "react";
+import { useBack } from "./back";
+import { RootContext, Tip } from "./feedback";
 import { Icon } from "./icons";
 
 export interface MenuItem {
@@ -46,6 +47,71 @@ export function ContextMenu({ items, off, children }: { items: MenuItem[]; off?:
         </Context.Content>
       </Context.Portal>
     </Context.Root>
+  );
+}
+
+/** A button opening a menu of `items`: by default a "…" one, which `label` names. */
+export function MenuButton({
+  label,
+  items,
+  className = "icon-btn",
+  align = "end",
+  children = <Icon of={Ellipsis} />,
+}: {
+  label?: string;
+  items: MenuItem[];
+  className?: string;
+  align?: "start" | "end";
+  children?: ReactNode;
+}) {
+  const root = useContext(RootContext);
+  const [menu, setMenu] = useState(false);
+  // A finger come down on the button, to open the menu once the tap is done.
+  const tap = useRef(false);
+  useBack("dialog", menu ? () => setMenu(false) : null);
+  const trigger = (
+    <DropdownMenu.Trigger
+      className={className}
+      // Radix opens the menu as the button goes down. A finger's opens it once the tap is done, as the
+      // system's menus do: the press shows, and a scroll or a long press begun on it opens nothing. A
+      // click with no pointer behind it, from a screen reader say, opens it too.
+      onPointerDown={(e) => {
+        tap.current = e.pointerType !== "mouse";
+        if (tap.current) e.preventDefault();
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (tap.current || !(e.nativeEvent as PointerEvent).pointerType) setMenu(true);
+        tap.current = false;
+      }}
+    >
+      {children}
+    </DropdownMenu.Trigger>
+  );
+  return (
+    <DropdownMenu.Root open={menu} onOpenChange={setMenu}>
+      {label ? <Tip label={label}>{trigger}</Tip> : trigger}
+      <DropdownMenu.Portal container={root}>
+        <DropdownMenu.Content
+          className="menu"
+          align={align}
+          sideOffset={4}
+          // A tap on the button while the menu is open comes down outside it: it closes the menu, and
+          // its click opens nothing.
+          onPointerDownOutside={() => (tap.current = false)}
+          // Rendered elsewhere, its clicks still reach what holds the button in React, such as a row
+          // that opens on a click.
+          onClick={(e) => e.stopPropagation()}
+        >
+          {items.map((item) => (
+            <DropdownMenu.Item key={item.label} className={itemClass(item)} onSelect={item.onSelect}>
+              <Icon of={item.icon} />
+              {item.label}
+            </DropdownMenu.Item>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
 

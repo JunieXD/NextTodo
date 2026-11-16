@@ -2,6 +2,7 @@ package cn.juniexd.nexttodo
 
 import android.Manifest
 import android.app.NotificationManager
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -9,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.util.Base64
 import androidx.activity.result.ActivityResult
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
@@ -26,6 +28,8 @@ import com.getcapacitor.annotation.CapacitorPlugin
 import com.getcapacitor.annotation.Permission
 import com.getcapacitor.annotation.PermissionCallback
 import java.io.File
+import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +41,9 @@ private val installing = AtomicBoolean(false)
 /** Whether the APKs earlier runs of the app downloaded have gone. This run's stay: an installer may
  * not have read them yet. */
 private var cleared = false
+
+/** In the cache, the attachments' files written to be opened or saved. */
+private const val ATTACHMENTS = "attachments"
 
 /** What the web app asks of Android beyond the stock plugins: see `apps/web/src/android.ts`. Its
  * permission `calendar` is checked and asked for with the plugin's own `checkPermissions` and
@@ -392,6 +399,71 @@ class NextTodoPlugin : Plugin() {
     fun commitRestore(call: PluginCall) = work(call, "恢复") {
         Local.commit(context)
         JSObject()
+    }
+
+    /** The directory of attachment `id`'s file, to open or save: the id read as one, a single part of
+     * the path whatever the page sends. */
+    private fun directory(id: String) = File(context.cacheDir, "$ATTACHMENTS/${UUID.fromString(id)}")
+
+    /** The file in it, under the name the attachment goes by. */
+    private fun attachment(id: String, name: String) = File(directory(id), fileName(name))
+
+    /** The attachments opened in the last run go as the page loads. */
+    override fun load() {
+        File(context.cacheDir, ATTACHMENTS).deleteRecursively()
+    }
+
+    /** Writes the `first` piece of an attachment's file, or the next, base64 `data`: the bridge takes
+     * no whole file (docs/android.md#附件). Beside the file until the `last`, which puts it in place
+     * whole: an app reading the file never gets part of it. */
+    @PluginMethod
+    fun writeAttachment(call: PluginCall) = work(call, "读取附件") {
+        val id = call.getString("id")!!
+        val file = attachment(id, call.getString("name")!!)
+        val part = File(directory(id).path + ".part")
+        val data = Base64.decode(call.getString("data")!!, Base64.DEFAULT)
+        if (call.getBoolean("first")!!) {
+            file.parentFile!!.mkdirs()
+            part.writeBytes(data)
+        } else {
+            part.appendBytes(data)
+        }
+        if (call.getBoolean("last")!! && !part.renameTo(file)) throw IOException("无法写入附件")
+        JSObject()
+    }
+
+    /** Hands the file written to an app for its `type`, allowed to read it. */
+    @PluginMethod
+    fun openAttachment(call: PluginCall) = work(call, "打开附件") {
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", attachment(call.getString("id")!!, call.getString("name")!!))
+        val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, call.getString("type"))
+        try {
+            context.startActivity(intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: ActivityNotFoundException) {
+            throw Exception("没有能打开这种文件的应用", e)
+        }
+        JSObject()
+    }
+
+    /** Asks where to save the file written, offering its name, and copies it there: `saved`, the
+     * file's name, or nothing when the user cancelled. */
+    @PluginMethod
+    fun saveAttachment(call: PluginCall) {
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+            .setType(call.getString("type"))
+            .putExtra(Intent.EXTRA_TITLE, fileName(call.getString("name")!!))
+        startActivityForResult(call, intent, "saveTo")
+    }
+
+    @ActivityCallback
+    private fun saveTo(call: PluginCall?, result: ActivityResult) {
+        if (call == null) return
+        val uri = result.data?.data ?: return call.resolve()
+        work(call, "保存附件") {
+            val file = attachment(call.getString("id")!!, call.getString("name")!!)
+            context.contentResolver.openOutputStream(uri, "wt")!!.use { out -> file.inputStream().use { it.copyTo(out) } }
+            JSObject().put("saved", name(uri))
+        }
     }
 
     /** What the user sees a document called. */

@@ -18,7 +18,9 @@ import { aiReady, setAiMode, useAiMode } from "../ai";
 import { type DueKind, dueKind, formatDay, localTime } from "../domain/dates";
 import { checkJobText, checkTitle } from "../domain/text";
 import { useCommit, useSession, useView } from "../session";
-import { draft, keepDraft } from "../sync/drafts";
+import { addOps, filesIn, plan } from "../attach";
+import { type Staged, draft, keepDraft, keepStaged, onDrafts, stagedFiles } from "../sync/drafts";
+import { dropFiles } from "../sync/files";
 import { useBack } from "../ui/back";
 import { Fold } from "../ui/fold";
 import { RootContext, Tip, useFeedback } from "../ui/feedback";
@@ -28,6 +30,7 @@ import { composing } from "../ui/keys";
 import { useLeave } from "../ui/leave";
 import { useWide } from "../ui/hooks";
 import { useTaskActions } from "./actions";
+import { StagedFiles, useKeepFiles } from "./attachments";
 import { useListed } from "./batch";
 import { useRowDrag } from "./drag";
 import { useNewFolder, usePlaceFolder } from "./FolderMenu";
@@ -268,8 +271,9 @@ export function SearchResults({ query, now }: { query: string; now: Date }) {
 }
 
 /** Adds tasks by typing, or, switched to AI organizing with ✦, has AI organize what is written into
- * tasks; that text can be expanded to write at length. In a folder (`null` for the root) it adds
- * there; elsewhere to a folder picked beside it, the root by default. */
+ * tasks; that text can be expanded to write at length. Files pasted or dropped in go with what is
+ * added. In a folder (`null` for the root) it adds there; elsewhere to a folder picked beside it, the
+ * root by default. */
 export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   const { board } = useView();
   const commit = useCommit();
@@ -280,6 +284,53 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   const edit = (text: string) => {
     setTitle(text);
     keepDraft(user.id, place, text);
+  };
+  const [staged, setStaged] = useState(() => stagedFiles(user.id, place));
+  const stage = (files: Staged[]) => {
+    setStaged(files);
+    keepStaged(user.id, place, files);
+  };
+  // An AI job turned down comes back here, also from another tab; the box of another tab is kept too.
+  useEffect(
+    () =>
+      onDrafts(() => {
+        setTitle(draft(user.id, place));
+        setStaged(stagedFiles(user.id, place));
+      }),
+    [user.id, place],
+  );
+  const keepFiles = useKeepFiles();
+  const addFiles = async (files: File[]) => {
+    if (!files.length) return;
+    const kept = await keepFiles(plan(files, staged.map((f) => f.name), snack));
+    // As they are now: more may have come meanwhile. None once signed out, when the drafts are gone.
+    if (kept.length) stage([...stagedFiles(user.id, place), ...kept]);
+  };
+  const unstage = (f: Staged) => {
+    stage(staged.filter((s) => s.id !== f.id));
+    void dropFiles(user.id, [f.id]);
+  };
+  /** What pasting or dropping files does in the box's text. */
+  const files = {
+    onPaste: (e: React.ClipboardEvent) => {
+      const list = filesIn(e.clipboardData);
+      if (!list.length) return;
+      e.preventDefault();
+      void addFiles(list);
+    },
+    onDragOver: (e: React.DragEvent) => e.dataTransfer.types.includes("Files") && e.preventDefault(),
+    onDrop: (e: React.DragEvent) => {
+      const list = filesIn(e.dataTransfer);
+      if (!list.length) return;
+      e.preventDefault();
+      void addFiles(list);
+    },
+  };
+  /** Whether the files staged can go; one the server turned down has to be taken out first. */
+  const canSend = () => {
+    const refused = staged.find((f) => f.error);
+    if (refused) snack(`“${refused.name}”传不上去，去掉后再提交`);
+    return !refused;
   };
   // The device remembers the mode last used.
   const ai = useAiMode();
@@ -332,16 +383,20 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
     requestAnimationFrame(focus);
   };
 
-  /** Hands the text to AI organizing; whether it went. */
+  /** Hands the text to AI organizing, with the files staged, in one change: the job starts once they
+   * are uploaded. Whether it went. */
   const organize = () => {
     const c = checkJobText(title);
     if (!c.ok) {
       snack(c.error);
       return false;
     }
-    const op: Op = { op: "ai_job.create", id: uuidv7(), text: c.value, local_time: localTime(new Date()), ...(into && { folder_id: into }) };
-    if (!commit([op])) return false;
+    if (!canSend()) return false;
+    const id = uuidv7();
+    const op: Op = { op: "ai_job.create", id, text: c.value, local_time: localTime(new Date()), ...(into && { folder_id: into }) };
+    if (!commit([op, ...addOps(staged, { job_id: id })])) return false;
     edit("");
+    stage([]);
     snack("已交给 AI 整理");
     return true;
   };
@@ -352,9 +407,14 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
     if (ai) return void organize();
     const c = checkTitle(title);
     if (!c.ok) return snack([...title.trim()].length > 200 ? `${c.error}；长段文字可以点 ✦ 交给 AI 整理` : c.error);
-    const op: Op = { op: "task.create", id: uuidv7(), title: c.value, sort_key: lastKey(board.contents(into).map((t) => t.sort_key)), ...(into && { folder_id: into }) };
+    if (!canSend()) return;
+    const id = uuidv7();
+    const op: Op = { op: "task.create", id, title: c.value, sort_key: lastKey(board.contents(into).map((t) => t.sort_key)), ...(into && { folder_id: into }) };
     if (!commit([op])) return;
+    // Each file in a change of its own: one the server turns down leaves the task and the others.
+    for (const f of staged) commit(addOps([f], { task_id: id }));
     edit("");
+    stage([]);
     snack(`已添加“${c.value}”`);
   };
 
@@ -382,10 +442,12 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
 
   return (
     <>
-      <form className="quick-add" onSubmit={submit}>
+      <form className="quick-add" onSubmit={submit} onDragOver={files.onDragOver} onDrop={files.onDrop}>
         <div className="qa-field">
+          <StagedFiles files={staged} onRemove={unstage} />
           {/* A title pasted on many lines is joined into one. */}
           <textarea
+            onPaste={files.onPaste}
             ref={area}
             rows={1}
             value={title}
@@ -424,7 +486,16 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
         </div>
       </form>
       {expanded && (
-        <Editor text={title} onEdit={edit} onEnter={enter} onSubmit={() => organize() && setExpanded(false)} onClose={() => setExpanded(false)}>
+        <Editor
+          text={title}
+          staged={staged}
+          files={files}
+          onEdit={edit}
+          onUnstage={unstage}
+          onEnter={enter}
+          onSubmit={() => organize() && setExpanded(false)}
+          onClose={() => setExpanded(false)}
+        >
           {pick}
           {send}
         </Editor>
@@ -438,7 +509,11 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
  * window on a computer. Kept outside the bar's form, which would otherwise get its submits too. */
 function Editor(props: {
   text: string;
+  staged: Staged[];
+  /** What pasting or dropping files does. */
+  files: { onPaste(e: React.ClipboardEvent): void; onDragOver(e: React.DragEvent): void; onDrop(e: React.DragEvent): void };
   onEdit(text: string): void;
+  onUnstage(f: Staged): void;
   onEnter(e: React.KeyboardEvent<HTMLTextAreaElement>): void;
   onSubmit(): void;
   onClose(): void;
@@ -484,7 +559,18 @@ function Editor(props: {
                 </Dialog.Close>
               </Tip>
             </div>
-            <textarea ref={area} value={props.text} onChange={(e) => props.onEdit(e.target.value)} onKeyDown={props.onEnter} placeholder="交给 AI 整理" aria-label="交给 AI 整理的内容" />
+            <StagedFiles files={props.staged} onRemove={props.onUnstage} />
+            <textarea
+              ref={area}
+              value={props.text}
+              onChange={(e) => props.onEdit(e.target.value)}
+              onKeyDown={props.onEnter}
+              onPaste={props.files.onPaste}
+              onDragOver={props.files.onDragOver}
+              onDrop={props.files.onDrop}
+              placeholder="交给 AI 整理"
+              aria-label="交给 AI 整理的内容"
+            />
             <div className="editor-foot">{props.children}</div>
           </form>
         </Dialog.Content>

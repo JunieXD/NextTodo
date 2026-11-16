@@ -132,7 +132,7 @@ Jetpack Glance 写的“接下来”小组件：
 ## 附件
 
 - 页面上传、下载[附件](design.md#附件)的文件用 WebView 自己的 `fetch`（`window.CapacitorWebFetch`），连服务器和本机模式都一样。CapacitorHttp 把请求体和回复整个经原生和网页之间的桥传递，官方文档说数据量大时会出问题；服务端的附件接口为此允许来源 `https://localhost` 跨域，见 [API](api.md#附件)。
-- 打开和保存文件：文件取自页面的 `files` 表（没有就先下载），所以下载过的离线也能打开，还没上传完的也能。页面把它分块（每块 512 KB，base64）交给插件的 `writeAttachment`，写进缓存目录的 `attachments/<附件 ID>/<名称>`：一次经桥传整个文件会出问题。文件名由 Rust 的同一个函数给出，规则见[桌面 App](desktop.md#附件)。写完再调：
+- 打开和保存文件：文件取自页面的 `files` 表（没有就先下载），所以下载过的离线也能打开，还没上传完的也能。页面把它分块（每块 512 KB，base64）交给插件的 `writeAttachment`，写进缓存目录的 `attachments/<附件 ID>/<名称>`：一次经桥传整个文件会出问题。先写在旁边，最后一块写完才换上，别的 App 读到的总是完整的文件；页面一次只交一个文件。附件 ID 按 UUID 解析，文件名由 Rust 的同一个函数给出，规则见[桌面 App](desktop.md#附件)。写完再调：
   - `openAttachment`：经 FileProvider 用 `ACTION_VIEW` 交给别的 App，授予临时的读权限；没有能打开的 App 时报“没有能打开这种文件的应用”。
   - `saveAttachment`：用 `ACTION_CREATE_DOCUMENT` 让用户选位置，复制进去。
   - 这些文件在下次启动 App 时删掉。

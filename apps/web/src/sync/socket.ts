@@ -96,7 +96,7 @@ export class Socket {
           this.synced = true;
           this.retry = FIRST_RETRY;
           this.opts.status("online");
-          for (const m of this.store.unconfirmed) this.write({ type: "mutate", mutation: m });
+          this.store.connected();
         }
         return;
       case "ack":

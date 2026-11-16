@@ -1,9 +1,8 @@
 // What can be done to a folder: make one inside it, tidy it with AI, share, rename, move, delete. From
 // its "…" button, or by right-clicking it on a computer.
 
-import { DropdownMenu } from "radix-ui";
-import { Ellipsis, FolderInput, FolderPlus, ListChecks, NotebookPen, Pencil, Sparkles, Trash2, Users } from "lucide-react";
-import { type ReactElement, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import { FolderInput, FolderPlus, ListChecks, NotebookPen, Pencil, Sparkles, Trash2, Users } from "lucide-react";
+import { type ReactElement, type ReactNode, useEffect, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
@@ -15,11 +14,9 @@ import { localTime } from "../domain/dates";
 import { rekey } from "../domain/reorder";
 import { checkFolderName, checkJobText } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
-import { useBack } from "../ui/back";
-import { Modal, RootContext, Tip, useFeedback } from "../ui/feedback";
+import { Modal, useFeedback } from "../ui/feedback";
 import { composing } from "../ui/keys";
-import { Icon } from "../ui/icons";
-import { ContextMenu, type MenuItem, itemClass } from "../ui/menu";
+import { ContextMenu, type MenuItem, MenuButton } from "../ui/menu";
 import { useAiNote } from "./AiNotes";
 import { useBatch } from "./batch";
 import { folderUrl, settingsUrl } from "./nav";
@@ -224,7 +221,6 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
 /** The "…" button of the folder shown, or of the root: what its right-click menu has, and choosing its
  * tasks for [batch operations](docs/ui.md#批量操作). */
 export function FolderMenu({ folder }: { folder: FolderId | null }) {
-  const root = useContext(RootContext);
   const { items: own, panel } = useFolderActions(folder);
   const { snack } = useFeedback();
   const { board } = useView();
@@ -232,50 +228,10 @@ export function FolderMenu({ folder }: { folder: FolderId | null }) {
   const choose = () => (board.contents(folder).length ? batch.start() : snack("这里没有事项"));
   // After making a folder and the two of AI, which the root's menu has alone.
   const items = own.length ? [...own.slice(0, 3), { icon: ListChecks, label: "批量操作", onSelect: choose }, ...own.slice(3)] : [];
-  const [menu, setMenu] = useState(false);
-  // A finger come down on the button, to open the menu once the tap is done.
-  const tap = useRef(false);
-  useBack("dialog", menu ? () => setMenu(false) : null);
   if (!items.length) return null;
   return (
     <>
-      <DropdownMenu.Root open={menu} onOpenChange={setMenu}>
-        <Tip label="文件夹操作">
-          <DropdownMenu.Trigger
-            className="icon-btn"
-            // Radix opens the menu as the button goes down. A finger's opens it once the tap is done, as the
-            // system's menus do: the press shows, and a scroll or a long press begun on it opens nothing. A
-            // click with no pointer behind it, from a screen reader say, opens it too.
-            onPointerDown={(e) => {
-              tap.current = e.pointerType !== "mouse";
-              if (tap.current) e.preventDefault();
-            }}
-            onClick={(e) => {
-              if (tap.current || !(e.nativeEvent as PointerEvent).pointerType) setMenu(true);
-              tap.current = false;
-            }}
-          >
-            <Icon of={Ellipsis} />
-          </DropdownMenu.Trigger>
-        </Tip>
-        <DropdownMenu.Portal container={root}>
-          <DropdownMenu.Content
-            className="menu"
-            align="end"
-            sideOffset={4}
-            // A tap on the button while the menu is open comes down outside it: it closes the menu, and
-            // its click opens nothing.
-            onPointerDownOutside={() => (tap.current = false)}
-          >
-            {items.map((item) => (
-              <DropdownMenu.Item key={item.label} className={itemClass(item)} onSelect={item.onSelect}>
-                <Icon of={item.icon} />
-                {item.label}
-              </DropdownMenu.Item>
-            ))}
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
+      <MenuButton label="文件夹操作" items={items} />
       {panel}
     </>
   );

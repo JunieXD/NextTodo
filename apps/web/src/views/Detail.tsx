@@ -1,8 +1,9 @@
-// A task's details: title, folder, who is to do it, due date, description, what it waits for and
-// what waits for it.
+// A task's details: title, folder, who is to do it, due date, description, attachments, what it
+// waits for and what waits for it.
 
 import { Bell, Calendar, CalendarCheck, CalendarClock, Folder as FolderIcon, KeyRound, type LucideIcon, Plus, User, Users, X } from "lucide-react";
 import { type ReactNode, Suspense, useEffect, useRef, useState } from "react";
+import type { Attachment } from "../api/types/Attachment";
 import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
@@ -10,6 +11,7 @@ import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
 import { day, formatDay, formatDue, formatMoment, isoDate, remindLabel, startLabel } from "../domain/dates";
 import { repeatLabel } from "../domain/repeat";
+import { filesIn, reference } from "../attach";
 import { checkDescription, checkTitle } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
 import { Check, Seg } from "../ui/controls";
@@ -18,6 +20,7 @@ import { Icon } from "../ui/icons";
 import { composing } from "../ui/keys";
 import { Description } from "../ui/lazy-markdown";
 import { useTaskActions } from "./actions";
+import { type Adding, useAddFiles, useAttachments } from "./attachments";
 import { DueEditor, StartEditor } from "./due";
 import { useMarks } from "./marks";
 import { useSelection } from "./nav";
@@ -98,17 +101,38 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
   const t = board.task(id);
   const actions = useTaskActions();
   const commit = useCommit();
+  const { snack } = useFeedback();
   const { pop } = useMarks();
   const { select } = useSelection();
   const [panel, setPanel] = useState<Panel>(null);
   if (closing && panel) setPanel(null);
+  const update = (fields: TaskFields) => commit([{ op: "task.update", id, ...fields }]);
+  const { store } = useSession();
+  /** Puts text where the description is being edited, while it is. */
+  const editing = useRef<((text: string) => void) | null>(null);
+  const refer = (a: Attachment) => {
+    const ref = reference(a);
+    if (editing.current) editing.current(ref);
+    else {
+      // On a line of its own after what is there.
+      const description = store.getView().board.task(id)!.description.trimEnd();
+      const c = checkDescription(description ? `${description}\n\n${ref}` : ref);
+      if (!c.ok) return snack(c.error);
+      if (!update({ description: c.value })) return;
+    }
+    snack("已在描述中引用");
+  };
+  const addFiles = useAddFiles();
+  const add = (files: File[]) => addFiles(id, files);
+  const attachments = useAttachments(id, refer, add);
+  const dropping = useFileDrop(id, add);
   if (!t) return <div className="detail-empty">该事项已删除</div>;
   const status = board.status(t);
   const shared = board.sharedRoot(t.folder_id);
-  const update = (fields: TaskFields) => commit([{ op: "task.update", id: t.id, ...fields }]);
 
   return (
-    <div className="detail">
+    <div className="detail" {...dropping.handlers}>
+      {dropping.on && <div className="drop-cover">松开添加附件</div>}
       <div className="d-head" data-drag>
         <Check status={status} large pop={pop === t.id} onToggle={() => actions.toggle(t)} />
         <div className="d-title-wrap">
@@ -172,7 +196,16 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
         {(t.due?.repeat || t.completions) && <Prop icon={CalendarCheck} label="已完成" value={completionsLabel(t, now)} cls={t.completions ? "" : "muted"} />}
       </div>
 
-      <DescriptionSection key={t.id} task={t} onSave={(description) => update({ description })} />
+      <DescriptionSection
+        key={t.id}
+        task={t}
+        attachments={board.attachments(t.id)}
+        onEditing={(insert) => (editing.current = insert)}
+        onSave={(description) => update({ description })}
+        onFiles={add}
+        onAttachment={attachments.open}
+      />
+      {attachments.section}
 
       <div className="d-sec">
         <div>
@@ -316,10 +349,74 @@ function Title({ task, onSave }: { task: Task; onSave: Save }) {
   );
 }
 
-/** The description: shown as Markdown with tickable checklists, or edited as text. An edit is saved
- * when leaving the editor, also by switching to another task. */
-function DescriptionSection({ task, onSave }: { task: Task; onSave: Save }) {
+/** Files dropped on the details are added to the task; while they are dragged over, `on`. One dropped
+ * in the description's editor is added there, which also refers to it. Files pasted while nothing
+ * that takes text has the focus are added too. */
+function useFileDrop(task: TaskId, add: (files: File[]) => unknown) {
+  const [on, setOn] = useState(false);
+  // Entering a child of the details leaves the one before.
+  const depth = useRef(0);
+  const latest = useRef(add);
+  useEffect(() => {
+    latest.current = add;
+  });
+  useEffect(() => {
+    const paste = (e: ClipboardEvent) => {
+      const files = filesIn(e.clipboardData);
+      if (!files.length || (e.target as Element).closest("input, textarea, [contenteditable]")) return;
+      e.preventDefault();
+      latest.current(files);
+    };
+    document.addEventListener("paste", paste);
+    return () => document.removeEventListener("paste", paste);
+  }, [task]);
+  const files = (e: React.DragEvent) => e.dataTransfer.types.includes("Files");
+  return {
+    on,
+    handlers: {
+      onDragEnter: (e: React.DragEvent) => {
+        if (!files(e)) return;
+        depth.current++;
+        setOn(true);
+      },
+      onDragLeave: (e: React.DragEvent) => {
+        if (files(e) && --depth.current === 0) setOn(false);
+      },
+      onDragOver: (e: React.DragEvent) => files(e) && e.preventDefault(),
+      onDrop: (e: React.DragEvent) => {
+        if (!files(e)) return;
+        depth.current = 0;
+        setOn(false);
+        // The description's editor has taken them.
+        if (e.defaultPrevented) return;
+        e.preventDefault();
+        latest.current(filesIn(e.dataTransfer));
+      },
+    },
+  };
+}
+
+/** The description: shown as Markdown with tickable checklists and the task's attachments referred to,
+ * or edited as text, where pasting or dropping files adds them and refers to them. An edit is saved
+ * when leaving the editor, also by switching to another task. While it is edited, `onEditing` is given
+ * what puts text where the cursor is. */
+function DescriptionSection({
+  task,
+  attachments,
+  onEditing,
+  onSave,
+  onFiles,
+  onAttachment,
+}: {
+  task: Task;
+  attachments: Attachment[];
+  onEditing(insert: ((text: string) => void) | null): void;
+  onSave: Save;
+  onFiles(files: File[]): Adding;
+  onAttachment(a: Attachment): void;
+}) {
   const [draft, setDraft] = useState<Draft | null>(null);
+  const area = useRef<HTMLTextAreaElement>(null);
   const { snack } = useFeedback();
   const keep = useKeepEdit("description", "描述");
   const pending = useRef({ draft, task, onSave });
@@ -344,6 +441,27 @@ function DescriptionSection({ task, onSave }: { task: Task; onSave: Save }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- saves once, when leaving
     [],
   );
+  /** Puts `text` in place of what is from `from` to `to` in the editor, the cursor after it. */
+  const insert = (text: string, [from, to]: [number, number]) => {
+    setDraft((d) => d && { ...d, text: d.text.slice(0, from) + text + d.text.slice(to) });
+    requestAnimationFrame(() => area.current?.setSelectionRange(from + text.length, from + text.length));
+  };
+  useEffect(() => {
+    if (draft === null) return;
+    onEditing((text) => insert(text, [area.current!.selectionStart, area.current!.selectionEnd]));
+    return () => onEditing(null);
+  });
+  /** Adds `files` and refers to them in place of what is selected; takes back the references to those
+   * that could not be added, while still editing and as put. */
+  const addHere = (files: File[], at: [number, number]) => {
+    const { planned, added } = onFiles(files);
+    if (!planned.length) return;
+    insert(planned.map(reference).join(" "), at);
+    void added.then((ids) => {
+      const failed = planned.filter((p) => !ids.includes(p.id));
+      if (failed.length) setDraft((d) => d && { ...d, text: failed.reduce((text, p) => text.replace(reference(p), ""), d.text) });
+    });
+  };
   const mode = (v: "view" | "edit") => {
     if (v === "edit") setDraft({ text: task.description, base: task.description });
     else {
@@ -375,16 +493,29 @@ function DescriptionSection({ task, onSave }: { task: Task; onSave: Save }) {
         {draft === null ? (
           <div className="md">
             <Suspense>
-              <Description source={task.description} onChange={onSave} />
+              <Description source={task.description} attachments={attachments} onChange={onSave} onAttachment={onAttachment} />
             </Suspense>
           </div>
         ) : (
           <textarea
+            ref={area}
             className="md-edit"
             value={draft.text}
             placeholder="支持 Markdown，以 - [ ] 开头为清单项"
             onChange={(e) => setDraft({ ...draft, text: e.target.value })}
             onBlur={() => void blur()}
+            onPaste={(e) => {
+              const files = filesIn(e.clipboardData);
+              if (!files.length) return;
+              e.preventDefault();
+              addHere(files, [e.currentTarget.selectionStart, e.currentTarget.selectionEnd]);
+            }}
+            onDrop={(e) => {
+              const files = filesIn(e.dataTransfer);
+              if (!files.length) return;
+              e.preventDefault();
+              addHere(files, [e.currentTarget.selectionStart, e.currentTarget.selectionStart]);
+            }}
           />
         )}
       </div>

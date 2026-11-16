@@ -228,7 +228,7 @@ label.row { cursor: pointer; }
 /* quick add: a field with its own fill and the buttons beside it, at the bottom as the field grows */
 .quick-add { position: absolute; z-index: 4; left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 10px); display: flex; align-items: flex-end; gap: 6px; padding: 5px; border-radius: 25px;
   background: var(--group-bg); box-shadow: var(--shadow-3); }
-.qa-field { flex: 1; min-width: 0; display: flex; border-radius: 20px; background: var(--surface-container); }
+.qa-field { flex: 1; min-width: 0; display: flex; flex-direction: column; border-radius: 20px; background: var(--surface-container); }
 .qa-field textarea { flex: 1; min-width: 0; border: 0; background: none; outline: none; resize: none; font-size: 16px; line-height: 22px; padding: 9px 14px; max-height: calc(22px * 5 + 18px); overflow-y: auto; text-overflow: ellipsis; }
 /* The placeholder takes one line, cut short with the field's ellipsis. */
 .qa-field ::placeholder { white-space: nowrap; overflow: hidden; text-overflow: inherit; }
@@ -393,6 +393,54 @@ label.row { cursor: pointer; }
 .add-row .row-inner { color: var(--primary); font-weight: 500; min-height: 48px; }
 /* As wide as the dots of the rows below it. */
 .add-row.dep svg { margin: 0 2px; flex: none; }
+/* Attachments (docs/ui.md#附件): pictures as square thumbnails, three a row on a phone and four on a
+   computer; other files as rows; the files staged in an add box; references in a description. */
+.spin svg { animation: spin 1s linear infinite; }
+.att-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 10px; }
+.desk .att-grid { grid-template-columns: repeat(4, 1fr); }
+.att-grid + .row::before { display: none; }
+.att-thumb { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: var(--surface-container); }
+.att-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.att-thumb:active { opacity: .8; }
+.att-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--outline); }
+.att-state { position: absolute; right: 4px; bottom: 4px; width: 22px; height: 22px; border-radius: 11px; display: grid; place-items: center; background: rgba(0, 0, 0, .55); color: #fff; }
+.att-file .row-inner { min-height: 52px; gap: 12px; cursor: default; }
+.att-file .row-inner > svg { flex: none; color: var(--on-surface-variant); }
+.att-name { flex: 1; min-width: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.att-size { flex: none; font-size: 13px; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+.att-file .icon-btn { margin-right: -8px; }
+.drop-cover { position: absolute; z-index: 10; inset: 8px; border: 2px dashed var(--primary); border-radius: 16px; display: grid; place-items: center; background: color-mix(in srgb, var(--surface), transparent 15%); color: var(--primary); font-weight: 500; pointer-events: none; }
+.ref-chip { display: inline-flex; align-items: center; gap: 4px; height: 22px; max-width: 100%; padding: 0 6px; border-radius: 6px; vertical-align: -5px; background: var(--secondary-container); color: var(--on-secondary-container); font-size: 13px; line-height: 22px; }
+.ref-chip svg { flex: none; }
+.ref-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ref-chip.gone { background: var(--surface-container); color: var(--outline); text-decoration: line-through; cursor: default; }
+.staged-list { display: flex; gap: 8px; overflow-x: auto; padding: 10px 12px 2px; scrollbar-width: none; }
+.staged { position: relative; flex: none; height: 48px; }
+.staged-main { height: 48px; max-width: 180px; padding: 0 12px; display: flex; align-items: center; gap: 6px; border-radius: 10px; background: var(--surface-high); font-size: 13px; }
+.staged-main span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.staged.picture .staged-main { width: 48px; padding: 0; justify-content: center; overflow: hidden; }
+.staged.picture img { width: 100%; height: 100%; object-fit: cover; }
+.staged.refused .staged-main { outline: 2px solid var(--error); outline-offset: -2px; }
+.staged-error { position: absolute; top: -5px; right: -5px; width: 18px; height: 18px; border-radius: 9px; display: grid; place-items: center; background: var(--error); color: var(--group-bg); pointer-events: none; }
+.staged-remove { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 10px; display: grid; place-items: center; background: var(--inverse-surface); color: var(--inverse-on-surface); }
+/* The mark has the corner, and × goes below it. */
+.staged.refused .staged-remove { top: auto; bottom: -6px; }
+/* The picture viewer: full screen, black, over the panels and under dialogs and the snackbar. */
+.viewer { position: absolute; z-index: 35; inset: 0; display: flex; flex-direction: column; background: #000; color: #fff; outline: none; }
+.viewer.enter { animation: fade .2s; }
+.viewer.leave { animation: fade-out .18s var(--ease-exit) forwards; }
+.viewer-bar { position: relative; z-index: 1; flex: none; display: flex; align-items: center; gap: 4px; padding: calc(8px + var(--safe-top)) 8px 8px; background: linear-gradient(rgba(0, 0, 0, .6), transparent); }
+.viewer-bar .icon-btn:active { background: rgba(255, 255, 255, .12); }
+.viewer-title { flex: 1; min-width: 0; margin: 0 4px; display: flex; gap: 8px; align-items: baseline; font-size: 15px; font-weight: 500; }
+.viewer-title span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.viewer-title span + span { flex: none; font-size: 13px; opacity: .7; }
+.viewer-stage { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; touch-action: none; }
+.viewer-stage img { max-width: 100%; max-height: 100%; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.viewer-empty { opacity: .6; }
+.viewer-step { position: absolute; top: 50%; width: 48px; height: 48px; margin-top: -24px; border-radius: 24px; display: grid; place-items: center; background: rgba(255, 255, 255, .12); color: #fff; }
+.viewer-step.prev { left: 16px; } .viewer-step.next { right: 16px; }
+.viewer-step:disabled { opacity: .3; }
+.viewer-step:hover:not(:disabled) { background: rgba(255, 255, 255, .2); }
 .provenance { margin: 18px 32px 0; font-size: 12px; color: var(--outline); display: flex; align-items: center; gap: 6px; }
 
 .modal-scrim { position: absolute; z-index: 30; inset: 0; background: rgba(0, 0, 0, .36); }
@@ -494,7 +542,8 @@ a.text-btn { display: inline-flex; align-items: center; }
 .desk .graph-tools { padding: 0 28px 10px; }
 .desk .graph-tools .spacer { flex: 1; }
 .desk .connect-banner { top: 12px; }
-.detail-pane { background: var(--surface-low); border-left: 1px solid var(--outline-variant); overflow: hidden; min-width: 0; transition: border-color .32s; }
+/* Relative: what covers the details while files are dragged over covers the pane, not what scrolls in it. */
+.detail-pane { position: relative; background: var(--surface-low); border-left: 1px solid var(--outline-variant); overflow: hidden; min-width: 0; transition: border-color .32s; }
 .pane-inner { width: 400px; height: 100%; overflow-y: auto; padding: 20px 0 32px; }
 .pane-closed .detail-pane { border-left-color: transparent; }
 .detail-empty { height: 100%; display: grid; place-items: center; color: var(--outline); font-size: 14px; text-align: center; padding: 32px; }

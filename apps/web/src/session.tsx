@@ -15,6 +15,7 @@ import type { User } from "./api/types/User";
 import { Rejected } from "./domain/apply";
 import * as android from "./android";
 import * as desktop from "./desktop";
+import { type FileMessage, Files } from "./sync/files";
 import { type Saver, forget, forgetCopy, forgetOthers, load, saver } from "./sync/persist";
 import { type Connection, Socket } from "./sync/socket";
 import { type Saved, Store } from "./sync/store";
@@ -72,8 +73,9 @@ async function logout(): Promise<boolean> {
 /** What a tab tells the others, numbered in the device's sequence: who signed in, so that tabs of
  * anyone else end; who signed out on this device, so that the user's tabs end too, whichever sign-in
  * they are in, instead of saving the data again; that the server turned a change down, which only
- * the tab that sent it hears, so that tabs that took it from the outbox drop it too. */
-type Message = { signedIn: Login } | { signedOut: Login } | { rejected: MutationId };
+ * the tab that sent it hears, so that tabs that took it from the outbox drop it too; that a file has
+ * been uploaded, so that the change waiting for it goes. */
+type Message = { signedIn: Login } | { signedOut: Login } | { rejected: MutationId } | FileMessage;
 const tabs = new BroadcastChannel("nexttodo");
 
 /** Calls `f` whenever another tab signs in. */
@@ -95,10 +97,13 @@ export interface Listeners {
   appFailed(e: unknown): void;
   /** The session has ended elsewhere, and here too now. */
   signedOut(): void;
+  /** Something to tell the user, such as a file the server turned down. */
+  told(text: string): void;
 }
 
 export class Session {
   readonly store: Store;
+  readonly files: Files;
   private readonly saver: Saver;
   private readonly socket: Socket;
   /** In the app: stops keeping the reminders and the widget in step, and clears them. */
@@ -106,7 +111,7 @@ export class Session {
   private readonly ticking: ReturnType<typeof setInterval>;
   connection: Connection = "connecting";
   private readonly watchers = new Set<() => void>();
-  private listeners: Listeners = { rejected() {}, arrived() {}, unsaved() {}, appFailed() {}, signedOut() {} };
+  private listeners: Listeners = { rejected() {}, arrived() {}, unsaved() {}, appFailed() {}, signedOut() {}, told() {} };
   /** How the session has ended here, once it has: when that is done, and whether the user's data
    * stays on this device. */
   private ended?: { done: Promise<void>; keep: boolean };
@@ -130,11 +135,18 @@ export class Session {
     this.store = new Store(user.id, saved, {
       save: (copy, queued, settled) => this.saver.save(copy, queued, settled),
       send: (m) => this.socket.send(m),
+      uploaded: (m) => this.files.has(m),
+      awaiting: (m, missing) => this.files.awaiting(m, missing),
       rejected: (m, e) => {
         tabs.postMessage({ rejected: m.id } satisfies Message);
         this.listeners.rejected(m, e);
       },
       arrived: (entries) => this.listeners.arrived(entries),
+    });
+    this.files = new Files(user.id, this.store, {
+      broadcast: (m) => tabs.postMessage(m satisfies Message),
+      told: (text) => this.listeners.told(text),
+      signedOut: () => this.endedElsewhere(true),
     });
     this.socket = new Socket(this.store, {
       url: syncUrl(),
@@ -158,7 +170,8 @@ export class Session {
   }
 
   private readonly heard = ({ data }: MessageEvent<Message>) => {
-    if ("rejected" in data) this.store.drop(data.rejected);
+    if ("rejected" in data) void this.store.drop(data.rejected);
+    else if ("uploaded" in data) this.files.heard(data);
     // A message can be heard late: only a sign-in or sign-out after this session's sign-in ends it.
     else if ("signedIn" in data) {
       if (data.signedIn.user.id !== this.user.id && data.signedIn.id > this.login) this.endedElsewhere(false);
@@ -280,6 +293,7 @@ export class Session {
 
   private async stop() {
     this.socket.stop();
+    this.files.stop();
     clearInterval(this.ticking);
     // The token goes first, so that the widget, emptied next, asks to sign in.
     await dropSession();

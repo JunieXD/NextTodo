@@ -1452,6 +1452,7 @@ dependencies = [
  "anyhow",
  "jni",
  "log",
+ "nexttodo-core",
  "nexttodo-server",
  "serde_json",
  "tokio",

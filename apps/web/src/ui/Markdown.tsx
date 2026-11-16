@@ -1,8 +1,15 @@
-// Markdown: descriptions, whose checklist items can be ticked in place. Raw HTML is not rendered. Loaded when first shown, being large and not needed to start (`lazyMarkdown`).
+// Markdown: descriptions, whose checklist items can be ticked in place, and whose references to the
+// task's attachments are tags that open them (docs/ui.md#附件). Raw HTML is not rendered. Loaded when
+// first shown, being large and not needed to start (`lazyMarkdown`).
 
-import Markdown, { type Components } from "react-markdown";
+import { File as FileIcon, Image as ImageIcon } from "lucide-react";
+import type { ReactNode } from "react";
+import Markdown, { type Components, defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { Attachment } from "../api/types/Attachment";
+import { isPicture } from "../attach";
 import { Box } from "./controls";
+import { Icon } from "./icons";
 
 const TASK = /^(\s*(?:[-*+]|\d+[.)])\s+\[)([ xX])(\])/;
 
@@ -13,14 +20,59 @@ export function toggleLine(source: string, line: number): string {
   return lines.join("\n");
 }
 
-/** Links open outside the app. */
-const link: Components["a"] = ({ node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />;
+const REFERENCE = "attachment:";
 
-export function Description({ source, onChange }: { source: string; onChange(source: string): void }) {
+/** Links as react-markdown allows them, `http`, `https`, `mailto` and the like, and references. */
+const urlTransform = (url: string) => (url.startsWith(REFERENCE) ? url : defaultUrlTransform(url));
+
+/** At most 16 characters of a name, shortened. */
+const short = (name: string) => ([...name].length > 16 ? `${[...name].slice(0, 16).join("")}…` : name);
+
+/** A reference: the attachment's name as it is now, which opens it; greyed out, with the name it was
+ * written with, when it is not one of the task's. */
+function Reference({ a, written, onOpen }: { a: Attachment | undefined; written: ReactNode; onOpen(a: Attachment): void }) {
+  if (!a) {
+    return (
+      <span className="ref-chip gone">
+        <Icon of={FileIcon} size={14} />
+        <span>{written}</span>
+      </span>
+    );
+  }
+  return (
+    <button type="button" className="ref-chip" title={a.name} onClick={() => onOpen(a)}>
+      <Icon of={isPicture(a.type) ? ImageIcon : FileIcon} size={14} />
+      <span>{short(a.name)}</span>
+    </button>
+  );
+}
+
+export function Description({
+  source,
+  attachments,
+  onChange,
+  onAttachment,
+}: {
+  source: string;
+  /** The task's. */
+  attachments: Attachment[];
+  onChange(source: string): void;
+  onAttachment(a: Attachment): void;
+}) {
   if (!source.trim()) return <p className="muted">暂无描述</p>;
+  // Links open outside the app.
+  const link: Components["a"] = ({ node, href, children, ...props }) =>
+    href?.startsWith(REFERENCE) ? (
+      <Reference a={attachments.find((a) => a.id === href.slice(REFERENCE.length))} written={children} onOpen={onAttachment} />
+    ) : (
+      <a {...props} href={href} target="_blank" rel="noreferrer">
+        {children}
+      </a>
+    );
   return (
     <Markdown
       remarkPlugins={[remarkGfm]}
+      urlTransform={urlTransform}
       components={{
         a: link,
         input: ({ checked }) => <Box checked={!!checked} />,
@@ -33,7 +85,7 @@ export function Description({ source, onChange }: { source: string; onChange(sou
               className={`ck${checked ? " on" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
-                if (!(e.target as HTMLElement).closest("a")) onChange(toggleLine(source, line));
+                if (!(e.target as HTMLElement).closest("a, .ref-chip")) onChange(toggleLine(source, line));
               }}
             >
               {children}

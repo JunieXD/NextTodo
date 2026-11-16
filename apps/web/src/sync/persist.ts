@@ -8,6 +8,8 @@
 //   out when a tab hears the server's verdict, in the same transaction as that tab's copy, which then
 //   includes it.
 //
+// - `files`, keyed by [user id, attachment id]: attachments' files (`files.ts`).
+//
 // The drafts of the add boxes, and the AI settings kept on the device (ai.ts), are in localStorage
 // and go along with the rest.
 
@@ -15,27 +17,41 @@ import { type IDBPDatabase, openDB } from "idb";
 import type { MutationId } from "../api/types/MutationId";
 import type { User } from "../api/types/User";
 import { forgetAiConfig, forgetOtherAiConfigs } from "../ai";
-import { forgetDrafts, forgetOtherDrafts } from "./drafts";
+import { forgetDrafts, forgetOtherDrafts, withdrawn } from "./drafts";
 import type { Copy, Pending, Saved } from "./store";
 
 let opened: Promise<IDBPDatabase> | undefined;
-const db = () =>
-  (opened ??= openDB("nexttodo", 1, {
-    upgrade(db) {
-      db.createObjectStore("copies");
-      db.createObjectStore("outbox");
-    },
-    // The browser closed it, say because the site's data was cleared: open it again next time.
-    terminated() {
-      opened = undefined;
-    },
+export const db = () =>
+  (opened ??= new Promise<IDBPDatabase>((resolve, reject) => {
+    openDB("nexttodo", 2, {
+      upgrade(db, from) {
+        if (from < 1) {
+          db.createObjectStore("copies");
+          db.createObjectStore("outbox");
+        }
+        db.createObjectStore("files");
+      },
+      // A page of an earlier version of the app has it open and does not give way: only closing that
+      // page lets this one upgrade it.
+      blocked: () => reject(new Error("其他开着的 NextTodo 页面还是旧版本，请关闭它们后刷新这一页")),
+      // A later version of the app is opening it in another tab: this page gives way, and loads as that
+      // version.
+      blocking(_, __, e) {
+        (e.target as IDBDatabase).close();
+        location.reload();
+      },
+      // The browser closed it, say because the site's data was cleared: open it again next time.
+      terminated() {
+        opened = undefined;
+      },
+    }).then(resolve, reject);
   }).catch((e) => {
     opened = undefined;
     throw e;
   }));
 
-/** All of a user's records in either store: arrays sort after strings. */
-const all = (userId: string) => IDBKeyRange.bound([userId], [userId, []]);
+/** All of a user's records in a store: arrays sort after strings. */
+export const all = (userId: string) => IDBKeyRange.bound([userId], [userId, []]);
 
 /** Everyone's records but the user's: arrays sort after strings, so their keys lie below `[userId]`
  * or above `[userId, []]`. */
@@ -43,18 +59,33 @@ const others = (userId: string) => [IDBKeyRange.upperBound([userId], true), IDBK
 
 /** The user's data saved on this device: the newest copy, and the outbox in the order the changes
  * were made (mutation ids are UUIDv7). The newest copy becomes `copyId`, in place of the others; a
- * session still open in another tab saves its own again with its next change. */
+ * session still open in another tab saves its own again with its next change. Changes withdrawn for a
+ * file turned down (docs/web.md#附件) leave the outbox first, if a tab closed before they did; they stay noted
+ * as withdrawn for the tab that uploads to tell the other tabs. */
 export async function load(user: User, copyId: string): Promise<Saved | undefined> {
+  const gone = withdrawn(user.id);
   const tx = (await db()).transaction(["copies", "outbox"], "readwrite");
   const copies = tx.objectStore("copies");
   const found: Copy[] = await copies.getAll(all(user.id));
   if (!found.length) return undefined;
   const newest = current(found.reduce((a, b) => (b.seq > a.seq ? b : a)), user);
-  const outbox: Pending[] = await tx.objectStore("outbox").getAll(all(user.id));
+  const outbox = tx.objectStore("outbox");
+  for (const id of gone) await outbox.delete([user.id, id]);
+  const pending: Pending[] = await outbox.getAll(all(user.id));
   await copies.delete(all(user.id));
   await copies.put(newest, [user.id, copyId]);
   await tx.done;
-  return { ...newest, outbox };
+  return { ...newest, outbox: pending };
+}
+
+/** The changes in the user's outbox, as every tab has saved them. */
+export async function outbox(userId: string): Promise<Pending[]> {
+  return (await db()).getAll("outbox", all(userId));
+}
+
+/** Takes a change out of the user's outbox, whichever tab made it. */
+export async function unqueue(userId: string, id: MutationId) {
+  await (await db()).delete("outbox", [userId, id]);
 }
 
 /** A copy saved by an earlier version, as one is now. Before folders could be shared, nothing was,
@@ -158,6 +189,7 @@ export async function forget(userId: string) {
   forgetDrafts(userId);
   forgetAiConfig(userId);
   await forgetSynced(userId);
+  await (await db()).delete("files", all(userId));
 }
 
 /** Deletes the user's copies and outbox, which belong to the server's history of their data; the
@@ -183,9 +215,9 @@ export async function unsentOfOthers(userId: string) {
 export async function forgetOthers(userId: string) {
   forgetOtherDrafts(userId);
   forgetOtherAiConfigs(userId);
-  const tx = (await db()).transaction(["copies", "outbox"], "readwrite");
-  const [copies, outbox] = [tx.objectStore("copies"), tx.objectStore("outbox")];
-  await Promise.all([...others(userId).flatMap((r) => [copies.delete(r), outbox.delete(r)]), tx.done]);
+  const tx = (await db()).transaction(["copies", "outbox", "files"], "readwrite");
+  const stores = ["copies", "outbox", "files"].map((s) => tx.objectStore(s));
+  await Promise.all([...others(userId).flatMap((r) => stores.map((s) => s.delete(r))), tx.done]);
 }
 
 /** Deletes one session's copy of the user's data. */

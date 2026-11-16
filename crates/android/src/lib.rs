@@ -9,6 +9,7 @@ use android_logger::Config;
 use anyhow::Context;
 use jni::objects::{JClass, JString};
 use jni::{Env, EnvUnowned};
+use nexttodo_core::model::FileName;
 use nexttodo_server::backup;
 use nexttodo_server::error::for_user;
 use nexttodo_server::local::{Local, StartError};
@@ -99,6 +100,20 @@ pub extern "system" fn Java_cn_juniexd_nexttodo_LocalServer_prepare<'a>(
     from: JString<'a>,
 ) {
     run(env, "读取备份", |env| backup::prepare(&path(env, &dir)?, &path(env, &from)?))
+}
+
+/// What an attachment called `name` is called as a file (docs/desktop.md#附件), to open or save.
+#[allow(unsafe_code, reason = "JNI finds a native method by its unmangled name")]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_cn_juniexd_nexttodo_LocalServer_fileName<'a>(
+    env: EnvUnowned<'a>,
+    _: JClass<'a>,
+    name: JString<'a>,
+) -> JString<'a> {
+    run(env, "读取附件名称", |env| {
+        let name = FileName::try_from(name.try_to_string(env)?).map_err(anyhow::Error::msg)?;
+        Ok(JString::from_str(env, name.on_disk())?)
+    })
 }
 
 /// The user's go-ahead: the backup prepared replaces the data in `dir` when the app starts next.

@@ -139,6 +139,29 @@ export async function bytesOf(p: Planned): Promise<Blob> {
   return blob;
 }
 
+/** The pictures an AI job goes with when the model sees them, in the order added: of the kinds models
+ * take, up to a size and a number. As in crates/server/src/ai/organize.rs. */
+const SENT_PICTURES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const MAX_SENT_SIZE = 5 * 1024 * 1024;
+const MAX_SENT = 10;
+
+/** Why the model does not see each of the pictures among `files` an AI job goes with, by id, when
+ * `vision` says whether it sees pictures at all (docs/ai.md#附件). */
+export function unseen(files: Staged[], vision: boolean): Map<string, string> {
+  const why = new Map<string, string>();
+  let sent = 0;
+  // In the order the server takes them: by id, which is when each was added.
+  for (const f of [...files].sort((a, b) => (a.id < b.id ? -1 : 1))) {
+    if (!isPicture(f.type)) continue;
+    if (!vision) why.set(f.id, "没有打开“识别图片”");
+    else if (!SENT_PICTURES.has(f.type)) why.set(f.id, "只发 PNG、JPEG、WebP 和 GIF 图片");
+    else if (f.size > MAX_SENT_SIZE) why.set(f.id, "图片超过 5 MB");
+    else if (sent === MAX_SENT) why.set(f.id, "一次最多发 10 张图片");
+    else sent++;
+  }
+  return why;
+}
+
 /** The ops adding `files` to a task or an AI job. */
 export const addOps = (files: Staged[], to: { task_id: TaskId } | { job_id: AiJobId }): Op[] =>
   files.map((f) => ({ op: "attachment.add", id: f.id, name: f.name, type: f.type, size: f.size, ...to }));

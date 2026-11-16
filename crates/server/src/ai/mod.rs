@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use nexttodo_core::board::{Board, Now};
-use nexttodo_core::model::{AiJobId, FolderId, Holder, JobKind, JobState, MutationId, NoteText, Suggestion};
+use nexttodo_core::model::{AiJobId, Attachment, FolderId, Holder, JobKind, JobState, MutationId, NoteText, Suggestion, TaskId};
 use nexttodo_core::ops::Op;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
 use rusqlite::{Connection, OptionalExtension, ToSql, params};
@@ -30,7 +30,7 @@ use crate::error::{ApiError, Json};
 use crate::mutate::{self, Actor};
 use crate::tools::args::PlanTask;
 use crate::{store, tools};
-use llm::{Api, Config, Endpoint, PROVIDERS, Provider, Thinking};
+use llm::{Api, Config, Endpoint, Failure, PROVIDERS, Provider, Thinking};
 use secret::SecretKey;
 
 /// Who the changes made for jobs are by.
@@ -101,12 +101,13 @@ struct Kept {
     base_url: String,
     model: String,
     thinking: Thinking,
+    vision: bool,
     api_key: Vec<u8>,
 }
 
 fn kept(c: &Connection, owner: &str) -> rusqlite::Result<Option<Kept>> {
-    c.query_row("SELECT provider, base_url, model, thinking, api_key FROM ai_settings WHERE user_id = ?1", [owner], |r| {
-        Ok(Kept { provider: r.get(0)?, base_url: r.get(1)?, model: r.get(2)?, thinking: r.get(3)?, api_key: r.get(4)? })
+    c.query_row("SELECT provider, base_url, model, thinking, vision, api_key FROM ai_settings WHERE user_id = ?1", [owner], |r| {
+        Ok(Kept { provider: r.get(0)?, base_url: r.get(1)?, model: r.get(2)?, thinking: r.get(3)?, vision: r.get(4)?, api_key: r.get(5)? })
     })
     .optional()
 }
@@ -118,7 +119,14 @@ impl Kept {
     }
 
     fn config(self, api_key: String) -> Config {
-        Config { provider: self.provider, base_url: self.base_url, model: self.model, thinking: self.thinking, api_key }
+        Config {
+            provider: self.provider,
+            base_url: self.base_url,
+            model: self.model,
+            thinking: self.thinking,
+            vision: self.vision,
+            api_key,
+        }
     }
 }
 
@@ -249,9 +257,9 @@ enum Shown {
     Tidy(Box<tidy::Shown>),
 }
 
-/// What a job's model answered.
+/// What a job's model answered: tasks, with the refs of the attachments each lists; or suggestions.
 enum Answer {
-    Tasks(Vec<PlanTask>, organize::Shown),
+    Tasks(Vec<PlanTask>, Vec<Vec<String>>, organize::Shown),
     Suggestions(Vec<Suggestion>),
 }
 
@@ -259,7 +267,7 @@ enum Answer {
 async fn organize(st: AppState, turn: Turn, job: AiJobId, config: Config) {
     let _slot = st.ai.slots.acquire().await.expect("the semaphore stays open");
     let began = Instant::now();
-    let owner = turn.owner.clone();
+    let (owner, vision) = (turn.owner.clone(), config.vision);
     let read = st
         .db
         .call(move |c| {
@@ -270,26 +278,37 @@ async fn organize(st: AppState, turn: Turn, job: AiJobId, config: Config) {
             let notes = notes_along(&board, &store::ai_notes(c, &owner)?, j.folder_id);
             Ok(Some(match j.kind {
                 JobKind::Organize => {
-                    let (prompt, shown) = organize::prompt(&j, &board, notes);
-                    (prompt, Shown::Organize(shown))
+                    let mut attached: Vec<&Attachment> = snap.attachments.iter().filter(|a| a.holder == Holder::Job(j.id)).collect();
+                    // Ids are UUIDv7, made as the files were added.
+                    attached.sort_by_key(|a| a.id);
+                    let (prompt, shown, pictures) = organize::prompt(&j, &board, notes, &attached, vision);
+                    (prompt, Shown::Organize(shown), pictures)
                 }
                 JobKind::Tidy => {
                     let (prompt, shown) = tidy::prompt(&j, snap, &owner, notes);
-                    (prompt, Shown::Tidy(Box::new(shown)))
+                    (prompt, Shown::Tidy(Box::new(shown)), Vec::new())
                 }
             }))
         })
         .await;
     let (mut status, outcome) = match read {
         Ok(None) => return,
-        Ok(Some((prompt, shown))) => {
-            let api = st.ai.api.clone();
-            let answer = tokio::task::spawn_blocking(move || api.chat(&config, &prompt, true, TIMEOUT)).await.expect("chat task panicked");
+        Ok(Some((mut prompt, shown, pictures))) => {
+            let (api, files) = (st.ai.api.clone(), st.files.clone());
+            let answer = tokio::task::spawn_blocking(move || {
+                prompt.pictures = pictures.into_iter().map(|p| p.read(&files)).collect::<std::io::Result<_>>().map_err(|e| {
+                    tracing::error!(job = %job, error = %e, "reading a picture for the model");
+                    Failure { status: None, message: "读取附件里的图片失败".into() }
+                })?;
+                api.chat(&config, &prompt, true, TIMEOUT)
+            })
+            .await
+            .expect("chat task panicked");
             match answer {
                 Ok(text) => (
                     None,
                     match shown {
-                        Shown::Organize(shown) => organize::parse(&text, &shown).map(|tasks| Answer::Tasks(tasks, shown)),
+                        Shown::Organize(shown) => organize::parse(&text, &shown).map(|(tasks, listed)| Answer::Tasks(tasks, listed, shown)),
                         Shown::Tidy(shown) => tidy::parse(&text, &shown).map(Answer::Suggestions),
                     },
                 ),
@@ -330,20 +349,27 @@ fn finish(
             let ready = mutate::suggest(c, &actor, id, suggestions, now)?;
             return Ok((if ready.is_some() { Ended::Done } else { Ended::Dropped }, to));
         }
-        Ok(Answer::Tasks(tasks, shown)) => {
+        Ok(Answer::Tasks(tasks, listed, shown)) => {
             let tx = c.transaction()?;
             let Some(job) = store::load_job(&tx, owner, id)?.filter(|j| j.state == JobState::Running) else {
                 return Ok((Ended::Dropped, to));
             };
             let snap = store::snapshot(&tx, owner)?;
-            let applied = tools::plan_into(&Board::new(&snap, Now::utc(now), owner), job.folder_id, tasks, &shown).and_then(|mut ops| {
-                // The job's attachments go to the first task, in the same change.
-                if let Some(first) = ops.iter().find_map(|op| match op {
-                    Op::TaskCreate { id, .. } => Some(*id),
-                    _ => None,
-                }) {
-                    let attached = snap.attachments.iter().filter(|a| a.holder == Holder::Job(id));
-                    ops.extend(attached.map(|a| Op::AttachmentUpdate { id: a.id, name: None, task_id: Some(first) }));
+            let board = Board::new(&snap, Now::utc(now), owner);
+            let applied = tools::plan_into(&board, job.folder_id, tasks, &shown.tasks).and_then(|mut ops| {
+                // The job's attachments go to the tasks they were put under, in the same change; one
+                // added since the model was asked, to the first.
+                let made: Vec<TaskId> = ops
+                    .iter()
+                    .filter_map(|op| match op {
+                        Op::TaskCreate { id, .. } => Some(*id),
+                        _ => None,
+                    })
+                    .collect();
+                let under = organize::place(shown.attachments.len(), &listed);
+                for a in snap.attachments.iter().filter(|a| a.holder == Holder::Job(id)) {
+                    let task = made[shown.attachments.iter().position(|&s| s == a.id).map_or(0, |i| under[i])];
+                    ops.push(Op::AttachmentUpdate { id: a.id, name: None, task_id: Some(task) });
                 }
                 ops.push(Op::AiJobDelete { id });
                 let done = mutate::run(&tx, &actor, &ops, now)?;
@@ -388,6 +414,9 @@ pub struct SettingsInput {
     base_url: String,
     model: String,
     thinking: Thinking,
+    /// As in `Config`.
+    #[serde(default)]
+    vision: bool,
     #[ts(optional)]
     api_key: Option<String>,
 }
@@ -400,6 +429,7 @@ pub struct SettingsView {
     base_url: String,
     model: String,
     thinking: Thinking,
+    vision: bool,
     /// The key's last 4 characters; `null` when the server cannot open it, and it has to be given again.
     key_end: Option<String>,
 }
@@ -410,6 +440,7 @@ fn view(k: &Kept, key: Option<&str>) -> SettingsView {
         base_url: k.base_url.clone(),
         model: k.model.clone(),
         thinking: k.thinking,
+        vision: k.vision,
         key_end: key.map(|k| k.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect()),
     }
 }
@@ -436,7 +467,14 @@ async fn key(st: &AppState, owner: String, given: Option<String>) -> Result<Stri
 /// The config `input` gives, with the key kept on the server when it gives none.
 async fn resolve(st: &AppState, owner: String, input: SettingsInput) -> Result<Config, ApiError> {
     let api_key = key(st, owner, input.api_key).await?;
-    checked(Config { provider: input.provider, base_url: input.base_url, model: input.model, thinking: input.thinking, api_key })
+    checked(Config {
+        provider: input.provider,
+        base_url: input.base_url,
+        model: input.model,
+        thinking: input.thinking,
+        vision: input.vision,
+        api_key,
+    })
 }
 
 pub async fn get_settings(State(st): State<AppState>, auth: Auth) -> Result<Json<Option<SettingsView>>, ApiError> {
@@ -467,14 +505,21 @@ pub async fn put_settings(
             let owner = auth.user_id;
             let sealed = ai.secret.as_ref().expect("checked above").seal(&owner, &config.api_key);
             c.execute(
-                "INSERT INTO ai_settings (user_id, provider, base_url, model, thinking, api_key, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                 ON CONFLICT (user_id) DO UPDATE SET provider = ?2, base_url = ?3, model = ?4, thinking = ?5, api_key = ?6, updated_at = ?7",
-                params![owner, config.provider, config.base_url, config.model, config.thinking, sealed, now],
+                "INSERT INTO ai_settings (user_id, provider, base_url, model, thinking, vision, api_key, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                 ON CONFLICT (user_id) DO UPDATE SET provider = ?2, base_url = ?3, model = ?4, thinking = ?5, vision = ?6, api_key = ?7, updated_at = ?8",
+                params![owner, config.provider, config.base_url, config.model, config.thinking, config.vision, sealed, now],
             )?;
             // The queue hears of it too, and starts the jobs that were waiting for settings.
             hub.changed(&owner);
-            let k = Kept { provider: config.provider, base_url: config.base_url, model: config.model, thinking: config.thinking, api_key: sealed };
+            let k = Kept {
+                provider: config.provider,
+                base_url: config.base_url,
+                model: config.model,
+                thinking: config.thinking,
+                vision: config.vision,
+                api_key: sealed,
+            };
             Ok(view(&k, Some(&config.api_key)))
         })
         .await
@@ -547,24 +592,35 @@ pub async fn delete_settings(State(st): State<AppState>, auth: Auth) -> Result<S
 pub struct TestResult {
     ok: bool,
     message: String,
+    /// Whether the model sees pictures; `null` when the API could not be reached.
+    vision: Option<bool>,
 }
 
-/// Sends a minimal chat with the settings given, as a job would.
+/// Sends a minimal chat with the settings given, as a job would; then, once that reaches the model,
+/// one with a picture.
 pub async fn test(State(st): State<AppState>, auth: Auth, Json(input): Json<SettingsInput>) -> Result<Json<TestResult>, ApiError> {
     auth.require_device()?;
     let config = resolve(&st, auth.user_id, input).await?;
     let api = st.ai.api.clone();
-    let began = Instant::now();
-    let answer = tokio::task::spawn_blocking(move || api.chat(&config, &organize::test_prompt(), true, TEST_TIMEOUT))
-        .await
-        .expect("chat task panicked");
-    let secs = began.elapsed().as_secs_f32();
+    let (answer, secs, vision) = tokio::task::spawn_blocking(move || {
+        let began = Instant::now();
+        let answer = api.chat(&config, &organize::test_prompt(), true, TEST_TIMEOUT);
+        let secs = began.elapsed().as_secs_f32();
+        // Many APIs answer a picture they cannot take with an error: the model does not see pictures.
+        let vision =
+            answer.is_ok().then(|| api.chat(&config, &organize::vision_prompt(), true, TEST_TIMEOUT).is_ok_and(|a| organize::sees_red(&a)));
+        (answer, secs, vision)
+    })
+    .await
+    .expect("chat task panicked");
     Ok(Json(match answer {
         Ok(text) if serde_json::from_str::<serde_json::Value>(organize::unwrap(&text)).is_ok() => {
-            TestResult { ok: true, message: format!("连接成功，用时 {secs:.1} 秒") }
+            TestResult { ok: true, message: format!("连接成功，用时 {secs:.1} 秒"), vision }
         }
-        Ok(_) => TestResult { ok: false, message: "连接成功，但模型没有按要求只输出 JSON，整理时可能失败".into() },
-        Err(f) => TestResult { ok: false, message: f.message },
+        Ok(_) => TestResult {
+            ok: false, message: "连接成功，但模型没有按要求只输出 JSON，整理时可能失败".into(), vision
+        },
+        Err(f) => TestResult { ok: false, message: f.message, vision },
     }))
 }
 

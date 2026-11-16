@@ -211,7 +211,7 @@ fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let key = std::env::var("NEXTTODO_EVAL_KEY").map_err(|_| anyhow::anyhow!("缺少环境变量 NEXTTODO_EVAL_KEY"))?;
     let thinking = Thinking::parse(&args.thinking).ok_or_else(|| anyhow::anyhow!("思考程度是 off、low 或 high"))?;
-    let config = Config { provider: args.provider, base_url: args.url, model: args.model, thinking, api_key: key };
+    let config = Config { provider: args.provider, base_url: args.url, model: args.model, thinking, vision: false, api_key: key };
     config.check().map_err(anyhow::Error::msg)?;
     let system = args.system.as_ref().map(std::fs::read_to_string).transpose()?;
     let mut cases = Vec::new();
@@ -296,7 +296,7 @@ fn ask(config: &Config, system: Option<&str>, case: &Case, index: usize, run: us
         Kind::Tidy(e, data) => return ask_tidy(config, system, e, data, &case.input, index, run),
     };
     let snap = snapshot(&case.input);
-    let shown: organize::Shown = snap.tasks.iter().map(|t| (t.number, t.id)).collect();
+    let shown = organize::Shown { tasks: snap.tasks.iter().map(|t| (t.number, t.id)).collect(), attachments: Vec::new() };
     let prompt = organize::chat(system.unwrap_or(organize::SYSTEM), &case.input);
     let (answer, seconds) = chat(config, &prompt);
     let facts = e.facts.len();
@@ -305,8 +305,8 @@ fn ask(config: &Config, system: Option<&str>, case: &Case, index: usize, run: us
         Ok(text) => {
             // As the server adds them: what it refuses fails the job.
             let planned = organize::parse(&text, &shown)
-                .and_then(|tasks| {
-                    tools::plan_into(&board(&snap), snap.folders.first().map(|f| f.id), tasks, &shown).map_err(|e| e.describe())
+                .and_then(|(tasks, _)| {
+                    tools::plan_into(&board(&snap), snap.folders.first().map(|f| f.id), tasks, &shown.tasks).map_err(|e| e.describe())
                 })
                 .and_then(|ops| accepted(&snap, &ops).map(|()| ops));
             let checked = match planned {

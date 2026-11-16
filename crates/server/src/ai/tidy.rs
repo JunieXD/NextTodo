@@ -82,6 +82,9 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
    - 把建议应用到事项上（没写的字段沿用原值），原标题和原描述的每一处都要能在改好后的标题或描述里找到，找不到的补上。
    - requires 写在后做的那一项上，里面是先做的事项；写反的改过来。"#;
 
+/// Added to the instructions when a description shown refers to attachments.
+pub const REFERENCES: &str = "有的描述里引用了附件，写成 [名称](attachment:…)：改写这些描述时，把引用原样留在新描述里，一个字都不改。";
+
 /// What the model was shown: the data as it was then, as the job's user sees it, the folder, and
 /// which of its tasks.
 pub struct Shown {
@@ -113,6 +116,7 @@ pub fn prompt(job: &AiJob, snap: Snapshot, user: &str, notes: Vec<Value>) -> (Pr
     let done: Vec<&Task> = all.iter().copied().filter(|t| t.done_at.is_some()).take(DONE_SHOWN).collect();
     let numbers: HashSet<i64> = open.iter().map(|t| t.number).collect();
     let mut budget = DESCRIBED;
+    let mut referring = false;
     let mut tasks = HashMap::new();
     let open_tasks: Vec<Value> = open
         .iter()
@@ -124,6 +128,7 @@ pub fn prompt(job: &AiJob, snap: Snapshot, user: &str, notes: Vec<Value>) -> (Pr
                 v["description_omitted"] = true.into();
             } else if !text.is_empty() {
                 budget -= text.chars().count();
+                referring |= references(text).next().is_some();
                 v["description"] = text.into();
             }
             if let Some(d) = &t.due {
@@ -171,7 +176,43 @@ pub fn prompt(job: &AiJob, snap: Snapshot, user: &str, notes: Vec<Value>) -> (Pr
     if !notes.is_empty() {
         input["notes"] = notes.into();
     }
-    (chat(SYSTEM, &input), Shown { snap, user: user.to_owned(), now, folder: job.folder_id, tasks })
+    let mut prompt = chat(SYSTEM, &input);
+    if referring {
+        prompt.system = format!("{}\n\n{REFERENCES}", prompt.system);
+    }
+    (prompt, Shown { snap, user: user.to_owned(), now, folder: job.folder_id, tasks })
+}
+
+/// The references to attachments in a description, `[名称](attachment:<ID>)` with `[`, `]` and `\`
+/// escaped in the name (docs/design.md#附件): each whole, with its id.
+fn references(text: &str) -> impl Iterator<Item = (&str, &str)> {
+    const MARK: &str = "](attachment:";
+    text.match_indices(MARK).filter_map(move |(at, _)| {
+        let rest = &text[at + MARK.len()..];
+        let id = &rest[..rest.find(')')?];
+        Uuid::parse_str(id).ok()?;
+        // The name starts after the last `[` before that is not escaped.
+        let start = text[..at]
+            .rmatch_indices('[')
+            .map(|(i, _)| i)
+            .find(|&i| text[..i].chars().rev().take_while(|&c| c == '\\').count() % 2 == 0)?;
+        Some((&text[start..at + MARK.len() + id.len() + 1], id))
+    })
+}
+
+/// The description `new` in place of `was`, with the references to attachments `was` has and it lacks
+/// put at the end: the model may drop one, and the attachment would be referred to no more.
+fn with_references(was: &Description, new: Description) -> Result<Description, String> {
+    let missing: Vec<&str> = {
+        let mut have: HashSet<&str> = references(new.as_str()).map(|(_, id)| id).collect();
+        references(was.as_str()).filter(|&(_, id)| have.insert(id)).map(|(r, _)| r).collect()
+    };
+    if missing.is_empty() {
+        return Ok(new);
+    }
+    let text = String::from(new);
+    let gap = if text.trim().is_empty() { "" } else { "\n\n" };
+    Description::try_from(format!("{}{gap}{}", text.trim_end(), missing.join(" ")))
 }
 
 /// `1d`, `2w`, `3m`, `1w:1,3,5`, `1m:1,15`, as the tools take a repeat.
@@ -388,7 +429,12 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
         // Not having seen the description, it would lose what the title held that this lacks.
         let described = state == Seen::Open { described: true };
         let title = s.title.filter(|_| described);
-        let description = s.description.filter(|_| described);
+        let description = s
+            .description
+            .filter(|_| described)
+            .map(|d| with_references(&t.description, d))
+            .transpose()
+            .map_err(|e| format!("事项 #{n}：{e}"))?;
         let fields = title.is_some()
             || description.is_some()
             || s.due.is_some()
@@ -684,6 +730,24 @@ mod tests {
         // What changes nothing goes.
         let same = r#"{"suggestions": [{"number": 1, "title": "官网", "reason": ""}, {"number": 5, "done": true, "reason": ""}, {"order": [1, 2], "reason": ""}]}"#;
         assert!(parse(same, &shown).unwrap().is_empty());
+    }
+
+    #[test]
+    fn keeps_the_references_to_attachments_a_new_description_drops() {
+        let mut s = snap();
+        let (picture, sheet) = (
+            "[图片 \\[1\\].png](attachment:00000000-0000-7000-8000-000000000201)",
+            "[表格.csv](attachment:00000000-0000-7000-8000-000000000202)",
+        );
+        s.tasks[0].description = Description::try_from(format!("看 {picture}，还有 {sheet} 和 {picture}")).unwrap();
+        let (prompt, shown) = prompt(&job(), s, "me", vec![]);
+        assert_eq!(prompt.system, format!("{SYSTEM}\n\n{REFERENCES}"));
+        // What is left of the picture's is no reference.
+        let rewritten = format!("做官网，见 {sheet}，图见 (attachment:00000000-0000-7000-8000-000000000201)");
+        let answer = format!(r#"{{"suggestions": [{{"number": 1, "description": "{rewritten}", "reason": ""}}]}}"#);
+        let suggested = parse(&answer, &shown).unwrap();
+        let [Suggestion::Edit(e)] = suggested.as_slice() else { panic!("{suggested:?}") };
+        assert_eq!(e.description.as_ref().unwrap().as_str(), format!("{rewritten}\n\n{picture}"));
     }
 
     #[test]

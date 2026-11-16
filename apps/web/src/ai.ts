@@ -2,7 +2,7 @@
 // handing them over for the jobs waiting. See docs/ai.md.
 
 import { Preferences } from "@capacitor/preferences";
-import { useEffect, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { ApiError, OFFLINE, api } from "./api/http";
 import type { AiConfig } from "./api/types/AiConfig";
 import type { AiSettings } from "./api/types/AiSettings";
@@ -13,10 +13,12 @@ const PREFIX = "ai:";
 const CHANGED = "nexttodo:ai-config";
 
 /** The settings kept on this device for the user. */
-export function localAiConfig(userId: string): AiConfig | null {
-  const kept = localStorage.getItem(PREFIX + userId);
+export const localAiConfig = (userId: string) => parsed(localStorage.getItem(PREFIX + userId));
+
+function parsed(kept: string | null): AiConfig | null {
   if (!kept) return null;
-  const c: AiConfig = JSON.parse(kept);
+  // Kept before the model could be shown pictures: it is not.
+  const c: AiConfig = { vision: false, ...JSON.parse(kept) };
   // ECNU is no longer a preset; as on the server (migration 003), it goes on as a custom provider.
   return c.provider === "ecnu" ? { ...c, provider: "custom" } : c;
 }
@@ -25,6 +27,17 @@ export function keepAiConfig(userId: string, c: AiConfig | null) {
   if (c) localStorage.setItem(PREFIX + userId, JSON.stringify(c));
   else localStorage.removeItem(PREFIX + userId);
   dispatchEvent(new Event(CHANGED));
+}
+
+/** Calls `f` when the settings kept here for the user change, in this window or another. */
+function onConfig(userId: string, f: () => void): () => void {
+  const stored = (e: StorageEvent) => e.key === PREFIX + userId && f();
+  addEventListener(CHANGED, f);
+  addEventListener("storage", stored);
+  return () => {
+    removeEventListener(CHANGED, f);
+    removeEventListener("storage", stored);
+  };
 }
 
 export const forgetAiConfig = (userId: string) => localStorage.removeItem(PREFIX + userId);
@@ -75,6 +88,29 @@ export async function aiReady(userId: string): Promise<boolean> {
   }
 }
 
+/** Whether the model in use sees pictures (docs/ai.md#附件), as the settings kept here say, or else
+ * those on the server, asked while `asking`; unknown until it answers, and when it cannot. */
+export function useAiVision(userId: string, asking: boolean): boolean | undefined {
+  const watch = useCallback((changed: () => void) => onConfig(userId, changed), [userId]);
+  const local = parsed(useSyncExternalStore(watch, () => localStorage.getItem(PREFIX + userId)));
+  const here = local !== null;
+  const [server, setServer] = useState<boolean>();
+  useEffect(() => {
+    if (!asking || here) return;
+    let live = true;
+    api<AiSettings | null>("GET", "/ai/settings").then(
+      (s) => live && setServer(s?.vision),
+      (e) => {
+        if (!(e instanceof ApiError)) throw e;
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [asking, here]);
+  return local ? local.vision : server;
+}
+
 /** How long to wait before asking again after the server could not take a job, at first. */
 const RETRY_MS = 5_000;
 
@@ -119,17 +155,14 @@ export function useLocalRunner(store: Store, userId: string) {
           if (again) look();
         });
     };
-    const stored = (e: StorageEvent) => e.key === PREFIX + userId && look();
     look();
     const unsubscribe = store.subscribe(look);
-    addEventListener(CHANGED, look);
-    addEventListener("storage", stored);
+    const unwatch = onConfig(userId, look);
     return () => {
       stopped = true;
       clearTimeout(retry);
       unsubscribe();
-      removeEventListener(CHANGED, look);
-      removeEventListener("storage", stored);
+      unwatch();
     };
   }, [store, userId]);
 }

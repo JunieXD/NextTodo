@@ -24,6 +24,8 @@ const KEY: &str = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 struct Fake {
     answers: Mutex<VecDeque<Result<String, String>>>,
     asked: Mutex<Vec<(String, String)>>,
+    /// The pictures each chat came with, by caption and URL.
+    pictures: Mutex<Vec<Vec<(String, String)>>>,
     held: Mutex<Option<Receiver<()>>>,
 }
 
@@ -43,12 +45,17 @@ impl Fake {
     fn asked(&self) -> Vec<(String, String)> {
         self.asked.lock().unwrap().clone()
     }
+
+    fn pictures(&self) -> Vec<Vec<(String, String)>> {
+        self.pictures.lock().unwrap().clone()
+    }
 }
 
 impl Api for Fake {
     fn chat(&self, c: &Config, prompt: &Prompt, json: bool, _: Duration) -> Result<String, Failure> {
         assert!(json);
         self.asked.lock().unwrap().push((c.api_key.clone(), prompt.user.clone()));
+        self.pictures.lock().unwrap().push(prompt.pictures.iter().map(|p| (p.caption.clone(), p.url.clone())).collect());
         let held = self.held.lock().unwrap().take();
         if let Some(rx) = held {
             rx.recv().unwrap();
@@ -184,6 +191,10 @@ async fn a_jobs_attachments_go_to_its_task_and_back_with_undo() {
     let snap = until(&t, &s, |s| s["ai_jobs"].as_array().unwrap().is_empty()).await;
     let first = snap["tasks"].as_array().unwrap().iter().find(|t| t["title"] == "交报销").unwrap()["id"].clone();
     assert_eq!(attachments(&snap), [(first, Value::Null)]);
+    // Settings from before there was the switch: the model is told of the picture, not shown it.
+    let shown: Value = serde_json::from_str(&fake.asked().pop().unwrap().1).unwrap();
+    assert_eq!(shown["attachments"], json!([{ "ref": "1", "name": "图片 1.png", "type": "image/png", "image": false }]));
+    assert_eq!(fake.pictures(), [vec![]]);
 
     let log = t.call("GET", "/changes?since=0", Some(&s), None).await.body;
     let done = log["changes"].as_array().unwrap().last().unwrap()["id"].clone();
@@ -192,6 +203,66 @@ async fn a_jobs_attachments_go_to_its_task_and_back_with_undo() {
     // Gone with its job.
     assert_eq!(t.mutate(&s, json!([{ "op": "ai_job.delete", "id": job }])).await.status, StatusCode::OK);
     assert!(attachments(&t.snapshot(&s).await).is_empty());
+}
+
+#[tokio::test]
+async fn a_model_that_sees_pictures_is_shown_the_jobs_and_puts_its_attachments_under_its_tasks() {
+    let (t, fake) = server();
+    let s = t.admin().await;
+    let mut seeing = config();
+    seeing["vision"] = true.into();
+    assert_eq!(t.call("PUT", "/ai/settings", Some(&s), Some(seeing)).await.body["vision"], true);
+    let job = id();
+    // Added in this order; the PDF and the AVIF are not shown, only named.
+    let files = [("图片 1.png", "image/png"), ("合同.pdf", "application/pdf"), ("图片 2.avif", "image/avif")];
+    let mut ops = vec![create(&job, "报销，附发票照片和合同", None)];
+    let mut ids = Vec::new();
+    for (name, media_type) in files {
+        let a = id();
+        t.upload(&s, &a, media_type, b"png").await;
+        ops.push(json!({ "op": "attachment.add", "id": a, "name": name, "type": media_type, "size": 3, "job_id": job }));
+        ids.push(a);
+    }
+    fake.answer(Ok(r#"{"tasks": [{"title": "交报销", "attachments": ["2", "7"]}, {"title": "寄发票", "attachments": [1, "2"]}]}"#));
+    assert_eq!(t.mutate(&s, json!(ops)).await.status, StatusCode::OK);
+
+    let snap = until(&t, &s, |s| s["ai_jobs"].as_array().unwrap().is_empty()).await;
+    let shown: Value = serde_json::from_str(&fake.asked().pop().unwrap().1).unwrap();
+    assert_eq!(
+        shown["attachments"],
+        json!([
+            { "ref": "1", "name": "图片 1.png", "type": "image/png", "image": true },
+            { "ref": "2", "name": "合同.pdf", "type": "application/pdf", "image": false },
+            { "ref": "3", "name": "图片 2.avif", "type": "image/avif", "image": false },
+        ])
+    );
+    assert_eq!(fake.pictures(), [vec![("附件 1：图片 1.png".to_owned(), "data:image/png;base64,cG5n".to_owned())]]);
+    let task = |title: &str| snap["tasks"].as_array().unwrap().iter().find(|t| t["title"] == title).unwrap()["id"].clone();
+    let under = |a: &str| snap["attachments"].as_array().unwrap().iter().find(|x| x["id"] == a).unwrap()["task_id"].clone();
+    // Each under the first task that lists it; one listed nowhere under the first task.
+    assert_eq!([under(&ids[0]), under(&ids[1]), under(&ids[2])], [task("寄发票"), task("交报销"), task("交报销")]);
+}
+
+#[tokio::test]
+async fn testing_says_whether_the_model_sees_pictures() {
+    let (t, fake) = server();
+    let s = t.admin().await;
+    let test = async || t.call("POST", "/ai/test", Some(&s), Some(config())).await.body;
+    fake.answer(Ok(r#"{"ok": true}"#));
+    fake.answer(Ok(r#"{"color": "红色"}"#));
+    assert_eq!(test().await["vision"], true);
+    assert_eq!(fake.pictures()[1].len(), 1, "the second chat has the picture");
+    fake.answer(Ok(r#"{"ok": true}"#));
+    fake.answer(Ok(r#"{"color": "看不到图片"}"#));
+    assert_eq!(test().await["vision"], false);
+    // Turned down for the picture: it does not see pictures, and the test still went well.
+    fake.answer(Ok(r#"{"ok": true}"#));
+    fake.answer(Err("image input is not supported"));
+    let r = test().await;
+    assert_eq!((r["ok"].clone(), r["vision"].clone()), (json!(true), json!(false)));
+    fake.answer(Err("invalid key"));
+    let r = test().await;
+    assert_eq!((r["ok"].clone(), r["vision"].clone()), (json!(false), Value::Null));
 }
 
 #[tokio::test]
@@ -422,7 +493,7 @@ async fn settings_are_each_users_own_and_the_key_stays_sealed() {
     let kept = t.call("PUT", "/ai/settings", Some(&alice), Some(without_key)).await.body;
     assert_eq!(
         kept,
-        json!({ "provider": "deepseek", "base_url": "https://api.deepseek.com", "model": "model-b", "thinking": "high", "key_end": "1234" })
+        json!({ "provider": "deepseek", "base_url": "https://api.deepseek.com", "model": "model-b", "thinking": "high", "vision": false, "key_end": "1234" })
     );
     // Listed with the key kept, and before a model is picked.
     let models = t.call("POST", "/ai/models", Some(&alice), Some(json!({ "base_url": "https://api.deepseek.com" }))).await;

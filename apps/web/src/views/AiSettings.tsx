@@ -1,7 +1,7 @@
 // The settings of AI organizing: which model, how much it thinks, and whether they stay on this device
 // or go to the server for every device. See docs/ai.md#模型配置.
 
-import { Popover } from "radix-ui";
+import { Popover, Switch as Toggle } from "radix-ui";
 import { useEffect, useId, useRef, useState } from "react";
 import { ApiError, api } from "../api/http";
 import type { AiConfig } from "../api/types/AiConfig";
@@ -52,6 +52,8 @@ export function AiPage() {
   const [result, setResult] = useState<AiTestResult | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<Busy | null>(null);
+  /** Counts the edits, so that a test's result is not taken for settings changed since. */
+  const edits = useRef(0);
 
   const failed = (e: unknown) => {
     if (!(e instanceof ApiError)) throw e;
@@ -66,11 +68,11 @@ export function AiPage() {
         const local = localAiConfig(user.id);
         if (local) setForm(local);
         else if (s) {
-          setForm({ provider: s.provider, base_url: s.base_url, model: s.model, thinking: s.thinking });
+          setForm({ provider: s.provider, base_url: s.base_url, model: s.model, thinking: s.thinking, vision: s.vision });
           setPlace("server");
         } else {
           const first = p.providers[0];
-          setForm({ provider: first.id, base_url: first.base_url, model: first.model, thinking: "off", api_key: "" });
+          setForm({ provider: first.id, base_url: first.base_url, model: first.model, thinking: "off", vision: false, api_key: "" });
         }
       } catch (e) {
         failed(e);
@@ -82,6 +84,7 @@ export function AiPage() {
   if (!providers || !form) return error ? <p className="form-error">{error}</p> : <p className="empty">正在读取…</p>;
   const provider = providers.providers.find((p) => p.id === form.provider) ?? providers.providers[0];
   const set = (change: Partial<AiSettingsInput>) => {
+    edits.current++;
     setForm({ ...form, ...change });
     setResult(null);
     setError("");
@@ -104,8 +107,17 @@ export function AiPage() {
       setBusy(null);
     }
   };
-  // Longer than the server waits for the model, a minute, so that its answer comes back.
-  const test = () => run("test", async () => setResult(await api<AiTestResult>("POST", "/ai/test", input, 70_000)));
+  // Longer than the server waits for the model, twice a minute, so that its answer comes back. Whether
+  // the model sees pictures is set as it tells.
+  const test = () =>
+    run("test", async () => {
+      const at = edits.current;
+      const r = await api<AiTestResult>("POST", "/ai/test", input, 130_000);
+      if (edits.current !== at) return;
+      const vision = r.vision;
+      setResult(r);
+      if (vision !== null) setForm((f) => f && { ...f, vision });
+    });
   const listModels = () =>
     run("models", async () => {
       const asked: AiModelsInput = { base_url: form.base_url, api_key: input.api_key };
@@ -120,7 +132,14 @@ export function AiPage() {
         if (!/^https:\/\/\S+$/.test(form.base_url)) return setError("接口地址要以 https:// 开头，不含空格");
         if (!form.model) return setError("请填写模型");
         if (!typed) return setError("请填写 API 密钥");
-        const config: AiConfig = { provider: form.provider, base_url: form.base_url, model: form.model, thinking: form.thinking, api_key: typed };
+        const config: AiConfig = {
+          provider: form.provider,
+          base_url: form.base_url,
+          model: form.model,
+          thinking: form.thinking,
+          vision: form.vision,
+          api_key: typed,
+        };
         keepAiConfig(user.id, config);
         if (kept) await api("DELETE", "/ai/settings");
         setKept(null);
@@ -189,6 +208,15 @@ export function AiPage() {
           />
         </div>
       )}
+      <label className="field">
+        识别图片
+        <span className="field-switch">
+          <span className="hint">模型能看懂图片时打开，整理时把附件里的图片一起发给它</span>
+          <Toggle.Root className="switch" checked={form.vision} onCheckedChange={(vision) => set({ vision })}>
+            <Toggle.Thumb />
+          </Toggle.Root>
+        </span>
+      </label>
       {/* In local mode the server is this device, without the key to keep a configuration with
           (docs/local.md#界面). */}
       {!inLocalMode() && (
@@ -207,7 +235,12 @@ export function AiPage() {
           />
         </div>
       )}
-      {result && <p className={result.ok ? "form-ok" : "form-error"}>{result.message}</p>}
+      {result && (
+        <p className={result.ok ? "form-ok" : "form-error"}>
+          {result.message}
+          {result.vision !== null && (result.vision ? "，模型可以识别图片，已打开识别图片" : "，模型无法识别图片，已关闭识别图片")}
+        </p>
+      )}
       {error && <p className="form-error">{error}</p>}
       <div className="actions">
         {(kept || localAiConfig(user.id)) && (

@@ -4,7 +4,7 @@ import type { AiThinking } from "./AiThinking";
 /**
  * Settings kept on the server, as shown: the key by its last characters.
  */
-export type AiSettings = { provider: string, base_url: string, model: string, thinking: AiThinking, 
+export type AiSettings = { provider: string, base_url: string, model: string, thinking: AiThinking, vision: boolean, 
 /**
  * The key's last 4 characters; `null` when the server cannot open it, and it has to be given again.
  */

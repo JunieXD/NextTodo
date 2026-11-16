@@ -4,4 +4,9 @@ import type { AiThinking } from "./AiThinking";
 /**
  * What to call a provider with.
  */
-export type AiConfig = { provider: string, base_url: string, model: string, thinking: AiThinking, api_key: string, };
+export type AiConfig = { provider: string, base_url: string, model: string, thinking: AiThinking, 
+/**
+ * Whether the model sees pictures: a job's are sent with it then (docs/ai.md#附件). Apps from
+ * before there was this hand over none.
+ */
+vision: boolean, api_key: string, };

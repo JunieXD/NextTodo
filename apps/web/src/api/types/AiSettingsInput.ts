@@ -4,4 +4,8 @@ import type { AiThinking } from "./AiThinking";
 /**
  * Settings to keep on the server or to try out; without a key, with the one kept.
  */
-export type AiSettingsInput = { provider: string, base_url: string, model: string, thinking: AiThinking, api_key?: string, };
+export type AiSettingsInput = { provider: string, base_url: string, model: string, thinking: AiThinking, 
+/**
+ * As in `Config`.
+ */
+vision: boolean, api_key?: string, };

@@ -109,6 +109,10 @@ pub struct Config {
     pub base_url: String,
     pub model: String,
     pub thinking: Thinking,
+    /// Whether the model sees pictures: a job's are sent with it then (docs/ai.md#附件). Apps from
+    /// before there was this hand over none.
+    #[serde(default)]
+    pub vision: bool,
     pub api_key: String,
 }
 
@@ -156,10 +160,17 @@ impl Endpoint<'_> {
     }
 }
 
-/// A chat: the instructions, and what the user gives.
+/// A chat: the instructions, and what the user gives, with pictures after their words.
 pub struct Prompt {
     pub system: String,
     pub user: String,
+    pub pictures: Vec<Picture>,
+}
+
+/// A picture the user gives: the words saying which it is, then the picture as a `data:` URL.
+pub struct Picture {
+    pub caption: String,
+    pub url: String,
 }
 
 /// Why a call failed, in words for the user; with the HTTP status when the API answered one.
@@ -191,9 +202,19 @@ pub trait Api: Send + Sync {
 /// The request body for `c`'s provider: its way to set the thinking level, and JSON mode where it
 /// has one that goes with that level.
 pub fn body(c: &Config, p: &Provider, prompt: &Prompt, json: bool) -> Value {
+    let user = if prompt.pictures.is_empty() {
+        prompt.user.as_str().into()
+    } else {
+        let mut parts = vec![json!({ "type": "text", "text": prompt.user })];
+        for p in &prompt.pictures {
+            parts.push(json!({ "type": "text", "text": p.caption }));
+            parts.push(json!({ "type": "image_url", "image_url": { "url": p.url } }));
+        }
+        Value::Array(parts)
+    };
     let mut b = json!({
         "model": c.model,
-        "messages": [{ "role": "system", "content": prompt.system }, { "role": "user", "content": prompt.user }],
+        "messages": [{ "role": "system", "content": prompt.system }, { "role": "user", "content": user }],
         "stream": true,
     });
     let effort = |t: Thinking| match t {
@@ -458,12 +479,19 @@ mod tests {
     use super::*;
 
     fn config(provider: &str, thinking: Thinking) -> Config {
-        Config { provider: provider.into(), base_url: "https://x.test/v1".into(), model: "m".into(), thinking, api_key: "k".into() }
+        Config {
+            provider: provider.into(),
+            base_url: "https://x.test/v1".into(),
+            model: "m".into(),
+            thinking,
+            vision: false,
+            api_key: "k".into(),
+        }
     }
 
     fn sent(provider: &str, thinking: Thinking) -> Value {
         let c = config(provider, thinking);
-        let mut b = body(&c, c.check().unwrap(), &Prompt { system: "s".into(), user: "u".into() }, true);
+        let mut b = body(&c, c.check().unwrap(), &Prompt { system: "s".into(), user: "u".into(), pictures: Vec::new() }, true);
         b.as_object_mut().unwrap().retain(|k, _| !["model", "messages", "stream"].contains(&k.as_str()));
         b
     }
@@ -480,6 +508,25 @@ mod tests {
         assert_eq!(sent("qwen", Thinking::Low), json!({ "enable_thinking": true }), "no JSON mode while thinking");
         assert_eq!(sent("openai", Thinking::Off), json!({ "reasoning_effort": "minimal", "response_format": fmt }));
         assert_eq!(sent("custom", Thinking::High), json!({}));
+    }
+
+    #[test]
+    fn pictures_go_after_the_words_each_with_its_caption() {
+        let c = config("openai", Thinking::Off);
+        let picture = |n: u8| Picture { caption: format!("附件 {n}"), url: format!("data:image/png;base64,{n}") };
+        let prompt = Prompt { system: "s".into(), user: "u".into(), pictures: vec![picture(1), picture(2)] };
+        assert_eq!(
+            body(&c, c.check().unwrap(), &prompt, true)["messages"][1]["content"],
+            json!([
+                { "type": "text", "text": "u" },
+                { "type": "text", "text": "附件 1" },
+                { "type": "image_url", "image_url": { "url": "data:image/png;base64,1" } },
+                { "type": "text", "text": "附件 2" },
+                { "type": "image_url", "image_url": { "url": "data:image/png;base64,2" } },
+            ])
+        );
+        let words = Prompt { pictures: Vec::new(), ..prompt };
+        assert_eq!(body(&c, c.check().unwrap(), &words, true)["messages"][1]["content"], json!("u"), "words alone without pictures");
     }
 
     #[test]

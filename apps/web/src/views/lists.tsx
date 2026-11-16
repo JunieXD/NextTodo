@@ -14,11 +14,11 @@ import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
 import { lastKey } from "../domain/apply";
 import { matches } from "../domain/board";
-import { aiReady, setAiMode, useAiMode } from "../ai";
+import { aiReady, setAiMode, useAiMode, useAiVision } from "../ai";
 import { type DueKind, dueKind, formatDay, localTime } from "../domain/dates";
 import { checkJobText, checkTitle } from "../domain/text";
 import { useCommit, useSession, useView } from "../session";
-import { addOps, filesIn, plan } from "../attach";
+import { addOps, filesIn, isPicture, plan, unseen } from "../attach";
 import { type Staged, draft, keepDraft, keepStaged, onDrafts, stagedFiles } from "../sync/drafts";
 import { dropFiles } from "../sync/files";
 import { useBack } from "../ui/back";
@@ -334,6 +334,8 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   };
   // The device remembers the mode last used.
   const ai = useAiMode();
+  const vision = useAiVision(user.id, ai && staged.some((f) => isPicture(f.type)));
+  const hidden = ai && vision !== undefined ? unseen(staged, vision) : undefined;
   const [target, setTarget] = useState<FolderId | null>(null);
   const [picking, setPicking] = useState(false);
   const [tall, setTall] = useState(false);
@@ -444,7 +446,7 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
     <>
       <form className="quick-add" onSubmit={submit} onDragOver={files.onDragOver} onDrop={files.onDrop}>
         <div className="qa-field">
-          <StagedFiles files={staged} onRemove={unstage} />
+          <StagedFiles files={staged} unseen={hidden} onRemove={unstage} />
           {/* A title pasted on many lines is joined into one. */}
           <textarea
             onPaste={files.onPaste}
@@ -489,6 +491,7 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
         <Editor
           text={title}
           staged={staged}
+          unseen={hidden}
           files={files}
           onEdit={edit}
           onUnstage={unstage}
@@ -510,6 +513,7 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
 function Editor(props: {
   text: string;
   staged: Staged[];
+  unseen?: Map<string, string>;
   /** What pasting or dropping files does. */
   files: { onPaste(e: React.ClipboardEvent): void; onDragOver(e: React.DragEvent): void; onDrop(e: React.DragEvent): void };
   onEdit(text: string): void;
@@ -559,7 +563,7 @@ function Editor(props: {
                 </Dialog.Close>
               </Tip>
             </div>
-            <StagedFiles files={props.staged} onRemove={props.onUnstage} />
+            <StagedFiles files={props.staged} unseen={props.unseen} onRemove={props.onUnstage} />
             <textarea
               ref={area}
               value={props.text}

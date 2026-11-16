@@ -551,12 +551,16 @@ function Viewer({ pictures, start, actions, onClose }: { pictures: Attachment[];
 
 /** A file staged in an add box: a picture's thumbnail or the file's name, with × to take it out; one
  * the server turned down is marked, and says why when tapped. */
-function StagedFile({ f, onRemove }: { f: Staged; onRemove(): void }) {
+function StagedFile({ f, unseen, onRemove }: { f: Staged; unseen?: string; onRemove(): void }) {
   const picture = isPicture(f.type);
   const { snack } = useFeedback();
+  const tapped = () => {
+    if (f.error) snack(`“${f.name}”传不上去：${f.error}`);
+    else if (unseen) snack(`AI 看不到“${f.name}”：${unseen}，只会把名称发给它`);
+  };
   return (
     <div className={`staged${picture ? " picture" : ""}${f.error ? " refused" : ""}`} title={f.name}>
-      <button type="button" className="staged-main" onClick={() => f.error && snack(`“${f.name}”传不上去：${f.error}`)}>
+      <button type="button" className="staged-main" onClick={tapped}>
         {picture ? (
           <StagedPicture f={f} />
         ) : (
@@ -565,6 +569,7 @@ function StagedFile({ f, onRemove }: { f: Staged; onRemove(): void }) {
             <span>{f.name}</span>
           </>
         )}
+        {unseen && <span className="staged-unseen">AI 看不到</span>}
       </button>
       {f.error && (
         <span className="staged-error">
@@ -586,13 +591,13 @@ function StagedPicture({ f }: { f: Staged }) {
 }
 
 /** The files staged in an add box, above where its text is typed; scrolling sideways when they do not
- * fit. */
-export function StagedFiles({ files, onRemove }: { files: Staged[]; onRemove(f: Staged): void }) {
+ * fit. Those AI organizing does not show the model, `unseen`, say so. */
+export function StagedFiles({ files, unseen, onRemove }: { files: Staged[]; unseen?: Map<string, string>; onRemove(f: Staged): void }) {
   if (!files.length) return null;
   return (
     <div className="staged-list">
       {files.map((f) => (
-        <StagedFile key={f.id} f={f} onRemove={() => onRemove(f)} />
+        <StagedFile key={f.id} f={f} unseen={unseen?.get(f.id)} onRemove={() => onRemove(f)} />
       ))}
     </div>
   );

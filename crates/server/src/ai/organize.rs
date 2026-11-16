@@ -2,17 +2,27 @@
 
 use std::collections::HashMap;
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use nexttodo_core::board::Board;
-use nexttodo_core::model::{AiJob, Due, Task, TaskId};
+use nexttodo_core::model::{AiJob, Attachment, AttachmentId, Due, Task, TaskId};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::llm::Prompt;
+use super::llm::{Picture, Prompt};
 use crate::error::from_value;
+use crate::files::Files;
 use crate::tools::args::{PlanRef, PlanTask, task_ref};
 
 /// How many of the folder's open tasks the model is shown.
 const SHOWN: usize = 50;
+
+/// The pictures among a job's attachments that go with it when the model sees pictures, in the order
+/// they were added: of the kinds models take, up to a size and a number (docs/ai.md#附件). As
+/// `unseen` in apps/web/src/attach.ts.
+const PICTURE_TYPES: [&str; 4] = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+const PICTURE_SIZE: u32 = 5 * 1024 * 1024;
+const PICTURES: usize = 10;
 
 /// The instructions. `examples/ai_eval.rs` tries others in their place (docs/ai.md#评测).
 pub const SYSTEM: &str = r#"你负责把用户随手写下的一段话整理成待办事项。输入是一个 JSON 对象：
@@ -67,6 +77,9 @@ pub const SYSTEM: &str = r#"你负责把用户随手写下的一段话整理成�
 /// Added to the instructions in a shared folder, where the text may say who is to do what.
 pub const ASSIGN: &str = r#"这个文件夹是共享的，输入里还有 people：共享人和成员，username 是用户名，name 是显示名，me 为 true 的是写这段话的用户。原文说了某件事由谁来做（“让小王去问报价”“我来订酒店”），就在那个事项上写 assign：负责人的 username 列表，如 "assign": ["wang"]；没说的不写，不要猜。"#;
 
+/// Added to the instructions when the job has attachments.
+pub const ATTACHMENTS: &str = r#"输入里还有 attachments：用户随原文附上的文件，ref 是附件的编号，name 是名称，type 是类型；image 为 true 的是图片，附在这条消息后面，每张前面写明了是第几个附件。看得到的图片里的信息和原文一样，要整理进事项；看不清的不要猜。每个事项可以写 attachments：放在这一项下的附件的 ref 列表，如 "attachments": ["1"]。每个附件只放在一项下，没写的放在第一项下。"#;
+
 /// Added to the instructions, of organizing and of tidying, when the user has notes along the way to
 /// the folder (docs/ai.md#说明).
 pub const NOTES: &str = "输入里还有 notes：用户写给你的长期要求，按文件夹从外到内排列，folder 是它所属的文件夹。整理时照着做，它们和上面的规则（如用原文的语言写、已经清楚的不要改）不一致时，以它们为准：已经清楚、但不合它们的要求的事项也要改。内层文件夹的要求和外层的不一致时，以内层的为准。它们只管怎么做，不扩大这次要做的范围：这次没要求改的地方，不因为它们去改；也不改变上面规定的输出格式和字段。";
@@ -78,14 +91,40 @@ pub(super) fn due_text(d: &Due) -> String {
     }
 }
 
-/// The tasks a chat shows, by the numbers it shows them by: the only ones its tasks may follow or come
-/// before. By id, as a task's number changes if it moves to another owner's while the model answers.
-pub type Shown = HashMap<i64, TaskId>;
+/// What a chat shows: the tasks, by the numbers it shows them by, the only ones its tasks may follow or
+/// come before (by id, as a task's number changes if it moves to another owner's while the model
+/// answers); and the job's attachments, the first by the ref "1".
+pub struct Shown {
+    pub tasks: HashMap<i64, TaskId>,
+    pub attachments: Vec<AttachmentId>,
+}
 
-/// The chat for `job`, with the user's `notes` along the way to its folder, and the tasks it shows.
-pub fn prompt(job: &AiJob, board: &Board, notes: Vec<Value>) -> (Prompt, Shown) {
+/// A picture that goes with a chat, still to be read from its file.
+pub struct PictureFile {
+    caption: String,
+    id: AttachmentId,
+    media_type: String,
+}
+
+impl PictureFile {
+    pub fn read(self, files: &Files) -> std::io::Result<Picture> {
+        let data = STANDARD.encode(files.read(self.id)?);
+        Ok(Picture { caption: self.caption, url: format!("data:{};base64,{data}", self.media_type) })
+    }
+}
+
+/// The chat for `job`, with the user's `notes` along the way to its folder and its `attachments` in
+/// the order added, the pictures among them too when the model has `vision`; what it shows, and the
+/// pictures to go with it.
+pub fn prompt(
+    job: &AiJob,
+    board: &Board,
+    notes: Vec<Value>,
+    attachments: &[&Attachment],
+    vision: bool,
+) -> (Prompt, Shown, Vec<PictureFile>) {
     let open: Vec<&Task> = board.tasks_in(job.folder_id).into_iter().filter(|t| t.done_at.is_none()).take(SHOWN).collect();
-    let shown: Shown = open.iter().map(|t| (t.number, t.id)).collect();
+    let shown = Shown { tasks: open.iter().map(|t| (t.number, t.id)).collect(), attachments: attachments.iter().map(|a| a.id).collect() };
     let tasks: Vec<Value> = open
         .iter()
         .map(|t| {
@@ -93,7 +132,7 @@ pub fn prompt(job: &AiJob, board: &Board, notes: Vec<Value>) -> (Prompt, Shown) 
             if let Some(d) = &t.due {
                 v["due"] = due_text(d).into();
             }
-            let after: Vec<i64> = board.before(t).iter().map(|b| b.number).filter(|n| shown.contains_key(n)).collect();
+            let after: Vec<i64> = board.before(t).iter().map(|b| b.number).filter(|n| shown.tasks.contains_key(n)).collect();
             if !after.is_empty() {
                 v["after"] = after.into();
             }
@@ -109,7 +148,22 @@ pub fn prompt(job: &AiJob, board: &Board, notes: Vec<Value>) -> (Prompt, Shown) 
     if !notes.is_empty() {
         input["notes"] = notes.into();
     }
-    let Some(share) = board.share(job.folder_id) else { return (chat(SYSTEM, &input), shown) };
+    let mut pictures = Vec::new();
+    let mut listed = Vec::new();
+    for (i, a) in attachments.iter().enumerate() {
+        let r = (i + 1).to_string();
+        let media_type = a.media_type.as_str();
+        let image = vision && PICTURE_TYPES.contains(&media_type) && a.size.get() <= PICTURE_SIZE && pictures.len() < PICTURES;
+        if image {
+            pictures
+                .push(PictureFile { caption: format!("附件 {r}：{}", a.name.as_str()), id: a.id, media_type: media_type.to_owned() });
+        }
+        listed.push(json!({ "ref": r, "name": a.name.as_str(), "type": media_type, "image": image }));
+    }
+    if !listed.is_empty() {
+        input["attachments"] = listed.into();
+    }
+    let Some(share) = board.share(job.folder_id) else { return (chat(SYSTEM, &input), shown, pictures) };
     let people: Vec<Value> = std::iter::once(&share.owner)
         .chain(&share.members)
         .filter_map(|id| board.person(id))
@@ -122,25 +176,43 @@ pub fn prompt(job: &AiJob, board: &Board, notes: Vec<Value>) -> (Prompt, Shown) 
         })
         .collect();
     input["people"] = people.into();
-    (chat(SYSTEM, &input), shown)
+    (chat(SYSTEM, &input), shown, pictures)
 }
 
 /// The chat that gives the model `input`, a job and its folder as `prompt` makes them, with the
 /// instructions `system` and those for what else the input has: the people of a shared folder, the
-/// user's notes.
+/// user's notes, the job's attachments. Without pictures.
 pub fn chat(system: &str, input: &Value) -> Prompt {
     let mut system = system.to_owned();
-    for (key, more) in [("people", ASSIGN), ("notes", NOTES)] {
+    for (key, more) in [("people", ASSIGN), ("notes", NOTES), ("attachments", ATTACHMENTS)] {
         if input.get(key).is_some() {
             system = format!("{system}\n\n{more}");
         }
     }
-    Prompt { system, user: serde_json::to_string_pretty(input).expect("JSON values serialize") }
+    Prompt { system, user: serde_json::to_string_pretty(input).expect("JSON values serialize"), pictures: Vec::new() }
 }
 
 /// A minimal chat that answers in JSON, to see whether a config works.
 pub fn test_prompt() -> Prompt {
-    Prompt { system: r#"只输出这个 json 对象：{"ok": true}"#.into(), user: "测试".into() }
+    Prompt { system: r#"只输出这个 json 对象：{"ok": true}"#.into(), user: "测试".into(), pictures: Vec::new() }
+}
+
+/// A 16×16 PNG all red.
+const RED: &str =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR42mP4z8BAEmIY1TCqYfhqAACQ+f8B8u7oVwAAAABJRU5ErkJggg==";
+
+/// A chat asking the colour of a red picture, to see whether the model sees pictures: whether it does
+/// is `sees_red` of the answer.
+pub fn vision_prompt() -> Prompt {
+    Prompt {
+        system: r#"看图回答图片是什么颜色，只输出这个 json 对象：{"color": "颜色"}"#.into(),
+        user: "这张图片是什么颜色？".into(),
+        pictures: vec![Picture { caption: "图片：".into(), url: RED.into() }],
+    }
+}
+
+pub fn sees_red(answer: &str) -> bool {
+    answer.contains('红') || answer.to_lowercase().contains("red")
 }
 
 #[derive(Deserialize)]
@@ -162,16 +234,22 @@ pub fn unwrap(answer: &str) -> &str {
     s
 }
 
-/// The tasks in the model's answer, linked only to each other and to tasks in `shown`.
-pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<PlanTask>, String> {
+/// The tasks in the model's answer, linked only to each other and to tasks in `shown`; with the refs of
+/// the attachments each lists.
+pub fn parse(answer: &str, shown: &Shown) -> Result<(Vec<PlanTask>, Vec<Vec<String>>), String> {
     let mut v: Value = serde_json::from_str(unwrap(answer)).map_err(|_| "模型返回的不是合法的 JSON".to_owned())?;
     // Models write an empty field for one they have nothing for, `"due": ""` say: it is left out. The
     // title has to be there.
-    for t in v["tasks"].as_array_mut().into_iter().flatten() {
-        if let Some(fields) = t.as_object_mut() {
+    let listed: Vec<Vec<String>> = v["tasks"]
+        .as_array_mut()
+        .into_iter()
+        .flatten()
+        .map(|t| {
+            let Some(fields) = t.as_object_mut() else { return Vec::new() };
             fields.retain(|k, f| k == "title" || !(f.is_null() || f.as_str().is_some_and(|s| s.trim().is_empty())));
-        }
-    }
+            refs(fields.remove("attachments"))
+        })
+        .collect();
     let Answer { tasks } = from_value(v).map_err(|e| format!("模型返回的结果不符合格式：{}", e.describe()))?;
     if tasks.is_empty() {
         return Err("模型没有整理出事项".into());
@@ -189,12 +267,35 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<PlanTask>, String> {
                     None => None,
                 },
             };
-            if let Some(n) = n.filter(|n| !shown.contains_key(n)) {
+            if let Some(n) = n.filter(|n| !shown.tasks.contains_key(n)) {
                 return Err(format!("结果引用了不在这个文件夹里的事项 #{n}"));
             }
         }
     }
-    Ok(tasks)
+    Ok((tasks, listed))
+}
+
+/// The refs in a task's `attachments`, which models write as strings or numbers; nothing else is one.
+fn refs(attachments: Option<Value>) -> Vec<String> {
+    let Some(Value::Array(refs)) = attachments else { return Vec::new() };
+    refs.into_iter()
+        .filter_map(|r| match r {
+            Value::String(s) => Some(s.trim().to_owned()),
+            Value::Number(n) => Some(n.to_string()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Which task each of the `shown` attachments goes under, by the refs the tasks `listed`: the first
+/// that lists it, else the first task. Refs to no attachment are left.
+pub fn place(shown: usize, listed: &[Vec<String>]) -> Vec<usize> {
+    (1..=shown)
+        .map(|n| {
+            let r = n.to_string();
+            listed.iter().position(|refs| refs.contains(&r)).unwrap_or(0)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -210,16 +311,25 @@ mod tests {
 
     #[test]
     fn checks_the_answer() {
-        let shown = Shown::from([(12, TaskId(uuid::Uuid::nil()))]);
+        let shown = Shown { tasks: HashMap::from([(12, TaskId(uuid::Uuid::nil()))]), attachments: Vec::new() };
         let ok = r##"{"tasks": [{"ref": "a", "title": "写初稿"}, {"title": "改稿", "after": ["a", 12, "#12"]}]}"##;
-        assert_eq!(parse(ok, &shown).unwrap().len(), 2);
+        assert_eq!(parse(ok, &shown).unwrap().0.len(), 2);
         assert_eq!(parse("好的", &shown).err().unwrap(), "模型返回的不是合法的 JSON");
         assert_eq!(parse(r#"{"tasks": []}"#, &shown).err().unwrap(), "模型没有整理出事项");
         assert!(parse(r#"{"tasks": [{"title": " "}]}"#, &shown).err().unwrap().starts_with("模型返回的结果不符合格式：标题不能为空"));
-        let empty = parse(r#"{"tasks": [{"title": "交初稿", "due": "", "description": null, "ref": " "}]}"#, &shown).unwrap();
+        let (empty, _) = parse(r#"{"tasks": [{"title": "交初稿", "due": "", "description": null, "ref": " "}]}"#, &shown).unwrap();
         assert!(empty[0].due.is_none() && empty[0].description.is_none() && empty[0].name.is_none());
         assert!(parse(r#"{"tasks": [{"title": "a", "note": "b"}]}"#, &shown).is_err());
         assert_eq!(parse(r#"{"tasks": [{"title": "a", "folder": "/x"}]}"#, &shown).err().unwrap(), "模型返回的结果指定了文件夹");
         assert_eq!(parse(r#"{"tasks": [{"title": "a", "before": [7]}]}"#, &shown).err().unwrap(), "结果引用了不在这个文件夹里的事项 #7");
+    }
+
+    #[test]
+    fn attachments_go_under_the_first_task_listing_them_else_the_first() {
+        let shown = Shown { tasks: HashMap::new(), attachments: Vec::new() };
+        let answer = r#"{"tasks": [{"title": "a", "attachments": ["3", 9]}, {"title": "b", "attachments": [2, " 3", {}]}, {"title": "c", "attachments": "1"}]}"#;
+        let (_, listed) = parse(answer, &shown).unwrap();
+        assert_eq!(listed, [vec!["3", "9"], vec!["2", "3"], vec![]]);
+        assert_eq!(place(4, &listed), [0, 1, 0, 0]);
     }
 }

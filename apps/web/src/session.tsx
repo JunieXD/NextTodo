@@ -32,6 +32,9 @@ interface Login {
 
 const COUNT = "nexttodo.count";
 
+/** Whether the app had been signed in to on this device, or out of, before it opened this time. */
+export const signedInBefore = localStorage.getItem(COUNT) !== null;
+
 /** The next number in the device's sequence of sign-ins and sign-outs; in `turn`. Never behind the
  * clock in milliseconds: should the site's storage be cleared, tabs left open have smaller ones. */
 function next(): number {

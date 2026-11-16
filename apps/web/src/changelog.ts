@@ -3,6 +3,7 @@
 
 import source from "../../../CHANGELOG.md?raw";
 import { newer } from "./server-update";
+import { signedInBefore } from "./session";
 
 /** A release: its version, the day it came out, and what it changed, in Markdown. */
 export type Release = { version: string; date: string; notes: string };
@@ -23,10 +24,14 @@ const SEEN = "nexttodo.seenVersion";
 
 const current = import.meta.env.WEB_VERSION;
 
+/** The last release that did not note the version it ran as. */
+const UNNOTED = "0.1.201";
+
 /** The releases since the version this device last ran, up to this one, the latest first: none the
  * first time, nor for a development build. */
 export function unseen(): Release[] {
-  const seen = localStorage.getItem(SEEN);
+  // With none noted, a device signed in to before ran 0.1.201 or an earlier version.
+  const seen = localStorage.getItem(SEEN) ?? (signedInBefore ? UNNOTED : null);
   if (import.meta.env.WEB_DEV || !seen) return [];
   return RELEASES.filter((r) => newer(r.version, seen) && !newer(r.version, current));
 }

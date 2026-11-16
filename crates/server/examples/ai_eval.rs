@@ -98,6 +98,9 @@ struct Expect {
     /// The due times, in any order.
     due: Option<Vec<String>>,
     remind: Option<Vec<u32>>,
+    /// The repeated tasks, each by a word in its title, and its due date in full as `due_text` writes
+    /// it, in one of its wordings (`~1w` or `~1w:1`, due on a Monday); empty for none.
+    repeat: Option<Vec<(String, Vec<String>)>>,
     /// The open tasks made to come before the new ones, and after them.
     after: Option<Vec<i64>>,
     before: Option<Vec<i64>>,
@@ -302,7 +305,9 @@ fn ask(config: &Config, system: Option<&str>, case: &Case, index: usize, run: us
         Ok(text) => {
             // As the server adds them: what it refuses fails the job.
             let planned = organize::parse(&text, &shown)
-                .and_then(|tasks| tools::plan_into(&board(&snap), None, tasks, &shown).map_err(|e| e.describe()))
+                .and_then(|tasks| {
+                    tools::plan_into(&board(&snap), snap.folders.first().map(|f| f.id), tasks, &shown).map_err(|e| e.describe())
+                })
                 .and_then(|ops| accepted(&snap, &ops).map(|()| ops));
             let checked = match planned {
                 Err(e) => Err(format!("出错：{e}")),
@@ -338,15 +343,27 @@ fn chat(config: &Config, prompt: &Prompt) -> (Result<String, String>, f64) {
     }
 }
 
-/// The case's folder as the server keeps it: its open tasks, and their dependencies.
+/// The case's folder as the server keeps it: its open tasks, and their dependencies. With `people`, a
+/// folder the user shares with them, as the root cannot be shared; otherwise the root.
 fn snapshot(input: &Value) -> Snapshot {
     let id = |n: i64| format!("00000000-0000-7000-8000-{n:012}");
+    let people: Vec<&Value> = input["people"].as_array().into_iter().flatten().collect();
+    let user = |p: &Value| if p["me"] == true { ME.to_owned() } else { format!("user-{}", p["username"].as_str().expect("usernames")) };
+    let folder = (!people.is_empty()).then_some("00000000-0000-7000-9000-000000000001");
+    let folders: Vec<Value> = folder
+        .iter()
+        .map(|f| json!({ "id": f, "parent_id": null, "name": "共享", "sort_key": "a0", "created_at": 0, "updated_at": 0 }))
+        .collect();
+    let members: Vec<String> = people.iter().map(|p| user(p)).filter(|u| u != ME).collect();
+    let shares: Vec<Value> = folder.iter().map(|f| json!({ "folder_id": f, "owner": ME, "members": members })).collect();
+    let persons: Vec<Value> =
+        people.iter().map(|p| json!({ "id": user(p), "username": p["username"], "display_name": p["name"] })).collect();
     let open: Vec<&Value> = input["open_tasks"].as_array().into_iter().flatten().collect();
     let tasks: Vec<Value> = open
         .iter()
         .map(|t| {
             let n = t["number"].as_i64().expect("open tasks have numbers");
-            json!({ "id": id(n), "number": n, "folder_id": null, "title": t["title"], "description": "", "done_at": null, "due": null,
+            json!({ "id": id(n), "number": n, "folder_id": folder, "title": t["title"], "description": "", "done_at": null, "due": null,
                 "sort_key": "a0", "assignees": [], "created_at": 0, "updated_at": 0, "created_by": ME, "updated_by": ME, "created_via": null, "updated_via": null })
         })
         .collect();
@@ -355,7 +372,7 @@ fn snapshot(input: &Value) -> Snapshot {
         .flat_map(|t| t["after"].as_array().into_iter().flatten().map(|b| json!({ "before": id(b.as_i64().unwrap_or_default()), "after": id(t["number"].as_i64().unwrap_or_default()), "created_at": 0 })))
         .collect();
     serde_json::from_value(
-        json!({ "folders": [], "tasks": tasks, "dependencies": dependencies, "ai_jobs": [], "shares": [], "people": [] }),
+        json!({ "folders": folders, "tasks": tasks, "dependencies": dependencies, "ai_jobs": [], "shares": shares, "people": persons }),
     )
     .expect("a snapshot")
 }
@@ -383,7 +400,8 @@ fn accepted(snap: &Snapshot, ops: &[Op]) -> Result<(), String> {
 fn check(e: &Expect, input: &Value, v: &Value, snap: &Snapshot, ops: &[Op]) -> (Vec<String>, usize) {
     let tasks: Vec<&Value> = v["tasks"].as_array().into_iter().flatten().collect();
     let field = |t: &Value, k: &str| t[k].as_str().map(str::trim).unwrap_or_default().to_owned();
-    let all: String = tasks.iter().map(|t| format!("{}\n{}\n", field(t, "title"), field(t, "description"))).collect();
+    // With the dates: a fact may be kept there, "三个月以后复查" as a due date.
+    let all: String = tasks.iter().map(|t| ["title", "description", "due", "start"].map(|k| field(t, k) + "\n").concat()).collect();
     let flat = squash(&all);
     let mut problems = Vec::new();
 
@@ -437,6 +455,21 @@ fn check(e: &Expect, input: &Value, v: &Value, snap: &Snapshot, ops: &[Op]) -> (
         let got: Vec<u32> = sorted(tasks.iter().filter_map(|t| t["remind"].as_u64()).map(|r| r as u32));
         if got != sorted(want.iter().copied()) {
             problems.push(format!("提醒 {got:?}，应为 {want:?}"));
+        }
+    }
+    if let Some(want) = &e.repeat {
+        // As the server takes them, so that `1w:5,1` is `1w:1,5`.
+        let got: Vec<(String, String)> = ops
+            .iter()
+            .filter_map(|op| match op {
+                Op::TaskCreate { title, due: Some(d), .. } if d.repeat.is_some() => Some((squash(title.as_str()), due_text(Some(d)))),
+                _ => None,
+            })
+            .collect();
+        let right = got.len() == want.len()
+            && want.iter().all(|(word, ways)| got.iter().any(|(title, r)| title.contains(&squash(word)) && ways.contains(r)));
+        if !right {
+            problems.push(format!("重复 {got:?}，应为 {want:?}"));
         }
     }
     // The dependencies as added: an open task is known by its number, a new one by its title.

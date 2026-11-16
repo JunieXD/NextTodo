@@ -156,13 +156,15 @@ async fn a_job_becomes_tasks_and_undoing_that_gives_it_back() {
     assert_eq!(titles(&snap), ["买材料"]);
     assert_eq!(job_state(&snap, &job), Some(("failed".into(), json!("已撤销"))));
 
-    // Retried with the text changed, it is organized again.
-    fake.answer(Ok(r#"{"tasks": [{"title": "写初稿"}]}"#));
-    let retry = t.mutate(&s, json!([{ "op": "ai_job.retry", "id": job, "text": "写初稿" }])).await;
+    // Retried with the text changed, it is organized again, with the repeat the text says.
+    fake.answer(Ok(r#"{"tasks": [{"title": "交周报", "due": "2026-11-06", "repeat": "1w"}]}"#));
+    let retry = t.mutate(&s, json!([{ "op": "ai_job.retry", "id": job, "text": "每周五交周报" }])).await;
     assert_eq!(retry.status, StatusCode::OK, "{}", retry.body);
     let snap = until(&t, &s, |s| s["ai_jobs"].as_array().unwrap().is_empty()).await;
-    assert_eq!(titles(&snap), ["买材料", "写初稿"]);
-    assert!(fake.asked().pop().unwrap().1.contains("\"text\": \"写初稿\""));
+    assert_eq!(titles(&snap), ["买材料", "交周报"]);
+    let report = snap["tasks"].as_array().unwrap().iter().find(|t| t["title"] == "交周报").unwrap();
+    assert_eq!(report["due"], json!({ "date": "2026-11-06", "repeat": { "every": 1, "unit": "week", "from": "due" } }));
+    assert!(fake.asked().pop().unwrap().1.contains("\"text\": \"每周五交周报\""));
 }
 
 #[tokio::test]

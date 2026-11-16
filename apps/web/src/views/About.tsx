@@ -8,7 +8,7 @@ import { type ServerVersions, checkServer, followUpgrade, newer, upgrade, useSer
 import { useSession } from "../session";
 import { ago } from "../domain/dates";
 import { Tip, forUser, useFeedback } from "../ui/feedback";
-import { Help, QQ_GROUP } from "../ui/help";
+import { Help, QQ_GROUP, REPOSITORY } from "../ui/help";
 import { Icon } from "../ui/icons";
 import { appVersion, check, failureText, install, restart, useChecked, useChecking, usePending } from "../updates";
 import { Changelog } from "./Changelog";
@@ -97,6 +97,17 @@ export function About() {
             </Tip>
             <a className="text-btn" href={QQ_GROUP.url} target="_blank" rel="noreferrer">
               加入
+            </a>
+          </div>
+        </div>
+        <div className="row">
+          <div className="row-inner">
+            <span className="folder-main">
+              <span>GitHub</span>
+              <span className="folder-sub">开源代码，欢迎点 Star 支持</span>
+            </span>
+            <a className="text-btn" href={REPOSITORY} target="_blank" rel="noreferrer">
+              打开
             </a>
           </div>
         </div>

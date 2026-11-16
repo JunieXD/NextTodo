@@ -18,9 +18,13 @@ NextTodo 有 Android、macOS 和 Windows App。连接自己的服务器时，也
 
 ## macOS
 
-要求 Apple 芯片（M1 及以后），macOS 14 及以上。
+要求 macOS 14 及以上。
 
-1. 下载 [NextTodo-macos-arm64.dmg](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-macos-arm64.dmg)，双击打开。
+1. 下载安装包，双击打开：
+   - Apple 芯片（M1 及以后）：[NextTodo-macos-arm64.dmg](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-macos-arm64.dmg)
+   - Intel 芯片：[NextTodo-macos-x64.dmg](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-macos-x64.dmg)
+
+   不知道是哪种的，点屏幕左上角的苹果菜单 → “关于本机”：有“芯片”一行、写着 Apple M1 这类的是 Apple 芯片，有“处理器”一行、写着 Intel 的是 Intel 芯片。
 2. 把窗口里的 NextTodo 拖进“应用程序”文件夹。不要直接在这个窗口里打开它，否则以后无法安装命令行。
 3. 打开“应用程序”文件夹，双击 NextTodo。第一次打开时，系统会提示无法验证开发者：
    1. 点击“完成”关掉提示。

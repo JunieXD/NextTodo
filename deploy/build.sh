@@ -3,9 +3,9 @@
 #
 #   target/deploy           what the server image holds: static Linux server binaries for amd64 and
 #                           arm64, the web app, and under its `/app/` the apps' updates
-#   target/release-assets   what is downloaded: the Android APK, the macOS dmg, the Windows setup, the
-#                           command line for macOS, Linux and Windows, and the apps' updates for local
-#                           mode
+#   target/release-assets   what is downloaded: the Android APK, the macOS dmgs for Apple silicon and
+#                           Intel, the Windows setup, the command line for macOS, Linux and Windows,
+#                           and the apps' updates for local mode
 #
 # The apps are signed with keys given in the environment, never in the repository:
 # NEXTTODO_KEYSTORE and NEXTTODO_KEYSTORE_PASSWORD (docs/android.md#构建和签名),
@@ -42,6 +42,7 @@ pnpm install --frozen-lockfile
 (cd apps/android && ./gradlew --quiet assembleRelease)
 # CI keeps the dmg script from laying out the window in Finder, which needs a desktop session.
 (cd apps/desktop && CI=true pnpm tauri build --bundles app,dmg --config "$tauri")
+(cd apps/desktop && CI=true pnpm tauri build --target x86_64-apple-darwin --bundles app,dmg --config "$tauri")
 (cd apps/desktop && pnpm tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis --config "$tauri")
 (cd apps/web && node scripts/compress.js)
 for arch in x86_64 aarch64; do
@@ -68,24 +69,30 @@ cp "$apk" "$app/NextTodo.apk"
 jq -n --argjson native "$(jq .native apps/web/dist/app/web.json)" --arg version "$version" \
   '{native: $native, versionName: $version, url: "app/NextTodo.apk"}' > "$app/android.json"
 bundle=apps/desktop/src-tauri/target/release/bundle
+intel=apps/desktop/src-tauri/target/x86_64-apple-darwin/release/bundle
 windows=apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/NextTodo_${version}_x64-setup.exe
 cp "$bundle/macos/NextTodo.app.tar.gz" "$app/"
+cp "$intel/macos/NextTodo.app.tar.gz" "$app/NextTodo-x64.app.tar.gz"
 cp "$windows" "$app/NextTodo-setup.exe"
 # Each read on its own line, where set -e stops at a missing signature; inside jq's arguments it
 # would not. The downloads are relative to desktop.json: the app resolves them against its server.
 mac_signature=$(cat "$bundle/macos/NextTodo.app.tar.gz.sig")
+intel_signature=$(cat "$intel/macos/NextTodo.app.tar.gz.sig")
 windows_signature=$(cat "$windows.sig")
-jq -n --arg version "$version" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg mac "$mac_signature" --arg windows "$windows_signature" \
+jq -n --arg version "$version" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg mac "$mac_signature" --arg intel "$intel_signature" --arg windows "$windows_signature" \
   '{version: $version, pub_date: $date, platforms: {
     "darwin-aarch64": {signature: $mac, url: "NextTodo.app.tar.gz"},
+    "darwin-x86_64": {signature: $intel, url: "NextTodo-x64.app.tar.gz"},
     "windows-x86_64": {signature: $windows, url: "NextTodo-setup.exe"}
   }}' > "$app/desktop.json"
 
 # Without the version in their names, so that `releases/latest/download/<name>` always finds them.
 cp "$apk" "$assets/NextTodo-android.apk"
 cp "$bundle/dmg/NextTodo_${version}_aarch64.dmg" "$assets/NextTodo-macos-arm64.dmg"
+cp "$intel/dmg/NextTodo_${version}_x64.dmg" "$assets/NextTodo-macos-x64.dmg"
 cp "$windows" "$assets/NextTodo-windows-x64-setup.exe"
 cp target/aarch64-apple-darwin/release/nexttodo "$assets/nexttodo-macos-arm64"
+cp target/x86_64-apple-darwin/release/nexttodo "$assets/nexttodo-macos-x64"
 cp target/x86_64-unknown-linux-musl/release/nexttodo "$assets/nexttodo-linux-x64"
 cp target/aarch64-unknown-linux-musl/release/nexttodo "$assets/nexttodo-linux-arm64"
 cp target/x86_64-pc-windows-msvc/release/nexttodo.exe "$assets/nexttodo-windows-x64.exe"
@@ -94,8 +101,9 @@ cp target/x86_64-pc-windows-msvc/release/nexttodo.exe "$assets/nexttodo-windows-
 # points into another one.
 release=https://github.com/JunieXD/NextTodo/releases/download/v$version
 cp "$bundle/macos/NextTodo.app.tar.gz" "$assets/"
+cp "$intel/macos/NextTodo.app.tar.gz" "$assets/NextTodo-x64.app.tar.gz"
 jq --arg url "$release/NextTodo-android.apk" '.url = $url' "$app/android.json" > "$assets/android.json"
-jq --arg mac "$release/NextTodo.app.tar.gz" --arg windows "$release/NextTodo-windows-x64-setup.exe" \
-  '.platforms["darwin-aarch64"].url = $mac | .platforms["windows-x86_64"].url = $windows' "$app/desktop.json" > "$assets/desktop.json"
-(cd "$assets" && shasum -a 256 NextTodo-* nexttodo-* > SHA256SUMS)
+jq --arg mac "$release/NextTodo.app.tar.gz" --arg intel "$release/NextTodo-x64.app.tar.gz" --arg windows "$release/NextTodo-windows-x64-setup.exe" \
+  '.platforms["darwin-aarch64"].url = $mac | .platforms["darwin-x86_64"].url = $intel | .platforms["windows-x86_64"].url = $windows' "$app/desktop.json" > "$assets/desktop.json"
+(cd "$assets" && shasum -a 256 NextTodo* nexttodo-* > SHA256SUMS)
 echo "已构建 NextTodo $version：$stage、$assets"

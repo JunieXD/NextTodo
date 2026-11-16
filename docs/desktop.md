@@ -74,7 +74,7 @@
 
 总体见[总体设计](design.md#app-更新)。用 `tauri-plugin-updater`：
 
-- 版本 `0.1.<提交数>`，由 `deploy/build.sh` 打包时写入。`tauri build` 同时生成更新包和它的签名（`createUpdaterArtifacts`）：macOS 是 `NextTodo.app.tar.gz`，Windows 直接用安装程序。构建脚本据此写出 `/app/desktop.json`，其中的下载地址是相对这个文件的路径，所以同一个镜像部署在哪个域名下都能用。
+- 版本 `0.1.<提交数>`，由 `deploy/build.sh` 打包时写入。`tauri build` 同时生成更新包和它的签名（`createUpdaterArtifacts`）：macOS 是 `NextTodo.app.tar.gz`（Intel 版的改名为 `NextTodo-x64.app.tar.gz`），Windows 直接用安装程序。构建脚本据此写出 `/app/desktop.json`，其中的下载地址是相对这个文件的路径，所以同一个镜像部署在哪个域名下都能用。
 - 启动时和之后每 6 小时，Rust 取 `<登录的服务器>/app/desktop.json`，把下载地址换成完整地址，交给更新插件判断版本、下载并校验签名。签名里记着版本号，必须和文件里写的一致。
 - 下载好以后，macOS 当场替换 App，下次启动生效；Windows 的安装程序一运行就会关掉 App，所以先留在内存里，等点了“重启”再安装（被动模式，只显示进度条），装完自动打开。提示条显示“新版本已准备好，重启后生效”，附“重启”；macOS 不点的话，下次退出再打开时生效，Windows 不点的话，退出后这次的下载作废，下次启动重新检查。
 - 更新密钥：私钥文件路径和密码从环境变量 `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 读取，不进仓库；公钥写在 `tauri.conf.json`。私钥丢了，已装的 App 就收不到更新，只能手动装一次换了公钥的新版本。
@@ -118,8 +118,10 @@ Tauri 构建前先运行 `apps/desktop/cli.sh`（`beforeBuildCommand`、`beforeD
 | 平台 | 命令 | 产物 |
 |---|---|---|
 | macOS（Apple 芯片） | `pnpm tauri build --bundles app,dmg` | `.app`、`.dmg` 和更新包 |
+| macOS（Intel） | `pnpm tauri build --target x86_64-apple-darwin --bundles app,dmg` | `.app`、`.dmg` 和更新包 |
 | Windows（x64） | `pnpm tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis` | NSIS 安装程序和它的签名 |
 
+- Intel 版在 Apple 芯片的 Mac 上交叉编译，要 `rustup target add x86_64-apple-darwin`；可以在同一台 Mac 上用 Rosetta 运行它来检查。
 - Windows 版用 `cargo-xwin` 交叉编译，要 `rustup target add x86_64-pc-windows-msvc`、`cargo install cargo-xwin`、Homebrew 的 `nsis` 和 `llvm`（`llvm` 的 `bin` 要在 `PATH` 里，里面有 `clang-cl` 和 `llvm-rc`）。第一次构建会下载 Windows SDK，可以用 `XWIN_CACHE_DIR` 指定放在哪里。
 - 不做苹果签名和公证，用 ad-hoc 签名（`signingIdentity: "-"`）。本机构建的不带隔离属性，直接能打开；从网上下载的第一次打开会被拦下，要到“系统设置 → 隐私与安全性”里点“仍要打开”。
 - Windows 安装程序没有代码签名，第一次运行时 SmartScreen 会提示，点“更多信息 → 仍要运行”。默认装到当前用户目录，不需要管理员权限；系统缺 WebView2 时安装程序会下载。

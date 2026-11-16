@@ -7,6 +7,7 @@ set -eu
 
 case "$(uname -s) $(uname -m)" in
   "Darwin arm64") file=nexttodo-macos-arm64 ;;
+  "Darwin x86_64") file=nexttodo-macos-x64 ;;
   "Linux x86_64") file=nexttodo-linux-x64 ;;
   "Linux aarch64" | "Linux arm64") file=nexttodo-linux-arm64 ;;
   *)

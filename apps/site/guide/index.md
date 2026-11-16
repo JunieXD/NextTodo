@@ -8,6 +8,7 @@ NextTodo 是一个待办应用。和普通待办不同的是，事项之间可�
 |---|---|---|
 | Android | [NextTodo-android.apk](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-android.apk) | Android 8.0 及以上 |
 | macOS | [NextTodo-macos-arm64.dmg](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-macos-arm64.dmg) | Apple 芯片，macOS 14 及以上 |
+| macOS | [NextTodo-macos-x64.dmg](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-macos-x64.dmg) | Intel 芯片，macOS 14 及以上 |
 | Windows | [NextTodo-windows-x64-setup.exe](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-windows-x64-setup.exe) | Windows 10 或 11，x64 |
 
 链接下载的都是最新版。第一次打开时系统可能会拦下，处理办法见[下载和安装](./install)。

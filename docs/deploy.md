@@ -150,12 +150,12 @@ NEXTTODO_HOST=myserver NEXTTODO_DIR=/srv/nexttodo NEXTTODO_PORT=8080 deploy/depl
 
 | 命令 | 做什么 |
 |---|---|
-| `deploy/build.sh` | 构建全部，版本 `0.1.<提交数>`。`target/deploy` 是镜像的内容（两种架构的服务端、网页和 `/app/` 下的更新），`target/release-assets` 是安装包、各平台的命令行 `nexttodo-*`、本机模式用的更新（`android.json`、`desktop.json` 和 `NextTodo.app.tar.gz`）和 `SHA256SUMS` |
+| `deploy/build.sh` | 构建全部，版本 `0.1.<提交数>`。`target/deploy` 是镜像的内容（两种架构的服务端、网页和 `/app/` 下的更新），`target/release-assets` 是安装包、各平台的命令行 `nexttodo-*`、本机模式用的更新（`android.json`、`desktop.json`、`NextTodo.app.tar.gz` 和 `NextTodo-x64.app.tar.gz`）和 `SHA256SUMS` |
 | `deploy/release.sh` | 发布已推送的提交：镜像推到 GHCR（版本号和 `latest` 两个标签），安装包传到 GitHub Releases（标签 `v<版本号>`），说明取 `CHANGELOG.md` 最上面一节，它的版本号要和这次发布的一样（见[更新日志](design.md#更新日志)）：写这一节的提交就是要发布的，版本号是提交以后的提交数。要先 `docker login ghcr.io` 并登录 `gh` |
 | `deploy/deploy.sh` | 见[用部署脚本](#用部署脚本) |
 
 - 三个脚本都要求工作区干净。
-- 安装包和命令行的文件名不带版本号（`NextTodo-android.apk`、`NextTodo-macos-arm64.dmg`、`NextTodo-windows-x64-setup.exe`、`nexttodo-<平台>`），`https://github.com/JunieXD/NextTodo/releases/latest/download/<文件名>` 总是下载最新版，官网、README 和 App 都用这个地址。
+- 安装包和命令行的文件名不带版本号（`NextTodo-android.apk`、`NextTodo-macos-arm64.dmg`、`NextTodo-macos-x64.dmg`、`NextTodo-windows-x64-setup.exe`、`nexttodo-<平台>`），`https://github.com/JunieXD/NextTodo/releases/latest/download/<文件名>` 总是下载最新版，官网、README 和 App 都用这个地址。
 
 ## 官网
 

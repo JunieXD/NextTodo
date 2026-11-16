@@ -63,6 +63,7 @@ App 可以只在本机使用，不需要服务器和账号；也可以连接自�
 |---|---|---|
 | Android | [NextTodo-android.apk](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-android.apk) | Android 8.0 及以上 |
 | macOS | [NextTodo-macos-arm64.dmg](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-macos-arm64.dmg) | Apple 芯片，macOS 14 及以上 |
+| macOS | [NextTodo-macos-x64.dmg](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-macos-x64.dmg) | Intel 芯片，macOS 14 及以上 |
 | Windows | [NextTodo-windows-x64-setup.exe](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-windows-x64-setup.exe) | Windows 10 或 11，x64 |
 | 网页 | 用浏览器打开服务器的地址，可以安装为 PWA | 需要先部署服务端 |
 

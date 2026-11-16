@@ -195,6 +195,7 @@ $ nexttodo graph 工作
   | 平台 | 文件 |
   |---|---|
   | macOS（Apple 芯片） | `nexttodo-macos-arm64` |
+  | macOS（Intel） | `nexttodo-macos-x64` |
   | Linux x64 | `nexttodo-linux-x64` |
   | Linux arm64 | `nexttodo-linux-arm64` |
   | Windows x64 | `nexttodo-windows-x64.exe` |

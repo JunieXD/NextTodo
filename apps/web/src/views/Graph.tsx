@@ -144,7 +144,7 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
       meta = (
         <span className="n-meta">
           <Icon of={CalendarClock} size={12} />
-          {startLabel(t.start!, now)}
+          {startLabel(t.start!, t.start_time, now)}
         </span>
       );
     } else if (!outside && t.due) {

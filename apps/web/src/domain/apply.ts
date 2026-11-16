@@ -213,6 +213,7 @@ class Applier {
           description: op.description ?? "",
           done_at: op.done ? now : null,
           start: op.start ?? null,
+          start_time: op.start_time,
           due: op.due ?? null,
           sort_key: op.sort_key ?? lastKey(keys),
           assignees,
@@ -231,7 +232,12 @@ class Applier {
         if (op.folder_id !== undefined) t.folder_id = op.folder_id;
         if (op.title !== undefined) t.title = op.title;
         if (op.description !== undefined) t.description = op.description;
-        if (op.start !== undefined) t.start = op.start;
+        if (op.start !== undefined) {
+          // The time goes with the date; a new date keeps it.
+          if (op.start === null) t.start_time = undefined;
+          t.start = op.start;
+        }
+        if (op.start_time !== undefined) t.start_time = op.start_time ?? undefined;
         if (op.due !== undefined) t.due = op.due;
         if (op.sort_key !== undefined) t.sort_key = op.sort_key;
         if (op.assign?.length || op.unassign?.length) {
@@ -246,7 +252,7 @@ class Applier {
             if (!op.today) throw new Rejected("invalid", "完成重复的事项需要给出今天的日期");
             const date = nextDue(repeat, t.due.date, op.today);
             if (!date) throw new Rejected("invalid", "下一次的截止日期超出范围");
-            // The start date keeps as far before it (docs/design.md#开始日期).
+            // The start date keeps as far before it, at the same time (docs/design.md#开始时间).
             if (t.start) t.start = shifted(t.start, t.due.date, date);
             t.due = { ...t.due, date };
             t.completions = { count: (t.completions?.count ?? 0) + 1, last: op.today };
@@ -598,10 +604,13 @@ class Applier {
           this.createTask({ ...t, updated_at: now, updated_by: this.cx.me, updated_via: null });
         } else {
           const cur = this.d.tasks.get(e.before.id);
-          const fields = ["folder_id", "title", "description", "done_at", "start", "completions", "sort_key"] as const;
+          const fields = ["folder_id", "title", "description", "done_at", "start", "start_time", "completions", "sort_key"] as const;
           if (cur) {
+            const restored = restore(cur, e.before, e.after, fields);
             this.updateTask(cur, {
-              ...restore(cur, e.before, e.after, fields),
+              ...restored,
+              // A time without its date, which was cleared since, goes too.
+              start_time: restored.start ? restored.start_time : undefined,
               due: restoreDue(cur.due, e.before.due, e.after.due),
               assignees: restorePeople(cur.assignees, e.before.assignees, e.after.assignees),
             });
@@ -690,7 +699,14 @@ function restoreDue(cur: Due | null, before: Due | null, after: Due | null): Due
 /** What the server rejects too, so that a change it would refuse isn't applied here meanwhile. */
 function checkTask(t: Task) {
   if (t.done_at !== null && t.due?.repeat) throw new Rejected("invalid", `“${t.title}”已完成，不能设置重复，请先重新打开`);
-  if (t.start && t.due && t.start > t.due.date) throw new Rejected("invalid", `“${t.title}”的开始日期不能晚于截止日期`);
+  if (!t.start) {
+    if (t.start_time) throw new Rejected("invalid", "设置开始的几点需要先有开始日期");
+    return;
+  }
+  if (t.due && t.start > t.due.date) throw new Rejected("invalid", `“${t.title}”的开始日期不能晚于截止日期`);
+  if (t.due?.time && t.start_time && t.start === t.due.date && t.start_time > t.due.time) {
+    throw new Rejected("invalid", `“${t.title}”的开始时间不能晚于截止时间`);
+  }
 }
 
 /** Equal as data: entities and their fields are plain JSON. */

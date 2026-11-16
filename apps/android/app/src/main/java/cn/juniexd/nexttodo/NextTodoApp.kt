@@ -1,11 +1,8 @@
 package cn.juniexd.nexttodo
 
 import android.app.Application
-import android.appwidget.AppWidgetManager
-import android.content.ComponentName
 import android.os.Build
 import android.util.Log
-import cn.juniexd.nexttodo.widget.NextWidgetReceiver
 import cn.juniexd.nexttodo.widget.Widget
 import java.io.File
 
@@ -25,7 +22,7 @@ class NextTodoApp : Application() {
             }
         }
         // To the mode now: in local mode its refreshes need no network (docs/local.md#android).
-        if (AppWidgetManager.getInstance(this).getAppWidgetIds(ComponentName(this, NextWidgetReceiver::class.java)).isNotEmpty()) Widget.schedule(this)
+        if (Widget.placed(this)) Widget.schedule(this)
     }
 
     private fun processName(): String =

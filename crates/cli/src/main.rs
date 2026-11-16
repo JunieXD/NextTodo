@@ -93,7 +93,7 @@ enum Command {
         folder: Option<String>,
         #[arg(short, long, allow_hyphen_values = true, help = "描述，Markdown")]
         description: Option<String>,
-        #[arg(long, help = "开始日期：2026-11-14，没到这天时事项等着")]
+        #[arg(long, help = "开始时间：2026-11-14 或 \"2026-11-14 09:30\"，没到时事项等着")]
         start: Option<String>,
         #[arg(long, help = "截止时间：2026-11-20 或 \"2026-11-20 18:00\"")]
         due: Option<String>,
@@ -133,9 +133,9 @@ enum Command {
         replace: Vec<String>,
         #[arg(long, allow_hyphen_values = true, conflicts_with = "description", help = "在描述末尾另起一行追加")]
         append: Option<String>,
-        #[arg(long, conflicts_with = "no_start", help = "开始日期：2026-11-14")]
+        #[arg(long, conflicts_with = "no_start", help = "开始时间：2026-11-14 或 \"2026-11-14 09:30\"；只写日期的去掉原来的几点")]
         start: Option<String>,
-        #[arg(long, help = "清除开始日期")]
+        #[arg(long, help = "清除开始时间")]
         no_start: bool,
         #[arg(long, conflicts_with = "no_due", help = "截止时间：2026-11-20 或 \"2026-11-20 18:00\"")]
         due: Option<String>,
@@ -490,13 +490,16 @@ fn printable(s: &str) -> String {
     out
 }
 
-/// The day here: start dates come by it, and repeating tasks done move on from it (docs/agent.md#引用).
-fn today() -> String {
-    chrono::Local::now().format("%Y-%m-%d").to_string()
+/// The day and time here, in a tool's arguments: starts come by them, and repeating tasks done move on
+/// from the day (docs/agent.md#引用).
+fn here(args: &mut Value) {
+    let now = chrono::Local::now();
+    args["today"] = now.format("%Y-%m-%d").to_string().into();
+    args["time"] = now.format("%H:%M").to_string().into();
 }
 
 fn call(name: &str, mut args: Value, json_out: bool) -> anyhow::Result<()> {
-    args["today"] = today().into();
+    here(&mut args);
     let (server, token) = connect()?;
     let (text, data) = server.tool(name, &token, &args)?;
     if json_out {
@@ -590,9 +593,12 @@ fn mcp() -> anyhow::Result<()> {
                 continue;
             }
         };
-        // Agents seldom say what day it is: through here, it is this computer's.
-        if message["method"] == "tools/call" && message["params"]["arguments"].get("today").is_none() {
-            message["params"]["arguments"]["today"] = today().into();
+        // Agents seldom say what day and time it is: through here, they are this computer's.
+        if message["method"] == "tools/call" {
+            let args = &mut message["params"]["arguments"];
+            if args.get("today").is_none() && args.get("time").is_none() {
+                here(args);
+            }
         }
         match forward(&message.to_string(), version.as_deref()) {
             Ok(Some(reply)) => {

@@ -9,6 +9,7 @@ import type { Share } from "../api/types/Share";
 import type { Snapshot } from "../api/types/Snapshot";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
+import { isoDate, isoTime } from "./dates";
 
 export type Status = "ready" | "waiting" | "done";
 
@@ -23,8 +24,21 @@ export const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 /** Whether a task's title or description has `q`, given trimmed and in lower case. */
 export const matches = (t: Task, q: string) => t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q);
 
-/** A snapshot indexed for lookups, as of a day, the user's today (`YYYY-MM-DD`), for the user `me`.
- * `null` as a folder means the root, the user's own. */
+/** The user's day, `YYYY-MM-DD`, and time, `HH:MM`; without a time, all of the day has come. */
+export interface Now {
+  today: string;
+  time?: string;
+}
+
+/** The moment `d` as the user's day and time. */
+export const nowOf = (d: Date): Now => ({ today: isoDate(d), time: isoTime(d) });
+
+/** Whether a start, its date with a time or without, is still to come `now`. */
+export const before = (now: Now, date: string, time?: string) =>
+  date > now.today || (date === now.today && time !== undefined && now.time !== undefined && time > now.time);
+
+/** A snapshot indexed for lookups, as of a moment, the user's `now`, for the user `me`. `null` as a
+ * folder means the root, the user's own. */
 export class Board {
   private readonly tasks = new Map<TaskId, Task>();
   /** By owner and number: `${owner}#${number}`. */
@@ -47,7 +61,7 @@ export class Board {
 
   constructor(
     readonly snapshot: Snapshot,
-    readonly today: string,
+    readonly now: Now,
     readonly me: string,
   ) {
     for (const p of snapshot.people) this.people.set(p.id, p);
@@ -167,9 +181,23 @@ export class Board {
     return this.waitingOn(t) === 0 && !this.notStarted(t) ? "ready" : "waiting";
   }
 
-  /** Whether its start date is still to come. */
+  /** Whether its start is still to come. */
   notStarted(t: Task): boolean {
-    return t.start !== null && t.start > this.today;
+    return t.start !== null && before(this.now, t.start, t.start_time);
+  }
+
+  /** When the first of the user's open tasks still to start does: the date, and the time if it has
+   * one. Shown with what is ready, so that what shows it can be fetched again then. */
+  nextStart(): { date: string; time?: string } | null {
+    let next: { date: string; time?: string } | null = null;
+    for (const t of this.snapshot.tasks) {
+      if (t.done_at !== null || t.start === null || !this.mine(t) || !before(this.now, t.start, t.start_time)) continue;
+      // A date alone starts the day: before any time on it.
+      if (!next || cmp(t.start, next.date) < 0 || (t.start === next.date && cmp(t.start_time ?? "", next.time ?? "") < 0)) {
+        next = { date: t.start, time: t.start_time };
+      }
+    }
+    return next;
   }
 
   /** How many prerequisites are not done yet. */

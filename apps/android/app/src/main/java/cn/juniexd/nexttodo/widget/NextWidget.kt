@@ -290,4 +290,13 @@ class NextWidgetReceiver : GlanceAppWidgetReceiver() {
         super.onDisabled(context)
         Widget.unschedule(context)
     }
+
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action == STARTED) Widget.started(context) else super.onReceive(context, intent)
+    }
+
+    companion object {
+        /** A task in the list has started: see `Widget.refreshAt`. */
+        const val STARTED = "cn.juniexd.nexttodo.WIDGET_STARTED"
+    }
 }

@@ -4,7 +4,7 @@
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
-use nexttodo_core::board::{Board, Status};
+use nexttodo_core::board::{Board, Now, Status};
 use nexttodo_core::model::{Change, Date, Description, Due, Effect, FolderId, MutationId, Name, Repeat, RepeatFrom, Task, TaskId, Title};
 use nexttodo_core::ops::Op;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use super::args::{
     AddArgs, ApplyArgs, DeleteArgs, DepArgs, DoneArgs, EditArgs, MkdirArgs, MoveArgs, Plan, PlanRef, PlanTask, RenameArgs, RepeatText,
-    Replace, ShareArgs, TaskRef, TasksArgs, UndoArgs, UnshareArgs, task_ref,
+    Replace, ShareArgs, TaskRef, TasksArgs, UndoArgs, UnshareArgs, WhenText, task_ref,
 };
 use super::text::{self, Names, task_view};
 use super::{Output, WriteFn, find_folder, find_task, person};
@@ -50,7 +50,7 @@ pub fn run(
     auth: &Auth,
     id: Option<MutationId>,
     now: i64,
-    today: Option<Date>,
+    local: Option<Now>,
     build: WriteFn,
 ) -> Result<(Output, Vec<String>), ApiError> {
     let actor = Actor { user: &auth.user_id, token_id: &auth.token_id, via: auth.via() };
@@ -68,13 +68,14 @@ pub fn run(
         return Ok((output, Vec::new()));
     }
     let snap = store::snapshot(&tx, &auth.user_id)?;
-    let day = today.clone().unwrap_or_else(|| Date::utc(now));
-    let write = build(&WriteCx { c: &tx, user: &auth.user_id, board: &Board::new(&snap, day.clone(), &auth.user_id), today })?;
+    let today = local.as_ref().map(|l| l.today.clone());
+    let local = local.unwrap_or_else(|| Now::utc(now));
+    let write = build(&WriteCx { c: &tx, user: &auth.user_id, board: &Board::new(&snap, local.clone(), &auth.user_id), today })?;
     let done = mutate::run(&tx, &actor, &write.ops, now)?;
     let effects = done.view(&auth.user_id);
     // Rendered inside the transaction, so a preview still sees what it would have made.
     let after = store::snapshot(&tx, &auth.user_id)?;
-    let b = Board::new(&after, day, &auth.user_id);
+    let b = Board::new(&after, local, &auth.user_id);
     let names = Names::new(&after, &auth.user_id, store::people(&tx, &text::strangers(&after, &effects))?);
     if write.preview {
         return Ok((report(&b, names, None, &effects), Vec::new()));
@@ -162,7 +163,7 @@ impl Folders<'_, '_> {
     }
 }
 
-fn due(due: Option<super::args::DueText>, remind: Option<u32>, repeat: Option<Repeat>) -> Result<Option<Due>, ApiError> {
+fn due(due: Option<WhenText>, remind: Option<u32>, repeat: Option<Repeat>) -> Result<Option<Due>, ApiError> {
     match (due, remind, repeat) {
         (None, None, None) => Ok(None),
         (None, Some(_), _) => Err(ApiError::invalid("设置提醒需要截止时间", Some("remind".into()))),
@@ -175,7 +176,7 @@ fn due(due: Option<super::args::DueText>, remind: Option<u32>, repeat: Option<Re
 
 /// A new task's due date, as a plan gives it.
 pub(crate) fn new_due(
-    due_text: Option<super::args::DueText>,
+    due_text: Option<WhenText>,
     remind: Option<u32>,
     repeat_text: Option<RepeatText>,
     from: Option<RepeatFrom>,
@@ -255,12 +256,14 @@ fn plan_ops(b: &Board, plan: Plan, number: &dyn Fn(i64) -> Option<TaskId>) -> Re
             Some(p) if p.trim_start().starts_with('/') => folders.ensure(&mut ops, &p)?.0,
             Some(p) => folders.ensure(&mut ops, &format!("{base_path}/{p}"))?.0,
         };
+        let (start, start_time) = start.map_or((None, None), |s| (Some(s.date), s.time));
         ops.push(Op::TaskCreate {
             id,
             title,
             folder_id,
             description: description.unwrap_or_default(),
             start,
+            start_time,
             due: new_due(due_text, remind, repeat_text, repeat_from)?,
             sort_key: None,
             done: false,
@@ -313,8 +316,26 @@ pub fn apply(w: &WriteCx, a: ApplyArgs) -> Result<Write, ApiError> {
 pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
     let t = find_task(w.board, &a.task)?;
     let Edit { id, title, description, start, due, assign, unassign } = edit_fields(w.board, t, a)?;
-    let op =
-        Op::TaskUpdate { id, folder_id: None, title, description, start, due, sort_key: None, done: None, today: None, assign, unassign };
+    // A start date given without a time starts at the start of its day; cleared, its time goes too.
+    let (start, start_time) = match start {
+        None => (None, None),
+        Some(None) => (Some(None), None),
+        Some(Some(s)) => (Some(Some(s.date)), Some(s.time)),
+    };
+    let op = Op::TaskUpdate {
+        id,
+        folder_id: None,
+        title,
+        description,
+        start,
+        start_time,
+        due,
+        sort_key: None,
+        done: None,
+        today: None,
+        assign,
+        unassign,
+    };
     Ok(vec![op].into())
 }
 
@@ -324,7 +345,7 @@ pub(crate) struct Edit {
     pub id: TaskId,
     pub title: Option<Title>,
     pub description: Option<Description>,
-    pub start: Option<Option<Date>>,
+    pub start: Option<Option<WhenText>>,
     pub due: Option<Option<Due>>,
     pub assign: Vec<String>,
     pub unassign: Vec<String>,
@@ -453,6 +474,7 @@ fn set_done(b: &Board, tasks: Vec<TaskRef>, done: bool, today: Option<Date>, end
                 title: None,
                 description: None,
                 start: None,
+                start_time: None,
                 due,
                 sort_key: None,
                 done: Some(done),
@@ -511,6 +533,7 @@ pub fn move_to(w: &WriteCx, a: MoveArgs) -> Result<Write, ApiError> {
             title: None,
             description: None,
             start: None,
+            start_time: None,
             due: None,
             sort_key: None,
             done: None,

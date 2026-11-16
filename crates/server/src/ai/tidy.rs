@@ -3,11 +3,11 @@
 
 use std::collections::{HashMap, HashSet};
 
-use nexttodo_core::board::{Board, Snapshot};
+use nexttodo_core::board::{Board, Now, Snapshot};
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
-    AiJob, Date, Description, FolderId, NewTask, Period, Reorder, Repeat, RepeatFrom, Suggestion, Task, TaskDeletion, TaskEdit, TaskId,
-    Title, Was,
+    AiJob, Description, FolderId, NewTask, Period, Reorder, Repeat, RepeatFrom, Suggestion, Task, TaskDeletion, TaskEdit, TaskId, Title,
+    Was,
 };
 use nexttodo_core::ops::MAX_OPS;
 use serde::Deserialize;
@@ -17,7 +17,7 @@ use uuid::Uuid;
 use super::llm::Prompt;
 use super::organize::{chat, due_text, unwrap};
 use crate::error::from_value;
-use crate::tools::args::{DueText, EditArgs, PlanRef, RepeatText, TaskRef, task_ref};
+use crate::tools::args::{EditArgs, PlanRef, RepeatText, TaskRef, WhenText, task_ref};
 use crate::tools::{Edit, edit_fields, new_due};
 
 /// How many of the folder's open tasks the model is shown, and of its done ones, the latest.
@@ -87,8 +87,8 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
 pub struct Shown {
     snap: Snapshot,
     user: String,
-    /// The day the board is as of: the job's in UTC, since tidying reads no task's status.
-    day: Date,
+    /// When the board is as of: the job's in UTC, since tidying reads no task's status.
+    now: Now,
     folder: Option<FolderId>,
     tasks: HashMap<i64, Seen>,
 }
@@ -104,8 +104,8 @@ enum Seen {
 
 /// The chat for `job`, a tidying of its folder in `snap`, and what was shown in it.
 pub fn prompt(job: &AiJob, snap: Snapshot, user: &str) -> (Prompt, Shown) {
-    let day = Date::utc(job.created_at);
-    let board = Board::new(&snap, day.clone(), user);
+    let now = Now::utc(job.created_at);
+    let board = Board::new(&snap, now.clone(), user);
     let all = board.tasks_in(job.folder_id);
     let open: Vec<&Task> = all.iter().copied().filter(|t| t.done_at.is_none()).take(SHOWN).collect();
     // Listed most recently done first.
@@ -167,7 +167,7 @@ pub fn prompt(job: &AiJob, snap: Snapshot, user: &str) -> (Prompt, Shown) {
         "open_tasks": open_tasks,
         "done_tasks": done_tasks,
     });
-    (chat(SYSTEM, &input), Shown { snap, user: user.to_owned(), day, folder: job.folder_id, tasks })
+    (chat(SYSTEM, &input), Shown { snap, user: user.to_owned(), now, folder: job.folder_id, tasks })
 }
 
 /// `1d`, `2w`, `3m`, `1w:1,3,5`, `1m:1,15`, as the tools take a repeat.
@@ -200,7 +200,7 @@ struct Suggested {
     delete: bool,
     title: Option<Title>,
     description: Option<Description>,
-    due: Option<DueText>,
+    due: Option<WhenText>,
     remind: Option<u32>,
     repeat: Option<RepeatText>,
     repeat_from: Option<RepeatFrom>,
@@ -305,7 +305,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             None => suggestions.push(s),
         }
     }
-    let board = Board::new(&shown.snap, shown.day.clone(), &shown.user);
+    let board = Board::new(&shown.snap, shown.now.clone(), &shown.user);
     // The folder's tasks all have its owner's numbers.
     let owner = board.owner_of(shown.folder);
     let task = |n: i64| -> Result<(&Task, Seen), String> {

@@ -60,8 +60,9 @@ interface NextTodoPlugin {
   /** Deletes those changes: signed out. */
   forgetChanges(): Promise<void>;
   /** Hands the widget its list, as JSON in the shape of the `next` tool's `tasks`, as of the change
-   * `seq`; without one, as when signing out, it replaces whatever the widget has. */
-  updateWidget(o: { tasks: string; seq?: number }): Promise<void>;
+   * `seq`; without one, as when signing out, it replaces whatever the widget has. At `nextStart`, as
+   * the `next` tool's `next_start` gives it, the widget fetches its list itself. */
+  updateWidget(o: { tasks: string; seq?: number; nextStart?: string }): Promise<void>;
   /** How large the widget's text is, which it keeps. */
   widgetTextSize(): Promise<{ size: WidgetTextSize }>;
   setWidgetTextSize(o: { size: WidgetTextSize }): Promise<void>;
@@ -138,7 +139,7 @@ export const widgetTasks = (board: Board) =>
   }));
 
 /** What the device reminds of (docs/android.md#截止提醒): every reminder, past ones too, with whether
- * the task waits for prerequisites, and for its start date, which the device reads by its own day. */
+ * the task waits for prerequisites, and for its start, which the device reads by its own clock. */
 export const deviceReminders = (board: Board) =>
   reminders(board).map((r) => ({
     task: r.task.id,
@@ -147,6 +148,7 @@ export const deviceReminders = (board: Board) =>
     body: r.body,
     waiting: board.waitingOn(r.task),
     start: r.task.start,
+    start_time: r.task.start_time,
   }));
 
 /** What the system calendar shows when it is written to: the open tasks with a deadline in `folders`
@@ -191,7 +193,9 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
     const { board } = store.getView();
     // With the change the copy is as of: the widget keeps a list it fetched since, should the copy
     // be behind the server.
-    await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board)), seq: store.since });
+    const start = board.nextStart();
+    const nextStart = start ? [start.date, start.time].filter(Boolean).join(" ") : undefined;
+    await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board)), seq: store.since, nextStart });
     await NextTodo.setReminders({ reminders: JSON.stringify(deviceReminders(board)) });
   };
   const calendar = () => NextTodo.updateCalendar({ events: JSON.stringify(calendarEvents(store.getView().board, calendarFolders(user))) });

@@ -11,9 +11,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
-use nexttodo_core::board::{Board, Snapshot};
+use nexttodo_core::board::{Board, Now, Snapshot};
 use nexttodo_core::dag::find_path;
-use nexttodo_core::model::{AiJob, Date, Due, RepeatFrom, Suggestion, TaskId};
+use nexttodo_core::model::{AiJob, Due, RepeatFrom, Suggestion, TaskId};
 use nexttodo_core::ops::{MAX_OPS, Op};
 use nexttodo_server::ai::llm::{Api, Config, Https, Prompt, Thinking};
 use nexttodo_server::ai::{organize, tidy};
@@ -282,9 +282,9 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The checks read no task's status, which is all a board's day is for.
+/// The checks read no task's status, which is all a board's time is for.
 fn board(snap: &Snapshot) -> Board<'_> {
-    Board::new(snap, Date::utc(0), ME)
+    Board::new(snap, Now::utc(0), ME)
 }
 
 fn ask(config: &Config, system: Option<&str>, case: &Case, index: usize, run: usize) -> Outcome {

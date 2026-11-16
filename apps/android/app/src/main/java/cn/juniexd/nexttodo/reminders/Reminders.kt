@@ -21,23 +21,41 @@ import cn.juniexd.nexttodo.Palette
 import cn.juniexd.nexttodo.R
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import org.json.JSONArray
 import org.json.JSONObject
 
 /** A task's reminder, as the app hands them over (`apps/web/src/android.ts`): at `at`, in
- * milliseconds; `waiting`, how many of its prerequisites are not done; `start`, its start date. */
-data class Reminder(val task: String, val at: Long, val title: String, val body: String, val waiting: Int, val start: LocalDate?) {
-    /** Whether it can be done straight from the reminder on `today`: it waits for nothing. */
-    fun ready(today: LocalDate) = waiting == 0 && (start == null || !start.isAfter(today))
+ * milliseconds; `waiting`, how many of its prerequisites are not done; `start` and `startTime`, when it
+ * starts, at the start of the day without a time. */
+data class Reminder(
+    val task: String,
+    val at: Long,
+    val title: String,
+    val body: String,
+    val waiting: Int,
+    val start: LocalDate?,
+    val startTime: LocalTime?,
+) {
+    /** Whether it can be done straight from the reminder `now`: it waits for nothing. */
+    fun ready(now: LocalDateTime) = waiting == 0 && toStart(now) == null
 
     /** What the reminder card says under the title: what the notification says, and what it waits for. */
     fun meta(now: LocalDateTime): String {
-        val waits = when {
-            waiting > 0 -> "等 $waiting 项"
-            start != null && start.isAfter(now.toLocalDate()) -> "${Due(start, null).label(now)}开始"
-            else -> null
-        }
+        val waits = if (waiting > 0) "等 $waiting 项" else toStart(now)
         return listOfNotNull(body, waits).joinToString(" · ")
+    }
+
+    /** Its start, if still to come `now`, as the app writes it: `20:00 开始`, `明天开始`, `周五 09:30 开始`. */
+    private fun toStart(now: LocalDateTime): String? {
+        val date = start ?: return null
+        if (!date.atTime(startTime ?: LocalTime.MIDNIGHT).isAfter(now)) return null
+        val day = Due(date, startTime)
+        return when {
+            startTime == null -> "${day.label(now)}开始"
+            day.today(now) -> "%02d:%02d 开始".format(startTime.hour, startTime.minute)
+            else -> "${day.label(now)} 开始"
+        }
     }
 
     companion object {
@@ -48,6 +66,7 @@ data class Reminder(val task: String, val at: Long, val title: String, val body:
             o.getString("body"),
             o.getInt("waiting"),
             if (o.isNull("start")) null else LocalDate.parse(o.getString("start")),
+            o.optString("start_time").takeIf { it.isNotEmpty() }?.let(LocalTime::parse),
         )
     }
 }
@@ -118,10 +137,10 @@ object Reminders {
 
     /** Keeps `list`, as JSON. A reminder put off stays so while its time is the same. Notifications
      * shown for reminders gone or moved go; one shown otherwise than it is now, its task renamed, come
-     * to wait for another or its start date come, shows as it is, without a sound. The alarm moves to
+     * to wait for another or its start come, shows as it is, without a sound. The alarm moves to
      * the next. */
     private fun keep(context: Context, list: String) {
-        val today = LocalDate.now()
+        val now = LocalDateTime.now()
         val wanted = JSONArray(list).let { a -> (0 until a.length()).map { Reminder.from(a.getJSONObject(it)) } }.associateBy { it.task }
         val snoozed = snoozed(context)
         for ((task, s) in snoozed.entries()) if (wanted[task]?.at != s.getLong("at")) snoozed.remove(task)
@@ -141,7 +160,7 @@ object Reminders {
             } else if (
                 extras.getCharSequence(Notification.EXTRA_TITLE).toString() != r.title ||
                 extras.getCharSequence(Notification.EXTRA_TEXT).toString() != r.body ||
-                extras.getBoolean(READY) != r.ready(today)
+                extras.getBoolean(READY) != r.ready(now)
             ) {
                 post(context, r, shown.notification.channelId == Channels.DUE_QUIET)
             }
@@ -183,7 +202,7 @@ object Reminders {
     }
 
     private fun json(r: Reminder) = JSONObject().put("task", r.task).put("at", r.at).put("title", r.title)
-        .put("body", r.body).put("waiting", r.waiting).put("start", r.start?.toString())
+        .put("body", r.body).put("waiting", r.waiting).put("start", r.start?.toString()).put("start_time", r.startTime?.toString())
 
     /** Signed out, or the data is gone: no reminders, none put off, none shown. */
     @Synchronized
@@ -272,7 +291,7 @@ object Reminders {
             .setAutoCancel(true)
             // Shown again as the task changes: the sound only the first time.
             .setOnlyAlertOnce(true)
-        val ready = r.ready(LocalDate.now())
+        val ready = r.ready(LocalDateTime.now())
         builder.addExtras(Bundle().apply { putString(TASK, r.task); putLong(AT, r.at); putBoolean(READY, ready) })
         if (ready) {
             val done = Intent(context, ReminderReceiver::class.java).setAction(ReminderReceiver.DONE).setData(uri)

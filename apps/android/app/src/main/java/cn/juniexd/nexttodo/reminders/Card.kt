@@ -289,7 +289,7 @@ private fun ReminderCard(
 ) {
     var snoozing by remember { mutableStateOf(snoozeFirst) }
     var done by remember { mutableStateOf(false) }
-    val ready = r.ready(now.toLocalDate())
+    val ready = r.ready(now)
     val titleColor by animateColorAsState(if (done) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface, label = "title")
     LaunchedEffect(done) {
         if (!done) return@LaunchedEffect

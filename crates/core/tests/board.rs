@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use nexttodo_core::board::{Board, Snapshot, Status};
-use nexttodo_core::model::{Date, FolderId, Task};
+use nexttodo_core::board::{Board, Now, Snapshot, Status};
+use nexttodo_core::model::{Date, FolderId, Task, Time};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -13,6 +13,9 @@ struct Case {
     /// The user's today; any day for the cases without start dates.
     #[serde(default)]
     today: Option<String>,
+    /// The time there, if known.
+    #[serde(default)]
+    time: Option<String>,
     folders: Vec<Value>,
     tasks: Vec<Value>,
     deps: Vec<(String, String)>,
@@ -36,6 +39,8 @@ struct Expect {
     paths: HashMap<String, String>,
     #[serde(default)]
     steps: HashMap<String, Option<(usize, usize)>>,
+    /// `2026-11-12` or `2026-11-12 20:00`.
+    next_start: Option<String>,
 }
 
 /// Turns the short names in a fixture into entity ids, and back.
@@ -77,7 +82,7 @@ fn snapshot(case: &Case, names: &mut Names) -> Snapshot {
             json!({
                 "id": names.id(t["id"].as_str().unwrap()), "number": i + 1,
                 "folder_id": s(&t["folder"]).map(|f| names.id(&f)),
-                "title": t["id"], "description": "", "done_at": t["done_at"], "start": t["start"], "due": t["due"], "sort_key": t["key"],
+                "title": t["id"], "description": "", "done_at": t["done_at"], "start": t["start"], "start_time": t["start_time"], "due": t["due"], "sort_key": t["key"],
                 "assignees": people(names, &t["assignees"]),
                 "created_at": 0, "updated_at": 0, "created_by": names.id("me"), "updated_by": names.id("me"), "created_via": null, "updated_via": null,
             })
@@ -117,8 +122,9 @@ fn board_matches_fixtures() {
         let mut names = Names::default();
         let snap = snapshot(case, &mut names);
         let today = Date::try_from(case.today.clone().unwrap_or_else(|| "2026-11-12".into())).unwrap();
+        let now = Now { today, time: case.time.clone().map(|t| Time::try_from(t).unwrap()) };
         let me = names.id("me");
-        let board = Board::new(&snap, today, &me);
+        let board = Board::new(&snap, now, &me);
         let task = |names: &mut Names, n: &str| board.task(serde_json::from_value(json!(names.id(n))).unwrap()).unwrap();
         let folder =
             |names: &mut Names, n: &str| -> Option<FolderId> { (n != "/").then(|| serde_json::from_value(json!(names.id(n))).unwrap()) };
@@ -143,6 +149,9 @@ fn board_matches_fixtures() {
             assert_eq!(&list(&names, board.tasks_in(f)), want, "{c}: order in {f:?}");
         }
         assert_eq!(list(&names, board.next()), case.expect.next, "{c}: next");
+        let next_start =
+            board.next_start().map(|(d, t)| t.map_or_else(|| d.as_str().to_owned(), |t| format!("{} {}", d.as_str(), t.as_str())));
+        assert_eq!(next_start, case.expect.next_start, "{c}: next start");
         let steps = board.steps();
         for (n, want) in &case.expect.steps {
             assert_eq!(steps.get(&task(&mut names, n).id).copied(), *want, "{c}: steps of {n}");
@@ -167,6 +176,7 @@ fn ordering_stays_linear_through_a_shared_task() {
     let case = Case {
         name: String::new(),
         today: None,
+        time: None,
         folders,
         tasks,
         deps,
@@ -175,7 +185,7 @@ fn ordering_stays_linear_through_a_shared_task() {
     };
     let mut names = Names::default();
     let snap = snapshot(&case, &mut names);
-    let board = Board::new(&snap, Date::try_from("2026-11-12".to_owned()).unwrap(), "me");
+    let board = Board::new(&snap, Now { today: Date::try_from("2026-11-12".to_owned()).unwrap(), time: None }, "me");
     let f = Some(serde_json::from_value(json!(names.id("f"))).unwrap());
     let order: Vec<String> = board.tasks_in(f).into_iter().map(|t| names.name(t)).collect();
     let want: Vec<String> = (0..n).map(|i| format!("b{i}")).chain((0..n).map(|i| format!("a{i}"))).collect();

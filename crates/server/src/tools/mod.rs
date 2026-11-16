@@ -13,8 +13,8 @@ use std::sync::Arc;
 
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;
-use nexttodo_core::board::Board;
-use nexttodo_core::model::{Date, FolderId, MutationId, Person, Task};
+use nexttodo_core::board::{Board, Now};
+use nexttodo_core::model::{Date, FolderId, MutationId, Person, Task, Time};
 use rmcp::handler::server::common::schema_for_type;
 use rmcp::model::JsonObject;
 use rusqlite::Connection;
@@ -66,8 +66,8 @@ pub struct Tool {
 pub struct Cx<'a> {
     pub user: &'a str,
     pub now: i64,
-    /// The user's, or UTC's if they don't say.
-    pub today: Date,
+    /// The user's day and time, or UTC's if they don't say.
+    pub local: Now,
 }
 
 type ReadFn = Box<dyn FnOnce(&Connection, &Cx) -> Result<Output, ApiError> + Send>;
@@ -123,25 +123,36 @@ tools! {
     Write "undo"(UndoArgs) => write::undo, "撤销一个批次（批次号见写操作的结果或 log）。撤销本身也是一个新批次。看得到全部改动、也有权做的批次才能撤销。";
 }
 
-/// A tool's arguments and `today`, which every tool takes (docs/agent.md#引用).
+/// A tool's arguments and `today` and `time`, which every tool takes (docs/agent.md#引用).
 fn with_today(schema: Arc<JsonObject>) -> Arc<JsonObject> {
     let mut s = (*schema).clone();
-    s.entry("properties").or_insert_with(|| json!({}))["today"] = json!({
+    let properties = s.entry("properties").or_insert_with(|| json!({}));
+    properties["today"] = json!({
         "type": "string",
-        "description": "用户当地今天的日期，如 2026-11-08：开始日期到了没有按它算，完成重复的事项时必须给，下一次的截止时间据此计算。不给时按 UTC 的今天",
+        "description": "用户当地今天的日期，如 2026-11-08：开始时间到了没有按它算，完成重复的事项时必须给，下一次的截止时间据此计算。不给时按 UTC 的现在",
+    });
+    properties["time"] = json!({
+        "type": "string",
+        "description": "用户当地现在的时间，如 18:30，和 today 一起给：开始时间到了没有按它算。只给 today 时，那天开始的都算已经到了",
     });
     Arc::new(s)
 }
 
 #[derive(Deserialize)]
-struct Today {
+struct Local {
     today: Option<Date>,
+    time: Option<Time>,
 }
 
-/// The `today` given with a tool's arguments, taken out of them.
-fn take_today(args: &mut Value) -> Result<Option<Date>, ApiError> {
-    let Some(today) = args.as_object_mut().and_then(|o| o.remove("today")) else { return Ok(None) };
-    Ok(from_value::<Today>(json!({ "today": today }))?.today)
+/// The `today` and `time` given with a tool's arguments, taken out of them.
+fn take_local(args: &mut Value) -> Result<Option<Now>, ApiError> {
+    let Some(o) = args.as_object_mut() else { return Ok(None) };
+    let given = from_value::<Local>(json!({ "today": o.remove("today"), "time": o.remove("time") }))?;
+    match given {
+        Local { today: Some(today), time } => Ok(Some(Now { today, time })),
+        Local { today: None, time: None } => Ok(None),
+        Local { today: None, time: Some(_) } => Err(ApiError::invalid("给了 time 也要给 today", Some("today".into()))),
+    }
 }
 
 /// The folder at a path; `None` is the root.
@@ -165,15 +176,15 @@ fn person<'a>(b: &Board<'a>, username: &str) -> Result<&'a Person, ApiError> {
 /// Runs a tool. `id` makes a write idempotent: the same id returns the first result.
 pub async fn call(st: &AppState, auth: Auth, name: &str, mut args: Value, id: Option<MutationId>) -> Result<Reply, ApiError> {
     let now = st.clock.now();
-    let today = take_today(&mut args)?;
+    let local = take_local(&mut args)?;
     match parse_call(name, args)? {
         // The read and the sequence number come from the same call on the one connection: no
         // change can come between them.
         Call::Read(run) => {
             st.db
                 .call(move |c| {
-                    let today = today.unwrap_or_else(|| Date::utc(now));
-                    let output = run(c, &Cx { user: &auth.user_id, now, today })?;
+                    let local = local.unwrap_or_else(|| Now::utc(now));
+                    let output = run(c, &Cx { user: &auth.user_id, now, local })?;
                     Ok(Reply { output, seq: Some(store::latest_seq(c, &auth.user_id)?) })
                 })
                 .await
@@ -183,7 +194,7 @@ pub async fn call(st: &AppState, auth: Auth, name: &str, mut args: Value, id: Op
             let hub = st.hub.clone();
             st.db
                 .call(move |c| {
-                    let (output, to) = write::run(c, &auth, id, now, today, build)?;
+                    let (output, to) = write::run(c, &auth, id, now, local, build)?;
                     hub.notify(&to);
                     Ok(Reply { output, seq: None })
                 })

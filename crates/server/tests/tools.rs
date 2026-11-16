@@ -282,6 +282,72 @@ async fn a_task_waits_for_its_start_date_and_keeps_it_as_far_before_its_due_date
 }
 
 #[tokio::test]
+async fn a_task_with_a_start_time_waits_for_that_moment_and_keeps_the_time() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "抢票", "start": "2026-11-12 20:00", "due": "2026-11-13", "repeat": "1d" })).await;
+    // A due date without a time lasts all day; one with a time ends there.
+    t.ok(&s, "add", json!({ "title": "领券", "start": "2026-11-12 23:00", "due": "2026-11-12" })).await;
+    let late = t.tool(&s, "add", json!({ "title": "晚了", "start": "2026-11-12 19:00", "due": "2026-11-12 18:00" })).await;
+    assert_eq!((late.status, late.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("start_time")));
+
+    // Before the time it waits, from it it can be done; with only the day known, it has started.
+    let shown = t.ok(&s, "show", json!({ "task": 1, "today": "2026-11-12", "time": "19:59" })).await;
+    assert_eq!((shown["data"]["status"].as_str(), shown["data"]["start_time"].as_str()), (Some("waiting"), Some("20:00")));
+    assert!(
+        text(&shown).starts_with("#1 [2026-11-12 20:00 开始] 抢票\n") && text(&shown).contains("开始：2026-11-12 20:00"),
+        "{}",
+        text(&shown)
+    );
+    // With it, when the next one starts, for the widget to fetch it again then.
+    let at_eight = t.ok(&s, "next", json!({ "today": "2026-11-12", "time": "20:00" })).await["data"].clone();
+    assert_eq!((numbers(&at_eight["tasks"]), at_eight["next_start"].as_str()), (vec![1], Some("2026-11-12 23:00")));
+    let all_day = t.ok(&s, "next", json!({ "today": "2026-11-12" })).await["data"].clone();
+    assert_eq!((numbers(&all_day["tasks"]), all_day.get("next_start")), (vec![2, 1], None));
+    let alone = t.tool(&s, "next", json!({ "time": "20:00" })).await;
+    assert_eq!((alone.status, alone.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("today")));
+
+    // Done, it moves on a day, at the same time.
+    t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-13" })).await;
+    let moved = t.ok(&s, "show", json!({ "task": 1 })).await["data"].clone();
+    assert_eq!(
+        (moved["start"].as_str(), moved["start_time"].as_str(), moved["due"]["date"].as_str()),
+        (Some("2026-11-13"), Some("20:00"), Some("2026-11-14"))
+    );
+
+    // A client that knows only dates moves the date and keeps the time; the edit tool, given only a
+    // date, starts at the start of that day.
+    let task = |snap: Value| snap["tasks"].as_array().unwrap().iter().find(|t| t["number"] == 1).unwrap().clone();
+    let id = task(t.snapshot(&s).await)["id"].clone();
+    assert_eq!(t.mutate(&s, json!([{ "op": "task.update", "id": id, "start": "2026-11-12" }])).await.status, StatusCode::OK);
+    assert_eq!(task(t.snapshot(&s).await)["start_time"], "20:00");
+    t.ok(&s, "edit", json!({ "task": 1, "start": "2026-11-13" })).await;
+    let edited = task(t.snapshot(&s).await);
+    assert_eq!((edited["start"].as_str(), edited.get("start_time")), (Some("2026-11-13"), None));
+
+    // Its time can go alone, but can't be without a date.
+    t.ok(&s, "edit", json!({ "task": 1, "start": "2026-11-13 08:00" })).await;
+    assert_eq!(t.mutate(&s, json!([{ "op": "task.update", "id": id, "start_time": null }])).await.status, StatusCode::OK);
+    let cleared = task(t.snapshot(&s).await);
+    assert_eq!((cleared["start"].as_str(), cleared.get("start_time")), (Some("2026-11-13"), None));
+    let dateless = t.mutate(&s, json!([{ "op": "task.update", "id": id, "start": null, "start_time": "08:00" }])).await;
+    assert_eq!((dateless.status, dateless.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("start_time")));
+
+    // Cleared and undone, the date and the time come back.
+    t.ok(&s, "edit", json!({ "task": 1, "start": "2026-11-13 08:00" })).await;
+    let gone = t.ok(&s, "edit", json!({ "task": 1, "start": null })).await;
+    t.ok(&s, "undo", json!({ "batch": gone["data"]["batch"] })).await;
+    let back = task(t.snapshot(&s).await);
+    assert_eq!((back["start"].as_str(), back["start_time"].as_str()), (Some("2026-11-13"), Some("08:00")));
+    // Undoing a new time once the date is gone brings back no time without a date.
+    let later = t.ok(&s, "edit", json!({ "task": 1, "start": "2026-11-13 09:00" })).await;
+    t.ok(&s, "edit", json!({ "task": 1, "start": null })).await;
+    t.ok(&s, "undo", json!({ "batch": later["data"]["batch"] })).await;
+    let undone = task(t.snapshot(&s).await);
+    assert_eq!((undone.get("start"), undone.get("start_time")), (Some(&Value::Null), None));
+}
+
+#[tokio::test]
 async fn next_says_which_step_a_task_is() {
     let t = TestApp::new();
     let s = t.admin().await;

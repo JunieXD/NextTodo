@@ -1,5 +1,5 @@
 import { v7 as uuidv7 } from "uuid";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test, vi } from "vitest";
 import type { ErrorBody } from "../api/types/ErrorBody";
 import type { LogEntry } from "../api/types/LogEntry";
 import type { Mutation } from "../api/types/Mutation";
@@ -182,4 +182,24 @@ test("a change comes after the queued ones also when the clock has gone back sin
   await settle();
   const ids = saved().outbox.map((p) => p.mutation.id);
   expect(ids.toSorted()).toEqual(ids);
+});
+
+test("a task becomes ready as its start comes, the view moving on then and not before, and back with the clock", () => {
+  vi.useFakeTimers({ now: new Date(2026, 10, 12, 19, 59, 30) });
+  onTestFinished(() => void vi.useRealTimers());
+  const saved = Store.empty();
+  saved.base.tasks = [task(1, "抢票", { start: "2026-11-12", start_time: "20:00" })];
+  const { store } = setup(saved);
+  let moved = 0;
+  store.subscribe(() => moved++);
+  const status = () => store.getView().board.status(store.getView().board.task(id(1))!);
+  store.tick();
+  expect([status(), moved]).toEqual(["waiting", 0]);
+  vi.setSystemTime(new Date(2026, 10, 12, 20, 0, 5));
+  store.tick();
+  expect([status(), moved]).toEqual(["ready", 1]);
+  // The clock or the time zone turned back.
+  vi.setSystemTime(new Date(2026, 10, 12, 19, 30));
+  store.tick();
+  expect([status(), moved]).toEqual(["waiting", 2]);
 });

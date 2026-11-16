@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::model::{
-    AiJobId, Date, Description, Due, FolderId, JobKind, JobText, LocalTime, MutationId, Name, SortKey, TaskId, Title, nullable,
+    AiJobId, Date, Description, Due, FolderId, JobKind, JobText, LocalTime, MutationId, Name, SortKey, TaskId, Time, Title, nullable,
 };
 
 pub const MAX_OPS: usize = 1000;
@@ -83,6 +83,9 @@ pub enum Op {
         start: Option<Date>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
+        start_time: Option<Time>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         due: Option<Due>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
@@ -108,10 +111,14 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         description: Option<Description>,
-        /// `null` clears the start date.
+        /// `null` clears the start date, with its time.
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         start: Option<Option<Date>>,
+        /// `null` clears the time of the start; without it, a new start date keeps the time.
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        start_time: Option<Option<Time>>,
         /// `null` clears the due date.
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
         #[ts(optional)]

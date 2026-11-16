@@ -72,7 +72,8 @@
 | title | TEXT | 1–200 字，单行，不含控制字符 |
 | description | TEXT | Markdown，最长 20000 字；除换行和制表符外不含控制字符 |
 | done_at | INTEGER，可空 | 空表示待办 |
-| start_date | TEXT，可空 | [开始日期](design.md#开始日期)，没到这天时事项等着；有 `due_date` 时不能晚于它 |
+| start_date | TEXT，可空 | [开始时间](design.md#开始时间)的日期，没到时事项等着；有 `due_date` 时开始不能晚于截止 |
+| start_time | TEXT，可空 | 开始的几点几分，只能在有 `start_date` 时设置；没有时从那天 0 点开始 |
 | due_date | TEXT，可空 | |
 | due_time | TEXT，可空 | 只能在有 `due_date` 时设置 |
 | remind_before | INTEGER，可空 | 提前多少分钟提醒，0 表示截止时；只能在有 `due_time` 时设置 |

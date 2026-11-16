@@ -63,8 +63,12 @@ export function formatDue(due: Due, now: Date): string {
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日${time}`;
 }
 
-/** `明天开始`, `周五开始`, `11月14日开始`: the day a task starts, written as due dates are. */
-export const startLabel = (start: string, now: Date) => `${formatDue({ date: start }, now)}开始`;
+/** `20:00 开始`, `明天开始`, `周五 09:30 开始`, `11月14日开始`: when a task starts, written as due dates
+ * are; today's has a time, or it would have started. */
+export function startLabel(date: string, time: string | undefined, now: Date): string {
+  if (time && date === isoDate(now)) return `${time} 开始`;
+  return time ? `${formatDue({ date, time }, now)} 开始` : `${formatDue({ date }, now)}开始`;
+}
 
 /** `11月2日 星期一` */
 export const formatToday = (now: Date) => `${now.getMonth() + 1}月${now.getDate()}日 星期${WEEK[now.getDay()]}`;

@@ -149,8 +149,39 @@
     "expect": {
       "status": { "a": "not started", "b": "ready", "c": "waiting 1", "d": "ready", "e": "waiting 1, not started", "f": "waiting 1" },
       "unlocks": { "d": ["c"], "a": ["f"] },
-      "next": ["b", "d"]
+      "next": ["b", "d"],
+      "next_start": "2026-11-13"
     }
+  },
+  {
+    "name": "带几点的开始时间，到了那一刻才可做",
+    "today": "2026-11-12",
+    "time": "09:30",
+    "folders": [],
+    "tasks": [
+      { "id": "a", "key": "a0", "start": "2026-11-12", "start_time": "09:30" },
+      { "id": "b", "key": "a1", "start": "2026-11-12", "start_time": "20:00" },
+      { "id": "c", "key": "a2", "start": "2026-11-11", "start_time": "23:00" },
+      { "id": "d", "key": "a3", "start": "2026-11-13", "start_time": "00:00" },
+      { "id": "e", "key": "a4", "start": "2026-11-12" }
+    ],
+    "deps": [],
+    "expect": {
+      "status": { "a": "ready", "b": "not started", "c": "ready", "d": "not started", "e": "ready" },
+      "next": ["a", "c", "e"],
+      "next_start": "2026-11-12 20:00"
+    }
+  },
+  {
+    "name": "只知道今天的日期时，当天开始的都算已经到了",
+    "today": "2026-11-12",
+    "folders": [],
+    "tasks": [
+      { "id": "a", "key": "a0", "start": "2026-11-12", "start_time": "20:00" },
+      { "id": "b", "key": "a1", "start": "2026-11-13", "start_time": "00:00" }
+    ],
+    "deps": [],
+    "expect": { "status": { "a": "ready", "b": "not started" }, "next": ["a"], "next_start": "2026-11-13 00:00" }
   },
   {
     "name": "关联进度：沿先后关系数步数，同时能做的是同一步，已完成的也算",

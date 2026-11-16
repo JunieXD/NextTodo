@@ -7,8 +7,9 @@ import { Board } from "./board";
 interface Case {
   name: string;
   today?: string;
+  time?: string;
   folders: { id: string; parent?: string; name: string; key: string }[];
-  tasks: { id: string; folder?: string; key: string; done_at?: number; start?: string; due?: Task["due"]; assignees?: string[] }[];
+  tasks: { id: string; folder?: string; key: string; done_at?: number; start?: string; start_time?: string; due?: Task["due"]; assignees?: string[] }[];
   deps: [string, string][];
   /** People by username; the user is `me`. */
   shares?: { folder: string; owner: string; members: string[] }[];
@@ -19,6 +20,8 @@ interface Case {
     next?: string[];
     paths?: Record<string, string>;
     steps?: Record<string, [number, number] | null>;
+    /** `2026-11-12` or `2026-11-12 20:00`. */
+    next_start?: string;
   };
 }
 
@@ -51,6 +54,7 @@ function snapshot(c: Case, id: (name: string) => string): Snapshot {
     description: "",
     done_at: t.done_at ?? null,
     start: t.start ?? null,
+    start_time: t.start_time,
     due: t.due ?? null,
     sort_key: t.key,
     assignees: people(t.assignees),
@@ -69,7 +73,7 @@ function snapshot(c: Case, id: (name: string) => string): Snapshot {
 
 describe.each(cases as unknown as Case[])("$name", (c) => {
   const id = ids();
-  const board = new Board(snapshot(c, id), c.today ?? "2026-11-12", id("me"));
+  const board = new Board(snapshot(c, id), { today: c.today ?? "2026-11-12", time: c.time }, id("me"));
   const task = (n: string) => board.task(id(n))!;
   const folder = (n: string) => (n === "/" ? null : id(n));
   const titles = (list: Task[]) => list.map((t) => t.title);
@@ -91,6 +95,8 @@ describe.each(cases as unknown as Case[])("$name", (c) => {
   });
   test("next", () => {
     expect(titles(board.next())).toEqual(c.expect.next ?? []);
+    const start = board.nextStart();
+    expect(start && [start.date, start.time].filter(Boolean).join(" "), "next start").toEqual(c.expect.next_start ?? null);
   });
   test("steps", () => {
     for (const [n, want] of Object.entries(c.expect.steps ?? {})) expect(board.step(task(n)) ?? null, n).toEqual(want);

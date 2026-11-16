@@ -101,7 +101,7 @@ export function TaskRow({
     meta.push(
       <span key="start">
         <Icon of={CalendarClock} size={14} />
-        {startLabel(t.start!, now)}
+        {startLabel(t.start!, t.start_time, now)}
       </span>,
     );
   }

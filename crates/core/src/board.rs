@@ -2,13 +2,13 @@
 //! dependencies and folder paths.
 //! The web app has a TypeScript twin of this module; both are checked against `fixtures/board.json`.
 
-use std::cmp::Reverse;
+use std::cmp::{Ordering, Reverse};
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::model::{AiJob, Date, Dependency, Folder, FolderId, Person, Share, SortKey, Task, TaskId};
+use crate::model::{AiJob, Date, Dependency, Folder, FolderId, Person, Share, SortKey, Task, TaskId, Time};
 
 /// All a user can see: their own data and the folders shared with them, where a folder someone else
 /// shares has no parent (docs/design.md#共享).
@@ -27,9 +27,9 @@ pub struct Snapshot {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
-    /// Not done, every prerequisite done, and the start date come.
+    /// Not done, every prerequisite done, and the start time come.
     Ready,
-    /// Not done: the prerequisites not done yet, and whether the start date is still to come.
+    /// Not done: the prerequisites not done yet, and whether the start time is still to come.
     Waiting {
         on: usize,
         not_started: bool,
@@ -37,10 +37,37 @@ pub enum Status {
     Done,
 }
 
-/// A snapshot indexed for lookups, as of a day, the user's today, for the user `me`. `None` as a
-/// folder means the root, the user's own.
+/// When a board is as of: the user's today, and the time of day there when known. Without the time,
+/// all of today has come: start times that day count as come (docs/design.md#开始时间).
+#[derive(Clone, Debug)]
+pub struct Now {
+    pub today: Date,
+    pub time: Option<Time>,
+}
+
+impl Now {
+    /// The day and time in UTC at `ms` milliseconds since 1970-01-01: now for those who don't say where
+    /// they are.
+    pub fn utc(ms: i64) -> Now {
+        let minutes = ms.rem_euclid(86_400_000) / 60_000;
+        let time = Time::try_from(format!("{:02}:{:02}", minutes / 60, minutes % 60)).expect("a time of day");
+        Now { today: Date::utc(ms), time: Some(time) }
+    }
+
+    /// Whether a start on `date`, at `time` or else at the start of the day, is still to come.
+    pub fn before(&self, date: &Date, time: Option<&Time>) -> bool {
+        match date.cmp(&self.today) {
+            Ordering::Greater => true,
+            Ordering::Less => false,
+            Ordering::Equal => time.zip(self.time.as_ref()).is_some_and(|(at, now)| at > now),
+        }
+    }
+}
+
+/// A snapshot indexed for lookups, as of `now`, for the user `me`. `None` as a folder means the root,
+/// the user's own.
 pub struct Board<'a> {
-    today: Date,
+    now: Now,
     me: &'a str,
     tasks: HashMap<TaskId, &'a Task>,
     /// By owner and number.
@@ -61,7 +88,7 @@ pub struct Board<'a> {
 }
 
 impl<'a> Board<'a> {
-    pub fn new(s: &'a Snapshot, today: Date, me: &'a str) -> Self {
+    pub fn new(s: &'a Snapshot, now: Now, me: &'a str) -> Self {
         let people: HashMap<&str, &Person> = s.people.iter().map(|p| (p.id.as_str(), p)).collect();
         let shares: HashMap<FolderId, &Share> = s.shares.iter().map(|sh| (sh.folder_id, sh)).collect();
         let mut children: HashMap<Option<FolderId>, Vec<&Folder>> = HashMap::new();
@@ -103,7 +130,7 @@ impl<'a> Board<'a> {
         let owner = |t: &Task| t.folder_id.and_then(|f| shared.get(&f)).map_or(me, |sh: &&Share| sh.owner.as_str());
         let numbers = s.tasks.iter().map(|t| ((owner(t), t.number), t)).collect();
         Board {
-            today,
+            now,
             me,
             tasks: s.tasks.iter().map(|t| (t.id, t)).collect(),
             numbers,
@@ -200,7 +227,7 @@ impl<'a> Board<'a> {
             return Status::Done;
         }
         let on = self.before.get(&t.id).into_iter().flatten().filter(|id| self.tasks[*id].done_at.is_none()).count();
-        let not_started = t.start.as_ref().is_some_and(|s| *s > self.today);
+        let not_started = t.start.as_ref().is_some_and(|s| self.now.before(s, t.start_time.as_ref()));
         if on == 0 && !not_started { Status::Ready } else { Status::Waiting { on, not_started } }
     }
 
@@ -319,6 +346,19 @@ impl<'a> Board<'a> {
             (due.is_none(), due, self.key(t))
         });
         list
+    }
+
+    /// When the first of the user's open tasks still to start does: the date, and the time if it has
+    /// one. Shown with what is ready, so that what shows it can be fetched again then.
+    pub fn next_start(&self) -> Option<(&'a Date, Option<&'a Time>)> {
+        self.tasks
+            .values()
+            .filter(|t| t.done_at.is_none() && self.mine(t))
+            .filter_map(|t| {
+                let start = t.start.as_ref()?;
+                self.now.before(start, t.start_time.as_ref()).then_some((start, t.start_time.as_ref()))
+            })
+            .min()
     }
 
     /// Sorts tasks in folder order and manual order, ignoring dependencies.

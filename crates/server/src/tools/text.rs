@@ -4,16 +4,16 @@ use std::collections::{BTreeMap, HashMap};
 
 use nexttodo_core::board::{Board, Snapshot, Status};
 use nexttodo_core::model::{
-    AiJob, Change, Date, Due, Effect, FolderId, JobState, Link, Period, Person, Repeat, RepeatFrom, Task, TaskId, Weekdays,
+    AiJob, Change, Date, Due, Effect, FolderId, JobState, Link, Period, Person, Repeat, RepeatFrom, Task, TaskId, Time, Weekdays,
 };
 use serde_json::{Value, json};
 
 /// How much of a title is shown where a task is only mentioned, not listed.
 const SHORT: usize = 30;
 
-/// `[可做]`, `[等 2 项]`, `[2026-11-14 开始]`, both `[等 2 项，2026-11-14 开始]`, or `[已完成]`.
+/// `[可做]`, `[等 2 项]`, `[2026-11-14 09:30 开始]`, both `[等 2 项，2026-11-14 开始]`, or `[已完成]`.
 pub fn status_tag(b: &Board, t: &Task) -> String {
-    let start = || format!("{} 开始", t.start.as_ref().expect("a start date to wait for").as_str());
+    let start = || format!("{} 开始", start(t).expect("a start to wait for"));
     match b.status(t) {
         Status::Ready => "[可做]".into(),
         Status::Waiting { on, not_started: false } => format!("[等 {on} 项]"),
@@ -24,6 +24,16 @@ pub fn status_tag(b: &Board, t: &Task) -> String {
 }
 
 /// `2026-11-20 18:00`, with how it repeats: `2026-11-20，每周`.
+/// When it starts, `2026-11-14` or `2026-11-14 09:30`, if it has a start.
+pub fn start(t: &Task) -> Option<String> {
+    Some(moment(t.start.as_ref()?, t.start_time.as_ref()))
+}
+
+/// `2026-11-14`, or `2026-11-14 09:30` with a time.
+pub fn moment(date: &Date, time: Option<&Time>) -> String {
+    time.map_or_else(|| date.as_str().to_owned(), |time| format!("{} {}", date.as_str(), time.as_str()))
+}
+
 pub fn due(d: &Due) -> String {
     let mut s = d.date.as_str().to_owned();
     if let Some(at) = &d.at {
@@ -131,6 +141,9 @@ pub fn task_view(b: &Board, t: &Task) -> Value {
     }
     if let Some(s) = &t.start {
         v["start"] = json!(s);
+    }
+    if let Some(time) = &t.start_time {
+        v["start_time"] = json!(time);
     }
     if let Some(d) = &t.due {
         v["due"] = json!(d);

@@ -40,7 +40,7 @@ function board(tasks: { key: string; done?: boolean; other?: boolean }[], deps: 
     shares: [],
     people: [],
   };
-  return new Board(snapshot, "2026-11-12", ME);
+  return new Board(snapshot, { today: "2026-11-12" }, ME);
 }
 
 const list = (b: Board) => b.order(b.contents(FOLDER).filter((t) => t.done_at === null), (t) => t.done_at === null);

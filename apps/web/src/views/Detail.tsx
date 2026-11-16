@@ -117,7 +117,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
             <span className={`pill ${status}`}>{STATUS[status]}</span>
             {/* What it waits for. */}
             {status === "waiting" && board.waitingOn(t) > 0 && <span>还有 {board.waitingOn(t)} 项前置未完成</span>}
-            {status === "waiting" && board.notStarted(t) && <span>{startLabel(t.start!, now)}</span>}
+            {status === "waiting" && board.notStarted(t) && <span>{startLabel(t.start!, t.start_time, now)}</span>}
             {t.number > 0 && <span className="tabular-nums">{board.label(t)}</span>}
           </div>
         </div>
@@ -155,7 +155,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
         <Prop
           icon={CalendarClock}
           label="开始"
-          value={t.start ? formatDue({ date: t.start }, now) : "未设置"}
+          value={t.start ? formatDue({ date: t.start, time: t.start_time }, now) : "未设置"}
           cls={t.start ? "" : "muted"}
           onClick={() => setPanel("start")}
         />
@@ -221,9 +221,24 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
           onClose={() => setPanel(null)}
         />
       )}
-      {panel === "start" && <StartEditor start={t.start} due={t.due?.date} onSave={(start) => update({ start })} onClose={() => setPanel(null)} />}
+      {panel === "start" && (
+        <StartEditor
+          start={t.start}
+          time={t.start_time}
+          due={t.due}
+          onSave={(s) => update(s ? { start: s.date, start_time: s.time ?? null } : { start: null })}
+          onClose={() => setPanel(null)}
+        />
+      )}
       {panel === "due" && (
-        <DueEditor due={t.due} start={t.start} done={t.done_at !== null} onSave={(due) => update({ due })} onClose={() => setPanel(null)} />
+        <DueEditor
+          due={t.due}
+          start={t.start}
+          startTime={t.start_time}
+          done={t.done_at !== null}
+          onSave={(due) => update({ due })}
+          onClose={() => setPanel(null)}
+        />
       )}
       {(panel === "pred" || panel === "succ") && (
         <TaskPicker

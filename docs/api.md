@@ -56,8 +56,8 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 // 文件夹
 { "id": "…", "parent_id": null, "name": "毕业论文", "sort_key": "a0", "created_at": 1730000000000, "updated_at": 1730000000000 }
 // 事项
-{ "id": "…", "number": 5, "folder_id": "…", "title": "设计问卷", "description": "…", "done_at": null, "start": "2026-10-30",
-  // 开始日期，没设时为 null，见 design.md#开始日期
+{ "id": "…", "number": 5, "folder_id": "…", "title": "设计问卷", "description": "…", "done_at": null, "start": "2026-10-30", "start_time": "09:00",
+  // 开始时间的日期和几点几分：没设时 start 为 null，只有日期时没有 start_time，见 design.md#开始时间
   "due": { "date": "2026-11-02", "time": "18:00", "remind_before": 60, "repeat": { "every": 1, "unit": "week", "from": "due" } },
   // 没有截止时间时为 null；time、remind_before、repeat 可省略；按周的 repeat 可以带 "days": [1, 3, 5]，在周几（1 是周一，7 是周日）；按月的 days 是几号（1–31）。每年是 every 12、unit month
   "completions": { "count": 12, "last": "2026-11-01" },
@@ -98,8 +98,8 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | `folder.create` | `id`、`name`，可选 `parent_id`、`sort_key` | 不给 `sort_key` 时排在同一层最后 |
 | `folder.update` | `id`，可选 `name`、`parent_id`、`sort_key` | `parent_id: null` 表示移到根目录 |
 | `folder.delete` | `id` | 连同子文件夹、事项和相关依赖 |
-| `task.create` | `id`、`title`，可选 `folder_id`、`description`、`start`、`due`、`sort_key`、`done`、`assignees` | `assignees` 是负责人的用户 ID |
-| `task.update` | `id`，可选 `folder_id`、`title`、`description`、`start`、`due`、`sort_key`、`done`、`today`、`assign`、`unassign` | 只带要改的字段；`start: null` 清除开始日期；`due: null` 清除截止时间（连同重复）；`done: true/false` 完成或重新打开；`assign`、`unassign` 是要加上、去掉的负责人，两个人同时指派时都算数 |
+| `task.create` | `id`、`title`，可选 `folder_id`、`description`、`start`、`start_time`、`due`、`sort_key`、`done`、`assignees` | `assignees` 是负责人的用户 ID |
+| `task.update` | `id`，可选 `folder_id`、`title`、`description`、`start`、`start_time`、`due`、`sort_key`、`done`、`today`、`assign`、`unassign` | 只带要改的字段；`start: null` 清除开始时间（连同几点）；只给 `start` 时几点不变，`start_time: null` 只清除几点；有 `start_time` 就要有开始日期；`due: null` 清除截止时间（连同重复）；`done: true/false` 完成或重新打开；`assign`、`unassign` 是要加上、去掉的负责人，两个人同时指派时都算数 |
 | `task.delete` | `id` | 连同相关依赖 |
 | `dep.add` | `before`、`after` | |
 | `dep.remove` | `before`、`after` | |

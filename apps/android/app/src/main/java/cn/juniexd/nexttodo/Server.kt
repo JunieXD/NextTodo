@@ -6,7 +6,8 @@ import java.net.Proxy
 import java.net.URL
 import java.nio.ByteBuffer
 import java.security.SecureRandom
-import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -35,8 +36,9 @@ object Server {
     /** The first `limit` of the ready tasks and how many there are, as the `next` tool's data gives
      * them, `{tasks, total}`, and the change they are as of. */
     suspend fun next(context: Context, token: String, limit: Int): Pair<JSONObject, Long> {
-        // Start dates come by the day here (docs/design.md#开始日期).
-        val args = JSONObject().put("limit", limit).put("today", LocalDate.now().toString())
+        // Starts come by the day and time here (docs/design.md#开始时间).
+        val now = LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES)
+        val args = JSONObject().put("limit", limit).put("today", now.toLocalDate().toString()).put("time", now.toLocalTime().toString())
         val reply = JSONObject(post(context, token, "/tools/next", args))
         return reply.getJSONObject("data") to reply.getLong("seq")
     }

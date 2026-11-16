@@ -1,13 +1,20 @@
 package cn.juniexd.nexttodo.widget
 
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.widget.Toast
 import androidx.glance.appwidget.updateAll
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -15,8 +22,12 @@ import cn.juniexd.nexttodo.Due
 import cn.juniexd.nexttodo.HttpError
 import cn.juniexd.nexttodo.Local
 import cn.juniexd.nexttodo.Server
+import cn.juniexd.nexttodo.reminders.Reminders
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -98,8 +109,9 @@ object Widget {
         if (draw) NextWidget().updateAll(context)
     }
 
-    /** Keeps `tasks`, with `more` past them, as of the change `seq`, unless the list kept is as of a later one. */
-    private fun keep(prefs: SharedPreferences, tasks: String, more: Int, seq: Long?): Boolean {
+    /** Keeps `tasks`, with `more` past them, as of the change `seq`, unless the list kept is as of a later
+     * one; and fetches it again when `start`, the next start it comes with, does. */
+    private fun keep(context: Context, prefs: SharedPreferences, tasks: String, more: Int, seq: Long?, start: String?): Boolean {
         if (seq != null && prefs.contains(SEQ) && seq < prefs.getLong(SEQ, 0)) return false
         val edit = prefs.edit().putString("tasks", tasks).putInt(MORE, more)
         if (seq == null) {
@@ -110,6 +122,7 @@ object Widget {
             edit.putLong(SEQ, seq).putString(DONE, done.toString())
         }
         edit.apply()
+        refreshAt(context, start)
         return true
     }
 
@@ -119,11 +132,11 @@ object Widget {
      * change `seq` its copy has. The app's lists come in the order of its sign-ins and sign-outs. Drawn
      * again only when the tasks it lists change, it signs in or out, or what it says of the time no
      * longer holds: the app hands its list over each time it starts, and Glance draws on the main
-     * thread, which holds back the app's first frame. */
-    suspend fun show(context: Context, tasks: String, seq: Long?) = update(context) { prefs ->
+     * thread, which holds back the app's first frame. With the list, `start`: see `refreshAt`. */
+    suspend fun show(context: Context, tasks: String, seq: Long?, start: String?) = update(context) { prefs ->
         val was = drawn(prefs)
         // A list older than the one kept is not taken, but what that one says of the time may be stale.
-        val changed = keep(prefs, tasks, 0, seq) && drawn(prefs) != was
+        val changed = keep(context, prefs, tasks, 0, seq, start) && drawn(prefs) != was
         changed || prefs.getString(UNTIL, null) != until(listed(prefs).first, LocalDateTime.now()).toString()
     }
 
@@ -213,7 +226,8 @@ object Widget {
             throw e
         }
         val tasks = data.getJSONArray("tasks")
-        update(context) { Server.token(context) == token && keep(it, tasks.toString(), data.getInt("total") - tasks.length(), seq) }
+        val start = data.optString("next_start").ifEmpty { null }
+        update(context) { Server.token(context) == token && keep(context, it, tasks.toString(), data.getInt("total") - tasks.length(), seq, start) }
     }
 
     /** Shows `task` done where it is in the list, whatever lists come, while it is being completed in
@@ -232,31 +246,81 @@ object Widget {
     /** The server says the session `token` has ended: unless the app has signed in again since, sign
      * out, and the widget asks to sign in again. */
     suspend fun ended(context: Context, token: String) {
-        update(context) { Server.ended(context, token) && keep(it, "[]", 0, null) }
+        update(context) { Server.ended(context, token) && keep(context, it, "[]", 0, null, null) }
     }
 
     /** Empties the list: it is of data that is there no more (docs/local.md#数据代号). */
-    suspend fun forget(context: Context) = update(context) { keep(it, "[]", 0, null) }
+    suspend fun forget(context: Context) = update(context) { keep(context, it, "[]", 0, null, null) }
 
     suspend fun toast(context: Context, text: String) = withContext(Dispatchers.Main) {
         Toast.makeText(context, text, Toast.LENGTH_LONG).show()
     }
 
-    /** Every 15 minutes, the shortest WorkManager allows; while online, but in local mode, whose server
-     * is in the app. Updates the refreshes there are to the mode now, keeping when they come. */
+    /** Whether there is a widget on the home screen to keep up to date. */
+    fun placed(context: Context) =
+        AppWidgetManager.getInstance(context).getAppWidgetIds(ComponentName(context, NextWidgetReceiver::class.java)).isNotEmpty()
+
+    /** Refreshes come while online, but in local mode, whose server is in the app. */
+    private fun online(context: Context) =
+        Constraints.Builder().setRequiredNetworkType(if (Local.on(context)) NetworkType.NOT_REQUIRED else NetworkType.CONNECTED).build()
+
+    /** Every 15 minutes, the shortest WorkManager allows. Updates the refreshes there are to the mode
+     * now, keeping when they come. */
     fun schedule(context: Context) {
-        val network = if (Local.on(context)) NetworkType.NOT_REQUIRED else NetworkType.CONNECTED
-        val request = PeriodicWorkRequestBuilder<RefreshWorker>(15, TimeUnit.MINUTES)
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(network).build())
-            .build()
+        val request = PeriodicWorkRequestBuilder<RefreshWorker>(15, TimeUnit.MINUTES).setConstraints(online(context)).build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(WORK, ExistingPeriodicWorkPolicy.UPDATE, request)
+    }
+
+    /** Fetches the list when the next task starts, `2026-11-16` or `2026-11-16 20:05` here, as the
+     * `next` tool's `next_start` gives it: it comes into the list also with the app not running, and
+     * that list sets the one after. An alarm, as reminders have, on time and in place of the one set
+     * before; none without a start, or without a widget. Set only with the list it came with, as that
+     * is kept. */
+    private fun refreshAt(context: Context, start: String?) {
+        val alarms = context.getSystemService(AlarmManager::class.java)
+        val alarm = PendingIntent.getBroadcast(
+            context,
+            0,
+            Intent(context, NextWidgetReceiver::class.java).setAction(NextWidgetReceiver.STARTED),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        if (start == null || !placed(context)) {
+            alarms.cancel(alarm)
+            return
+        }
+        val (date, time) = start.split(' ').let { it[0] to it.getOrNull(1) }
+        val local = LocalDate.parse(date).atTime(time?.let(LocalTime::parse) ?: LocalTime.MIDNIGHT)
+        // When the clock here first reads it, as starts are told by the clock here: a time skipped as
+        // summer time begins comes as it ends the skip; in the hour that leaving it repeats, the one
+        // still to come.
+        val zone = ZoneId.systemDefault()
+        val now = ZonedDateTime.now(zone)
+        val change = zone.rules.getTransition(local)
+        val at = when {
+            !local.isAfter(now.toLocalDateTime()) -> now
+            change == null -> local.atZone(zone)
+            change.isGap -> change.instant.atZone(zone)
+            else -> local.atZone(zone).let { if (it.isBefore(now)) it.withLaterOffsetAtOverlap() else it }
+        }.toInstant().toEpochMilli()
+        when {
+            Reminders.exact(context) -> alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, alarm)
+            else -> alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, alarm)
+        }
+    }
+
+    /** A task has started, by the alarm `refreshAt` set: the list now, as soon as online. */
+    fun started(context: Context) {
+        val request = OneTimeWorkRequestBuilder<RefreshWorker>().setConstraints(online(context)).build()
+        WorkManager.getInstance(context).enqueueUniqueWork(START, ExistingWorkPolicy.REPLACE, request)
     }
 
     fun unschedule(context: Context) {
         WorkManager.getInstance(context).cancelUniqueWork(WORK)
+        refreshAt(context, null)
     }
 
     private const val WORK = "widget-refresh"
+    private const val START = "widget-start"
 }
 
 class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {

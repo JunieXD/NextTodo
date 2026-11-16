@@ -117,6 +117,29 @@ test("a repeating task moves on rather than being done, and is never done while 
   expect(() => apply(d, [doneRepeating], cx)).toThrow("“交房租”已完成，不能设置重复，请先重新打开");
 });
 
+test("a start keeps its time with a new date, loses it with the date, and is not after the due time that day", () => {
+  const d = empty();
+  const daily = { every: 1, unit: "day", from: "due" } as const;
+  run(d, 130, [{ op: "task.create", id: id(1), title: "抢票", start: "2026-11-12", start_time: "20:00", due: { date: "2026-11-13", repeat: daily } }]);
+  run(d, 131, [{ op: "task.update", id: id(1), start: "2026-11-13" }]);
+  expect(d.tasks.get(id(1))).toMatchObject({ start: "2026-11-13", start_time: "20:00" });
+  // Done, it moves on a day, at the same time.
+  run(d, 132, [{ op: "task.update", id: id(1), done: true, today: "2026-11-13" }]);
+  expect(d.tasks.get(id(1))).toMatchObject({ start: "2026-11-14", start_time: "20:00", due: { date: "2026-11-14" } });
+  expect(() => apply(d, [{ op: "task.update", id: id(1), due: { date: "2026-11-14", time: "19:00" } }], cx)).toThrow("“抢票”的开始时间不能晚于截止时间");
+  expect(() => apply(d, [{ op: "task.update", id: id(1), start: null, start_time: "08:00" }], cx)).toThrow("设置开始的几点需要先有开始日期");
+  // Cleared, the time goes with the date, and comes back with it.
+  run(d, 133, [{ op: "task.update", id: id(1), start: null }]);
+  expect(d.tasks.get(id(1))!.start_time).toBeUndefined();
+  run(d, 134, [{ op: "undo", mutation: id(133) }]);
+  expect(d.tasks.get(id(1))).toMatchObject({ start: "2026-11-14", start_time: "20:00" });
+  // Undoing a new time once the date is gone brings back no time without a date.
+  run(d, 135, [{ op: "task.update", id: id(1), start_time: "09:00" }]);
+  run(d, 136, [{ op: "task.update", id: id(1), start: null }]);
+  run(d, 137, [{ op: "undo", mutation: id(135) }]);
+  expect([d.tasks.get(id(1))!.start, d.tasks.get(id(1))!.start_time]).toEqual([null, undefined]);
+});
+
 test("revert undoes what replaying effects did", () => {
   const d = empty();
   const effects = run(d, 110, [

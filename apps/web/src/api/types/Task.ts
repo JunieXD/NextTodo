@@ -6,13 +6,19 @@ import type { Due } from "./Due";
 import type { FolderId } from "./FolderId";
 import type { SortKey } from "./SortKey";
 import type { TaskId } from "./TaskId";
+import type { Time } from "./Time";
 import type { Title } from "./Title";
 
 export type Task = { id: TaskId, number: number, folder_id: FolderId | null, title: Title, description: Description, done_at: number | null, 
 /**
- * The day it can start: it waits until then (docs/design.md#开始日期). Not after the due date.
+ * The day it can start: it waits until then (docs/design.md#开始时间). Not after the due date.
  */
-start: Date | null, due: Due | null, 
+start: Date | null, 
+/**
+ * The time on the start day it starts; without one, the start of the day. Only with a start date,
+ * and not after the due time on the same day.
+ */
+start_time?: Time, due: Due | null, 
 /**
  * None until a repeating task is first done.
  */

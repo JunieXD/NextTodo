@@ -12,8 +12,7 @@ import type { Op } from "../api/types/Op";
 import type { SeqSnapshot } from "../api/types/SeqSnapshot";
 import type { Snapshot } from "../api/types/Snapshot";
 import { type Data, Rejected, apply, copy, fromSnapshot, replay, toSnapshot } from "../domain/apply";
-import { Board, cmp } from "../domain/board";
-import { isoDate } from "../domain/dates";
+import { Board, before, cmp, nowOf } from "../domain/board";
 
 /** A change made here, with when it was made, so that applying it again gives the same times. */
 export interface Pending {
@@ -67,8 +66,6 @@ export class Store {
   private readonly saving = new Set<MutationId>();
   private view!: View;
   private data!: Data;
-  /** The day the view is as of: start dates come by it. */
-  private today = isoDate(new Date());
   private readonly listeners = new Set<() => void>();
 
   constructor(
@@ -95,11 +92,17 @@ export class Store {
 
   getView = () => this.view;
 
-  /** Moves the view on to a new day, if there is one: what starts today can be done (docs/design.md#开始日期). */
+  /** Moves the view on as a task's start comes, what starts then can be done, or back as the clock is
+   * turned back past one; and on a new day (docs/design.md#开始时间). */
   tick = () => {
-    const today = isoDate(new Date());
-    if (today === this.today) return;
-    this.today = today;
+    const now = nowOf(new Date());
+    const { board } = this.view;
+    // By the user's day and time, not the moment: a start comes or goes again also as the clock or the
+    // time zone is turned back.
+    const crossed = board.snapshot.tasks.some(
+      (t) => t.done_at === null && t.start !== null && before(board.now, t.start, t.start_time) !== before(now, t.start, t.start_time),
+    );
+    if (!crossed && now.today === board.now.today) return;
     this.recompute();
     for (const listener of this.listeners) listener();
   };
@@ -231,7 +234,7 @@ export class Store {
       }
     }
     this.data = d;
-    this.view = { board: new Board(toSnapshot(d), this.today, this.me), stuck, pending: this.outbox.length };
+    this.view = { board: new Board(toSnapshot(d), nowOf(new Date()), this.me), stuck, pending: this.outbox.length };
   }
 }
 

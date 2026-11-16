@@ -25,16 +25,18 @@ const UNITS: [RepeatUnit, string][] = [
 const AHEAD = (["minute", "hour", "day"] as const).map((u): [RemindUnit, string] => [u, REMIND_UNITS[u].name]);
 
 /** Sets or clears the due date, its time, the reminder and how it repeats; a task `done` doesn't
- * repeat. Not before the task's `start`. */
+ * repeat. Not before the task's `start`, at `startTime`. */
 export function DueEditor({
   due,
   start,
+  startTime,
   done,
   onSave,
   onClose,
 }: {
   due: Due | null;
   start: string | null;
+  startTime?: string;
   done: boolean;
   onSave(d: Due | null): void;
   onClose(): void;
@@ -77,7 +79,11 @@ export function DueEditor({
   const named = repeat?.days && !workdays ? repeatLabel(repeat) : null;
   const menu = workdays ? "workdays" : named ? "days" : kind;
   const remindBefore = remind === "custom" ? ahead[0] * REMIND_UNITS[ahead[1]].minutes : Number(remind);
+  // Said once saving is tried, until it is put right.
+  const [tried, setTried] = useState(false);
+  const early = Boolean(startTime && time && date === start && time < startTime);
   const save = () => {
+    if (early) return setTried(true);
     onSave({ date, ...(time && { time }), ...(time && remind !== "off" && { remind_before: remindBefore }), ...(repeat && { repeat }) });
     onClose();
   };
@@ -172,6 +178,11 @@ export function DueEditor({
           </Controls>
         )}
       </div>
+      {tried && early && (
+        <p className="form-error" role="alert">
+          截止不能早于开始
+        </p>
+      )}
       <div className="actions">
         {due && (
           <button className="text-btn danger-text" onClick={() => (onSave(null), onClose())}>
@@ -195,19 +206,54 @@ const ARROWS = new Map([
   ["ArrowDown", 7],
 ]);
 
-/** Sets the day a task starts, not after it is due, or clears it: picked, it is set. */
-export function StartEditor({ start, due, onSave, onClose }: { start: string | null; due?: string; onSave(start: string | null): void; onClose(): void }) {
-  const pick = (date: string | null) => (onSave(date), onClose());
+/** Sets when a task starts, a day and maybe a time, not after it is `due`; or clears it. */
+export function StartEditor({
+  start,
+  time: was,
+  due,
+  onSave,
+  onClose,
+}: {
+  start: string | null;
+  time?: string;
+  due: Due | null;
+  onSave(start: { date: string; time?: string } | null): void;
+  onClose(): void;
+}) {
+  const [date, setDate] = useState(() => {
+    const today = isoDate(new Date());
+    return start ?? (due && due.date < today ? due.date : today);
+  });
+  const [time, setTime] = useState(was ?? "");
+  // Said once saving is tried, until it is put right.
+  const [tried, setTried] = useState(false);
+  const late = Boolean(due?.time && time && date === due.date && time > due.time);
+  const save = () => {
+    if (late) return setTried(true);
+    onSave({ date, ...(time && { time }) });
+    onClose();
+  };
   return (
-    <Modal title="开始日期" onClose={onClose}>
-      <Calendar value={start ?? ""} max={due} onChange={pick} />
-      {start && (
-        <div className="actions">
-          <button className="text-btn danger-text" onClick={() => pick(null)}>
-            清除开始日期
-          </button>
-        </div>
+    <Modal title="开始时间" onClose={onClose}>
+      <Calendar value={date} max={due?.date} onChange={setDate} />
+      <div className="group settings">
+        <TimeRow value={time} extra={was} onChange={setTime} />
+      </div>
+      {tried && late && (
+        <p className="form-error" role="alert">
+          开始不能晚于截止
+        </p>
       )}
+      <div className="actions">
+        {start && (
+          <button className="text-btn danger-text" onClick={() => (onSave(null), onClose())}>
+            清除开始时间
+          </button>
+        )}
+        <button className="filled-btn" onClick={save}>
+          保存
+        </button>
+      </div>
     </Modal>
   );
 }

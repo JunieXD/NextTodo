@@ -11,13 +11,14 @@ import type { MutationId } from "./MutationId";
 import type { Name } from "./Name";
 import type { SortKey } from "./SortKey";
 import type { TaskId } from "./TaskId";
+import type { Time } from "./Time";
 import type { Title } from "./Title";
 
 export type Op = { "op": "folder.create", id: FolderId, name: Name, parent_id?: FolderId, sort_key?: SortKey, } | { "op": "folder.update", id: FolderId, name?: Name, 
 /**
  * `null` moves the folder to the root.
  */
-parent_id?: FolderId | null, sort_key?: SortKey, } | { "op": "folder.delete", id: FolderId, } | { "op": "task.create", id: TaskId, title: Title, folder_id?: FolderId, description?: Description, start?: Date, due?: Due, sort_key?: SortKey, done?: boolean, 
+parent_id?: FolderId | null, sort_key?: SortKey, } | { "op": "folder.delete", id: FolderId, } | { "op": "task.create", id: TaskId, title: Title, folder_id?: FolderId, description?: Description, start?: Date, start_time?: Time, due?: Due, sort_key?: SortKey, done?: boolean, 
 /**
  * User ids, in a shared folder only.
  */
@@ -27,9 +28,13 @@ assignees?: Array<string>, } | { "op": "task.update", id: TaskId,
  */
 folder_id?: FolderId | null, title?: Title, description?: Description, 
 /**
- * `null` clears the start date.
+ * `null` clears the start date, with its time.
  */
 start?: Date | null, 
+/**
+ * `null` clears the time of the start; without it, a new start date keeps the time.
+ */
+start_time?: Time | null, 
 /**
  * `null` clears the due date.
  */

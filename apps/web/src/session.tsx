@@ -145,8 +145,8 @@ export class Session {
       },
     });
     this.socket.start();
-    // A minute late at most, also after the device has slept.
-    this.ticking = setInterval(this.store.tick, 60_000);
+    // A start comes ten seconds late at most, also after the device has slept.
+    this.ticking = setInterval(this.store.tick, 10_000);
     tabs.addEventListener("message", this.heard);
     const failed = (e: unknown) => this.listeners.appFailed(e);
     // The main window hands the desktop app the reminders, not the panel too.

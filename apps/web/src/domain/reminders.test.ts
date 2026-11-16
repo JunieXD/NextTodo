@@ -58,7 +58,7 @@ test("reminders come before the deadline by the time set, for the user's pending
         { id: ME, username: "me", display_name: "我" },
       ],
     },
-    "2026-11-03",
+    { today: "2026-11-03" },
     ME,
   );
   expect(reminders(board).map((r) => [r.task.number, r.at.getHours(), r.at.getMinutes(), r.body])).toEqual([

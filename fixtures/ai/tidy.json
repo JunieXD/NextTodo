@@ -310,5 +310,17 @@
     "note": "英文：用英文改写，补上先后",
     "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/Work", "request": "Make the titles clear, rewrite descriptions in plain written English, and add missing dependencies.", "subfolders": [], "open_tasks": [{ "number": 1, "title": "deploy", "description": "uh so basically we need to push the new build to staging, but like only after QA signs off on it" }, { "number": 2, "title": "QA sign-off" }], "done_tasks": [] },
     "expect": { "allowed": ["title", "description", "after"], "linked": [[2, 1]], "facts": [["staging"], ["QA"]] }
+  },
+  {
+    "id": "notes-module-prefix",
+    "note": "上级文件夹的说明要求标题以模块名开头：没有的补上",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/项目/App", "request": "把标题改清楚，描述改成简洁的书面语，补上漏掉的先后关系。", "subfolders": [], "open_tasks": [{ "number": 61, "title": "登录老是超时要修" }, { "number": 62, "title": "支付页按钮颜色不对", "description": "安卓上是灰的，应该是主题绿" }, { "number": 63, "title": "设置：加深色模式" }], "done_tasks": [], "notes": [{ "folder": "/项目", "text": "标题以模块名开头，用全角冒号隔开，如“登录：修复超时”" }] },
+    "expect": { "allowed": ["title", "description", "after"], "facts": [["登录："], ["支付：", "支付页："], ["超时"], ["按钮"], ["灰"], ["绿"]] }
+  },
+  {
+    "id": "notes-inner-english",
+    "note": "外层说明要中文，内层要英文标题：标题按内层的改成英文，单元号原样",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/学习/英语", "request": "把标题改清楚，描述改成简洁的书面语，补上漏掉的先后关系。", "subfolders": [], "open_tasks": [{ "number": 71, "title": "背单词 Unit 5" }, { "number": 72, "title": "每天听半小时听力" }], "done_tasks": [], "notes": [{ "folder": "/", "text": "标题和描述都用中文" }, { "folder": "/学习/英语", "text": "这个文件夹里的标题都用英文写" }] },
+    "expect": { "allowed": ["title", "description"], "verbatim": ["Unit 5"], "facts": [["vocabulary", "words"], ["listening"], ["daily", "every day", "each day"], ["30 min", "half an hour", "half-hour"]] }
   }
 ]

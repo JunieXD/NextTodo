@@ -19,6 +19,7 @@ import { useBack } from "../ui/back";
 import { Seg, Select } from "../ui/controls";
 import { useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
+import { AiNotes } from "./AiNotes";
 
 type Place = "local" | "server";
 
@@ -145,7 +146,7 @@ export function AiPage() {
   return (
     <>
       <p className="empty">
-        在添加框点 ✦ 切到 AI 整理，写下一段话，由所选的模型整理成事项。原文、文件夹名和其中未完成的事项会发给这个服务商。<Help to="ai#key">如何获取 API 密钥</Help>
+        在添加框点 ✦ 切到 AI 整理，写下一段话，由所选的模型整理成事项。原文、文件夹名、其中未完成的事项和 AI 说明会发给这个服务商。<Help to="ai#key">如何获取 API 密钥</Help>
       </p>
       <div className="field">
         服务商
@@ -221,6 +222,7 @@ export function AiPage() {
           保存
         </button>
       </div>
+      <AiNotes />
     </>
   );
 }

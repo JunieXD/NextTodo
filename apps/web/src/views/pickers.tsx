@@ -13,8 +13,8 @@ import { Icon } from "../ui/icons";
 import { FolderName, folderIcon } from "./share";
 
 /** Picks a folder or the root, checking `current`: to add to, the one picked so far; to move to, where
- * what is moved is now, which cannot be picked, nor can where `exclude`, a folder moved, may not go.
- * The folders others share with the user follow, apart. */
+ * what is moved is now, which cannot be picked, nor can where `exclude`, a folder moved, may not go; for
+ * a note for AI organizing, any. The folders others share with the user follow, apart. */
 export function FolderPicker({
   mode,
   current,
@@ -22,8 +22,8 @@ export function FolderPicker({
   onPick,
   onClose,
 }: {
-  mode: "add" | "move";
-  current: FolderId | null;
+  mode: "add" | "move" | "note";
+  current?: FolderId | null;
   exclude?: FolderId;
   onPick(f: FolderId | null): void;
   onClose(): void;
@@ -54,7 +54,7 @@ export function FolderPicker({
   const tree = board.folderTree();
   const theirs = tree.filter((f) => board.ownerOf(f) !== board.me);
   return (
-    <Modal title={mode === "add" ? "添加到" : "移动到"} onClose={onClose}>
+    <Modal title={{ add: "添加到", move: "移动到", note: "选择文件夹" }[mode]} onClose={onClose}>
       <div className="group picker">{tree.filter((f) => board.ownerOf(f) === board.me).map(row)}</div>
       {theirs.length > 0 && (
         <>

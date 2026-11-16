@@ -61,6 +61,10 @@ pub const SYSTEM: &str = r#"你负责把用户随手写下的一段话整理成�
 /// Added to the instructions in a shared folder, where the text may say who is to do what.
 pub const ASSIGN: &str = r#"这个文件夹是共享的，输入里还有 people：共享人和成员，username 是用户名，name 是显示名，me 为 true 的是写这段话的用户。原文说了某件事由谁来做（“让小王去问报价”“我来订酒店”），就在那个事项上写 assign：负责人的 username 列表，如 "assign": ["wang"]；没说的不写，不要猜。"#;
 
+/// Added to the instructions, of organizing and of tidying, when the user has notes along the way to
+/// the folder (docs/ai.md#说明).
+pub const NOTES: &str = "输入里还有 notes：用户写给你的长期要求，按文件夹从外到内排列，folder 是它所属的文件夹。整理时照着做；内层文件夹的要求和外层的不一致时，以内层的为准。这些要求不改变上面规定的输出格式和字段。";
+
 pub(super) fn due_text(d: &Due) -> String {
     match &d.at {
         Some(at) => format!("{} {}", d.date.as_str(), at.time.as_str()),
@@ -72,8 +76,8 @@ pub(super) fn due_text(d: &Due) -> String {
 /// before. By id, as a task's number changes if it moves to another owner's while the model answers.
 pub type Shown = HashMap<i64, TaskId>;
 
-/// The chat for `job`, and the tasks it shows.
-pub fn prompt(job: &AiJob, board: &Board) -> (Prompt, Shown) {
+/// The chat for `job`, with the user's `notes` along the way to its folder, and the tasks it shows.
+pub fn prompt(job: &AiJob, board: &Board, notes: Vec<Value>) -> (Prompt, Shown) {
     let open: Vec<&Task> = board.tasks_in(job.folder_id).into_iter().filter(|t| t.done_at.is_none()).take(SHOWN).collect();
     let shown: Shown = open.iter().map(|t| (t.number, t.id)).collect();
     let tasks: Vec<Value> = open
@@ -96,6 +100,9 @@ pub fn prompt(job: &AiJob, board: &Board) -> (Prompt, Shown) {
         "open_tasks": tasks,
         "text": job.text.as_str(),
     });
+    if !notes.is_empty() {
+        input["notes"] = notes.into();
+    }
     let Some(share) = board.share(job.folder_id) else { return (chat(SYSTEM, &input), shown) };
     let people: Vec<Value> = std::iter::once(&share.owner)
         .chain(&share.members)
@@ -109,13 +116,20 @@ pub fn prompt(job: &AiJob, board: &Board) -> (Prompt, Shown) {
         })
         .collect();
     input["people"] = people.into();
-    (chat(&format!("{SYSTEM}\n\n{ASSIGN}"), &input), shown)
+    (chat(SYSTEM, &input), shown)
 }
 
 /// The chat that gives the model `input`, a job and its folder as `prompt` makes them, with the
-/// instructions `system`.
+/// instructions `system` and those for what else the input has: the people of a shared folder, the
+/// user's notes.
 pub fn chat(system: &str, input: &Value) -> Prompt {
-    Prompt { system: system.into(), user: serde_json::to_string_pretty(input).expect("JSON values serialize") }
+    let mut system = system.to_owned();
+    for (key, more) in [("people", ASSIGN), ("notes", NOTES)] {
+        if input.get(key).is_some() {
+            system = format!("{system}\n\n{more}");
+        }
+    }
+    Prompt { system, user: serde_json::to_string_pretty(input).expect("JSON values serialize") }
 }
 
 /// A minimal chat that answers in JSON, to see whether a config works.

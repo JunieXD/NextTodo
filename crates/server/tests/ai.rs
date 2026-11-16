@@ -491,3 +491,50 @@ async fn the_tasks_the_model_saw_are_kept_to_when_their_numbers_change_meanwhile
         [(id_of("量尺寸"), id_of("买灯"))]
     );
 }
+
+#[tokio::test]
+async fn a_job_is_given_the_users_own_notes_from_the_root_down_to_its_folder() {
+    let (t, fake) = server();
+    let s = t.admin().await;
+    t.ok(&s, "mkdir", json!({ "path": "/工作/官网" })).await;
+    t.ok(&s, "mkdir", json!({ "path": "/生活" })).await;
+    let snap = t.snapshot(&s).await;
+    let folder = |name: &str| snap["folders"].as_array().unwrap().iter().find(|f| f["name"] == name).unwrap()["id"].clone();
+    let note = |folder: Value, text: &str| json!({ "folder_id": folder, "text": text });
+    for (f, text) in
+        [(Value::Null, "标题简短"), (folder("工作"), "  用英文写\n"), (folder("官网"), "按页面拆开"), (folder("生活"), "不相干")]
+    {
+        assert_eq!(t.call("PUT", "/ai/notes", Some(&s), Some(note(f, text))).await.status, StatusCode::NO_CONTENT);
+    }
+    assert_eq!(t.call("PUT", "/ai/settings", Some(&s), Some(config())).await.status, StatusCode::OK);
+
+    fake.answer(Ok(r#"{"tasks": [{"ref": "a", "title": "Write the home page"}]}"#));
+    t.mutate(&s, json!([create(&id(), "写首页", folder("官网").as_str())])).await;
+    until(&t, &s, |s| s["ai_jobs"].as_array().unwrap().is_empty()).await;
+    let shown: Value = serde_json::from_str(&fake.asked().pop().unwrap().1).unwrap();
+    let along = json!([
+        { "folder": "/", "text": "标题简短" },
+        { "folder": "/工作", "text": "用英文写" },
+        { "folder": "/工作/官网", "text": "按页面拆开" },
+    ]);
+    assert_eq!(shown["notes"], along, "outermost first, trimmed, and none of other folders");
+
+    // Each user's own: another sees none, nor writes one for a folder they don't see.
+    let bob = t.user(&s, "bob").await;
+    assert_eq!(t.call("GET", "/ai/notes", Some(&bob), None).await.body, json!([]));
+    assert_eq!(t.call("PUT", "/ai/notes", Some(&bob), Some(note(folder("工作"), "x"))).await.status, StatusCode::NOT_FOUND);
+    let long = t.call("PUT", "/ai/notes", Some(&s), Some(note(Value::Null, &"长".repeat(2001)))).await;
+    assert_eq!((long.status, long.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("text")));
+    let token = t.call("POST", "/tokens", Some(&s), Some(json!({ "name": "Claude Code", "scope": "write" }))).await.body;
+    assert_eq!(t.call("GET", "/ai/notes", token["secret"].as_str(), None).await.status, StatusCode::FORBIDDEN);
+
+    // A folder deleted keeps its note, listed again once that is undone; an empty one clears it.
+    let listed = |body: Value| -> Vec<String> { body.as_array().unwrap().iter().map(|n| n["text"].as_str().unwrap().to_owned()).collect() };
+    let deleted = id();
+    t.call("POST", "/mutations", Some(&s), Some(json!({ "id": deleted, "ops": [{ "op": "folder.delete", "id": folder("生活") }] }))).await;
+    assert!(!listed(t.call("GET", "/ai/notes", Some(&s), None).await.body).contains(&"不相干".to_owned()));
+    t.mutate(&s, json!([{ "op": "undo", "mutation": deleted }])).await;
+    assert!(listed(t.call("GET", "/ai/notes", Some(&s), None).await.body).contains(&"不相干".to_owned()));
+    t.call("PUT", "/ai/notes", Some(&s), Some(note(Value::Null, " "))).await;
+    assert!(!listed(t.call("GET", "/ai/notes", Some(&s), None).await.body).contains(&"标题简短".to_owned()));
+}

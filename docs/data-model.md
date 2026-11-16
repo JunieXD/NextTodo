@@ -155,6 +155,19 @@
 | api_key | BLOB | 加密的 API 密钥：24 字节随机 nonce 加 XChaCha20-Poly1305 密文，附加数据是用户 ID，所以换到别人名下解不开 |
 | updated_at | INTEGER | |
 
+### ai_notes
+
+AI 整理的[说明](ai.md#说明)，每个用户每个文件夹（含根目录）最多一份。
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| user_id | TEXT → users | 写说明的人 |
+| folder_id | TEXT，可空 | `NULL` 是根目录，即全局说明。不设外键：文件夹删除后说明留着，撤销删除时随文件夹回来 |
+| text | TEXT | 1–2000 字 |
+| updated_at | INTEGER | |
+
+唯一索引 `(user_id, ifnull(folder_id, ''))`。
+
 ### mutations
 
 改动日志，用于幂等、增量同步和撤销。

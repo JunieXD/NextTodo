@@ -2,7 +2,7 @@
 // its "…" button, or by right-clicking it on a computer.
 
 import { DropdownMenu } from "radix-ui";
-import { Ellipsis, FolderInput, FolderPlus, ListChecks, Pencil, Sparkles, Trash2, Users } from "lucide-react";
+import { Ellipsis, FolderInput, FolderPlus, ListChecks, NotebookPen, Pencil, Sparkles, Trash2, Users } from "lucide-react";
 import { type ReactElement, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation } from "wouter";
@@ -20,6 +20,7 @@ import { Modal, RootContext, Tip, useFeedback } from "../ui/feedback";
 import { composing } from "../ui/keys";
 import { Icon } from "../ui/icons";
 import { ContextMenu, type MenuItem, itemClass } from "../ui/menu";
+import { useAiNote } from "./AiNotes";
 import { useBatch } from "./batch";
 import { folderUrl, settingsUrl } from "./nav";
 import { FolderPicker } from "./pickers";
@@ -154,6 +155,7 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
   const newFolder = useNewFolder();
   const place = usePlaceFolder();
   const tidy = useTidy(folder);
+  const note = useAiNote(folder);
   const [location, navigate] = useLocation();
   const [moving, setMoving] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -162,8 +164,17 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
     const items = [
       { icon: FolderPlus, label: "新建文件夹", onSelect: () => newFolder(null) },
       { icon: Sparkles, label: "AI 整理事项", onSelect: tidy.start },
+      { icon: NotebookPen, label: "AI 说明", onSelect: note.start },
     ];
-    return { items, panel: tidy.panel };
+    return {
+      items,
+      panel: (
+        <>
+          {tidy.panel}
+          {note.panel}
+        </>
+      ),
+    };
   }
   const f = board.folder(folder);
   if (!f) return { items: [], panel: null };
@@ -189,6 +200,7 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
     items: [
       { icon: FolderPlus, label: "新建子文件夹", onSelect: () => newFolder(f.id) },
       { icon: Sparkles, label: "AI 整理事项", onSelect: tidy.start },
+      { icon: NotebookPen, label: "AI 说明", onSelect: note.start },
       ...(shareable(board, f.id) && !inLocalMode() ? [{ icon: Users, label: "共享…", onSelect: () => setSharing(true) }] : []),
       ...(theirs
         ? []
@@ -201,6 +213,7 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
     panel: (
       <>
         {tidy.panel}
+        {note.panel}
         {moving && <FolderPicker mode="move" current={f.parent_id} exclude={f.id} onPick={(parent) => place(f.id, parent, null)} onClose={() => setMoving(false)} />}
         {sharing && <SharePanel folder={f.id} onClose={() => setSharing(false)} />}
       </>
@@ -217,8 +230,8 @@ export function FolderMenu({ folder }: { folder: FolderId | null }) {
   const { board } = useView();
   const batch = useBatch();
   const choose = () => (board.contents(folder).length ? batch.start() : snack("这里没有事项"));
-  // After making a folder and tidying, which the root's menu has alone.
-  const items = own.length ? [...own.slice(0, 2), { icon: ListChecks, label: "批量操作", onSelect: choose }, ...own.slice(2)] : [];
+  // After making a folder and the two of AI, which the root's menu has alone.
+  const items = own.length ? [...own.slice(0, 3), { icon: ListChecks, label: "批量操作", onSelect: choose }, ...own.slice(3)] : [];
   const [menu, setMenu] = useState(false);
   // A finger come down on the button, to open the menu once the tap is done.
   const tap = useRef(false);

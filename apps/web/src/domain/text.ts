@@ -39,6 +39,13 @@ export function checkJobText(s: string): Checked {
   return { ok: true, value };
 }
 
+/** A note for AI organizing in a folder: empty clears it. */
+export function checkNoteText(s: string): Checked {
+  const value = s.replace(control, "").trim();
+  if (length(value) > 2000) return { ok: false, error: "说明不能超过 2000 个字" };
+  return { ok: true, value };
+}
+
 export const checkDisplayName = (s: string) => line(s, "显示名", 50);
 
 export const checkTokenName = (s: string) => line(s, "令牌名", 50);

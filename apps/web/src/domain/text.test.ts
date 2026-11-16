@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkDescription, checkJobText, checkTitle } from "./text";
+import { checkDescription, checkJobText, checkNoteText, checkTitle } from "./text";
 
 // Some chat apps, QQ on Android among them, copy control characters in place of their emoji: no one
 // can see them in the box to take them out.
@@ -21,5 +21,16 @@ describe("text pasted with control characters", () => {
   it("is empty when it is nothing else", () => {
     expect(checkJobText("\u0014\u0014\n")).toEqual({ ok: false, error: "内容不能为空" });
     expect(checkTitle("\u0014")).toEqual({ ok: false, error: "标题不能为空" });
+  });
+});
+
+describe("a note for AI organizing", () => {
+  it("counts characters as the server does, not UTF-16 units: an emoji is one", () => {
+    expect(checkNoteText("😀".repeat(2000))).toEqual({ ok: true, value: "😀".repeat(2000) });
+    expect(checkNoteText("😀".repeat(2001))).toEqual({ ok: false, error: "说明不能超过 2000 个字" });
+  });
+
+  it("is empty, to clear it, when it is only spaces", () => {
+    expect(checkNoteText(" \n\u0014 ")).toEqual({ ok: true, value: "" });
   });
 });

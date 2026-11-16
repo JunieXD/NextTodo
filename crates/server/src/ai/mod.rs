@@ -6,18 +6,19 @@ pub mod organize;
 pub mod secret;
 pub mod tidy;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use nexttodo_core::board::{Board, Now};
-use nexttodo_core::model::{AiJobId, JobKind, JobState, MutationId, Suggestion};
+use nexttodo_core::model::{AiJobId, FolderId, JobKind, JobState, MutationId, NoteText, Suggestion};
 use nexttodo_core::ops::Op;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
 use rusqlite::{Connection, OptionalExtension, ToSql, params};
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{Notify, Semaphore};
 use ts_rs::TS;
@@ -264,14 +265,16 @@ async fn organize(st: AppState, turn: Turn, job: AiJobId, config: Config) {
         .call(move |c| {
             let Some(j) = store::load_job(c, &owner, job)?.filter(|j| j.state == JobState::Running) else { return Ok(None) };
             let snap = store::snapshot(c, &owner)?;
+            // Organizing reads no task's status, for which the board needs the user's day.
+            let board = Board::new(&snap, Now::utc(j.created_at), &owner);
+            let notes = notes_along(&board, &store::ai_notes(c, &owner)?, j.folder_id);
             Ok(Some(match j.kind {
                 JobKind::Organize => {
-                    // Organizing reads no task's status, for which the board needs the user's day.
-                    let (prompt, shown) = organize::prompt(&j, &Board::new(&snap, Now::utc(j.created_at), &owner));
+                    let (prompt, shown) = organize::prompt(&j, &board, notes);
                     (prompt, Shown::Organize(shown))
                 }
                 JobKind::Tidy => {
-                    let (prompt, shown) = tidy::prompt(&j, snap, &owner);
+                    let (prompt, shown) = tidy::prompt(&j, snap, &owner, notes);
                     (prompt, Shown::Tidy(Box::new(shown)))
                 }
             }))
@@ -468,6 +471,57 @@ pub async fn put_settings(
         })
         .await
         .map(Json)
+}
+
+/// Of the user's `notes`, those from the root to `folder`, outermost first, as the model is given them.
+pub fn notes_along(board: &Board, notes: &HashMap<Option<FolderId>, NoteText>, folder: Option<FolderId>) -> Vec<Value> {
+    let mut along = vec![folder];
+    while let Some(Some(f)) = along.last() {
+        along.push(board.folder(*f).and_then(|f| f.parent_id));
+    }
+    along.iter().rev().filter_map(|&f| notes.get(&f).map(|text| json!({ "folder": board.path(f), "text": text }))).collect()
+}
+
+/// A note for AI organizing (docs/ai.md#说明): the root's, with no folder, is for every folder.
+#[derive(Serialize, Deserialize, TS)]
+#[ts(export, rename = "AiNote")]
+pub struct Note {
+    folder_id: Option<FolderId>,
+    text: NoteText,
+}
+
+/// The user's notes, of the folders they see.
+pub async fn get_notes(State(st): State<AppState>, auth: Auth) -> Result<Json<Vec<Note>>, ApiError> {
+    auth.require_device()?;
+    st.db
+        .call(move |c| {
+            let seen: HashSet<FolderId> = store::snapshot(c, &auth.user_id)?.folders.iter().map(|f| f.id).collect();
+            let notes = store::ai_notes(c, &auth.user_id)?;
+            Ok(notes
+                .into_iter()
+                .filter(|(f, _)| f.is_none_or(|f| seen.contains(&f)))
+                .map(|(folder_id, text)| Note { folder_id, text })
+                .collect())
+        })
+        .await
+        .map(Json)
+}
+
+/// Puts a note in place of the user's for its folder; an empty one clears it.
+pub async fn put_note(State(st): State<AppState>, auth: Auth, Json(note): Json<Note>) -> Result<StatusCode, ApiError> {
+    auth.require_device()?;
+    let now = st.clock.now();
+    st.db
+        .call(move |c| {
+            if let Some(f) = note.folder_id
+                && !store::snapshot(c, &auth.user_id)?.folders.iter().any(|seen| seen.id == f)
+            {
+                return Err(ApiError::not_found("文件夹不存在"));
+            }
+            store::set_ai_note(c, &auth.user_id, note.folder_id, &note.text, now)?;
+            Ok(StatusCode::NO_CONTENT)
+        })
+        .await
 }
 
 pub async fn delete_settings(State(st): State<AppState>, auth: Auth) -> Result<StatusCode, ApiError> {

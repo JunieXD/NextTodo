@@ -102,8 +102,9 @@ enum Seen {
     Done,
 }
 
-/// The chat for `job`, a tidying of its folder in `snap`, and what was shown in it.
-pub fn prompt(job: &AiJob, snap: Snapshot, user: &str) -> (Prompt, Shown) {
+/// The chat for `job`, a tidying of its folder in `snap` with the user's `notes` along the way to it,
+/// and what was shown in it.
+pub fn prompt(job: &AiJob, snap: Snapshot, user: &str, notes: Vec<Value>) -> (Prompt, Shown) {
     let now = Now::utc(job.created_at);
     let board = Board::new(&snap, now.clone(), user);
     let all = board.tasks_in(job.folder_id);
@@ -159,7 +160,7 @@ pub fn prompt(job: &AiJob, snap: Snapshot, user: &str) -> (Prompt, Shown) {
         .take(FOLDERS_SHOWN)
         .map(|f| board.path(f))
         .collect();
-    let input = json!({
+    let mut input = json!({
         "local_time": job.local_time.as_str(),
         "folder": board.path(job.folder_id),
         "request": job.text.as_str(),
@@ -167,6 +168,9 @@ pub fn prompt(job: &AiJob, snap: Snapshot, user: &str) -> (Prompt, Shown) {
         "open_tasks": open_tasks,
         "done_tasks": done_tasks,
     });
+    if !notes.is_empty() {
+        input["notes"] = notes.into();
+    }
     (chat(SYSTEM, &input), Shown { snap, user: user.to_owned(), now, folder: job.folder_id, tasks })
 }
 
@@ -597,7 +601,7 @@ mod tests {
 
     #[test]
     fn shows_the_folder() {
-        let (prompt, shown) = prompt(&job(), snap(), "me");
+        let (prompt, shown) = prompt(&job(), snap(), "me", vec![]);
         let input: Value = serde_json::from_str(&prompt.user).unwrap();
         assert_eq!(input["folder"], "/官网");
         assert_eq!(input["request"], "整理一下");
@@ -614,11 +618,21 @@ mod tests {
         assert_eq!(input["done_tasks"], json!([{ "number": 5, "title": "订机票" }]));
         assert_eq!(input["open_tasks"].as_array().unwrap().len(), 4);
         assert!(shown.tasks[&3] == Seen::Open { described: true } && shown.tasks[&4] == Seen::Open { described: false });
+        assert!(input.get("notes").is_none() && prompt.system == SYSTEM, "no notes, no word of them");
+    }
+
+    #[test]
+    fn gives_the_notes_with_what_to_make_of_them() {
+        let notes = vec![json!({ "folder": "/", "text": "标题用英文" }), json!({ "folder": "/官网", "text": "按页面拆开" })];
+        let (prompt, _) = prompt(&job(), snap(), "me", notes.clone());
+        let input: Value = serde_json::from_str(&prompt.user).unwrap();
+        assert_eq!(input["notes"], json!(notes));
+        assert_eq!(prompt.system, format!("{SYSTEM}\n\n{}", super::super::organize::NOTES));
     }
 
     #[test]
     fn reads_each_kind() {
-        let (_, shown) = prompt(&job(), snap(), "me");
+        let (_, shown) = prompt(&job(), snap(), "me", vec![]);
         let ok = r#"{"suggestions": [
             {"number": 1, "title": "建好官网", "description": "做一个官网。", "due": "2026-11-20", "requires": ["a"], "reason": "标题以动作开头"},
             {"number": 2, "due": "2026-11-21 09:00", "folder": "/官网/文档", "requires": [1], "drop_requires": [4], "reason": "推迟一天"},
@@ -674,7 +688,7 @@ mod tests {
 
     #[test]
     fn refuses_what_could_not_be_applied() {
-        let (_, shown) = prompt(&job(), snap(), "me");
+        let (_, shown) = prompt(&job(), snap(), "me", vec![]);
         let err = |s: &str| parse(&format!(r#"{{"suggestions": [{s}]}}"#), &shown).err().unwrap();
         assert_eq!(err(r#"{"number": 6, "title": "x", "reason": ""}"#), "结果引用了不在这个文件夹里的事项 #6");
         assert_eq!(err(r#"{"number": 1, "requires": [2], "reason": ""}"#), "建议把 #2 设为 #1 的前置，但这样依赖会成环");
@@ -709,7 +723,7 @@ mod tests {
     #[test]
     fn suggests_no_more_than_one_change_takes() {
         let tasks: Vec<Task> = (1..=50).map(|n| task(n, &format!("t{n}"), json!({}))).collect();
-        let (_, shown) = prompt(&job(), Snapshot { tasks, folders: snap().folders, ..Default::default() }, "me");
+        let (_, shown) = prompt(&job(), Snapshot { tasks, folders: snap().folders, ..Default::default() }, "me", vec![]);
         // Each task after every one before it: 1225 links, a DAG still.
         let all: Vec<Value> = (2..=50).map(|n| json!({ "number": n, "requires": (1..n).collect::<Vec<_>>(), "reason": "" })).collect();
         assert_eq!(

@@ -119,7 +119,7 @@ function Back({ to, label }: { to: string; label: string }) {
   const up = () => navigate(to);
   useBack("page", up);
   return (
-    <button className="back" onClick={up}>
+    <button className="back-btn" onClick={up}>
       <Icon of={ChevronLeft} size={22} />
       <span>{label}</span>
     </button>

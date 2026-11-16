@@ -1,10 +1,12 @@
 //! Reading and writing entities. Lookups by id find whatever has it; who can see it is for the caller
 //! to decide, by its owner and the folder it is in (docs/design.md#共享). Lists are those of a user.
 
+use std::collections::HashMap;
+
 use nexttodo_core::board::Snapshot;
 use nexttodo_core::model::{
-    AiJob, AiJobId, Completions, Date, Dependency, Due, DueAt, Every, Folder, FolderId, Monthdays, Period, Person, Repeat, RepeatFrom,
-    RepeatUnit, Share, SortKey, Task, TaskId, Time, Weekdays,
+    AiJob, AiJobId, Completions, Date, Dependency, Due, DueAt, Every, Folder, FolderId, Monthdays, NoteText, Period, Person, Repeat,
+    RepeatFrom, RepeatUnit, Share, SortKey, Task, TaskId, Time, Weekdays,
 };
 use rusqlite::{Connection, OptionalExtension, Params, Row, params};
 
@@ -382,6 +384,26 @@ pub fn subtree_jobs(c: &Connection, id: FolderId) -> rusqlite::Result<Vec<(AiJob
     c.prepare_cached(&format!("{SUBTREE} SELECT {JOB_COLUMNS}, owner_id FROM ai_jobs WHERE folder_id IN (SELECT id FROM sub)"))?
         .query_map([id], |r| Ok((job_row(r)?, r.get(10)?)))?
         .collect()
+}
+
+/// The user's notes for AI organizing, by folder, the root's `None` (docs/ai.md#说明); those of folders
+/// they no longer see too.
+pub fn ai_notes(c: &Connection, user: &str) -> rusqlite::Result<HashMap<Option<FolderId>, NoteText>> {
+    c.prepare("SELECT folder_id, text FROM ai_notes WHERE user_id = ?1")?.query_map([user], |r| Ok((r.get(0)?, r.get(1)?)))?.collect()
+}
+
+/// Puts `text` in place of the user's note for `folder`; an empty one clears it.
+pub fn set_ai_note(c: &Connection, user: &str, folder: Option<FolderId>, text: &NoteText, now: i64) -> rusqlite::Result<()> {
+    if text.as_str().is_empty() {
+        c.execute("DELETE FROM ai_notes WHERE user_id = ?1 AND folder_id IS ?2", params![user, folder])?;
+    } else {
+        c.execute(
+            "INSERT INTO ai_notes (user_id, folder_id, text, updated_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (user_id, ifnull(folder_id, '')) DO UPDATE SET text = ?3, updated_at = ?4",
+            params![user, folder, text, now],
+        )?;
+    }
+    Ok(())
 }
 
 pub fn load_job(c: &Connection, owner: &str, id: AiJobId) -> rusqlite::Result<Option<AiJob>> {

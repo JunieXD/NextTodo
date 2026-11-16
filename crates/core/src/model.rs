@@ -186,6 +186,21 @@ text_type!(
     }
 );
 text_type!(
+    /// What the user wrote for AI to keep to when organizing in a folder, and in those inside it
+    /// (docs/ai.md#说明). Empty, there is none.
+    NoteText,
+    |s| {
+        let s = s.trim().to_owned();
+        if s.chars().count() > 2000 {
+            Err("说明不能超过 2000 个字".into())
+        } else if s.chars().any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t')) {
+            Err("说明不能包含控制字符".into())
+        } else {
+            Ok(s)
+        }
+    }
+);
+text_type!(
     /// The user's local time as written by their device, such as `2026-11-04 16:30 星期三`: what
     /// "tomorrow" means in a text submitted for AI to organize.
     LocalTime,

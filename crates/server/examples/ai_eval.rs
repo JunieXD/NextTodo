@@ -219,7 +219,7 @@ fn main() -> anyhow::Result<()> {
             let expect = if c.input.get("request").is_some() {
                 let data = tidy_data(&c.input);
                 // So that the case is what the server would send.
-                let sent: Value = serde_json::from_str(&tidy::prompt(&data.1, data.0.clone(), ME).0.user)?;
+                let sent: Value = serde_json::from_str(&tidy::prompt(&data.1, data.0.clone(), ME, notes(&c.input)).0.user)?;
                 anyhow::ensure!(sent == c.input, "{}：服务端发给模型的会是\n{}", c.id, serde_json::to_string_pretty(&sent)?);
                 Kind::Tidy(serde_json::from_value(c.expect).map_err(|e| anyhow::anyhow!("{}：{e}", c.id))?, Box::new(data))
             } else {
@@ -290,7 +290,7 @@ fn board(snap: &Snapshot) -> Board<'_> {
 fn ask(config: &Config, system: Option<&str>, case: &Case, index: usize, run: usize) -> Outcome {
     let e = match &case.expect {
         Kind::Organize(e) => e,
-        Kind::Tidy(e, data) => return ask_tidy(config, system, e, data, index, run),
+        Kind::Tidy(e, data) => return ask_tidy(config, system, e, data, &case.input, index, run),
     };
     let snap = snapshot(&case.input);
     let shown: organize::Shown = snap.tasks.iter().map(|t| (t.number, t.id)).collect();
@@ -354,7 +354,10 @@ fn snapshot(input: &Value) -> Snapshot {
         .iter()
         .flat_map(|t| t["after"].as_array().into_iter().flatten().map(|b| json!({ "before": id(b.as_i64().unwrap_or_default()), "after": id(t["number"].as_i64().unwrap_or_default()), "created_at": 0 })))
         .collect();
-    serde_json::from_value(json!({ "folders": [], "tasks": tasks, "dependencies": dependencies, "ai_jobs": [] })).expect("a snapshot")
+    serde_json::from_value(
+        json!({ "folders": [], "tasks": tasks, "dependencies": dependencies, "ai_jobs": [], "shares": [], "people": [] }),
+    )
+    .expect("a snapshot")
 }
 
 /// Refuses what the server refuses when it adds the tasks: more operations than a change holds, with
@@ -612,8 +615,10 @@ fn tidy_data(input: &Value) -> (Snapshot, AiJob) {
             dependencies.push(json!({ "before": task_id(b.as_i64().expect("numbers")), "after": task_id(n), "created_at": 0 }));
         }
     }
-    let snap = serde_json::from_value(json!({ "folders": folders, "tasks": tasks, "dependencies": dependencies, "ai_jobs": [] }))
-        .expect("a snapshot");
+    let snap = serde_json::from_value(
+        json!({ "folders": folders, "tasks": tasks, "dependencies": dependencies, "ai_jobs": [], "shares": [], "people": [] }),
+    )
+    .expect("a snapshot");
     let job = serde_json::from_value(json!({
         "id": id(999), "folder_id": folder, "kind": "tidy", "text": input["request"], "local_time": input["local_time"],
         "state": "running", "error": null, "created_at": 0, "updated_at": 0,
@@ -622,12 +627,24 @@ fn tidy_data(input: &Value) -> (Snapshot, AiJob) {
     (snap, job)
 }
 
-fn ask_tidy(config: &Config, system: Option<&str>, e: &TidyExpect, data: &(Snapshot, AiJob), index: usize, run: usize) -> Outcome {
+/// The notes an input gives, those along the way to its folder (docs/ai.md#说明).
+fn notes(input: &Value) -> Vec<Value> {
+    input["notes"].as_array().cloned().unwrap_or_default()
+}
+
+fn ask_tidy(
+    config: &Config,
+    system: Option<&str>,
+    e: &TidyExpect,
+    data: &(Snapshot, AiJob),
+    input: &Value,
+    index: usize,
+    run: usize,
+) -> Outcome {
     let (snap, job) = data;
-    let (mut prompt, shown) = tidy::prompt(job, snap.clone(), ME);
-    if let Some(s) = system {
-        prompt.system = s.to_owned();
-    }
+    let (_, shown) = tidy::prompt(job, snap.clone(), ME, notes(input));
+    // The input is what the server sends, as checked when it was read.
+    let prompt = organize::chat(system.unwrap_or(tidy::SYSTEM), input);
     let (answer, seconds) = chat(config, &prompt);
     let facts = e.facts.len();
     let (answer, checked) = match answer {

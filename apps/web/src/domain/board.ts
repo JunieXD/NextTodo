@@ -356,6 +356,11 @@ export class Board {
     return this.direct.get(f) ?? [];
   }
 
+  /** Tasks in a folder and in its subfolders, in no particular order. */
+  within(f: FolderId | null): Task[] {
+    return [...this.contents(f), ...this.subfolders(f).flatMap((sub) => this.within(sub.id))];
+  }
+
   /** Tasks directly in a folder: unfinished ones in dependency order, then finished ones, most
    * recently finished first. */
   tasksIn(f: FolderId | null): Task[] {

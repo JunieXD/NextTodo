@@ -237,9 +237,9 @@ function useSwipe(inner: React.RefObject<HTMLDivElement | null>, done: ((dx: num
 }
 
 export function FolderRow({ folder, board, onOpen }: { folder: Folder; board: Board; onOpen(): void }) {
-  const own = board.contents(folder.id).filter((t) => t.done_at === null);
-  const ready = own.filter((t) => board.status(t) === "ready").length;
-  const sub = own.length ? `${ready} 项可做，共 ${own.length} 项待办` : `${board.subfolders(folder.id).length} 个文件夹`;
+  const pending = board.within(folder.id).filter((t) => t.done_at === null);
+  const ready = pending.filter((t) => board.status(t) === "ready").length;
+  const sub = pending.length ? `${ready} 项可做，共 ${pending.length} 项待办` : `${board.subfolders(folder.id).length} 个文件夹`;
   return (
     <FolderContextMenu folder={folder.id}>
       <button className="row folder-row" data-into={folder.id} onClick={onOpen}>

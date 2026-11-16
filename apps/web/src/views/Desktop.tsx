@@ -206,7 +206,7 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ro
   const tree = (id: FolderId | null, parent: FolderId | null, depth: number): ReactNode => {
     const kids = board.subfolders(id);
     const open = !collapsed.has(id);
-    const count = board.contents(id).filter((t) => t.done_at === null).length;
+    const count = board.within(id).filter((t) => t.done_at === null).length;
     const theirs = id && sharer(board, id);
     return (
       <div key={id ?? "root"}>

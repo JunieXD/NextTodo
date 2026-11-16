@@ -416,6 +416,15 @@ impl<'a> Board<'a> {
         self.contents.get(&f).map_or(&[], Vec::as_slice)
     }
 
+    /// Tasks in a folder and in its subfolders, in no particular order.
+    pub fn within(&self, f: Option<FolderId>) -> Vec<&'a Task> {
+        let mut tasks = self.contents(f).to_vec();
+        for sub in self.subfolders(f) {
+            tasks.extend(self.within(Some(sub.id)));
+        }
+        tasks
+    }
+
     fn key(&self, t: &'a Task) -> (usize, &'a SortKey, TaskId) {
         (self.rank[&t.folder_id], &t.sort_key, t.id)
     }

@@ -37,6 +37,9 @@ struct Expect {
     next: Vec<String>,
     #[serde(default)]
     paths: HashMap<String, String>,
+    /// The tasks in a folder and its subfolders, by name.
+    #[serde(default)]
+    within: HashMap<String, Vec<String>>,
     #[serde(default)]
     steps: HashMap<String, Option<(usize, usize)>>,
     /// `2026-11-12` or `2026-11-12 20:00`.
@@ -160,6 +163,12 @@ fn board_matches_fixtures() {
             let f = folder(&mut names, f);
             assert_eq!(&board.path(f), want, "{c}: path");
             assert_eq!(board.find_folder(want), Some(f), "{c}: find {want}");
+        }
+        for (f, want) in &case.expect.within {
+            let f = folder(&mut names, f);
+            let mut got = list(&names, board.within(f));
+            got.sort();
+            assert_eq!(&got, want, "{c}: within {f:?}");
         }
     }
 }

@@ -19,6 +19,8 @@ interface Case {
     order?: Record<string, string[]>;
     next?: string[];
     paths?: Record<string, string>;
+    /** The tasks in a folder and its subfolders, by name. */
+    within?: Record<string, string[]>;
     steps?: Record<string, [number, number] | null>;
     /** `2026-11-12` or `2026-11-12 20:00`. */
     next_start?: string;
@@ -106,5 +108,8 @@ describe.each(cases as unknown as Case[])("$name", (c) => {
       expect(board.folderPath(folder(f))).toBe(want);
       expect(board.findFolder(want)).toBe(folder(f));
     }
+  });
+  test("within", () => {
+    for (const [f, want] of Object.entries(c.expect.within ?? {})) expect(titles(board.within(folder(f))).sort(), f).toEqual(want);
   });
 });

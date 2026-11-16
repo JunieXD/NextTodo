@@ -33,9 +33,9 @@ fn listed(mut lines: Vec<String>, shown: usize, total: usize) -> Vec<String> {
     lines
 }
 
-/// `（待办 3，可做 1）` for the tasks directly in a folder, and the same as data.
+/// `（待办 3，可做 1）` for the tasks in a folder and its subfolders, and the same as data.
 fn counts(b: &Board, f: Option<FolderId>) -> (String, usize, usize) {
-    let tasks = b.contents(f);
+    let tasks = b.within(f);
     let pending = tasks.iter().filter(|t| t.done_at.is_none()).count();
     let ready = tasks.iter().filter(|t| b.status(t) == Status::Ready).count();
     let text = if pending == 0 { "（无待办）".to_owned() } else { format!("（待办 {pending}，可做 {ready}）") };

@@ -128,7 +128,9 @@ async fn folders_are_named_by_path() {
     let tree = t.ok(&s, "tree", json!({})).await["data"].clone();
     let paths: Vec<&str> = tree.as_array().unwrap().iter().map(|f| f["path"].as_str().unwrap()).collect();
     assert_eq!(paths, vec!["/", "/课程", "/生活", "/生活/毕业论文"]);
-    assert_eq!(tree[2]["pending"], 1);
+    // Counting those in subfolders too.
+    let pending: Vec<u64> = tree.as_array().unwrap().iter().map(|f| f["pending"].as_u64().unwrap()).collect();
+    assert_eq!(pending, vec![2, 0, 2, 1]);
 
     t.ok(&s, "delete", json!({ "tasks": [1], "folders": ["/生活", "/生活/毕业论文", "/生活"] })).await;
     let snap = t.snapshot(&s).await;

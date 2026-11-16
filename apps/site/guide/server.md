@@ -51,6 +51,7 @@ NextTodo 默认只在这台机器内部的 `127.0.0.1:8080` 上运行，外面�
 | 整个网站转发到 `http://127.0.0.1:8080` | 要单独占一个域名、子域名或 IP，不能放在某个路径下（如 `example.com/todo`） |
 | 支持 WebSocket | 各设备靠 `/api/v1/sync` 上的 WebSocket 实时同步。NextTodo 每 30 秒发一次心跳，反向代理的空闲超时不能短于 30 秒（Nginx 默认的 60 秒就够） |
 | 把原来的 `Host` 传过去 | 或者设置 `X-Forwarded-Host`。网页版的同步连接靠它确认是同一个网站 |
+| 请求体允许 30 MB | 附件最大 20 MB，agent 用 base64 上传时约 27 MB。Nginx 默认只收 1 MB，要像下面那样设 `client_max_body_size`；Caddy 默认不限制 |
 
 下面是常见的几种写法，域名都换成自己的。
 
@@ -77,6 +78,9 @@ server {
     ssl_certificate     /path/to/fullchain.pem;
     ssl_certificate_key /path/to/privkey.pem;
 
+    # 附件最大 20 MB，Nginx 默认只收 1 MB 的请求体
+    client_max_body_size 30m;
+
     location / {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
@@ -87,11 +91,11 @@ server {
 }
 ```
 
-`proxy_set_header Host` 传原来的 `Host`，后三行开启 WebSocket。改完运行 `sudo nginx -s reload`（OpenResty 是 `sudo openresty -s reload`）。
+`client_max_body_size` 让附件能上传（最大 20 MB，Nginx 默认只收 1 MB），`proxy_set_header Host` 传原来的 `Host`，后三行开启 WebSocket。改完运行 `sudo nginx -s reload`（OpenResty 是 `sudo openresty -s reload`）。
 
 ### 面板和 NAS 自带的反向代理
 
-1Panel、宝塔、群晖这类面板通常有“反向代理”或“网站”功能。新建一个，按上面的表格填写：目标（后端）地址填 `http://127.0.0.1:8080`，打开 WebSocket 支持，申请或上传证书。有的面板没有 WebSocket 开关，要在自定义配置里加上和上面 Nginx 一样的 `Upgrade`、`Connection` 两行。具体在哪里设置，见面板自己的文档。
+1Panel、宝塔、群晖这类面板通常有“反向代理”或“网站”功能。新建一个，按上面的表格填写：目标（后端）地址填 `http://127.0.0.1:8080`，打开 WebSocket 支持，申请或上传证书。有的面板没有 WebSocket 开关，要在自定义配置里加上和上面 Nginx 一样的 `Upgrade`、`Connection` 两行。上传大小的限制也要放到 30 MB 以上（Nginx 系的面板就是 `client_max_body_size`），否则较大的附件传不上去。具体在哪里设置，见面板自己的文档。
 
 ### 只用 IP 地址 {#ip}
 
@@ -187,7 +191,7 @@ docker compose pull && docker compose up -d
 
 ## 备份
 
-服务器每天在 `data/snapshots/` 里保存一份数据库快照，保留最近 7 份。把这些快照定期复制到别处，就是备份。从快照恢复的步骤见[部署文档](https://github.com/JunieXD/NextTodo/blob/main/docs/deploy.md#备份和恢复)。
+服务器每天在 `data/snapshots/` 里保存一份数据库快照，保留最近 7 份。附件的文件不在快照里，在 `data/files/`。把这些快照和 `data/files/` 定期复制到别处，就是备份。从快照恢复的步骤见[部署文档](https://github.com/JunieXD/NextTodo/blob/main/docs/deploy.md#备份和恢复)。
 
 ## 遇到问题 {#troubleshooting}
 

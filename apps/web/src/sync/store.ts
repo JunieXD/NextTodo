@@ -82,7 +82,7 @@ export class Store {
   }
 
   static empty(): Saved {
-    return { seq: 0, base: { folders: [], tasks: [], dependencies: [], ai_jobs: [], shares: [], people: [] }, outbox: [], log: [] };
+    return { seq: 0, base: { folders: [], tasks: [], dependencies: [], attachments: [], ai_jobs: [], shares: [], people: [] }, outbox: [], log: [] };
   }
 
   subscribe = (listener: () => void) => {

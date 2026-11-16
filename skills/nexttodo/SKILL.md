@@ -10,7 +10,7 @@ NextTodo 是用户自己的待办应用，核心是事项之间的先后关系�
 ## 怎么调用
 
 - 有终端时用命令行 `nexttodo`；`nexttodo --help` 和 `nexttodo <命令> --help` 列出全部参数。
-- 有名为 `nexttodo` 的 MCP 服务时，用它的工具也一样，工具名和参数与命令行对应（`ls` 对应 `list`，`mv` 对应 `move`，`rm` 对应 `delete`，`dep add` / `dep rm` 对应 `dep_add` / `dep_remove`，`edit --replace 原文 新文` 对应 `replace: [{old, new}]`）。
+- 有名为 `nexttodo` 的 MCP 服务时，用它的工具也一样，工具名和参数与命令行对应（`ls` 对应 `list`，`mv` 对应 `move`，`rm` 对应 `delete`，`dep add` / `dep rm` 对应 `dep_add` / `dep_remove`，`attach` 的文件对应 base64 的 `data`，`edit --replace 原文 新文` 对应 `replace: [{old, new}]`）。
 - 命令行报“尚未登录”时，请用户运行 `nexttodo login --url <服务器地址> --name <agent 名称>`，不要替用户输入密码。
 
 引用方式：事项用编号（`12`），文件夹用路径（`/工作/网站改版`，根目录是 `/`）。别人共享给用户的文件夹从共享人的用户名开始（`@alice/装修`），里面的事项用共享人的编号（`@alice#42`），在 YAML 里要加引号。截止时间写 `2026-11-20` 或 `"2026-11-20 18:00"`，用户说的“周五”“下周”要先换算成具体日期。
@@ -55,6 +55,8 @@ nexttodo edit 12 --append '进度：接口已写完，待联调'                
 ```
 
 报“描述里没有……”说明那里刚被用户改过，先 `show` 再改。全部做完再 `nexttodo done 12`。
+
+**附件**：`show` 列出事项的附件和 ID。`nexttodo attach 12 报价单.pdf` 加附件（每个文件最多 20 MB），`nexttodo download <附件 ID>` 存到当前目录，`nexttodo rename <附件 ID> 新名称` 改名，`nexttodo detach <附件 ID>` 删除。用 MCP 时 `attachment` 工具能直接读：图片作为图片返回，文本文件返回内容。描述里的 `[名称](attachment:<附件 ID>)` 是对附件的引用，改描述时原样保留。
 
 **改错了**：`nexttodo log` 找到批次号，`nexttodo undo <批次>`。撤销按字段进行，不会撤掉别人之后的修改。
 

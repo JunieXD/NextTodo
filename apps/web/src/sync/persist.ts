@@ -59,8 +59,9 @@ export async function load(user: User, copyId: string): Promise<Saved | undefine
 
 /** A copy saved by an earlier version, as one is now. Before folders could be shared, nothing was,
  * every task was the user's, and the user was the only one in it; its log of changes goes, being of
- * tasks as they were then. Before AI organizing there were no jobs. */
-function current(c: Copy, { id, username, display_name }: User): Copy {
+ * tasks as they were then. Before AI organizing there were no jobs, and before attachments none. */
+function current(saved: Copy, { id, username, display_name }: User): Copy {
+  const c = { ...saved, base: { ...saved.base, attachments: saved.base.attachments ?? [] } };
   if (c.base.people) return c;
   const tasks = c.base.tasks.map((t) => ({ ...t, assignees: [], created_by: id, updated_by: id }));
   const people = [{ id, username, display_name }];

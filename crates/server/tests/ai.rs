@@ -168,6 +168,33 @@ async fn a_job_becomes_tasks_and_undoing_that_gives_it_back() {
 }
 
 #[tokio::test]
+async fn a_jobs_attachments_go_to_its_task_and_back_with_undo() {
+    let (t, fake) = server();
+    let s = t.admin().await;
+    t.call("PUT", "/ai/settings", Some(&s), Some(config())).await;
+    let attachments = |snap: &Value| -> Vec<(Value, Value)> {
+        snap["attachments"].as_array().unwrap().iter().map(|a| (a["task_id"].clone(), a["job_id"].clone())).collect()
+    };
+    let (job, a) = (id(), id());
+    t.upload(&s, &a, "image/png", b"png").await;
+    fake.answer(Ok(r#"{"tasks": [{"title": "交报销"}, {"title": "寄发票"}]}"#));
+    let add = json!({ "op": "attachment.add", "id": a, "name": "图片 1.png", "type": "image/png", "size": 3, "job_id": job });
+    assert_eq!(t.mutate(&s, json!([create(&job, "报销，附发票照片", None), add])).await.status, StatusCode::OK);
+
+    let snap = until(&t, &s, |s| s["ai_jobs"].as_array().unwrap().is_empty()).await;
+    let first = snap["tasks"].as_array().unwrap().iter().find(|t| t["title"] == "交报销").unwrap()["id"].clone();
+    assert_eq!(attachments(&snap), [(first, Value::Null)]);
+
+    let log = t.call("GET", "/changes?since=0", Some(&s), None).await.body;
+    let done = log["changes"].as_array().unwrap().last().unwrap()["id"].clone();
+    assert_eq!(t.mutate(&s, json!([{ "op": "undo", "mutation": done }])).await.status, StatusCode::OK);
+    assert_eq!(attachments(&t.snapshot(&s).await), [(Value::Null, json!(job))]);
+    // Gone with its job.
+    assert_eq!(t.mutate(&s, json!([{ "op": "ai_job.delete", "id": job }])).await.status, StatusCode::OK);
+    assert!(attachments(&t.snapshot(&s).await).is_empty());
+}
+
+#[tokio::test]
 async fn a_tidying_suggests_and_what_is_taken_goes_with_it_in_one_change() {
     let (t, fake) = server();
     let s = t.admin().await;

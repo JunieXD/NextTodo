@@ -129,6 +129,15 @@ Jetpack Glance 写的“接下来”小组件：
 - **退出登录、离开本机模式**：删掉写过的全部日程和“NextTodo”日历，所选的日历留着，下次登录或进入本机模式后照常写入。删除出错时提示，不挡退出；留下的日程对应关系还在，下次登录后的第一次更新删掉。
 - **权限**：打开时请求读写日历的权限（`READ_CALENDAR`、`WRITE_CALENDAR`）；被拒绝就不打开，这一行改为提示到系统设置里允许。之后在系统设置里收回权限的，暂停更新，已写的日程留在日历里，这一行提示去允许；这期间退出登录也删不掉日程，对应关系留着，再允许后的下一次更新删掉不再需要的。
 
+## 附件
+
+- 页面上传、下载[附件](design.md#附件)的文件用 WebView 自己的 `fetch`（`window.CapacitorWebFetch`），连服务器和本机模式都一样。CapacitorHttp 把请求体和回复整个经原生和网页之间的桥传递，官方文档说数据量大时会出问题；服务端的附件接口为此允许来源 `https://localhost` 跨域，见 [API](api.md#附件)。
+- 打开和保存文件：文件取自页面的 `files` 表（没有就先下载），所以下载过的离线也能打开，还没上传完的也能。页面把它分块（每块 512 KB，base64）交给插件的 `writeAttachment`，写进缓存目录的 `attachments/<附件 ID>/<名称>`：一次经桥传整个文件会出问题。文件名由 Rust 的同一个函数给出，规则见[桌面 App](desktop.md#附件)。写完再调：
+  - `openAttachment`：经 FileProvider 用 `ACTION_VIEW` 交给别的 App，授予临时的读权限；没有能打开的 App 时报“没有能打开这种文件的应用”。
+  - `saveAttachment`：用 `ACTION_CREATE_DOCUMENT` 让用户选位置，复制进去。
+  - 这些文件在下次启动 App 时删掉。
+- 拍照用 `<input type="file" accept="image/*" capture="environment">`，由 Capacitor 的 WebView 打开系统相机。
+
 ## 更新
 
 总体见[总体设计](design.md#app-更新)。

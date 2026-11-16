@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::model::{
-    AiJobId, Date, Description, Due, FolderId, JobKind, JobText, LocalTime, MutationId, Name, SortKey, TaskId, Time, Title, nullable,
+    AiJobId, AttachmentId, Date, Description, Due, FileName, FileSize, FolderId, JobKind, JobText, LocalTime, MediaType, MutationId, Name,
+    SortKey, TaskId, Time, Title, nullable,
 };
 
 pub const MAX_OPS: usize = 1000;
@@ -149,6 +150,35 @@ pub enum Op {
     DepAdd { before: TaskId, after: TaskId },
     #[serde(rename = "dep.remove")]
     DepRemove { before: TaskId, after: TaskId },
+    /// Attaches a file uploaded under `id` to a task or to an AI job, one of the two; its type and size
+    /// are those it was uploaded with.
+    #[serde(rename = "attachment.add")]
+    AttachmentAdd {
+        id: AttachmentId,
+        name: FileName,
+        #[serde(rename = "type")]
+        media_type: MediaType,
+        size: FileSize,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        task_id: Option<TaskId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        job_id: Option<AiJobId>,
+    },
+    /// Renames an attachment, or moves it to a task: from an AI job to the task it is organized into.
+    #[serde(rename = "attachment.update")]
+    AttachmentUpdate {
+        id: AttachmentId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        name: Option<FileName>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        task_id: Option<TaskId>,
+    },
+    #[serde(rename = "attachment.delete")]
+    AttachmentDelete { id: AttachmentId },
     #[serde(rename = "ai_job.create")]
     AiJobCreate {
         id: AiJobId,

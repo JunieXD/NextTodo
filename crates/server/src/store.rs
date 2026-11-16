@@ -5,13 +5,14 @@ use std::collections::HashMap;
 
 use nexttodo_core::board::Snapshot;
 use nexttodo_core::model::{
-    AiJob, AiJobId, Completions, Date, Dependency, Due, DueAt, Every, Folder, FolderId, Monthdays, NoteText, Period, Person, Repeat,
-    RepeatFrom, RepeatUnit, Share, SortKey, Task, TaskId, Time, Weekdays,
+    AiJob, AiJobId, Attachment, AttachmentId, Completions, Date, Dependency, Due, DueAt, Every, FileSize, Folder, FolderId, Holder,
+    MediaType, Monthdays, NoteText, Period, Person, Repeat, RepeatFrom, RepeatUnit, Share, SortKey, Task, TaskId, Time, Weekdays,
 };
 use rusqlite::{Connection, OptionalExtension, Params, Row, params};
 
 const FOLDER_COLUMNS: &str = "id, parent_id, name, sort_key, created_at, updated_at";
 const JOB_COLUMNS: &str = "id, folder_id, kind, text, local_time, state, error, suggestions, created_at, updated_at";
+const ATTACHMENT_COLUMNS: &str = "id, task_id, job_id, name, type, size, created_at";
 macro_rules! task_columns {
     () => {
         "id, number, folder_id, title, description, done_at, due_date, due_time, remind_before, sort_key, created_at, updated_at, created_via, updated_via, repeat_every, repeat_unit, repeat_from, repeat_days, completion_count, last_completed, repeat_monthdays, start_date, created_by, updated_by, start_time"
@@ -105,6 +106,22 @@ fn suggestions(j: &AiJob) -> Option<String> {
 
 fn dep_row(r: &Row) -> rusqlite::Result<Dependency> {
     Ok(Dependency { before: r.get(0)?, after: r.get(1)?, created_at: r.get(2)? })
+}
+
+fn attachment_row(r: &Row) -> rusqlite::Result<Attachment> {
+    // One of the two, as the table checks.
+    let holder = match r.get::<_, Option<TaskId>>(1)? {
+        Some(t) => Holder::Task(t),
+        None => Holder::Job(r.get(2)?),
+    };
+    Ok(Attachment { id: r.get(0)?, holder, name: r.get(3)?, media_type: r.get(4)?, size: r.get(5)?, created_at: r.get(6)? })
+}
+
+fn holder_columns(h: Holder) -> (Option<TaskId>, Option<AiJobId>) {
+    match h {
+        Holder::Task(t) => (Some(t), None),
+        Holder::Job(j) => (None, Some(j)),
+    }
 }
 
 fn all<T>(c: &Connection, sql: &str, p: impl Params, f: fn(&Row) -> rusqlite::Result<T>) -> rusqlite::Result<Vec<T>> {
@@ -435,6 +452,97 @@ pub fn delete_job(c: &Connection, id: AiJobId) -> rusqlite::Result<()> {
     Ok(())
 }
 
+pub fn load_attachment(c: &Connection, id: AttachmentId) -> rusqlite::Result<Option<Attachment>> {
+    c.query_row(&format!("SELECT {ATTACHMENT_COLUMNS} FROM attachments WHERE id = ?1"), [id], attachment_row).optional()
+}
+
+/// A task's attachments, in the order they were added.
+pub fn task_attachments(c: &Connection, task: TaskId) -> rusqlite::Result<Vec<Attachment>> {
+    all(c, &format!("SELECT {ATTACHMENT_COLUMNS} FROM attachments WHERE task_id = ?1 ORDER BY id"), [task], attachment_row)
+}
+
+pub fn job_attachments(c: &Connection, job: AiJobId) -> rusqlite::Result<Vec<Attachment>> {
+    all(c, &format!("SELECT {ATTACHMENT_COLUMNS} FROM attachments WHERE job_id = ?1 ORDER BY id"), [job], attachment_row)
+}
+
+/// The attachments of the tasks in the subtree rooted at `id`.
+pub fn subtree_attachments(c: &Connection, id: FolderId) -> rusqlite::Result<Vec<Attachment>> {
+    all(
+        c,
+        &format!(
+            "{SUBTREE} SELECT {ATTACHMENT_COLUMNS} FROM attachments
+             WHERE task_id IN (SELECT id FROM tasks WHERE folder_id IN (SELECT id FROM sub)) ORDER BY id"
+        ),
+        [id],
+        attachment_row,
+    )
+}
+
+/// Attaches its file, which is then in use.
+pub fn insert_attachment(c: &Connection, a: &Attachment) -> rusqlite::Result<()> {
+    let (task, job) = holder_columns(a.holder);
+    c.execute(
+        &format!("INSERT INTO attachments ({ATTACHMENT_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"),
+        params![a.id, task, job, a.name, a.media_type, a.size, a.created_at],
+    )?;
+    c.execute("UPDATE files SET unused_at = NULL WHERE id = ?1", [a.id])?;
+    Ok(())
+}
+
+pub fn update_attachment(c: &Connection, a: &Attachment) -> rusqlite::Result<()> {
+    let (task, job) = holder_columns(a.holder);
+    c.execute("UPDATE attachments SET task_id = ?2, job_id = ?3, name = ?4 WHERE id = ?1", params![a.id, task, job, a.name])?;
+    Ok(())
+}
+
+/// Deletes the attachment; its file is unused from `now` on, kept for undoing it.
+pub fn delete_attachment(c: &Connection, id: AttachmentId, now: i64) -> rusqlite::Result<()> {
+    c.execute("DELETE FROM attachments WHERE id = ?1", [id])?;
+    c.execute("UPDATE files SET unused_at = ?2 WHERE id = ?1", params![id, now])?;
+    Ok(())
+}
+
+/// A file uploaded, as recorded.
+pub struct StoredFile {
+    pub owner: String,
+    pub media_type: MediaType,
+    pub size: FileSize,
+}
+
+pub fn load_file(c: &Connection, id: AttachmentId) -> rusqlite::Result<Option<StoredFile>> {
+    c.query_row("SELECT owner_id, type, size FROM files WHERE id = ?1", [id], |r| {
+        Ok(StoredFile { owner: r.get(0)?, media_type: r.get(1)?, size: r.get(2)? })
+    })
+    .optional()
+}
+
+/// Records a file just uploaded, not attached yet.
+pub fn insert_file(c: &Connection, id: AttachmentId, f: &StoredFile, now: i64) -> rusqlite::Result<()> {
+    c.execute(
+        "INSERT INTO files (id, owner_id, type, size, created_at, unused_at) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+        params![id, f.owner, f.media_type, f.size, now],
+    )?;
+    Ok(())
+}
+
+pub fn attachment_id_taken(c: &Connection, id: AttachmentId) -> rusqlite::Result<bool> {
+    c.query_row("SELECT EXISTS (SELECT 1 FROM attachments WHERE id = ?1)", [id], |r| r.get(0))
+}
+
+/// Whether `user` sees task `id`: theirs, or in a folder shared with them.
+pub fn sees_task(c: &Connection, user: &str, id: TaskId) -> rusqlite::Result<bool> {
+    c.query_row(
+        &format!("{SHARED} SELECT EXISTS (SELECT 1 FROM tasks WHERE id = ?2 AND (owner_id = ?1 OR folder_id IN shared))"),
+        params![user, id],
+        |r| r.get(0),
+    )
+}
+
+/// Whether job `id` is `user`'s.
+pub fn owns_job(c: &Connection, user: &str, id: AiJobId) -> rusqlite::Result<bool> {
+    c.query_row("SELECT EXISTS (SELECT 1 FROM ai_jobs WHERE id = ?1 AND owner_id = ?2)", params![id, user], |r| r.get(0))
+}
+
 /// The shared folder `id` is in, or is.
 pub fn shared_root(c: &Connection, id: FolderId) -> rusqlite::Result<Option<FolderId>> {
     c.query_row(
@@ -560,6 +668,16 @@ pub fn snapshot(c: &Connection, user: &str) -> rusqlite::Result<Snapshot> {
             ),
             [user],
             dep_row,
+        )?,
+        attachments: all(
+            c,
+            &format!(
+                "{SHARED} SELECT {ATTACHMENT_COLUMNS} FROM attachments
+                 WHERE task_id IN (SELECT id FROM tasks WHERE {visible}) OR job_id IN (SELECT id FROM ai_jobs WHERE owner_id = ?1)
+                 ORDER BY id"
+            ),
+            [user],
+            attachment_row,
         )?,
         ai_jobs: all(c, &format!("SELECT {JOB_COLUMNS} FROM ai_jobs WHERE owner_id = ?1 ORDER BY id"), [user], job_row)?,
         shares,

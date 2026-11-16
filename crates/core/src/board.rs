@@ -8,7 +8,7 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::model::{AiJob, Date, Dependency, Folder, FolderId, Person, Share, SortKey, Task, TaskId, Time};
+use crate::model::{AiJob, Attachment, Date, Dependency, Folder, FolderId, Holder, Person, Share, SortKey, Task, TaskId, Time};
 
 /// All a user can see: their own data and the folders shared with them, where a folder someone else
 /// shares has no parent (docs/design.md#共享).
@@ -18,6 +18,9 @@ pub struct Snapshot {
     pub folders: Vec<Folder>,
     pub tasks: Vec<Task>,
     pub dependencies: Vec<Dependency>,
+    /// Of the tasks and of the user's AI jobs, by id.
+    #[serde(default)]
+    pub attachments: Vec<Attachment>,
     pub ai_jobs: Vec<AiJob>,
     /// The folders shared by the user or with them.
     pub shares: Vec<Share>,
@@ -80,6 +83,8 @@ pub struct Board<'a> {
     foreign: Vec<&'a Folder>,
     before: HashMap<TaskId, Vec<TaskId>>,
     after: HashMap<TaskId, Vec<TaskId>>,
+    /// Each task's attachments, in the order they were added.
+    attached: HashMap<TaskId, Vec<&'a Attachment>>,
     /// Subfolders in manual order.
     children: HashMap<Option<FolderId>, Vec<&'a Folder>>,
     contents: HashMap<Option<FolderId>, Vec<&'a Task>>,
@@ -127,6 +132,16 @@ impl<'a> Board<'a> {
             before.entry(d.after).or_default().push(d.before);
             after.entry(d.before).or_default().push(d.after);
         }
+        let mut attached: HashMap<TaskId, Vec<&Attachment>> = HashMap::new();
+        for a in &s.attachments {
+            if let Holder::Task(t) = a.holder {
+                attached.entry(t).or_default().push(a);
+            }
+        }
+        // Ids are UUIDv7: in the order they were made.
+        for list in attached.values_mut() {
+            list.sort_by_key(|a| a.id);
+        }
         let owner = |t: &Task| t.folder_id.and_then(|f| shared.get(&f)).map_or(me, |sh: &&Share| sh.owner.as_str());
         let numbers = s.tasks.iter().map(|t| ((owner(t), t.number), t)).collect();
         Board {
@@ -140,6 +155,7 @@ impl<'a> Board<'a> {
             foreign,
             before,
             after,
+            attached,
             children,
             contents,
             rank,
@@ -148,6 +164,11 @@ impl<'a> Board<'a> {
 
     pub fn task(&self, id: TaskId) -> Option<&'a Task> {
         self.tasks.get(&id).copied()
+    }
+
+    /// A task's attachments, in the order they were added.
+    pub fn attachments(&self, t: &Task) -> &[&'a Attachment] {
+        self.attached.get(&t.id).map_or(&[], Vec::as_slice)
     }
 
     /// The task with `number` among those of `owner`, a user id.

@@ -8,7 +8,7 @@
 - 令牌明文是 `nt_` 加 43 位 base62 随机串（256 位熵），只在生成时返回一次，数据库只存它的 SHA-256。
 - 只读令牌调用会产生改动的接口时返回 403。
 - Cookie 属性：`HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=34560000`（400 天）。
-- 带请求体的接口只接受 `Content-Type: application/json`。别的网站用表单提交不了这种请求，所以不能借用户的 Cookie 调接口。
+- 带请求体的接口只接受 `Content-Type: application/json`。别的网站用表单提交不了这种请求，所以不能借用户的 Cookie 调接口。上传附件的 `PUT /files/{id}` 例外，请求体是文件本身：表单发不了 PUT，别的网站同样借不了 Cookie。
 - 文件夹、事项和改动的 ID 必须是 UUIDv7。
 
 ## 端点
@@ -30,10 +30,14 @@
 | POST | `/invites` | 管理员：生成一个邀请码 |
 | GET | `/admin/upgrade` | 管理员：[在设置里升级](deploy.md#在设置里升级)的状态 `{state, …}`。`state` 是 `idle`；`downloading`，带 `version`、`received`、`total`（字节数）；`switching`，带 `version`；`failed`，带 `version` 和给用户看的 `message`；不能这样升级的（开发版）是 `unsupported` |
 | POST | `/admin/upgrade` | 管理员：开始升级到 `{version}`，返回状态；正在下载或切换时只返回当前的状态。版本号要比服务端的新，否则 400 |
-| GET | `/snapshot` | 完整数据：`{user, seq, folders, tasks, dependencies, ai_jobs, shares, people}`，`user` 是数据所属用户的 ID。包括共享给这个用户的文件夹和其中的一切，见[共享](#共享) |
+| GET | `/snapshot` | 完整数据：`{user, seq, folders, tasks, dependencies, attachments, ai_jobs, shares, people}`，`user` 是数据所属用户的 ID。包括共享给这个用户的文件夹和其中的一切，见[共享](#共享) |
 | GET | `/changes?since=<seq>` | 增量：`{seq, changes}`；`since` 早于保留期时返回 410 |
 | POST | `/mutations` | 提交一个改动，见下文 |
 | GET | `/sync` | WebSocket，见[同步协议](#同步协议) |
+| PUT | `/files/{id}` | 上传附件的文件，见[附件](#附件) |
+| GET | `/files/{id}` | 下载附件的文件 |
+| GET | `/settings` | 服务器的设置：`{compress_images}`，是否在上传前[压缩图片](design.md#附件) |
+| PUT | `/settings` | 管理员改服务器的设置，本机模式下是本机用户：`{compress_images}` → 设置；只能用会话 |
 | GET | `/tools` | 工具列表，见 [agent 接入](agent.md#工具接口) |
 | POST | `/tools/{name}` | 调用一个工具 |
 | | `/ai/…` | AI 整理的服务商、配置和测试，见 [AI 整理](ai.md#接口) |
@@ -50,6 +54,15 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 - 别人共享的文件夹在这个用户的数据里没有上级：`parent_id` 为空，共享人把它放在哪里都一样，也不会暴露共享人别的文件夹。
 - 加入、退出或被移出共享的人，设备收到 `resync`，重新下载完整数据。
 
+## 附件
+
+[附件](design.md#附件)分两步加：先上传文件，再用改动 `attachment.add` 把它加为附件。网页端在文件上传完以前不发这个改动，见[网页端](web.md#附件)。
+
+- `PUT /files/{id}`：请求体是文件，`Content-Type` 是它的类型（`类型/子类型`，最长 100 字；不知道的用 `application/octet-stream`）。`id` 是客户端生成的 UUIDv7，之后也是附件的 ID。最多 20 MB，超过时返回 413。服务端边收边写进 `files/` 下的临时文件，收完以后在数据库的锁里再查一次这个 ID：没人用过就改名换上、记下这个文件，返回 `{id, size}`；同一个人已经传过（断线重传）就丢掉这份，直接返回原来的；别人用过返回 409。已经记下的文件不会被覆盖。只读令牌返回 403。
+- `GET /files/{id}`：文件。看得到它现在所属的事项或请求的人能下载；它不属于任何事项或请求时（还没加为附件，或者附件删除后文件还留着），上传的人也能。其余返回 404。响应头 `Content-Type` 是附件的类型，并且总有 `Content-Disposition: attachment; filename*=UTF-8''<名称>`、`X-Content-Type-Options: nosniff` 和 `Content-Security-Policy: sandbox`：上传的 HTML、SVG 即使在浏览器里被直接打开，也不会在这个网址下执行脚本、借用登录状态。文件不会变，`Cache-Control: private, max-age=31536000, immutable`。
+- 跨域：这两个接口允许来源 `https://localhost`（Android App 的页面），方法 GET、PUT，请求头只允许 `Authorization` 和 `Content-Type`，不带 Cookie；预检请求不要求登录。Android App 的其他请求走原生 HTTP，附件的文件大，经原生和网页之间的桥传会出问题，见 [Android](android.md#附件)。
+- 日志只记附件 ID、大小和结果，不记文件名。
+
 ## 实体
 
 ```jsonc
@@ -65,6 +78,8 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
   "sort_key": "a1", "assignees": ["<用户 id>"],
   // 负责人，只有共享的文件夹里的事项能有
   "created_at": …, "updated_at": …, "created_by": "<用户 id>", "updated_by": "<用户 id>", "created_via": "Claude Code", "updated_via": null }
+// 附件：task_id 和 job_id 正好一个有值
+{ "id": "…", "task_id": "…", "job_id": null, "name": "图片 1.png", "type": "image/png", "size": 182044, "created_at": … }
 // 依赖
 { "before": "<前置 id>", "after": "<后续 id>", "created_at": … }
 // AI 整理请求
@@ -103,6 +118,9 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | `task.delete` | `id` | 连同相关依赖 |
 | `dep.add` | `before`、`after` | |
 | `dep.remove` | `before`、`after` | |
+| `attachment.add` | `id`、`name`、`type`、`size`，`task_id` 或 `job_id` | 把上传了的文件加为事项或 AI 整理请求的附件，规则见[数据模型](data-model.md#规则) |
+| `attachment.update` | `id`，可选 `name`、`task_id` | 改名，或改属另一个事项（AI 整理完成时、按原文添加时从请求改到事项） |
+| `attachment.delete` | `id` | |
 | `ai_job.create`、`ai_job.retry`、`ai_job.delete` | | 提交、重试、删除 AI 整理请求，见 [AI 整理](ai.md#接口) |
 | `share.add` | `folder_id`、`username` | 共享人按用户名添加成员 |
 | `share.remove` | `folder_id`、`user_id` | 共享人移除成员，或成员自己退出。最后一个成员离开时文件夹回到私人的 |
@@ -121,9 +139,9 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
   { "kind": "dependency", "before": null, "after": { "before": "…", "after": "…", "created_at": … } } ]
 ```
 
-`kind` 是 `folder`、`task`、`dependency`、`ai_job`、`share` 或 `person`。`before` 为空表示新建，`after` 为空表示删除，都不为空表示修改。客户端按顺序应用 `after` 就能得到最新状态。`share` 是一个文件夹的共享人和成员，有了成员是新建，最后一个成员离开是删除；`person` 是这个用户的数据里新出现的人（新建：加入了共享的文件夹，或者添加、修改过一个刚看得到的事项）或改了显示名的人（修改）。
+`kind` 是 `folder`、`task`、`dependency`、`attachment`、`ai_job`、`share` 或 `person`。`before` 为空表示新建，`after` 为空表示删除，都不为空表示修改。客户端按顺序应用 `after` 就能得到最新状态。`share` 是一个文件夹的共享人和成员，有了成员是新建，最后一个成员离开是删除；`person` 是这个用户的数据里新出现的人（新建：加入了共享的文件夹，或者添加、修改过一个刚看得到的事项）或改了显示名的人（修改）。
 
-每个人收到的是自己看得到的那部分：事项移出共享的文件夹，留下的成员收到的是它被删除，移进来时是新建。`/changes` 和同步推送里的每条记录是 `{seq, id, user, actor, effects, created_at}`，`id` 是改动 ID，`user` 是提交改动的用户 ID，`actor` 是 API 令牌名（会话为空，AI 整理是“AI 整理”）。
+每个人收到的是自己看得到的那部分：事项移出共享的文件夹，留下的成员收到的是它被删除，移进来时是新建，它的附件、依赖也一样。`/changes` 和同步推送里的每条记录是 `{seq, id, user, actor, effects, created_at}`，`id` 是改动 ID，`user` 是提交改动的用户 ID，`actor` 是 API 令牌名（会话为空，AI 整理是“AI 整理”）。
 
 ## 错误
 
@@ -133,11 +151,13 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 |---|---|---|
 | 400 | `invalid` | 字段格式、长度不对，`details.field` 指出哪一项；改动里的操作只定位到第几个，如 `ops[2]` |
 | 401 | `unauthenticated` | 没有令牌、令牌无效，或用户名密码不对 |
-| 403 | `forbidden` | 只读令牌提交改动，非管理员管理邀请码、升级服务端，成员改名、移动、删除共享的文件夹或管理成员，或撤销看不全的改动 |
+| 403 | `forbidden` | 只读令牌提交改动或上传文件，非管理员管理邀请码、升级服务端、改服务器的设置，成员改名、移动、删除共享的文件夹或管理成员，或撤销看不全的改动 |
 | 404 | `not_found` | 引用的实体不存在或当前用户看不到 |
 | 409 | `cycle` | 依赖会成环，`details.path` 是环上的事项 ID，首尾相同 |
 | 409 | `folder_cycle` | 文件夹移到了自己的子孙下面 |
-| 409 | `conflict` | 用户名已被占用、邀请码已用过、依赖已存在、同一层已有同名文件夹 |
+| 404 | `file_missing` | 加附件时服务器上没有这个文件：还没上传，或者上传后一直没加为附件、已被清理。客户端重新上传后再发 |
+| 409 | `conflict` | 用户名已被占用、邀请码已用过、依赖已存在、同一层已有同名文件夹、附件 ID 已被别人用过 |
+| 413 | `too_large` | 上传的文件超过 20 MB |
 | 410 | `resync` | `since` 早于保留期，或者服务端恢复过快照，需要重新下载 `/snapshot` |
 
 ## 同步协议
@@ -151,7 +171,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | 服务端 → 客户端 | `{type: "resync"}` | `since` 超出保留期或服务端恢复过快照，客户端重新下载 `/snapshot` |
 | 客户端 → 服务端 | `{type: "mutate", mutation}` | 提交改动，格式同 `POST /mutations` |
 | 服务端 → 客户端 | `{type: "ack", id, seq}` | 改动已生效，`seq` 是它的序号（重复提交时是第一次生效时的序号） |
-| 服务端 → 客户端 | `{type: "reject", id, code, message, details?}` | 改动本身不成立（格式不对、冲突、事项不存在、只读令牌等），客户端撤回它的本地效果，不再重发 |
+| 服务端 → 客户端 | `{type: "reject", id, code, message, details?}` | 改动本身不成立（格式不对、冲突、事项不存在、只读令牌等），客户端撤回它的本地效果，不再重发。`file_missing` 例外：附件的文件不在服务器上，客户端重新上传后再发同一个改动，见[网页端](web.md#附件) |
 | 服务端 → 客户端 | `{type: "error", code, message}` | 认证失败、消息无法识别或服务端出错（`internal`），随后服务端关闭连接。提交改动时会话已失效或服务端出错，也是这样而不是 `reject`：错不在改动，客户端留着它，重新登录或重连后再发 |
 
 - 每次 `mutate` 和每次推送前都重新检查令牌：令牌删除、会话退出或改密码登出其他设备后，已有的连接马上收到 `unauthenticated` 错误并关闭，不再收到数据；只读令牌的提交被拒绝。

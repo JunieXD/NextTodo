@@ -14,7 +14,7 @@ docker compose up -d
 docker compose exec nexttodo /nexttodo-server create-admin <用户名>
 ```
 
-- 服务端以 65534 用户运行，`data/` 要归它所有，里面是 SQLite 数据库和每日快照。
+- 服务端以 65534 用户运行，`data/` 要归它所有，里面是 SQLite 数据库、每日快照和附件的文件（`files/`）。
 - 默认只监听本机的 `127.0.0.1:8080`，交给同一台机器上的反向代理。换端口在同目录的 `.env` 里写 `NEXTTODO_PORT=8790`。
 - 默认跟随最新版本（`latest`）。要固定版本，在 `.env` 里写 `NEXTTODO_IMAGE=ghcr.io/juniexd/nexttodo:<版本号>`，版本号见 [Releases](https://github.com/JunieXD/NextTodo/releases)。
 - [AI 整理](ai.md)的配置要同步到服务器（提交后设备可以离线），在 `.env` 里写 `NEXTTODO_SECRET_KEY=<32 字节的 base64>`，可以用 `openssl rand -base64 32` 生成。服务端用它加密用户的 API 密钥，它不在 `data/` 里，数据库和快照单独泄露时密钥仍然安全。不设置时，配置只能保存在各自的设备上。换掉或丢了它，已保存的 API 密钥就解不开，要在设置里重新填写。
@@ -23,7 +23,7 @@ docker compose exec nexttodo /nexttodo-server create-admin <用户名>
 
 ## 反向代理
 
-反向代理负责 HTTPS，要开启 WebSocket，并把原来的 `Host` 传给服务端（或设 `X-Forwarded-Host`），网页的同步连接靠它确认是同源页面。整个域名（或 IP）都要转给 NextTodo：网页的资源和接口都从根路径开始，不能放在某个路径下。面板、NAS 和反向代理在容器里时的做法和排错，见官网的[部署服务器](https://juniexd.github.io/NextTodo/guide/server#proxy)。
+反向代理负责 HTTPS，要开启 WebSocket，并把原来的 `Host` 传给服务端（或设 `X-Forwarded-Host`），网页的同步连接靠它确认是同源页面。请求体要允许 30 MB：[附件](design.md#附件)最大 20 MB，agent 工具 `attach` 用 base64 带上它时约 27 MB；被反向代理拒绝的，界面上提示文件过大。整个域名（或 IP）都要转给 NextTodo：网页的资源和接口都从根路径开始，不能放在某个路径下。面板、NAS 和反向代理在容器里时的做法和排错，见官网的[部署服务器](https://juniexd.github.io/NextTodo/guide/server#proxy)。
 
 Caddy 默认就满足这些要求，还会自动申请证书：
 
@@ -40,6 +40,9 @@ server {
     listen 443 ssl;
     server_name todo.example.com;
     # ssl_certificate 和 ssl_certificate_key 指向证书
+
+    # 附件最大 20 MB，Nginx 默认只收 1 MB 的请求体
+    client_max_body_size 30m;
 
     location / {
         proxy_pass http://127.0.0.1:8080;
@@ -98,7 +101,7 @@ server {
 
 ## 备份和恢复
 
-服务端每天在 `data/snapshots/` 留一份数据库快照，保留最近 7 份。要另外备份，复制这些快照即可；运行中直接复制 `nexttodo.db` 不一定得到完整的副本。恢复：
+服务端每天在 `data/snapshots/` 留一份数据库快照，保留最近 7 份。要另外备份，复制这些快照和附件的文件 `data/files/`；运行中直接复制 `nexttodo.db` 不一定得到完整的副本。附件的文件写入后不再变，运行中复制也完整；删除的附件，文件留 90 天，所以 7 天内的快照用到的文件都还在。恢复：
 
 ```sh
 docker compose stop

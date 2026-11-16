@@ -40,7 +40,7 @@ vi.mock("@tauri-apps/plugin-http", () => ({
     const body =
       path === "/me"
         ? { id: app.user, username: "local", display_name: "本机", is_admin: false }
-        : { user: app.user, seq: 0, folders: [], tasks: [], dependencies: [], ai_jobs: [], shares: [], people: [] };
+        : { user: app.user, seq: 0, folders: [], tasks: [], dependencies: [], attachments: [], ai_jobs: [], shares: [], people: [] };
     return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
   },
 }));

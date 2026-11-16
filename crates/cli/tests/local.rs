@@ -92,6 +92,32 @@ async fn commands_reach_the_app_and_nothing_else() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_file_attached_downloads_under_a_name_the_disk_takes_and_never_over_another() {
+    let home = Home::new();
+    let local = Local::start(&home.local()).await.unwrap();
+    let token = local.session().await.unwrap();
+    let (proxy, _) = proxy();
+    let dir = home.0.join("files");
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("notes.txt");
+    std::fs::write(&file, "第一稿").unwrap();
+    run(home.nexttodo(&token, &proxy).args(["add", "写测试"]));
+    let (ok, out, err) = run(home.nexttodo(&token, &proxy).args(["attach", "1"]).arg(&file).args(["--name", "会议 10:30.txt"]));
+    assert!(ok && out.contains("添加附件 会议 10:30.txt"), "{out}{err}");
+
+    let (_, shown, _) = run(home.nexttodo(&token, &proxy).args(["--json", "show", "1"]));
+    let shown: Value = serde_json::from_str(&shown).unwrap();
+    let id = shown["attachments"][0]["id"].as_str().unwrap().to_owned();
+    let into = home.0.join("downloads");
+    std::fs::create_dir_all(&into).unwrap();
+    let (ok, _, err) = run(home.nexttodo(&token, &proxy).args(["download", &id, "-o"]).arg(&into));
+    assert!(ok, "{err}");
+    assert_eq!(std::fs::read_to_string(into.join("会议 10_30.txt")).unwrap(), "第一稿");
+    let (ok, _, err) = run(home.nexttodo(&token, &proxy).args(["download", &id, "-o"]).arg(&into));
+    assert!(!ok && err.contains("无法写入"), "{err}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn nothing_is_sent_where_the_app_no_longer_is() {
     let home = Home::new();
     let (proxy, proxied) = proxy();

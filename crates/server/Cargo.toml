@@ -17,6 +17,8 @@ axum = { version = "0.8.9", features = ["ws", "macros"] }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 # For upgrading from the settings (src/upgrade.rs): the image's layers are gzipped tar files.
 flate2 = "1.1.10"
+http-body-util = "0.1.5"
+mime_guess = "2.0.5"
 hyper-util = { version = "0.1.21", features = ["server-auto", "tokio", "service"], optional = true }
 nexttodo-core = { path = "../core", features = ["sql"] }
 rand = "0.10.3"
@@ -30,25 +32,21 @@ serde_json = "1.0.154"
 serde_path_to_error = "0.1.20"
 sha2 = "0.11.1"
 tar = { version = "0.4.46", default-features = false }
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "fs", "io-util"] }
 # With ring, as the rest of the desktop app: with two crypto providers, rustls can't pick a default.
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring"], optional = true }
 tower = { version = "0.5.3", features = ["util"] }
-tower-http = { version = "0.7.1", features = ["compression-br", "compression-zstd", "compression-gzip", "fs", "trace"] }
+# cors: for the page of the Android app, at another origin (docs/api.md#附件).
+tower-http = { version = "0.7.1", features = ["compression-br", "compression-zstd", "compression-gzip", "cors", "fs", "trace"] }
 tracing = "0.1.44"
 ts-rs = { version = "12.0.1", features = ["no-serde-warnings", "serde-json-impl"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 ureq = "3.5.0"
 uuid = { version = "1.29.0", features = ["v7", "serde"] }
 
-# For the page of the Android app, at another origin (src/local.rs).
-[target.'cfg(target_os = "android")'.dependencies]
-tower-http = { version = "0.7.1", features = ["cors"] }
-
 [lints]
 workspace = true
 
 [dev-dependencies]
 futures-util = "0.3.34"
-http-body-util = "0.1.5"
 tokio-tungstenite = "0.29.0"

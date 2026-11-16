@@ -2,6 +2,7 @@ mod common;
 
 use axum::http::StatusCode;
 use common::{TestApp, id};
+use nexttodo_server::files::Files;
 use nexttodo_server::{AppState, Clock, Db, auth, db};
 use rusqlite::Connection;
 use rusqlite::config::DbConfig;
@@ -12,7 +13,7 @@ async fn snapshots_hold_the_data_and_only_the_newest_are_kept() {
     let dir = std::env::temp_dir().join(format!("nexttodo-snapshot-{}", uuid::Uuid::now_v7()));
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("nexttodo.db");
-    let state = AppState::new(Db::open(&file).unwrap(), Clock::system());
+    let state = AppState::new(Db::open(&file).unwrap(), Clock::system(), Files::new(dir.join("files")));
     auth::create_admin(&state, "alice".into(), "Alice".into(), "correct horse".into()).await.unwrap();
     let snapshots = dir.join("snapshots");
     // A partial copy left by a crash doesn't get in the way; files put there by hand stay.

@@ -1463,8 +1463,10 @@ name = "nexttodo-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "clap",
+ "nexttodo-core",
  "nexttodo-server",
  "rpassword",
  "serde",
@@ -1500,6 +1502,7 @@ dependencies = [
  "futures-util",
  "http-body-util",
  "hyper-util",
+ "mime_guess",
  "nexttodo-core",
  "rand 0.10.3",
  "rcgen",

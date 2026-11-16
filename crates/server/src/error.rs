@@ -57,6 +57,16 @@ impl ApiError {
         Self::new(StatusCode::CONFLICT, "conflict", message)
     }
 
+    /// An attachment's file is not on the server: never uploaded, or cleared away unused. The client
+    /// uploads it again and sends the same change (docs/web.md#附件).
+    pub fn file_missing() -> Self {
+        Self::new(StatusCode::NOT_FOUND, "file_missing", "附件的文件不在服务器上，请重新上传")
+    }
+
+    pub fn too_large() -> Self {
+        Self::new(StatusCode::PAYLOAD_TOO_LARGE, "too_large", "文件不能超过 20 MB")
+    }
+
     /// `path` goes around the cycle and ends where it starts; `titles` spells it out for the user.
     pub fn cycle(path: Vec<TaskId>, titles: &str) -> Self {
         let mut e = Self::new(StatusCode::CONFLICT, "cycle", format!("添加该依赖将形成循环：{titles}"));
@@ -134,6 +144,13 @@ impl std::error::Error for ApiError {}
 impl From<rusqlite::Error> for ApiError {
     fn from(e: rusqlite::Error) -> Self {
         tracing::error!(error = %e, "database error");
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal", "服务器错误，请稍后重试")
+    }
+}
+
+impl From<std::io::Error> for ApiError {
+    fn from(e: std::io::Error) -> Self {
+        tracing::error!(error = %e, "file error");
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal", "服务器错误，请稍后重试")
     }
 }

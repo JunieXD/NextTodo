@@ -33,34 +33,37 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `tree` | `tree` | | 文件夹树，每个文件夹里（含子文件夹）的待办数和可做数；共享的文件夹注明成员，别人共享给我的列在后面 |
 | `list` | `ls [文件夹] [--all] [--limit 条数]` | `folder?`、`all?`、`limit?` | 文件夹的子文件夹和事项，按[文件夹内顺序](design.md#排序)；默认不含已完成；文件夹里有 [AI 整理](ai.md)请求时开头注明；在共享的文件夹里时开头写共享人和成员 |
 | `next` | `next [--limit 条数]` | `limit?` | 接下来：[我的事项](design.md#共享)里可做的，按[接下来的顺序](design.md#排序) |
-| `show` | `show <事项>` | `task` | 事项详情：负责人、开始、截止、提醒、完成次数（重复的事项）、前置、后续、来源、描述 |
+| `show` | `show <事项>` | `task` | 事项详情：负责人、开始、截止、提醒、完成次数（重复的事项）、前置、后续、附件（ID、名称、类型、大小）、来源、描述 |
 | `search` | `search <关键词> [--limit 条数]` | `query`、`limit?` | 标题和描述里包含关键词的事项（不区分大小写） |
 | `graph` | `graph [文件夹] [--all] [--mermaid]` | `folder?`、`all?`、`mermaid?` | 文件夹（含子文件夹）里的事项和依赖，按先后顺序；连到外面的事项也列出并注明文件夹 |
 | `log` | `log [-n 条数]` | `limit?` | 最近的改动批次，默认 10，最多 100；包括别的成员在共享的文件夹里做的，写明是谁 |
 | `jobs` | `jobs` | | [AI 整理](ai.md)的请求：等待、整理中和失败的，失败的带原因，以及建议待用户确认的整理文件夹；整理完的请求已经变成事项，不在这里 |
+| `attachment` | `download <附件 ID> [-o 路径]` | `id` | 读一个[附件](design.md#附件)：PNG、JPEG、WebP、GIF 图片（5 MB 以内）在 MCP 里作为图片返回，agent 能直接看；UTF-8 的文本文件（`text/` 开头的和 JSON，1 MB 以内）返回内容；其他文件只给名称、类型和大小。命令行的 `download` 不经过这个工具，直接下载文件，存到 `-o` 给的文件或目录，不给时存到当前目录；存到目录时用附件的名称（按[桌面 App](desktop.md#附件)的规则改成能用的文件名）。已有同名文件时报错，不覆盖 |
 | `add` | `add <标题> [--folder] [-d 描述] [--start] [--due] [--remind] [--repeat [--repeat-from]] [--assign 用户名…] [--after 编号…] [--before 编号…]` | `title`、`folder?`、`description?`、`start?`、`due?`、`remind?`、`repeat?`、`repeat_from?`、`assign?`、`after?`、`before?` | 添加一个事项；文件夹不存在时一起新建 |
 | `edit` | `edit <事项> [--title] [-d 描述 \| --replace 原文 新文… \| --append 文本] [--start \| --no-start] [--due \| --no-due] [--remind \| --no-remind] [--repeat [--repeat-from] \| --no-repeat] [--assign 用户名…] [--unassign 用户名…]` | `task`、`title?`、`description?`、`replace?`、`append?`、`start?`、`due?`、`remind?`、`repeat?`、`repeat_from?`、`assign?`、`unassign?` | 修改事项；`due`、`remind`、`repeat` 给 `null` 表示清除；描述的改法见[同时修改](#同时修改)；负责人在现有的上面加、减 |
 | `done` | `done <事项…> [--end-repeat]` | `tasks`、`today?`、`end_repeat?` | 标为完成，输出因此变成可做的事项；重复的事项改为顺延，输出下一次的截止时间。有重复的事项时必须给 `today`（用户当地的当天日期），命令行自动带上本机日期。`end_repeat` 让重复的事项结束重复、直接完成，用于打卡的长期事项全部做完时，见[总体设计](design.md#重复) |
 | `reopen` | `reopen <事项…>` | `tasks` | 重新打开 |
 | `mkdir` | `mkdir <路径>` | `path` | 新建文件夹，路径上缺的层级一起建；已存在时报错 |
-| `rename` | `rename <文件夹> <新名字>` | `folder`、`name` | 文件夹改名 |
+| `rename` | `rename <文件夹或附件 ID> <新名字>` | `folder?`、`attachment?`、`name` | 文件夹或附件改名，`folder` 和 `attachment` 正好给一个 |
 | `move` | `mv <事项或文件夹…> <目标文件夹>` | `tasks?`、`folders?`、`to` | 移动到已有的文件夹，`/` 是根目录；移进、移出共享的文件夹时去掉连到外面的依赖和看不到的负责人，并换成新主人的编号，输出里写明 |
 | `delete` | `rm <事项或文件夹…>` | `tasks?`、`folders?` | 删除；文件夹连同里面的一切 |
 | `dep_add` | `dep add <前置> <后续>` | `before`、`after` | 加依赖，成环时拒绝并列出环上的事项 |
 | `dep_remove` | `dep rm <前置> <后续>` | `before`、`after` | 删依赖 |
+| `attach` | `attach <事项> <文件…> [--name 名称]` | `task`、`name`、`data`、`type?` | 给事项加一个附件：`data` 是文件内容的 base64，最多 20 MB；`type` 不给时按扩展名推断，推断不出是 `application/octet-stream`。命令行每个文件一个批次，`--name` 只能和一个文件一起给。原样保存，不压缩 |
+| `detach` | `detach <附件 ID…>` | `attachments` | 删除附件，可撤销 |
 | `apply` | `apply <文件或 -> [--dry-run]` | `plan`、`dry_run?` | 按[计划](#计划)批量新建文件夹、事项和依赖 |
 | `share` | `share <文件夹> <用户名…>` | `folder`、`users` | 共享人把文件夹共享给这些人，或添加成员 |
 | `unshare` | `unshare <文件夹> [用户名…]` | `folder`、`users?` | 共享人移除这些成员，不写就是停止共享；成员不写用户名就是自己退出 |
 | `undo` | `undo <批次>` | `batch` | 撤销一个批次，撤销本身也是一个新批次；看得到全部改动、也有权做的批次才能撤销，别的成员的也行 |
 
-- 命令行里 `mv`、`rm` 的参数像编号的是事项，其余是文件夹。
+- 命令行里 `mv`、`rm` 的参数像编号的是事项，其余是文件夹；`rename` 的参数是 UUID 时是附件。
 - `list`、`next`、`search` 最多列出 `limit` 项，默认 50，最多 500；没列完时最后一行说明还有多少项。`list` 先列未完成的，再列已完成的。
 - `edit` 的 `start` 给 `null`（命令行 `--no-start`）清除开始时间，`due` 同样；只写日期的 `start` 去掉原来的几点。改了截止或开始，开始晚于截止时报错。
 - `edit` 只改 `due` 不给 `remind` 时：新截止带具体时间就保留原来的提醒，否则去掉；重复总是保留，清除截止时间时一起清除。`repeat_from` 只能和 `repeat` 一起给。
 - 负责人只能是共享人和成员，只有共享的文件夹里的事项能设。`assign`、`unassign` 在服务端当时的负责人上加、减，两个人同时设也不会互相覆盖。
 - 依赖只能连在同一处：私人的事项之间，或同一个共享的文件夹里的事项之间，见[依赖](design.md#依赖)。
 - 每个写操作是一个批次，全部生效或全部不生效。
-- 只读令牌只能用前 8 个查询工具。
+- 只读令牌只能用前 9 个查询工具。
 
 ## 计划
 
@@ -222,7 +225,7 @@ nexttodo skill install                   # 见 Skill
 - 地址 `https://todo.example.com/mcp`，请求头 `Authorization: Bearer <令牌>`。
 - [本机模式](local.md#agent-接入)下地址每次启动都变，改用命令行的 `nexttodo mcp` 转接（stdio）：它把每条消息转给 `NEXTTODO_URL` 指向的服务端。
 - 连接时服务端给出一段使用说明（MCP 的 `instructions`），是 [Skill](#skill) 的要点：只接 MCP、不装 skill，agent 也知道该怎么用。
-- 工具的结果是上面的文本；出错时返回 `isError` 和错误说明。
+- 工具的结果是上面的文本；出错时返回 `isError` 和错误说明。`attachment` 读到图片时，结果里在文本后面另有一个图片内容块。
 - 查询工具标注为只读，`delete` 标注为破坏性，客户端可以据此决定是否需要确认。
 
 Claude Code：
@@ -242,7 +245,7 @@ bearer_token_env_var = "NEXTTODO_TOKEN"
 ## 工具接口
 
 - `GET /api/v1/tools`：工具列表，每项 `{name, description, input_schema}`，和 MCP 的 `tools/list` 相同。
-- `POST /api/v1/tools/{name}`：请求体是参数 JSON，返回 `{text, data}`；读工具还返回 `seq`：结果包含到这个序号为止的全部改动，编号同 [`/changes`](api.md#端点)。错误格式同 [API](api.md#错误)。
+- `POST /api/v1/tools/{name}`：请求体是参数 JSON（最大 28 MB，够 `attach` 带上 20 MB 文件的 base64），返回 `{text, data}`；`attachment` 的 `data` 里，图片的内容是 base64 的 `image`，文本文件的是 `text`；读工具还返回 `seq`：结果包含到这个序号为止的全部改动，编号同 [`/changes`](api.md#端点)。错误格式同 [API](api.md#错误)。
 - 写操作可以带请求头 `Idempotency-Key: <uuidv7>`，作为改动 ID：同一个键重发时原样返回第一次的结果（90 天内）；超过保留期，或者这个键是 App 提交的改动 ID 时，只返回批次号，不会再生效一次。
 
 ## Skill

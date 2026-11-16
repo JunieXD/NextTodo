@@ -1,6 +1,8 @@
 //! Tool arguments. Descriptions are written for the agents that read the tool list.
 
-use nexttodo_core::model::{Date, Description, Every, Monthdays, Name, Period, RepeatFrom, Time, Title, Weekdays};
+use nexttodo_core::model::{
+    AttachmentId, Date, Description, Every, FileName, MediaType, Monthdays, Period, RepeatFrom, Time, Title, Weekdays,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer};
 
@@ -231,10 +233,40 @@ pub struct MkdirArgs {
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RenameArgs {
-    #[schemars(description = "文件夹路径")]
-    pub folder: String,
-    #[schemars(with = "String", description = "新名称，不能包含 /")]
-    pub name: Name,
+    #[schemars(description = "文件夹路径；和 attachment 给且只给一个")]
+    pub folder: Option<String>,
+    #[schemars(with = "Option<String>", description = "附件 ID（show 列出的）；和 folder 给且只给一个")]
+    pub attachment: Option<AttachmentId>,
+    #[schemars(description = "新名称，不能包含 / 和 \\")]
+    pub name: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AttachmentArgs {
+    #[schemars(with = "String", description = "附件 ID（show 列出的）")]
+    pub id: AttachmentId,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AttachArgs {
+    #[schemars(description = "事项编号")]
+    pub task: TaskRef,
+    #[schemars(with = "String", description = "附件的名称，一般是文件名，如 报价单.pdf")]
+    pub name: FileName,
+    #[schemars(description = "文件内容的 base64，最多 20 MB")]
+    pub data: String,
+    #[serde(rename = "type")]
+    #[schemars(with = "Option<String>", description = "文件类型，如 image/png；不给时按名称的扩展名推断")]
+    pub media_type: Option<MediaType>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DetachArgs {
+    #[schemars(with = "Vec<String>", description = "要删除的附件 ID", length(min = 1))]
+    pub attachments: Vec<AttachmentId>,
 }
 
 #[derive(Deserialize, JsonSchema)]

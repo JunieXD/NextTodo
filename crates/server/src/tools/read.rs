@@ -2,17 +2,23 @@
 
 use std::collections::{HashMap, HashSet};
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use nexttodo_core::board::{Board, Status};
-use nexttodo_core::model::{Effect, FolderId, JobState, Share, Task, TaskId};
+use nexttodo_core::model::{Attachment, Effect, FolderId, Holder, JobState, Share, Task, TaskId};
 use nexttodo_core::ops::Op;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 
-use super::args::{GraphArgs, ListArgs, LogArgs, NextArgs, NoArgs, SearchArgs, ShowArgs};
+use super::args::{AttachmentArgs, GraphArgs, ListArgs, LogArgs, NextArgs, NoArgs, SearchArgs, ShowArgs};
 use super::text::{self, Names, ago, job_item, mention, status_tag, task_line, task_view, usernames};
 use super::{Cx, Output, find_folder, find_task};
+use crate::attachments::showable_image;
 use crate::error::ApiError;
 use crate::store;
+
+/// The largest text file `attachment` gives the content of.
+const MAX_TEXT: u32 = 1024 * 1024;
 
 /// How many tasks a list shows, unless told otherwise.
 const LIMIT: u32 = 50;
@@ -185,6 +191,11 @@ pub fn show(c: &Connection, cx: &Cx, a: ShowArgs) -> Result<Output, ApiError> {
             lines.extend(list.iter().map(|l| format!("  {}", mention(&b, l, l.folder_id != t.folder_id))));
         }
     }
+    let attachments = b.attachments(t);
+    if !attachments.is_empty() {
+        lines.push("附件：".into());
+        lines.extend(attachments.iter().map(|a| format!("  {} {}", a.id, attachment_line(a))));
+    }
     let source = |by: &str, via: &Option<String>| who(&b, by, via.as_deref());
     lines.push(format!("创建：{}，{}", ago(cx.now, t.created_at), source(&t.created_by, &t.created_via)));
     if t.updated_at != t.created_at {
@@ -210,10 +221,53 @@ pub fn show(c: &Connection, cx: &Cx, a: ShowArgs) -> Result<Output, ApiError> {
             data[key] = usernames(&b, std::slice::from_ref(by))[0].into();
         }
     }
+    if !attachments.is_empty() {
+        data["attachments"] = attachments.iter().map(|a| attachment_view(a)).collect();
+    }
     for (key, list) in [("before", &before), ("after", &after)] {
         if !list.is_empty() {
             data[key] = list.iter().map(|t| task_view(&b, t)).collect();
         }
+    }
+    Ok(Output { text: lines.join("\n"), data })
+}
+
+/// `图片 1.png（image/png，182 KB）`
+fn attachment_line(a: &Attachment) -> String {
+    format!("{}（{}，{}）", a.name.as_str(), a.media_type.as_str(), text::size(a.size.get()))
+}
+
+fn attachment_view(a: &Attachment) -> Value {
+    json!({ "id": a.id, "name": a.name, "type": a.media_type, "size": a.size })
+}
+
+/// Text an agent can read as it is.
+fn is_text(a: &Attachment) -> bool {
+    a.media_type.as_str().starts_with("text/") || a.media_type.as_str() == "application/json"
+}
+
+pub fn attachment(c: &Connection, cx: &Cx, a: AttachmentArgs) -> Result<Output, ApiError> {
+    let snap = store::snapshot(c, cx.user)?;
+    let b = Board::new(&snap, cx.local.clone(), cx.user);
+    let at = snap.attachments.iter().find(|x| x.id == a.id).ok_or_else(|| ApiError::not_found("附件不存在"))?;
+    let of = match at.holder {
+        Holder::Task(t) => text::item(&b, b.task(t).expect("the snapshot has the tasks of its attachments")),
+        Holder::Job(_) => "AI 整理请求的附件".into(),
+    };
+    let mut lines = vec![format!("{}，{of}", attachment_line(at))];
+    let mut data = attachment_view(at);
+    if showable_image(at) {
+        data["image"] = BASE64.encode(cx.files.read(at.id)?).into();
+        lines.push("图片随结果返回".into());
+    } else if is_text(at)
+        && at.size.get() <= MAX_TEXT
+        && let Ok(content) = String::from_utf8(cx.files.read(at.id)?)
+    {
+        lines.push(String::new());
+        lines.push(content.clone());
+        data["text"] = content.into();
+    } else {
+        lines.push("这个文件不能在这里查看，命令行可以用 download 下载".into());
     }
     Ok(Output { text: lines.join("\n"), data })
 }

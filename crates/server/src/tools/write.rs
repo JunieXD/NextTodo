@@ -4,23 +4,29 @@
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use nexttodo_core::board::{Board, Now, Status};
-use nexttodo_core::model::{Change, Date, Description, Due, Effect, FolderId, MutationId, Name, Repeat, RepeatFrom, Task, TaskId, Title};
+use nexttodo_core::model::{
+    AttachmentId, Change, Date, Description, Due, Effect, FileName, FileSize, FolderId, MediaType, MutationId, Name, Repeat, RepeatFrom,
+    Task, TaskId, Title,
+};
 use nexttodo_core::ops::Op;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::json;
 use uuid::Uuid;
 
 use super::args::{
-    AddArgs, ApplyArgs, DeleteArgs, DepArgs, DoneArgs, EditArgs, MkdirArgs, MoveArgs, Plan, PlanRef, PlanTask, RenameArgs, RepeatText,
-    Replace, ShareArgs, TaskRef, TasksArgs, UndoArgs, UnshareArgs, WhenText, task_ref,
+    AddArgs, ApplyArgs, AttachArgs, DeleteArgs, DepArgs, DetachArgs, DoneArgs, EditArgs, MkdirArgs, MoveArgs, Plan, PlanRef, PlanTask,
+    RenameArgs, RepeatText, Replace, ShareArgs, TaskRef, TasksArgs, UndoArgs, UnshareArgs, WhenText, task_ref,
 };
 use super::text::{self, Names, task_view};
 use super::{Output, WriteFn, find_folder, find_task, person};
 use crate::auth::Auth;
 use crate::error::ApiError;
+use crate::files::Files;
 use crate::mutate::{self, Actor};
-use crate::store;
+use crate::store::{self, StoredFile};
 
 /// What write tools build from.
 pub struct WriteCx<'a> {
@@ -29,6 +35,8 @@ pub struct WriteCx<'a> {
     pub board: &'a Board<'a>,
     /// As the user gave it: a repeating task done needs it.
     pub today: Option<Date>,
+    pub now: i64,
+    pub files: &'a Files,
 }
 
 /// The operations a write tool wants applied.
@@ -48,6 +56,7 @@ impl From<Vec<Op>> for Write {
 pub fn run(
     c: &mut Connection,
     auth: &Auth,
+    files: &Files,
     id: Option<MutationId>,
     now: i64,
     local: Option<Now>,
@@ -70,7 +79,8 @@ pub fn run(
     let snap = store::snapshot(&tx, &auth.user_id)?;
     let today = local.as_ref().map(|l| l.today.clone());
     let local = local.unwrap_or_else(|| Now::utc(now));
-    let write = build(&WriteCx { c: &tx, user: &auth.user_id, board: &Board::new(&snap, local.clone(), &auth.user_id), today })?;
+    let board = Board::new(&snap, local.clone(), &auth.user_id);
+    let write = build(&WriteCx { c: &tx, user: &auth.user_id, board: &board, today, now, files })?;
     let done = mutate::run(&tx, &actor, &write.ops, now)?;
     let effects = done.view(&auth.user_id);
     // Rendered inside the transaction, so a preview still sees what it would have made.
@@ -513,9 +523,41 @@ fn folder_id(b: &Board, path: &str, what: &str) -> Result<FolderId, ApiError> {
 }
 
 pub fn rename(w: &WriteCx, a: RenameArgs) -> Result<Write, ApiError> {
-    let b = w.board;
-    let id = folder_id(b, &a.folder, "改名")?;
-    Ok(vec![Op::FolderUpdate { id, name: Some(a.name), parent_id: None, sort_key: None }].into())
+    let invalid = |m: String| ApiError::invalid(m, Some("name".into()));
+    let op = match (a.folder, a.attachment) {
+        (Some(folder), None) => {
+            let id = folder_id(w.board, &folder, "改名")?;
+            Op::FolderUpdate { id, name: Some(Name::try_from(a.name).map_err(invalid)?), parent_id: None, sort_key: None }
+        }
+        (None, Some(id)) => Op::AttachmentUpdate { id, name: Some(FileName::try_from(a.name).map_err(invalid)?), task_id: None },
+        _ => return Err(ApiError::invalid("folder 和 attachment 给且只给一个", None)),
+    };
+    Ok(vec![op].into())
+}
+
+/// Saves the file, recorded as the user's upload, and attaches it: as `PUT /files/{id}` and
+/// `attachment.add` do, in the change's transaction.
+pub fn attach(w: &WriteCx, a: AttachArgs) -> Result<Write, ApiError> {
+    let t = find_task(w.board, &a.task)?;
+    let bytes = BASE64.decode(a.data.as_bytes()).map_err(|_| ApiError::invalid("data 不是有效的 base64", Some("data".into())))?;
+    let size = u32::try_from(bytes.len()).map_or(Err("文件不能超过 20 MB"), FileSize::try_from);
+    let size = size.map_err(|m| ApiError::invalid(m, Some("data".into())))?;
+    let media_type = match a.media_type {
+        Some(t) => t,
+        None => {
+            let guessed = mime_guess::from_path(a.name.as_str()).first_raw().unwrap_or("application/octet-stream");
+            MediaType::try_from(guessed.to_owned()).expect("mime_guess gives media types")
+        }
+    };
+    let id = AttachmentId(Uuid::now_v7());
+    store::insert_file(w.c, id, &StoredFile { owner: w.user.to_owned(), media_type: media_type.clone(), size }, w.now)?;
+    // Left for the daily sweep when the change fails after this.
+    w.files.write(id, &bytes)?;
+    Ok(vec![Op::AttachmentAdd { id, name: a.name, media_type, size, task_id: Some(t.id), job_id: None }].into())
+}
+
+pub fn detach(_: &WriteCx, a: DetachArgs) -> Result<Write, ApiError> {
+    Ok(a.attachments.into_iter().map(|id| Op::AttachmentDelete { id }).collect::<Vec<_>>().into())
 }
 
 pub fn move_to(w: &WriteCx, a: MoveArgs) -> Result<Write, ApiError> {

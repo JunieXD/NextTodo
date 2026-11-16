@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use nexttodo_core::board::{Board, Snapshot, Status};
 use nexttodo_core::model::{
-    AiJob, Change, Date, Due, Effect, FolderId, JobState, Link, Period, Person, Repeat, RepeatFrom, Task, TaskId, Time, Weekdays,
+    AiJob, Change, Date, Due, Effect, FolderId, Holder, JobState, Link, Period, Person, Repeat, RepeatFrom, Task, TaskId, Time, Weekdays,
 };
 use serde_json::{Value, json};
 
@@ -265,7 +265,7 @@ impl Names {
                 self.folders.insert(f.id, (f.parent_id, f.name.as_str().to_owned()));
             }
             Effect::Task(Change::Created(t) | Change::Deleted(t)) | Effect::Task(Change::Updated { before: t, .. }) => self.seen(t),
-            Effect::Dependency(_) | Effect::AiJob(_) | Effect::Share(_) | Effect::Person(_) => {}
+            Effect::Dependency(_) | Effect::Attachment(_) | Effect::AiJob(_) | Effect::Share(_) | Effect::Person(_) => {}
         }
     }
 
@@ -289,6 +289,14 @@ impl Names {
         match owner {
             Some(owner) => format!("@{owner}/{}", parts.join("/")),
             None => format!("/{}", parts.join("/")),
+        }
+    }
+
+    /// What an attachment belongs to: `#12`, or the AI job it came with.
+    fn holder(&self, h: Holder) -> (String, Value) {
+        match h {
+            Holder::Task(t) => (self.number(t), self.tasks.get(&t).map_or(Value::Null, |(n, _)| (*n).into())),
+            Holder::Job(_) => ("AI 整理请求".into(), Value::Null),
         }
     }
 
@@ -336,6 +344,10 @@ enum Kind {
     TaskDeleted,
     DepAdded,
     DepRemoved,
+    AttachmentAdded,
+    AttachmentRenamed,
+    AttachmentMoved,
+    AttachmentDeleted,
     JobCreated,
     JobStarted,
     JobFailed,
@@ -365,6 +377,10 @@ impl Kind {
             Kind::TaskDeleted => ("删除", "删除", "项"),
             Kind::DepAdded => ("添加依赖", "添加", "条依赖"),
             Kind::DepRemoved => ("删除依赖", "删除", "条依赖"),
+            Kind::AttachmentAdded => ("添加附件", "添加", "个附件"),
+            Kind::AttachmentRenamed => ("附件改名", "改名", "个附件"),
+            Kind::AttachmentMoved => ("移动附件", "移动", "个附件"),
+            Kind::AttachmentDeleted => ("删除附件", "删除", "个附件"),
             Kind::JobCreated => ("提交 AI 整理", "提交 AI 整理", "条"),
             Kind::JobStarted => ("开始 AI 整理", "开始 AI 整理", "条"),
             Kind::JobFailed => ("AI 整理失败", "AI 整理失败", "条"),
@@ -394,6 +410,10 @@ impl Kind {
             Kind::TaskDeleted => "task_deleted",
             Kind::DepAdded => "dep_added",
             Kind::DepRemoved => "dep_removed",
+            Kind::AttachmentAdded => "attachment_added",
+            Kind::AttachmentRenamed => "attachment_renamed",
+            Kind::AttachmentMoved => "attachment_moved",
+            Kind::AttachmentDeleted => "attachment_deleted",
             Kind::JobCreated => "job_created",
             Kind::JobStarted => "job_started",
             Kind::JobFailed => "job_failed",
@@ -404,6 +424,17 @@ impl Kind {
             Kind::MemberRemoved => "member_removed",
             Kind::PersonRenamed => "person_renamed",
         }
+    }
+}
+
+/// A file's size as people read it: `820 B`, `320 KB`, `1.2 MB`.
+pub fn size(bytes: u32) -> String {
+    const KB: u32 = 1024;
+    const MB: u32 = KB * KB;
+    match bytes {
+        0..KB => format!("{bytes} B"),
+        KB..MB => format!("{} KB", bytes.div_ceil(KB)),
+        _ => format!("{:.1} MB", f64::from(bytes) / f64::from(MB)).replace(".0 MB", " MB"),
     }
 }
 
@@ -510,6 +541,27 @@ fn describe(e: &Effect, n: &Names) -> Vec<(Kind, String, Value)> {
             }
             vec![(kind, text, v)]
         }
+        Effect::Attachment(Change::Created(a) | Change::Deleted(a)) => {
+            let kind = if matches!(e, Effect::Attachment(Change::Created(_))) { Kind::AttachmentAdded } else { Kind::AttachmentDeleted };
+            let (of, task) = n.holder(a.holder);
+            vec![(kind, format!("{}（{of}）", a.name.as_str()), json!({ "attachment": a.id, "name": a.name, "task": task }))]
+        }
+        Effect::Attachment(Change::Updated { before, after }) => {
+            let mut found = Vec::new();
+            if before.name != after.name {
+                let text = format!("{} → {}", before.name.as_str(), after.name.as_str());
+                found.push((Kind::AttachmentRenamed, text, json!({ "attachment": after.id, "name": after.name })));
+            }
+            if before.holder != after.holder {
+                let (to, task) = n.holder(after.holder);
+                found.push((
+                    Kind::AttachmentMoved,
+                    format!("{} → {to}", after.name.as_str()),
+                    json!({ "attachment": after.id, "task": task }),
+                ));
+            }
+            found
+        }
         Effect::Share(change) => {
             let (folder, before, after) = match change {
                 Change::Created(a) => (a.folder_id, &[][..], &a.members[..]),
@@ -552,6 +604,10 @@ fn number(e: &Effect, n: &Names) -> Option<i64> {
         Effect::Folder(_) | Effect::AiJob(_) | Effect::Share(_) | Effect::Person(_) => None,
         Effect::Task(Change::Created(t) | Change::Updated { after: t, .. } | Change::Deleted(t)) => Some(t.number),
         Effect::Dependency(Link::Added(d) | Link::Removed(d)) => n.tasks.get(&d.before).map(|(number, _)| *number),
+        Effect::Attachment(Change::Created(a) | Change::Updated { after: a, .. } | Change::Deleted(a)) => match a.holder {
+            Holder::Task(t) => n.tasks.get(&t).map(|(number, _)| *number),
+            Holder::Job(_) => None,
+        },
     }
 }
 

@@ -31,7 +31,7 @@ function board(n: number, deps: [number, number][]) {
       updated_via: null,
     })),
     dependencies: deps.map(([b, a]) => ({ before: id(b), after: id(a), created_at: 0 })),
-    ai_jobs: [],
+    attachments: [], ai_jobs: [],
     shares: [],
     people: [],
   };

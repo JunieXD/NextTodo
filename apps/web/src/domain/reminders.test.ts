@@ -50,7 +50,7 @@ test("reminders come before the deadline by the time set, for the user's pending
         task(7, { due: { date: "2026-11-05", time: "09:00", remind_before: 0 }, folder_id: SHARED }),
       ],
       dependencies: [],
-      ai_jobs: [],
+      attachments: [], ai_jobs: [],
       shares: [{ folder_id: SHARED, owner: alice, members: [bob, ME].sort() }],
       people: [
         { id: alice, username: "alice", display_name: "Alice" },

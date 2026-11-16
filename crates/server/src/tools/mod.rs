@@ -24,9 +24,13 @@ use serde_json::{Value, json};
 use crate::AppState;
 use crate::auth::Auth;
 use crate::error::{ApiError, Json, from_value};
+use crate::files::Files;
 use crate::store;
 use args::*;
 use write::{Write, WriteCx};
+
+/// The largest arguments a tool takes: `attach`'s, a 20 MB file in base64 (docs/agent.md#工具接口).
+pub const MAX_BODY: usize = 28 * 1024 * 1024;
 
 /// What a tool returns: text for people and agents, data for programs.
 #[derive(Debug, Serialize, Deserialize)]
@@ -68,6 +72,7 @@ pub struct Cx<'a> {
     pub now: i64,
     /// The user's day and time, or UTC's if they don't say.
     pub local: Now,
+    pub files: &'a Files,
 }
 
 type ReadFn = Box<dyn FnOnce(&Connection, &Cx) -> Result<Output, ApiError> + Send>;
@@ -102,21 +107,24 @@ tools! {
     Read "tree"(NoArgs) => read::tree, "文件夹树，每个文件夹里（含子文件夹）的待办数和可做数；共享的文件夹注明共享人和成员，别人共享给我的列在后面。";
     Read "list"(ListArgs) => read::list, "列出一个文件夹的子文件夹和事项，事项按先后顺序；默认不含已完成的，最多 50 项。文件夹里有 AI 整理请求时开头注明；在共享的文件夹里时开头写共享人和成员。";
     Read "next"(NextArgs) => read::next, "接下来：当前可做的事项（前置均已完成），有截止时间的排在前面，最多 50 项；共享的文件夹里只列交给我的和没指定负责人的。回答“现在该做什么”时使用。";
-    Read "show"(ShowArgs) => read::show, "事项详情：状态、文件夹、负责人、截止时间和提醒、前置、后续、来源和描述。";
+    Read "show"(ShowArgs) => read::show, "事项详情：状态、文件夹、负责人、截止时间和提醒、前置、后续、附件、来源和描述。";
     Read "search"(SearchArgs) => read::search, "按关键词搜索事项的标题和描述，不区分大小写，最多列出 50 项。";
     Read "graph"(GraphArgs) => read::graph, "文件夹（含子文件夹）里的事项和依赖，按先后顺序列出，每项后面是它的前置；连到文件夹外的事项也列出。";
     Read "log"(LogArgs) => read::log, "最近的改动批次，新的在前，包括别的成员在共享的文件夹里做的。撤销时要用批次号。";
     Read "jobs"(NoArgs) => read::jobs, "用户提交的 AI 整理请求：等待、正在整理和失败的，失败的带原因。整理好的已经变成事项，不在这里。";
+    Read "attachment"(AttachmentArgs) => read::attachment, "读一个附件（ID 见 show）：PNG、JPEG、WebP、GIF 图片（5 MB 以内）返回图片，UTF-8 文本文件（1 MB 以内）返回内容，其他文件只给名称、类型和大小。";
     Write "add"(AddArgs) => write::add, "添加一个事项；文件夹不存在时一起新建。一次加多个、带依赖的事项时用 apply。";
     Write "edit"(EditArgs) => write::edit, "修改事项的标题、描述、截止时间、提醒或负责人；只改给出的字段，due、remind 给 null 表示清除，assign、unassign 在现有的负责人上加、减。改描述中的一段用 replace、加内容用 append，不要读出整段再整段写回，以免盖掉用户同时做的修改。";
     Write "done"(DoneArgs) => write::done, "把事项标为完成，结果里会列出因此变成可做的事项。重复的事项不会完成，而是把截止时间顺延到下一次，这时要给 today；打卡的长期事项全部做完时用 end_repeat 结束重复并完成。";
     Write "reopen"(TasksArgs) => write::reopen, "重新打开已完成的事项。";
     Write "mkdir"(MkdirArgs) => write::mkdir, "新建文件夹，路径上缺的层级一起建。";
-    Write "rename"(RenameArgs) => write::rename, "给文件夹改名。";
+    Write "rename"(RenameArgs) => write::rename, "给文件夹或附件改名。";
     Write "move"(MoveArgs) => write::move_to, "把事项或文件夹移到一个已有的文件夹，/ 是根目录。移进、移出共享的文件夹时去掉连到外面的依赖和看不到的负责人，并换成新主人的编号。";
     Destructive "delete"(DeleteArgs) => write::delete, "删除事项或文件夹；文件夹连同其中的子文件夹和事项一并删除。可用 undo 撤销。";
     Write "dep_add"(DepArgs) => write::dep_add, "加一条依赖：before 完成后才能做 after。只能连私人的事项之间，或同一个共享的文件夹里的事项之间；会成环时拒绝，并列出环上的事项。";
     Write "dep_remove"(DepArgs) => write::dep_remove, "删除一条依赖。";
+    Write "attach"(AttachArgs) => write::attach, "给事项加一个附件，文件内容用 base64 给出，最多 20 MB，原样保存。";
+    Destructive "detach"(DetachArgs) => write::detach, "删除附件。可用 undo 撤销。";
     Write "share"(ShareArgs) => write::share, "把自己的文件夹共享给同一台服务器上的其他人，或添加成员：成员能查看和修改里面的一切。";
     Destructive "unshare"(UnshareArgs) => write::unshare, "共享人移除成员，不写用户就是停止共享；成员不写用户就是自己退出共享。";
     Write "apply"(ApplyArgs) => write::apply, "按计划批量新建文件夹、事项和依赖，全部成功或全部不生效。新事项用 ref 互相引用，已有事项用编号。先用 dry_run 预览给用户看。";
@@ -177,6 +185,7 @@ fn person<'a>(b: &Board<'a>, username: &str) -> Result<&'a Person, ApiError> {
 pub async fn call(st: &AppState, auth: Auth, name: &str, mut args: Value, id: Option<MutationId>) -> Result<Reply, ApiError> {
     let now = st.clock.now();
     let local = take_local(&mut args)?;
+    let files = st.files.clone();
     match parse_call(name, args)? {
         // The read and the sequence number come from the same call on the one connection: no
         // change can come between them.
@@ -184,7 +193,7 @@ pub async fn call(st: &AppState, auth: Auth, name: &str, mut args: Value, id: Op
             st.db
                 .call(move |c| {
                     let local = local.unwrap_or_else(|| Now::utc(now));
-                    let output = run(c, &Cx { user: &auth.user_id, now, local })?;
+                    let output = run(c, &Cx { user: &auth.user_id, now, local, files: &files })?;
                     Ok(Reply { output, seq: Some(store::latest_seq(c, &auth.user_id)?) })
                 })
                 .await
@@ -194,7 +203,7 @@ pub async fn call(st: &AppState, auth: Auth, name: &str, mut args: Value, id: Op
             let hub = st.hub.clone();
             st.db
                 .call(move |c| {
-                    let (output, to) = write::run(c, &auth, id, now, local, build)?;
+                    let (output, to) = write::run(c, &auth, &files, id, now, local, build)?;
                     hub.notify(&to);
                     Ok(Reply { output, seq: None })
                 })

@@ -12,7 +12,7 @@ async fn pages_get_the_app_and_missing_files_get_404() {
     std::fs::create_dir_all(dir.join("assets")).unwrap();
     std::fs::write(dir.join("index.html"), "<!doctype html>app").unwrap();
     std::fs::write(dir.join("assets/app-1a2b.js"), "console.log(1)").unwrap();
-    let app = nexttodo_server::with_web(TestApp::new().app, &dir);
+    let app = nexttodo_server::with_web(TestApp::new().app.clone(), &dir);
     let get = |path: &str| {
         let req = Request::get(path).body(Body::empty()).unwrap();
         let app = app.clone();

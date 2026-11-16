@@ -11,7 +11,7 @@ const log = new Map<string, Effect[]>();
 const cx = { me: ME, now: 1000, effectsOf: (m: string) => log.get(m) };
 
 function empty(): Data {
-  return fromSnapshot({ folders: [], tasks: [], dependencies: [], ai_jobs: [], shares: [], people: [] });
+  return fromSnapshot({ folders: [], tasks: [], dependencies: [], attachments: [], ai_jobs: [], shares: [], people: [] });
 }
 
 /** Applies a mutation and remembers its effects under `mutation`, for undo. */
@@ -68,6 +68,54 @@ test("deleting a folder takes everything inside, and undo brings it back", () =>
 
   run(d, 104, [{ op: "undo", mutation: id(103) }]);
   expect([d.folders.size, titles(d).sort(), d.deps.size]).toEqual([2, ["PPT", "外面"], 1]);
+});
+
+test("attachments go with their task, folder or AI job, and come back with undo", () => {
+  const d = empty();
+  const add = (attachment: number, holder: { task_id: string } | { job_id: string }): Op => ({
+    op: "attachment.add",
+    id: id(attachment),
+    name: `图片 ${attachment}.png`,
+    type: "image/png",
+    size: 100,
+    ...holder,
+  });
+  run(d, 120, [
+    { op: "folder.create", id: id(1), name: "报销" },
+    { op: "task.create", id: id(2), title: "交发票", folder_id: id(1) },
+    add(3, { task_id: id(2) }),
+    { op: "ai_job.create", id: id(4), text: "整理这些票", local_time: "2026-11-17 09:00 星期二" },
+    add(5, { job_id: id(4) }),
+  ]);
+  expect(() => apply(d, [add(6, { task_id: id(99) })], cx)).toThrow("事项不存在");
+  expect(() => apply(d, [{ op: "attachment.add", id: id(6), name: "a", type: "image/png", size: 1 }], cx)).toThrow(Rejected);
+
+  run(d, 121, [{ op: "attachment.update", id: id(3), name: "发票.png" }]);
+  const effects = run(d, 122, [{ op: "folder.delete", id: id(1) }]);
+  expect(effects.map((e) => e.kind)).toEqual(["attachment", "task", "folder"]);
+  run(d, 123, [{ op: "ai_job.delete", id: id(4) }]);
+  expect(d.attachments.size).toBe(0);
+
+  run(d, 124, [{ op: "undo", mutation: id(122) }]);
+  run(d, 125, [{ op: "undo", mutation: id(123) }]);
+  expect([...d.attachments.values()].map((a) => [a.name, a.task_id, a.job_id])).toEqual([
+    ["发票.png", id(2), null],
+    ["图片 5.png", null, id(4)],
+  ]);
+  // Moved from the job to a task, as adding it as it was written does, and back.
+  run(d, 126, [{ op: "attachment.update", id: id(5), task_id: id(2) }]);
+  expect(d.attachments.get(id(5))!.job_id).toBe(null);
+  run(d, 127, [{ op: "undo", mutation: id(126) }]);
+  expect([d.attachments.get(id(5))!.task_id, d.attachments.get(id(5))!.job_id]).toEqual([null, id(4)]);
+  run(d, 128, [{ op: "undo", mutation: id(121) }]);
+  expect(d.attachments.get(id(3))!.name).toBe("图片 3.png");
+  // Moved twice and undone first to last, it belongs to one thing at every step.
+  run(d, 129, [{ op: "attachment.update", id: id(5), task_id: id(2) }]);
+  run(d, 130, [{ op: "task.create", id: id(6), title: "寄发票" }]);
+  run(d, 131, [{ op: "attachment.update", id: id(5), task_id: id(6) }]);
+  run(d, 132, [{ op: "undo", mutation: id(129) }]);
+  run(d, 133, [{ op: "undo", mutation: id(131) }]);
+  expect([d.attachments.get(id(5))!.task_id, d.attachments.get(id(5))!.job_id]).toEqual([id(2), null]);
 });
 
 test("undo puts back only the fields the change touched", () => {

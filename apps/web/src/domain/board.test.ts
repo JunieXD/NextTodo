@@ -70,7 +70,7 @@ function snapshot(c: Case, id: (name: string) => string): Snapshot {
   const dependencies = c.deps.map(([b, a]) => ({ before: id(b), after: id(a), created_at: 0 }));
   const shares = (c.shares ?? []).map((sh) => ({ folder_id: id(sh.folder), owner: id(sh.owner), members: people(sh.members) }));
   const usernames = [...new Set(["me", ...(c.shares ?? []).flatMap((sh) => [sh.owner, ...sh.members])])].sort();
-  return { folders, tasks, dependencies, ai_jobs: [], shares, people: usernames.map((u) => ({ id: id(u), username: u, display_name: u })) };
+  return { folders, tasks, dependencies, attachments: [], ai_jobs: [], shares, people: usernames.map((u) => ({ id: id(u), username: u, display_name: u })) };
 }
 
 describe.each(cases as unknown as Case[])("$name", (c) => {

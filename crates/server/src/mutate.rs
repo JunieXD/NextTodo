@@ -13,8 +13,8 @@ use std::num::NonZeroU32;
 
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
-    AiJob, AiJobId, Change, Completions, Dependency, Due, Effect, Folder, FolderId, JobKind, JobState, Link, MutationId, Person, Share,
-    SortKey, Suggestion, Task, TaskId,
+    AiJob, AiJobId, Attachment, AttachmentId, Change, Completions, Dependency, Due, Effect, Folder, FolderId, Holder, JobKind, JobState,
+    Link, MutationId, Person, Share, SortKey, Suggestion, Task, TaskId,
 };
 use nexttodo_core::ops::{MAX_OPS, Mutation, Op};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -254,6 +254,7 @@ impl Done {
                         Some(Effect::Folder(masked))
                     }
                     Effect::Task(change) => sided(change, b, a, s.kept).map(Effect::Task),
+                    Effect::Attachment(change) => sided(change, b, a, s.kept).map(Effect::Attachment),
                     Effect::AiJob(change) => sided(change, b, a, s.kept).map(Effect::AiJob),
                     Effect::Share(change) => sided(change, b, a, s.kept).map(Effect::Share),
                     Effect::Person(change) => sided(change, b, a, s.kept).map(Effect::Person),
@@ -578,6 +579,43 @@ impl<'a> Cx<'a> {
                 let space = self.space(&owner, b.folder_id)?;
                 self.delete_dependency(d, &space)
             }
+            Op::AttachmentAdd { id, name, media_type, size, task_id, job_id } => {
+                let holder = match (task_id, job_id) {
+                    (Some(t), None) => Holder::Task(*t),
+                    (None, Some(j)) => Holder::Job(*j),
+                    _ => return Err(ApiError::invalid("附件要属于一个事项或一条 AI 整理请求：task_id 和 job_id 给且只给一个", None)),
+                };
+                let side = self.holder_side(holder)?;
+                match store::load_file(self.c, *id)? {
+                    Some(f) if f.owner == self.user => {
+                        if store::attachment_id_taken(self.c, *id)? {
+                            return Err(ApiError::conflict("附件 ID 已存在"));
+                        }
+                        if f.media_type != *media_type || f.size != *size {
+                            return Err(ApiError::invalid("附件的类型或大小和上传的文件不一致", None));
+                        }
+                    }
+                    _ => return Err(ApiError::file_missing()),
+                }
+                let a =
+                    Attachment { id: *id, holder, name: name.clone(), media_type: media_type.clone(), size: *size, created_at: self.now };
+                self.create_attachment(a, side)
+            }
+            Op::AttachmentUpdate { id, name, task_id } => {
+                let (before, side) = self.attachment(*id)?;
+                let mut a = before.clone();
+                if let Some(name) = name {
+                    a.name = name.clone();
+                }
+                if let Some(t) = task_id {
+                    a.holder = Holder::Task(*t);
+                }
+                self.update_attachment(before, side, a)
+            }
+            Op::AttachmentDelete { id } => {
+                let (a, side) = self.attachment(*id)?;
+                self.delete_attachment(a, side)
+            }
             Op::AiJobCreate { id, kind, text, local_time, folder_id } => {
                 if store::job_id_taken(self.c, *id)? {
                     return Err(ApiError::conflict("请求 ID 已存在"));
@@ -691,6 +729,25 @@ impl<'a> Cx<'a> {
         store::load_job(self.c, self.user, id)?.ok_or_else(|| ApiError::not_found("AI 整理请求不存在"))
     }
 
+    /// Who sees what an attachment belongs to, which the user has to see: a task, or their own job.
+    fn holder_side(&self, holder: Holder) -> Result<Side, ApiError> {
+        match holder {
+            Holder::Task(t) => {
+                let (t, owner) = self.task(t)?;
+                Ok(self.space(&owner, t.folder_id)?.side())
+            }
+            Holder::Job(j) => {
+                self.job(j)?;
+                Ok(Side::of(vec![self.user.to_owned()]))
+            }
+        }
+    }
+
+    /// An attachment the user can see, and who sees it.
+    fn attachment(&self, id: AttachmentId) -> Result<(Attachment, Side), ApiError> {
+        self.visible_attachment(id)?.ok_or_else(|| ApiError::not_found("附件不存在"))
+    }
+
     /// Whose what is put in `folder` is: the folder's owner's, or at the root the user's.
     fn owner_in(&self, folder: Option<FolderId>) -> Result<String, ApiError> {
         match folder {
@@ -800,6 +857,9 @@ impl<'a> Cx<'a> {
             }
             self.push(Effect::Task(Change::Updated { before: Box::new(t), after: Box::new(after) }), from.side(), to.side(), kept);
         }
+        for a in store::subtree_attachments(self.c, id)? {
+            self.push(Effect::Attachment(Change::Updated { before: a.clone(), after: a }), from.side(), to.side(), true);
+        }
         for (j, owner) in store::subtree_jobs(self.c, id)? {
             if !to.sees(&owner) {
                 self.drop_job(j, &owner)?;
@@ -825,7 +885,8 @@ impl<'a> Cx<'a> {
         }
     }
 
-    /// Records the removal of everything in the subtree (dependencies, tasks, folders deepest first)
+    /// Records the removal of everything in the subtree (dependencies, attachments, tasks, AI jobs,
+    /// folders deepest first)
     /// so that undo can bring it all back in reverse order. Folders are deleted one by one, deepest
     /// first, because a single cascade through a deep tree would hit SQLite's trigger depth limit.
     /// Shared folders inside go first, as their members see them. A shared folder stops being
@@ -852,11 +913,14 @@ impl<'a> Cx<'a> {
         for d in store::subtree_dependencies(self.c, id)? {
             self.push(Effect::Dependency(Link::Removed(d)), space.side(), Side::default(), false);
         }
+        for a in store::subtree_attachments(self.c, id)? {
+            self.delete_attachment(a, space.side())?;
+        }
         for t in store::subtree_tasks(self.c, id)? {
             self.push(Effect::Task(Change::Deleted(Box::new(t))), space.side(), Side::default(), false);
         }
         for (j, owner) in store::subtree_jobs(self.c, id)? {
-            self.push(Effect::AiJob(Change::Deleted(Box::new(j))), Side::of(vec![owner]), Side::default(), false);
+            self.delete_job(j, &owner)?;
         }
         for f in store::subtree_folders(self.c, id)? {
             store::delete_folder(self.c, f.id)?;
@@ -877,7 +941,8 @@ impl<'a> Cx<'a> {
     }
 
     /// Changes a task. One moved into or out of a shared folder loses its dependencies, which were
-    /// all on what stays behind, and the assignees who can't see it now, and belongs to the owner of
+    /// all on what stays behind, and the assignees who can't see it now, takes its attachments along
+    /// for who sees it now, and belongs to the owner of
     /// where it is: numbered anew if that is someone else, or with the number it had there, when that
     /// is `had`, undoing such a move, and still free.
     fn update_task(&mut self, before: Task, owner: &str, mut after: Task, had: Option<i64>) -> Result<(), ApiError> {
@@ -906,7 +971,13 @@ impl<'a> Cx<'a> {
         after.updated_by = self.user.to_owned();
         after.updated_via = self.via.clone();
         store::update_task(self.c, &new_owner, &after)?;
+        let id = after.id;
         self.push(Effect::Task(Change::Updated { before: Box::new(before), after: Box::new(after) }), from.side(), to.side(), false);
+        if to != from {
+            for a in store::task_attachments(self.c, id)? {
+                self.push(Effect::Attachment(Change::Updated { before: a.clone(), after: a }), from.side(), to.side(), true);
+            }
+        }
         Ok(())
     }
 
@@ -924,6 +995,9 @@ impl<'a> Cx<'a> {
         let space = self.space(&owner, t.folder_id)?;
         for d in store::task_dependencies(self.c, id)? {
             self.push(Effect::Dependency(Link::Removed(d)), space.side(), Side::default(), false);
+        }
+        for a in store::task_attachments(self.c, id)? {
+            self.delete_attachment(a, space.side())?;
         }
         store::delete_task(self.c, id)?;
         self.push(Effect::Task(Change::Deleted(Box::new(t))), space.side(), Side::default(), false);
@@ -950,8 +1024,34 @@ impl<'a> Cx<'a> {
     }
 
     fn delete_job(&mut self, j: AiJob, owner: &str) -> Result<(), ApiError> {
+        for a in store::job_attachments(self.c, j.id)? {
+            self.delete_attachment(a, Side::of(vec![owner.to_owned()]))?;
+        }
         store::delete_job(self.c, j.id)?;
         self.push(Effect::AiJob(Change::Deleted(Box::new(j))), Side::of(vec![owner.to_owned()]), Side::default(), false);
+        Ok(())
+    }
+
+    fn create_attachment(&mut self, a: Attachment, side: Side) -> Result<(), ApiError> {
+        store::insert_attachment(self.c, &a)?;
+        self.push(Effect::Attachment(Change::Created(a)), Side::default(), side, false);
+        Ok(())
+    }
+
+    /// Renames an attachment, or moves it to what the user sees too.
+    fn update_attachment(&mut self, before: Attachment, side: Side, after: Attachment) -> Result<(), ApiError> {
+        if after == before {
+            return Ok(());
+        }
+        let after_side = if after.holder == before.holder { side.clone() } else { self.holder_side(after.holder)? };
+        store::update_attachment(self.c, &after)?;
+        self.push(Effect::Attachment(Change::Updated { before, after }), side, after_side, false);
+        Ok(())
+    }
+
+    fn delete_attachment(&mut self, a: Attachment, side: Side) -> Result<(), ApiError> {
+        store::delete_attachment(self.c, a.id, self.now)?;
+        self.push(Effect::Attachment(Change::Deleted(a)), side, Side::default(), false);
         Ok(())
     }
 
@@ -1044,7 +1144,8 @@ impl<'a> Cx<'a> {
     /// back are skipped; bringing something back into a folder or onto a task that is gone fails.
     ///
     /// Only a change the user saw all of can be undone, someone else's in a shared folder too, the
-    /// AI jobs in it aside: those are each their owner's, who undoes their own.
+    /// AI jobs in it aside, with their attachments: those are each their owner's, who undoes their
+    /// own. An attachment moved from a job to a task is, to everyone else, made there.
     fn undo(&mut self, id: MutationId) -> Result<(), ApiError> {
         let row: Option<(Option<String>, Option<String>)> = self
             .c
@@ -1066,8 +1167,26 @@ impl<'a> Cx<'a> {
         if all.iter().any(|e| matches!(e, Effect::Share(c) if owner(c) != self.user)) {
             return Err(ApiError::forbidden("只有共享人能添加或移除成员"));
         }
+        let of_job = |a: &Attachment| matches!(a.holder, Holder::Job(_));
+        let jobs: BTreeSet<AttachmentId> = all
+            .iter()
+            .filter_map(|e| match e {
+                Effect::Attachment(Change::Created(a) | Change::Deleted(a)) if of_job(a) => Some(a.id),
+                Effect::Attachment(Change::Updated { before, after }) if of_job(before) || of_job(after) => Some(before.id),
+                _ => None,
+            })
+            .collect();
         let shared = |list: &[Effect]| -> Vec<Effect> {
-            list.iter().filter(|e| !matches!(e, Effect::AiJob(_) | Effect::Person(_))).cloned().collect()
+            list.iter()
+                .filter(|e| match e {
+                    Effect::AiJob(_) | Effect::Person(_) => false,
+                    Effect::Attachment(Change::Created(a) | Change::Deleted(a) | Change::Updated { before: a, .. }) => {
+                        !jobs.contains(&a.id)
+                    }
+                    _ => true,
+                })
+                .cloned()
+                .collect()
         };
         if shared(&all) != shared(&seen) {
             return Err(ApiError::forbidden("这个批次里有看不到的改动，无法撤销"));
@@ -1144,6 +1263,29 @@ impl<'a> Cx<'a> {
                         self.create_dependency(d, &space)?;
                     }
                 }
+                Effect::Attachment(Change::Created(a)) => {
+                    if let Some((cur, side)) = self.visible_attachment(a.id)? {
+                        self.delete_attachment(cur, side)?;
+                    }
+                }
+                Effect::Attachment(Change::Deleted(a)) => {
+                    if store::load_attachment(self.c, a.id)?.is_none() {
+                        // Whoever uploaded it: what it belongs to says who sees it.
+                        if store::load_file(self.c, a.id)?.is_none() {
+                            return Err(ApiError::not_found(format!("附件“{}”的文件已不在服务器上", a.name.as_str())));
+                        }
+                        let side = self
+                            .holder_side(a.holder)
+                            .map_err(|_| ApiError::not_found(format!("附件“{}”所属的事项已删除", a.name.as_str())))?;
+                        self.create_attachment(a, side)?;
+                    }
+                }
+                Effect::Attachment(Change::Updated { before: b, after: a }) => {
+                    if let Some((cur, side)) = self.visible_attachment(b.id)? {
+                        let restored = restore!(cur, b, a, name, holder);
+                        self.update_attachment(cur, side, restored)?;
+                    }
+                }
                 Effect::AiJob(Change::Created(j)) => {
                     if let Some(cur) = store::load_job(self.c, self.user, j.id)? {
                         let user = self.user;
@@ -1194,6 +1336,15 @@ impl<'a> Cx<'a> {
     fn visible_folder(&self, id: FolderId) -> Result<Option<(Folder, String)>, ApiError> {
         match self.folder(id) {
             Ok(found) => Ok(Some(found)),
+            Err(e) if e.code() == "not_found" => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn visible_attachment(&self, id: AttachmentId) -> Result<Option<(Attachment, Side)>, ApiError> {
+        let Some(a) = store::load_attachment(self.c, id)? else { return Ok(None) };
+        match self.holder_side(a.holder) {
+            Ok(side) => Ok(Some((a, side))),
             Err(e) if e.code() == "not_found" => Ok(None),
             Err(e) => Err(e),
         }

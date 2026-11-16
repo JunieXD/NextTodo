@@ -8,7 +8,10 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use anyhow::{Context, anyhow, bail};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use clap::{Parser, Subcommand};
+use nexttodo_core::model::{FileName, MAX_FILE_SIZE};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use ureq::http::StatusCode;
@@ -175,8 +178,12 @@ enum Command {
     },
     #[command(about = "新建文件夹，缺的上级一起建")]
     Mkdir { path: String },
-    #[command(about = "文件夹改名")]
-    Rename { folder: String, name: String },
+    #[command(about = "文件夹或附件改名")]
+    Rename {
+        #[arg(value_name = "文件夹或附件 ID")]
+        target: String,
+        name: String,
+    },
     #[command(about = "移动事项（编号）或文件夹（路径）到另一个文件夹")]
     Mv {
         #[arg(required = true, num_args = 2.., help = "要移动的事项和文件夹，最后一个是目标文件夹")]
@@ -191,6 +198,27 @@ enum Command {
     Dep {
         #[command(subcommand)]
         command: Dep,
+    },
+    #[command(about = "给事项加附件，每个文件一个批次")]
+    Attach {
+        #[arg(value_parser = task, help = TASK)]
+        task: String,
+        #[arg(required = true, value_name = "文件")]
+        files: Vec<PathBuf>,
+        #[arg(long, help = "附件的名称，默认是文件名；只能和一个文件一起给")]
+        name: Option<String>,
+    },
+    #[command(about = "删除附件")]
+    Detach {
+        #[arg(required = true, value_name = "附件 ID")]
+        attachments: Vec<String>,
+    },
+    #[command(about = "下载附件")]
+    Download {
+        #[arg(value_name = "附件 ID")]
+        id: String,
+        #[arg(short, long, help = "存到哪个文件或目录，默认当前目录，用附件的名称")]
+        output: Option<PathBuf>,
     },
     #[command(about = "按计划批量新建文件夹、事项和依赖")]
     Apply {
@@ -360,12 +388,17 @@ struct Server {
     url: String,
     /// The app on this computer in local mode.
     local: bool,
+    /// How long a request may take in all.
+    timeout: Duration,
 }
+
+/// How long most requests may take; sending a file may take longer.
+const TIMEOUT: Duration = Duration::from_secs(30);
 
 impl Server {
     fn new(url: &str) -> Self {
-        let config = ureq::Agent::config_builder().http_status_as_error(false).timeout_global(Some(Duration::from_secs(30))).build();
-        Server { agent: config.into(), url: url.trim_end_matches('/').to_owned(), local: false }
+        let config = ureq::Agent::config_builder().http_status_as_error(false).build();
+        Server { agent: config.into(), url: url.trim_end_matches('/').to_owned(), local: false, timeout: TIMEOUT }
     }
 
     /// The app on this computer in local mode, as its address file has it now (docs/local.md#agent-接入).
@@ -386,14 +419,8 @@ impl Server {
         }
         let ca = ureq::tls::Certificate::from_pem(address.ca.as_bytes()).with_context(bad)?;
         let tls = ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::new_with_certs(&[ca])).build();
-        let config = ureq::Agent::config_builder()
-            .tls_config(tls)
-            .proxy(None)
-            .max_redirects(0)
-            .http_status_as_error(false)
-            .timeout_global(Some(Duration::from_secs(30)))
-            .build();
-        Ok(Server { agent: config.into(), url: address.url, local: true })
+        let config = ureq::Agent::config_builder().tls_config(tls).proxy(None).max_redirects(0).http_status_as_error(false).build();
+        Ok(Server { agent: config.into(), url: address.url, local: true, timeout: TIMEOUT })
     }
 
     /// In local mode, whether the other end could not show this run's certificate: it is another
@@ -414,7 +441,7 @@ impl Server {
 
     /// Sends once and reads the whole reply.
     fn send(&self, path: &str, token: Option<&str>, key: Option<&str>, body: &Value) -> Result<(StatusCode, String), ureq::Error> {
-        let mut req = self.agent.post(format!("{}{path}", self.url));
+        let mut req = self.agent.post(format!("{}{path}", self.url)).config().timeout_global(Some(self.timeout)).build();
         if let Some(key) = key {
             req = req.header("Idempotency-Key", key);
         }
@@ -508,6 +535,88 @@ fn call(name: &str, mut args: Value, json_out: bool) -> anyhow::Result<()> {
         println!("{}", printable(&text));
     }
     Ok(())
+}
+
+/// Attaches each file to `task`, one change each, as `name` or the file's own.
+fn attach(task: &str, files: &[PathBuf], name: Option<String>, json_out: bool) -> anyhow::Result<()> {
+    if name.is_some() && files.len() > 1 {
+        bail!("--name 只能和一个文件一起给");
+    }
+    let (mut server, token) = connect()?;
+    // 20 MB as base64 over a slow line.
+    server.timeout = Duration::from_secs(600);
+    for file in files {
+        // No more than one byte past the limit is read, whatever the file's size.
+        let mut bytes = Vec::new();
+        File::open(file)
+            .and_then(|f| f.take(u64::from(MAX_FILE_SIZE) + 1).read_to_end(&mut bytes))
+            .with_context(|| format!("无法读取 {}", file.display()))?;
+        if bytes.len() > MAX_FILE_SIZE as usize {
+            bail!("{} 超过 20 MB", file.display());
+        }
+        let name = match &name {
+            Some(n) => n.clone(),
+            None => file.file_name().context("文件路径没有文件名")?.to_string_lossy().into_owned(),
+        };
+        let mut args = json!({ "task": task, "name": name, "data": BASE64.encode(&bytes) });
+        here(&mut args);
+        let (text, data) = server.tool("attach", &token, &args)?;
+        if json_out {
+            println!("{}", serde_json::to_string_pretty(&data)?);
+        } else {
+            println!("{}", printable(&text));
+        }
+    }
+    Ok(())
+}
+
+/// Saves attachment `id`'s file to `output`: a file, or a directory to put it in under the
+/// attachment's name, as the server gives it. Never over a file already there.
+fn download(id: &str, output: Option<PathBuf>) -> anyhow::Result<()> {
+    let (mut server, token) = connect()?;
+    server.timeout = Duration::from_secs(600);
+    let req = server.agent.get(format!("{}/api/v1/files/{id}", server.url)).config().timeout_global(Some(server.timeout)).build();
+    let mut res = req.header("Authorization", format!("Bearer {token}")).call().map_err(|e| server.unreachable(e))?;
+    if !res.status().is_success() {
+        let text = res.body_mut().read_to_string().map_err(|e| server.unreachable(e))?;
+        reply(res.status(), &text)?;
+    }
+    let disposition = res.headers().get("content-disposition").and_then(|v| v.to_str().ok()).unwrap_or_default();
+    let name = disposition.split_once("filename*=UTF-8''").and_then(|(_, n)| decode(n)).context("服务器回复缺少附件的名称")?;
+    let name = FileName::try_from(name).map_err(|e| anyhow!("附件的名称无效：{e}"))?.on_disk();
+    let path = match output {
+        Some(dir) if dir.is_dir() => dir.join(&name),
+        Some(p) => p,
+        None => PathBuf::from(&name),
+    };
+    let mut file =
+        std::fs::OpenOptions::new().write(true).create_new(true).open(&path).with_context(|| format!("无法写入 {}", path.display()))?;
+    let copied = std::io::copy(&mut res.body_mut().as_reader(), &mut file);
+    if let Err(e) = copied {
+        // Half a file is no use; it is the one just made.
+        drop(file);
+        let _ = std::fs::remove_file(&path);
+        return Err(anyhow::Error::new(e).context("下载中断"));
+    }
+    println!("{}", printable(&format!("已下载到 {}", path.display())));
+    Ok(())
+}
+
+/// Text percent-encoded, as in `filename*`; `None` when it isn't.
+fn decode(s: &str) -> Option<String> {
+    let mut bytes = Vec::with_capacity(s.len());
+    let mut rest = s.as_bytes();
+    while let Some((&b, tail)) = rest.split_first() {
+        if b == b'%' {
+            let hex = std::str::from_utf8(tail.get(..2)?).ok()?;
+            bytes.push(u8::from_str_radix(hex, 16).ok()?);
+            rest = &tail[2..];
+        } else {
+            bytes.push(b);
+            rest = tail;
+        }
+    }
+    String::from_utf8(bytes).ok()
 }
 
 fn login(url: Option<String>, name: String, read_only: bool) -> anyhow::Result<()> {
@@ -627,6 +736,9 @@ fn forward(message: &str, version: Option<&str>) -> anyhow::Result<Option<Value>
     let mut req = server
         .agent
         .post(format!("{}/mcp", server.url))
+        .config()
+        .timeout_global(Some(server.timeout))
+        .build()
         .header("Authorization", format!("Bearer {token}"))
         .header("Accept", "application/json, text/event-stream")
         .header("Content-Type", "application/json");
@@ -737,7 +849,14 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Done { tasks, end_repeat } => call("done", json!({ "tasks": tasks, "end_repeat": end_repeat }), j),
         Command::Reopen { tasks } => call("reopen", json!({ "tasks": tasks }), j),
         Command::Mkdir { path } => call("mkdir", json!({ "path": path }), j),
-        Command::Rename { folder, name } => call("rename", json!({ "folder": folder, "name": name }), j),
+        // An attachment's id is a UUID; a folder is a path.
+        Command::Rename { target, name } => match uuid::Uuid::parse_str(&target) {
+            Ok(_) => call("rename", json!({ "attachment": target, "name": name }), j),
+            Err(_) => call("rename", json!({ "folder": target, "name": name }), j),
+        },
+        Command::Attach { task, files, name } => attach(&task, &files, name, j),
+        Command::Detach { attachments } => call("detach", json!({ "attachments": attachments }), j),
+        Command::Download { id, output } => download(&id, output),
         Command::Mv { items: mut list } => {
             let to = list.pop().expect("at least two arguments");
             let (tasks, folders) = items(&list);

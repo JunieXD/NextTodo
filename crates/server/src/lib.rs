@@ -3,10 +3,12 @@
 #[cfg(feature = "agent-port")]
 mod agent_port;
 pub mod ai;
+pub mod attachments;
 pub mod auth;
 pub mod backup;
 pub mod db;
 pub mod error;
+pub mod files;
 pub mod local;
 pub mod mcp;
 pub mod mutate;
@@ -23,11 +25,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::Router;
 use axum::body::Body;
+use axum::extract::DefaultBodyLimit;
 use axum::extract::Request;
 use axum::http::{HeaderValue, Uri, header};
 use axum::middleware;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
+use files::Files;
 use tower::ServiceExt;
 use tower_http::compression::CompressionLayer;
 use tower_http::services::ServeDir;
@@ -64,17 +68,22 @@ pub struct AppState {
     pub ai: Arc<ai::Ai>,
     /// Only where the server can upgrade itself.
     pub upgrade: Option<Arc<upgrade::Upgrade>>,
+    pub files: Arc<Files>,
+    /// In the app, for its one user (docs/local.md).
+    pub local: bool,
 }
 
 impl AppState {
     /// With API keys kept only on devices, and models called over HTTPS.
-    pub fn new(db: Db, clock: Clock) -> Self {
+    pub fn new(db: Db, clock: Clock, files: Files) -> Self {
         AppState {
             db,
             clock,
             hub: Hub::default(),
             ai: Arc::new(ai::Ai::new(None, Arc::new(ai::llm::Https { public_only: true }))),
             upgrade: None,
+            files: Arc::new(files),
+            local: false,
         }
     }
 
@@ -133,7 +142,9 @@ pub fn app(state: AppState) -> Router {
         .route("/mutations", post(sync::mutate))
         .route("/sync", get(ws::sync))
         .route("/tools", get(tools::list_tools))
-        .route("/tools/{name}", post(tools::call_tool))
+        .route("/files/{id}", get(attachments::get_file).put(attachments::put_file).layer(page_cors()))
+        .route("/settings", get(attachments::get_settings).put(attachments::put_settings))
+        .route("/tools/{name}", post(tools::call_tool).layer(DefaultBodyLimit::max(tools::MAX_BODY)))
         .route("/ai/providers", get(ai::providers))
         .route("/ai/settings", get(ai::get_settings).put(ai::put_settings).delete(ai::delete_settings))
         .route("/ai/test", post(ai::test))
@@ -145,6 +156,19 @@ pub fn app(state: AppState) -> Router {
         .route_service("/mcp", mcp::service(state.clone()))
         .route_layer(middleware::from_fn_with_state(state.clone(), mcp::authenticate));
     Router::new().nest("/api/v1", api).merge(mcp).layer(CompressionLayer::new()).layer(TraceLayer::new_for_http()).with_state(state)
+}
+
+/// Lets the Android app's page, at `https://localhost`, call the server: in local mode everything,
+/// otherwise the files, which are too large for the bridge to native HTTP. It sends the token in
+/// `Authorization`; no cookie (docs/api.md#附件). Nested, as in local mode, the inner layer's headers
+/// take the outer's place.
+pub(crate) fn page_cors() -> tower_http::cors::CorsLayer {
+    use axum::http::{Method, header};
+    tower_http::cors::CorsLayer::new()
+        .allow_origin(HeaderValue::from_static("https://localhost"))
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+        .max_age(std::time::Duration::from_secs(3600))
 }
 
 /// Adds the web app's files from `dir`, using the compressed copies made at build time. Page
@@ -171,4 +195,26 @@ async fn web(files: ServeDir, mut req: Request) -> Response {
     let cache = if immutable && res.status().is_success() { "public, max-age=31536000, immutable" } else { "no-cache" };
     res.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
     res
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::{Request, header};
+    use tower::ServiceExt;
+
+    use super::*;
+
+    /// In local mode on Android the whole app has the layer, and the files routes have it again.
+    #[tokio::test]
+    async fn the_page_is_allowed_once_where_the_layers_nest() {
+        let dir = std::env::temp_dir().join(format!("nexttodo-cors-{}", uuid::Uuid::now_v7()));
+        let state = AppState::new(Db::open_in_memory().unwrap(), Clock::system(), Files::new(dir));
+        let router = app(state).layer(page_cors());
+        let req = Request::get(format!("/api/v1/files/{}", uuid::Uuid::now_v7()))
+            .header(header::ORIGIN, "https://localhost")
+            .body(Body::empty())
+            .unwrap();
+        let res = router.oneshot(req).await.unwrap();
+        assert_eq!(res.headers().get_all(header::ACCESS_CONTROL_ALLOW_ORIGIN).iter().collect::<Vec<_>>(), ["https://localhost"]);
+    }
 }

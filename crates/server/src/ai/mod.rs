@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use nexttodo_core::board::{Board, Now};
-use nexttodo_core::model::{AiJobId, FolderId, JobKind, JobState, MutationId, NoteText, Suggestion};
+use nexttodo_core::model::{AiJobId, FolderId, Holder, JobKind, JobState, MutationId, NoteText, Suggestion};
 use nexttodo_core::ops::Op;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
 use rusqlite::{Connection, OptionalExtension, ToSql, params};
@@ -337,6 +337,14 @@ fn finish(
             };
             let snap = store::snapshot(&tx, owner)?;
             let applied = tools::plan_into(&Board::new(&snap, Now::utc(now), owner), job.folder_id, tasks, &shown).and_then(|mut ops| {
+                // The job's attachments go to the first task, in the same change.
+                if let Some(first) = ops.iter().find_map(|op| match op {
+                    Op::TaskCreate { id, .. } => Some(*id),
+                    _ => None,
+                }) {
+                    let attached = snap.attachments.iter().filter(|a| a.holder == Holder::Job(id));
+                    ops.extend(attached.map(|a| Op::AttachmentUpdate { id: a.id, name: None, task_id: Some(first) }));
+                }
                 ops.push(Op::AiJobDelete { id });
                 let done = mutate::run(&tx, &actor, &ops, now)?;
                 Ok((ops, done))

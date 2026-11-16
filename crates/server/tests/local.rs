@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+use nexttodo_server::files::Files;
 use nexttodo_server::local::Local;
 use nexttodo_server::{AppState, Clock, Db, auth};
 use rusqlite::{Connection, params};
@@ -19,7 +20,7 @@ fn db_file(dir: &Path) -> PathBuf {
 /// A database left by a server, or by an earlier version of the app, with the given users.
 async fn existing(dir: &Path, users: &[&str]) -> AppState {
     std::fs::create_dir_all(dir.join("db")).unwrap();
-    let state = AppState::new(Db::open(&db_file(dir)).unwrap(), Clock::system());
+    let state = AppState::new(Db::open(&db_file(dir)).unwrap(), Clock::system(), Files::new(dir.join("db").join("files")));
     for name in users {
         auth::create_admin(&state, (*name).into(), (*name).into(), "correct horse".into()).await.unwrap();
     }

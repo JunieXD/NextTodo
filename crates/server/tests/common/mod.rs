@@ -11,6 +11,7 @@ use axum::body::Body;
 use axum::http::{HeaderMap, Request, StatusCode, header};
 use http_body_util::BodyExt;
 use nexttodo_server::ai::Ai;
+use nexttodo_server::files::Files;
 use nexttodo_server::upgrade::Upgrade;
 use nexttodo_server::{AppState, Clock, Db, app, auth};
 use serde_json::{Value, json};
@@ -21,6 +22,14 @@ pub struct TestApp {
     pub app: Router,
     pub state: AppState,
     time: Arc<AtomicI64>,
+    /// Where attachments' files go, deleted with the app.
+    pub files: std::path::PathBuf,
+}
+
+impl Drop for TestApp {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.files);
+    }
 }
 
 pub struct Reply {
@@ -54,8 +63,9 @@ impl TestApp {
     fn build(db: Db, f: impl FnOnce(AppState) -> AppState) -> Self {
         let time = Arc::new(AtomicI64::new(1_762_000_000_000));
         let t = time.clone();
-        let state = f(AppState::new(db, Clock(Arc::new(move || t.load(Ordering::SeqCst)))));
-        TestApp { app: app(state.clone()), state, time }
+        let files = std::env::temp_dir().join(format!("nexttodo-files-{}", Uuid::now_v7()));
+        let state = f(AppState::new(db, Clock(Arc::new(move || t.load(Ordering::SeqCst))), Files::new(files.clone())));
+        TestApp { app: app(state.clone()), state, time, files }
     }
 
     pub fn advance(&self, ms: i64) {
@@ -111,6 +121,40 @@ impl TestApp {
         let r = self.tool(secret, name, args).await;
         assert_eq!(r.status, StatusCode::OK, "{name}: {}", r.body);
         r.body
+    }
+
+    /// A request with `body` as it is, answered as it is.
+    pub async fn raw(&self, req: axum::http::request::Builder, body: Body) -> (StatusCode, HeaderMap, Vec<u8>) {
+        let res = self.app.clone().oneshot(req.body(body).unwrap()).await.unwrap();
+        let (status, headers) = (res.status(), res.headers().clone());
+        (status, headers, res.into_body().collect().await.unwrap().to_bytes().to_vec())
+    }
+
+    /// Uploads `bytes` as attachment `id`'s file.
+    pub async fn upload(&self, secret: &str, id: &str, media_type: &str, bytes: &[u8]) -> Reply {
+        let req = Request::builder()
+            .method("PUT")
+            .uri(format!("/api/v1/files/{id}"))
+            .header(header::AUTHORIZATION, format!("Bearer {secret}"))
+            .header(header::CONTENT_TYPE, media_type);
+        let (status, headers, bytes) = self.raw(req, Body::from(bytes.to_vec())).await;
+        Reply { status, headers, body: if bytes.is_empty() { Value::Null } else { serde_json::from_slice(&bytes).unwrap() } }
+    }
+
+    pub async fn download(&self, secret: &str, id: &str) -> (StatusCode, HeaderMap, Vec<u8>) {
+        let req = Request::builder().uri(format!("/api/v1/files/{id}")).header(header::AUTHORIZATION, format!("Bearer {secret}"));
+        self.raw(req, Body::empty()).await
+    }
+
+    /// Uploads a file and attaches it to task `task` as `name`, returning the attachment's id.
+    pub async fn attach(&self, secret: &str, task: &str, name: &str, bytes: &[u8]) -> String {
+        let a = id();
+        let up = self.upload(secret, &a, "text/plain", bytes).await;
+        assert_eq!(up.status, StatusCode::OK, "{}", up.body);
+        let op = json!([{ "op": "attachment.add", "id": a, "name": name, "type": "text/plain", "size": bytes.len(), "task_id": task }]);
+        let r = self.mutate(secret, op).await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+        a
     }
 
     pub async fn snapshot(&self, secret: &str) -> Value {

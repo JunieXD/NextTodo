@@ -7,6 +7,8 @@
 import { generateNKeysBetween } from "fractional-indexing";
 import type { AiJob } from "../api/types/AiJob";
 import type { AiJobId } from "../api/types/AiJobId";
+import type { Attachment } from "../api/types/Attachment";
+import type { AttachmentId } from "../api/types/AttachmentId";
 import type { Dependency } from "../api/types/Dependency";
 import type { Due } from "../api/types/Due";
 import type { Effect } from "../api/types/Effect";
@@ -27,6 +29,7 @@ export interface Data {
   folders: Map<FolderId, Folder>;
   tasks: Map<TaskId, Task>;
   deps: Map<string, Dependency>;
+  attachments: Map<AttachmentId, Attachment>;
   jobs: Map<AiJobId, AiJob>;
   shares: Map<FolderId, Share>;
   people: Map<string, Person>;
@@ -39,6 +42,7 @@ export function fromSnapshot(s: Snapshot): Data {
     folders: new Map(s.folders.map((f) => [f.id, f])),
     tasks: new Map(s.tasks.map((t) => [t.id, t])),
     deps: new Map(s.dependencies.map((d) => [depKey(d.before, d.after), d])),
+    attachments: new Map(s.attachments.map((a) => [a.id, a])),
     jobs: new Map(s.ai_jobs.map((j) => [j.id, j])),
     shares: new Map(s.shares.map((sh) => [sh.folder_id, sh])),
     people: new Map(s.people.map((p) => [p.id, p])),
@@ -50,6 +54,7 @@ export function toSnapshot(d: Data): Snapshot {
     folders: [...d.folders.values()],
     tasks: [...d.tasks.values()],
     dependencies: [...d.deps.values()],
+    attachments: [...d.attachments.values()],
     ai_jobs: [...d.jobs.values()],
     shares: [...d.shares.values()],
     people: [...d.people.values()],
@@ -61,6 +66,7 @@ export function copy(d: Data): Data {
     folders: new Map(d.folders),
     tasks: new Map(d.tasks),
     deps: new Map(d.deps),
+    attachments: new Map(d.attachments),
     jobs: new Map(d.jobs),
     shares: new Map(d.shares),
     people: new Map(d.people),
@@ -96,6 +102,12 @@ function set(d: Data, e: Effect, side: "before" | "after") {
       const [key, v] = [depKey(dep.before, dep.after), e[side]];
       if (v) d.deps.set(key, v);
       else d.deps.delete(key);
+      return;
+    }
+    case "attachment": {
+      const [id, v] = [(e.before ?? e.after)!.id, e[side]];
+      if (v) d.attachments.set(id, v);
+      else d.attachments.delete(id);
       return;
     }
     case "ai_job": {
@@ -279,6 +291,36 @@ class Applier {
         this.deleteDependency(dep);
         return;
       }
+      case "attachment.add": {
+        // Whether its file is there, and is the user's, only the server knows.
+        if (this.d.attachments.has(op.id)) throw new Rejected("conflict", "附件 ID 已存在");
+        if ((op.task_id === undefined) === (op.job_id === undefined)) {
+          throw new Rejected("invalid", "附件要属于一个事项或一条 AI 整理请求：task_id 和 job_id 给且只给一个");
+        }
+        const a: Attachment = {
+          id: op.id,
+          task_id: op.task_id ?? null,
+          job_id: op.job_id ?? null,
+          name: op.name,
+          type: op.type,
+          size: op.size,
+          created_at: now,
+        };
+        this.holder(a);
+        this.push({ kind: "attachment", before: null, after: a });
+        return;
+      }
+      case "attachment.update": {
+        const before = this.attachment(op.id);
+        const a = { ...before };
+        if (op.name !== undefined) a.name = op.name;
+        if (op.task_id !== undefined) [a.task_id, a.job_id] = [op.task_id, null];
+        this.updateAttachment(before, a);
+        return;
+      }
+      case "attachment.delete":
+        this.deleteAttachment(this.attachment(op.id));
+        return;
       case "ai_job.create": {
         if (this.d.jobs.has(op.id)) throw new Rejected("conflict", "请求 ID 已存在");
         const folder = op.folder_id ?? null;
@@ -311,7 +353,7 @@ class Applier {
         return;
       }
       case "ai_job.delete":
-        this.push({ kind: "ai_job", before: this.job(op.id), after: null });
+        this.deleteJob(this.job(op.id));
         return;
       case "share.add":
       case "share.remove":
@@ -369,6 +411,33 @@ class Applier {
     const j = this.d.jobs.get(id);
     if (!j) throw new Rejected("not_found", "AI 整理请求不存在");
     return j;
+  }
+
+  private attachment(id: AttachmentId): Attachment {
+    const a = this.d.attachments.get(id);
+    if (!a) throw new Rejected("not_found", "附件不存在");
+    return a;
+  }
+
+  /** What `a` belongs to, which has to be there. */
+  private holder(a: Attachment) {
+    if (a.task_id !== null) this.task(a.task_id);
+    else this.job(a.job_id!);
+  }
+
+  private updateAttachment(before: Attachment, after: Attachment) {
+    if (same(before, after)) return;
+    if (after.task_id !== before.task_id || after.job_id !== before.job_id) this.holder(after);
+    this.push({ kind: "attachment", before, after });
+  }
+
+  private deleteAttachment(a: Attachment) {
+    this.push({ kind: "attachment", before: a, after: null });
+  }
+
+  private deleteJob(j: AiJob) {
+    for (const a of [...this.d.attachments.values()]) if (a.job_id === j.id) this.deleteAttachment(a);
+    this.push({ kind: "ai_job", before: j, after: null });
   }
 
   private createJob(j: AiJob) {
@@ -448,7 +517,7 @@ class Applier {
     }
   }
 
-  /** Removes everything in the subtree: dependencies, tasks, then folders deepest first, so that
+  /** Removes everything in the subtree: dependencies, attachments, tasks, AI jobs, then folders deepest first, so that
    * undo brings it all back in reverse order. Shared folders inside go first. A shared folder stops
    * being shared first, its tasks assigned to nobody before, so that bringing it back shares it again
    * and then assigns them again. */
@@ -476,10 +545,9 @@ class Applier {
     for (const dep of [...this.d.deps.values()].filter((dep) => ids.has(dep.before) || ids.has(dep.after))) {
       this.push({ kind: "dependency", before: dep, after: null });
     }
+    for (const a of [...this.d.attachments.values()].filter((a) => a.task_id !== null && ids.has(a.task_id))) this.deleteAttachment(a);
     for (const t of tasks) this.push({ kind: "task", before: t, after: null });
-    for (const j of [...this.d.jobs.values()].filter((j) => j.folder_id !== null && depth.has(j.folder_id))) {
-      this.push({ kind: "ai_job", before: j, after: null });
-    }
+    for (const j of [...this.d.jobs.values()].filter((j) => j.folder_id !== null && depth.has(j.folder_id))) this.deleteJob(j);
     const folders = [...depth].sort((a, b) => b[1] - a[1]).map(([f]) => this.d.folders.get(f)!);
     for (const f of folders) this.push({ kind: "folder", before: f, after: null });
   }
@@ -510,6 +578,7 @@ class Applier {
     for (const dep of [...this.d.deps.values()].filter((dep) => dep.before === id || dep.after === id)) {
       this.push({ kind: "dependency", before: dep, after: null });
     }
+    for (const a of [...this.d.attachments.values()]) if (a.task_id === id) this.deleteAttachment(a);
     this.push({ kind: "task", before: this.task(id), after: null });
   }
 
@@ -616,9 +685,28 @@ class Applier {
             });
           }
         }
+      } else if (e.kind === "attachment") {
+        if (!e.before) {
+          const cur = this.d.attachments.get(e.after!.id);
+          if (cur) this.deleteAttachment(cur);
+        } else if (!e.after) {
+          const a = e.before;
+          if (this.d.attachments.has(a.id)) continue;
+          // Whether its file is still kept, only the server knows.
+          if (a.task_id !== null ? !this.d.tasks.has(a.task_id) : !this.d.jobs.has(a.job_id!)) {
+            throw new Rejected("not_found", `附件“${a.name}”所属的事项已删除`);
+          }
+          this.push({ kind: "attachment", before: null, after: a });
+        } else {
+          const cur = this.d.attachments.get(e.before.id);
+          // What it belongs to is one thing, in two fields, as the server has it.
+          const moved = e.before.task_id !== e.after.task_id || e.before.job_id !== e.after.job_id;
+          const holder = moved ? { task_id: e.before.task_id, job_id: e.before.job_id } : {};
+          if (cur) this.updateAttachment(cur, { ...restore(cur, e.before, e.after, ["name"]), ...holder });
+        }
       } else if (e.kind === "ai_job") {
         if (!e.before) {
-          if (this.d.jobs.has(e.after!.id)) this.push({ kind: "ai_job", before: this.job(e.after!.id), after: null });
+          if (this.d.jobs.has(e.after!.id)) this.deleteJob(this.job(e.after!.id));
         } else if (!e.after) {
           const j = e.before;
           if (this.d.jobs.has(j.id)) continue;

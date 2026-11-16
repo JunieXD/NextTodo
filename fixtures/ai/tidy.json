@@ -321,6 +321,12 @@
     "id": "notes-inner-english",
     "note": "外层说明要中文，内层要英文标题：标题按内层的改成英文，单元号原样",
     "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/学习/英语", "request": "把标题改清楚，描述改成简洁的书面语，补上漏掉的先后关系。", "subfolders": [], "open_tasks": [{ "number": 71, "title": "背单词 Unit 5" }, { "number": 72, "title": "每天听半小时听力" }], "done_tasks": [], "notes": [{ "folder": "/", "text": "标题和描述都用中文" }, { "folder": "/学习/英语", "text": "这个文件夹里的标题都用英文写" }] },
-    "expect": { "allowed": ["title", "description"], "verbatim": ["Unit 5"], "facts": [["vocabulary", "words"], ["listening"], ["daily", "every day", "each day"], ["30 min", "half an hour", "half-hour"]] }
+    "expect": { "allowed": ["title", "description"], "verbatim": ["Unit 5"], "facts": [["vocabulary", "words"], ["listen"], ["daily", "every day", "each day"], ["30 min", "half an hour", "half-hour"]] }
+  },
+  {
+    "id": "notes-narrow-request",
+    "note": "说明要英文标题，但这次只要求推迟：只改截止时间，不借说明去改标题",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/学习/英语", "request": "把背单词推迟到周五", "subfolders": [], "open_tasks": [{ "number": 71, "title": "背单词 Unit 5", "due": "2026-11-11" }, { "number": 72, "title": "每天听半小时听力" }], "done_tasks": [], "notes": [{ "folder": "/学习/英语", "text": "这个文件夹里的标题都用英文写" }] },
+    "expect": { "allowed": ["due"], "due": [[71, "2026-11-13"]], "untouched": [72] }
   }
 ]

@@ -63,7 +63,7 @@ pub const ASSIGN: &str = r#"这个文件夹是共享的，输入里还有 people
 
 /// Added to the instructions, of organizing and of tidying, when the user has notes along the way to
 /// the folder (docs/ai.md#说明).
-pub const NOTES: &str = "输入里还有 notes：用户写给你的长期要求，按文件夹从外到内排列，folder 是它所属的文件夹。整理时照着做；内层文件夹的要求和外层的不一致时，以内层的为准。这些要求不改变上面规定的输出格式和字段。";
+pub const NOTES: &str = "输入里还有 notes：用户写给你的长期要求，按文件夹从外到内排列，folder 是它所属的文件夹。整理时照着做，它们和上面的规则（如用原文的语言写、已经清楚的不要改）不一致时，以它们为准：已经清楚、但不合它们的要求的事项也要改。内层文件夹的要求和外层的不一致时，以内层的为准。它们只管怎么做，不扩大这次要做的范围：这次没要求改的地方，不因为它们去改；也不改变上面规定的输出格式和字段。";
 
 pub(super) fn due_text(d: &Due) -> String {
     match &d.at {

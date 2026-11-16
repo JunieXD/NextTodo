@@ -370,13 +370,19 @@ label.row { cursor: pointer; }
 .md blockquote { margin: 8px 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--primary-container); color: var(--on-surface-variant); }
 .md code { font: 13px ui-monospace, Menlo, monospace; background: var(--surface-container); padding: 1px 5px; border-radius: 5px; }
 .md-edit { display: block; width: 100%; min-height: 200px; border: 0; outline: none; resize: vertical; padding: 14px 16px; background: var(--group-bg); font: 14px/1.6 ui-monospace, Menlo, monospace; }
-/* A release's notes in the changelog (views/Changelog.tsx): its version and day, then what it changed. */
+/* The changelog (views/Changelog.tsx): after an update, what changed since, by kind, each item with
+   its version when there are several; in the settings, a section for each release, its version and day. */
+.release-since { margin: 0 24px; font-size: 13px; color: var(--on-surface-variant); }
 .release + .release { border-top: .5px solid var(--outline-variant); }
+.release { padding-bottom: 12px; }
 .release h4 { margin: 16px 24px 0; display: flex; align-items: baseline; gap: 8px; font-size: 16px; font-weight: 600; }
 .release h4 span { font-size: 13px; font-weight: 400; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
-.release .md { padding: 4px 24px 14px; font-size: 14px; }
-.release .md h3 { margin-top: 10px; font-size: 13px; color: var(--on-surface-variant); }
-.earlier { margin: 0 10px; }
+.changes h5 { margin: 14px 24px 4px; display: flex; align-items: baseline; gap: 6px; font-size: 14px; font-weight: 600; }
+.changes h5 span { font-weight: 400; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+.changes ul { margin: 0; padding: 0 24px 0 42px; font-size: 14px; line-height: 1.6; }
+.changes li + li { margin-top: 4px; }
+.changes .version { margin-left: 8px; font-size: 12px; color: var(--on-surface-variant); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.earlier { margin: 8px 10px 0; }
 .dep .row-inner { min-height: 52px; gap: 12px; }
 .dot { width: 10px; height: 10px; border-radius: 5px; border: 2px solid var(--outline); flex: none; margin: 0 7px; }
 .dot.ready { border-color: var(--primary); } .dot.done { background: var(--primary); border-color: var(--primary); } .dot.waiting { border-style: dashed; border-color: var(--outline-variant); }
@@ -406,6 +412,7 @@ label.row { cursor: pointer; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 12px 10px 24px; }
 .modal-head h3 { margin: 0; font-size: 18px; font-weight: 600; }
 .modal-body { overflow-y: auto; padding-bottom: 8px; }
+.actions.modal-foot { margin: 0; padding: 12px 16px 0; border-top: .5px solid var(--outline-variant); }
 .search { margin: 0 16px 12px; height: 40px; border-radius: 12px; background: var(--surface-container); display: flex; align-items: center; gap: 8px; padding: 0 12px; color: var(--on-surface-variant); }
 .search input { flex: 1; border: 0; background: none; outline: none; font-size: 16px; color: var(--on-surface); min-width: 0; }
 .picker .row:disabled { opacity: .45; }
@@ -492,6 +499,7 @@ a.text-btn { display: inline-flex; align-items: center; }
 .pane-closed .detail-pane { border-left-color: transparent; }
 .detail-empty { height: 100%; display: grid; place-items: center; color: var(--outline); font-size: 14px; text-align: center; padding: 32px; }
 .desk .modal { left: 0; right: 0; margin: 0 auto; bottom: auto; top: 12vh; width: 440px; border-radius: 28px; max-height: 76vh; padding-bottom: 12px; }
+.desk .modal.wide { width: clamp(440px, 56%, 640px); }
 .desk .modal.enter { animation: dialog-in .25s var(--ease); }
 .desk .modal-scrim.leave { animation-duration: .16s; }
 .desk .modal.leave, .desk .editor.leave { animation: dialog-out .16s var(--ease-exit) forwards; }

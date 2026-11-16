@@ -6,7 +6,6 @@ import { lazy } from "react";
 const load = () => import("./Markdown");
 
 export const Description = lazy(() => load().then((m) => ({ default: m.Description })));
-export const Prose = lazy(() => load().then((m) => ({ default: m.Prose })));
 
 /** Loads it once the app has had its start. */
 export const preloadMarkdown = () => void setTimeout(load, 2000);

@@ -294,18 +294,23 @@ let modals = 0;
 /** A panel for choosing or settings: a bottom sheet on phones, a centred card on desktops. Back goes
  * to `onBack` when given, such as the page the panel came from, otherwise closes it. `focus` is what
  * takes the focus as it opens, rather than its first button: also when a menu opened the panel, where
- * a field's `autoFocus` loses it. */
+ * a field's `autoFocus` loses it. `wide` for reading, wider on desktops; `footer`, its buttons, stays
+ * below the content as it scrolls. */
 export function Modal({
   title,
   onClose,
   onBack,
   focus,
+  wide,
+  footer,
   children,
 }: {
   title: string;
   onClose(): void;
   onBack?: () => void;
   focus?: RefObject<HTMLElement | null>;
+  wide?: boolean;
+  footer?: ReactNode;
   children: ReactNode;
 }) {
   const root = useContext(RootContext);
@@ -326,7 +331,7 @@ export function Modal({
         <Dialog.Overlay ref={scrim} className={`modal-scrim${replacing ? "" : " enter"}`} />
         <Dialog.Content
           ref={panel}
-          className={`modal ${replacing ? (onBack ? "forth" : "back") : "enter"}`}
+          className={`modal${wide ? " wide" : ""} ${replacing ? (onBack ? "forth" : "back") : "enter"}`}
           aria-describedby={undefined}
           // Without scrolling: the panel is still sliding in, and the app would scroll to where it is now.
           onOpenAutoFocus={focus && ((e) => (e.preventDefault(), focus.current!.focus({ preventScroll: true })))}
@@ -345,6 +350,7 @@ export function Modal({
             </Tip>
           </div>
           <div className="modal-body">{children}</div>
+          {footer && <div className="actions modal-foot">{footer}</div>}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

@@ -59,12 +59,13 @@ export const fileIcon = (type: string): LucideIcon => (type.startsWith("image/")
 const waitingIn = (queued: Mutation[]) => new Set(queued.flatMap((m) => m.ops.flatMap((op) => (op.op === "attachment.add" ? [op.id] : []))));
 
 /** An object URL of the file, kept here or downloaded, while it is shown; `failed` when it could not
- * be had, tried again once the server can be reached. */
-function useFileUrl(id: string, type: string): { url?: string; failed?: boolean } {
+ * be had, tried again once the server can be reached, or when the picture is one the browser cannot
+ * show, as its `<img>` says by calling `unreadable`. */
+function useFileUrl(id: string, type: string) {
   const { files } = useSession();
   const online = useConnection() === "online";
-  const [shown, setShown] = useState<{ url?: string; failed?: boolean }>({});
-  const again = !!shown.failed && online;
+  const [shown, setShown] = useState<{ url?: string; failed?: "unreached" | "unreadable" }>({});
+  const again = shown.failed === "unreached" && online;
   useEffect(() => {
     let live = true;
     let url: string | undefined;
@@ -76,7 +77,7 @@ function useFileUrl(id: string, type: string): { url?: string; failed?: boolean 
       },
       (e) => {
         if (!(e instanceof ApiError)) throw e;
-        if (live) setShown({ failed: true });
+        if (live) setShown({ failed: "unreached" });
       },
     );
     return () => {
@@ -84,7 +85,7 @@ function useFileUrl(id: string, type: string): { url?: string; failed?: boolean 
       if (url) URL.revokeObjectURL(url);
     };
   }, [files, id, type, again]);
-  return shown;
+  return { url: shown.url, failed: !!shown.failed, unreadable: () => setShown({ failed: "unreadable" }) };
 }
 
 function download(name: string, b: Blob) {
@@ -275,12 +276,12 @@ function Waiting() {
 }
 
 function Thumb({ a, waiting, menu, onOpen }: { a: Attachment; waiting: boolean; menu: MenuItem[]; onOpen(): void }) {
-  const { url, failed } = useFileUrl(a.id, a.type);
+  const { url, failed, unreadable } = useFileUrl(a.id, a.type);
   return (
     <ContextMenu items={menu}>
       <button type="button" className="att-thumb" onClick={onOpen} aria-label={a.name}>
         {url ? (
-          <img src={url} alt="" draggable={false} />
+          <img src={url} alt="" draggable={false} onError={unreadable} />
         ) : (
           <span className={`att-empty${failed ? "" : " spin"}`}>
             <Icon of={failed ? ImageIcon : LoaderCircle} />
@@ -378,7 +379,7 @@ function Viewer({ pictures, start, actions, onClose }: { pictures: Attachment[];
   const page = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const img = useRef<HTMLImageElement>(null);
-  const { url, failed } = useFileUrl(a.id, a.type);
+  const { url, failed, unreadable } = useFileUrl(a.id, a.type);
   useLeave([page]);
   useBack("dialog", onClose);
   const go = (by: number) => {
@@ -525,6 +526,7 @@ function Viewer({ pictures, start, actions, onClose }: { pictures: Attachment[];
                 src={url}
                 alt={a.name}
                 draggable={false}
+                onError={unreadable}
                 style={{ transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})` }}
               />
             ) : (
@@ -586,8 +588,8 @@ function StagedFile({ f, unseen, onRemove }: { f: Staged; unseen?: string; onRem
 }
 
 function StagedPicture({ f }: { f: Staged }) {
-  const { url } = useFileUrl(f.id, f.type);
-  return url ? <img src={url} alt={f.name} draggable={false} /> : <Icon of={ImageIcon} size={16} />;
+  const { url, unreadable } = useFileUrl(f.id, f.type);
+  return url ? <img src={url} alt={f.name} draggable={false} onError={unreadable} /> : <Icon of={ImageIcon} size={16} />;
 }
 
 /** The files staged in an add box, above where its text is typed; scrolling sideways when they do not

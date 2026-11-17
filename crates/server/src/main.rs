@@ -7,7 +7,7 @@ use std::sync::Arc;
 use clap::{Parser, Subcommand};
 
 use nexttodo_server::ai::{Ai, llm::Https, secret::SecretKey};
-use nexttodo_server::files::Files;
+use nexttodo_server::files::{self, Files};
 use nexttodo_server::upgrade::{self, Upgrade};
 use nexttodo_server::{AppState, Clock, Db, app, auth, db, start, with_web};
 use tracing_subscriber::EnvFilter;
@@ -139,7 +139,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::CreateAdmin { username, display_name } => {
             let _lock = lock(&cli.data, false)?;
-            let state = AppState::new(Db::open(&db)?, Clock::system(), Files::new(cli.data.join("files")));
+            let state = AppState::new(Db::open(&db)?, Clock::system(), Files::new(cli.data.join(files::DIR)));
             let password = read_password()?;
             let display_name = display_name.unwrap_or_else(|| username.clone());
             auth::create_admin(&state, username, display_name, password).await?;
@@ -148,7 +148,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::ResetPassword { username } => {
             let _lock = lock(&cli.data, false)?;
-            let state = AppState::new(Db::open(&db)?, Clock::system(), Files::new(cli.data.join("files")));
+            let state = AppState::new(Db::open(&db)?, Clock::system(), Files::new(cli.data.join(files::DIR)));
             // Asked for once the user is found, not after typing it twice for a misspelt name.
             let user = auth::user_named(&state, username).await?;
             auth::reset_password(&state, user, read_password()?).await?;

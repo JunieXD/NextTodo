@@ -121,7 +121,7 @@ impl Local {
             if to.parent().context("备份文件的路径无效")?.canonicalize()?.starts_with(dir.canonicalize()?) {
                 anyhow::bail!("备份不能放在 NextTodo 的数据目录里");
             }
-            backup::write(&dir.join(DB_DIR).join(DB_FILE), &to)
+            backup::write(&dir, &to)
         })
         .await?
     }

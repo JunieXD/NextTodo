@@ -164,7 +164,7 @@ export function sent(store: Store): Promise<boolean> {
  * The changes made here are in it. */
 export async function backup(store: Store): Promise<string | null> {
   if (!(await sent(store))) throw new Error("备份失败：还有改动尚未保存，请稍后重试");
-  return shell.backup(`NextTodo-备份-${isoDate(new Date())}.db`);
+  return shell.backup(`NextTodo-备份-${isoDate(new Date())}.tar`);
 }
 
 /** Asks for a backup and, once `confirm` has agreed to what goes, replaces the data with it and

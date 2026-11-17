@@ -12,7 +12,7 @@ use tokio::net::TcpListener;
 
 use crate::ai::{self, Ai};
 use crate::error::ApiError;
-use crate::files::Files;
+use crate::files::{self, Files};
 use crate::{AppState, Clock, Db, MUTATION_RETENTION_MS, attachments, db};
 
 /// How many daily snapshots of the database are kept.
@@ -36,7 +36,7 @@ pub async fn start<T: Send + 'static>(
     ai: Ai,
     prepare: impl FnOnce(&mut Connection) -> Result<T, ApiError> + Send + 'static,
 ) -> anyhow::Result<(Started, T)> {
-    let files = Files::new(db.parent().expect("a database in a directory").join("files"));
+    let files = Files::new(db.parent().expect("a database in a directory").join(files::DIR));
     let state = AppState::new(Db::open(db)?, Clock::system(), files).with_ai(ai);
     let prepared = state.db.call(prepare).await?;
     // Before any request: a job the user starts would otherwise race these.

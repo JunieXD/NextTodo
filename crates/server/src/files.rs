@@ -14,6 +14,9 @@ use tokio::io::AsyncWriteExt;
 use tower_http::services::ServeFile;
 use uuid::Uuid;
 
+/// Where the files are, beside the database.
+pub const DIR: &str = "files";
+
 /// What files being written are called until they are published.
 const PART: &str = ".part-";
 

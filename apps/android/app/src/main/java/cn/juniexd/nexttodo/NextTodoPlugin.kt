@@ -348,7 +348,7 @@ class NextTodoPlugin : Plugin() {
     @PluginMethod
     fun backupLocal(call: PluginCall) {
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
-            .setType("application/octet-stream")
+            .setType("application/x-tar")
             .putExtra(Intent.EXTRA_TITLE, call.getString("name"))
         startActivityForResult(call, intent, "backupTo")
     }
@@ -359,7 +359,7 @@ class NextTodoPlugin : Plugin() {
         if (call == null) return
         val uri = result.data?.data ?: return call.resolve()
         work(call, "备份") {
-            val file = File.createTempFile("backup-", ".db", context.cacheDir)
+            val file = File.createTempFile("backup-", ".tar", context.cacheDir)
             try {
                 Local.backup(file)
                 context.contentResolver.openOutputStream(uri, "wt")!!.use { out -> file.inputStream().use { it.copyTo(out) } }
@@ -383,7 +383,7 @@ class NextTodoPlugin : Plugin() {
         if (call == null) return
         val uri = result.data?.data ?: return call.resolve(JSObject().put("picked", false))
         work(call, "读取备份") {
-            val file = File.createTempFile("restore-", ".db", context.cacheDir)
+            val file = File.createTempFile("restore-", null, context.cacheDir)
             try {
                 context.contentResolver.openInputStream(uri)!!.use { input -> file.outputStream().use { input.copyTo(it) } }
                 Local.prepare(context, file)

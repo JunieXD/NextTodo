@@ -1,5 +1,6 @@
 //! Local mode: the server the app starts for itself on a data directory, reached over HTTP.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use nexttodo_server::files::Files;
@@ -226,6 +227,95 @@ async fn a_backup_replaces_the_data_with_a_new_epoch_and_the_data_replaced_is_ke
     assert_eq!(c.query_row("SELECT username FROM users", [], |r| r.get::<_, String>(0)).unwrap(), "alice");
     drop(c);
     clean([mine, other, file]);
+}
+
+/// A tar with these files in it.
+fn tar_of(files: &[(&str, &[u8])]) -> PathBuf {
+    let path = data_dir().with_extension("tar");
+    let mut tar = tar::Builder::new(std::fs::File::create(&path).unwrap());
+    for (name, data) in files {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(data.len() as u64);
+        tar.append_data(&mut header, name, *data).unwrap();
+    }
+    tar.finish().unwrap();
+    path
+}
+
+#[tokio::test]
+async fn a_backup_has_the_attachments_files_and_a_tar_with_anything_else_is_refused() {
+    let (mine, other, file) = (data_dir(), data_dir(), data_dir().with_extension("tar"));
+    let local = Local::start(&mine).await.unwrap();
+    let session = local.session().await.unwrap();
+    add(&local, &session, "带附件的").await;
+    let attached = call(&local, "POST", "/tools/attach", &session, Some(json!({ "task": 1, "name": "图片 1.png", "data": "cG5n" }))).await;
+    assert_eq!(attached.0, 200, "{}", attached.1);
+    local.backup(file.clone()).await.unwrap();
+    let id: String = Connection::open(db_file(&mine)).unwrap().query_row("SELECT id FROM attachments", [], |r| r.get(0)).unwrap();
+    let packed = entries(&file);
+    let attachment = format!("files/{id}");
+    assert_eq!(packed.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), [attachment.as_str(), "nexttodo.db"]);
+    assert!(!names(&mine).contains(&"backup.part".to_owned()), "the copy taken goes");
+
+    drop(existing(&other, &["alice"]).await);
+    nexttodo_server::backup::prepare(&other, &file).unwrap();
+    nexttodo_server::backup::commit(&other).unwrap();
+    drop(Local::start(&other).await.unwrap());
+    assert_eq!(std::fs::read(other.join("db").join("files").join(&id)).unwrap(), b"png");
+
+    let db = &packed[1].data;
+    let unlisted = "files/019a4b2c-0000-7000-8000-000000000001";
+    let whole = std::fs::read(&file).unwrap();
+    // Cut short at an entry's end, which reads as a whole tar, or within the database.
+    let cuts = [packed[1].header, packed[1].header + 512 + db.len() as u64 / 2].map(|at| {
+        let cut = data_dir().with_extension("tar");
+        std::fs::write(&cut, &whole[..at as usize]).unwrap();
+        cut
+    });
+    let odd = [
+        tar_of(&[("nexttodo.db", db), ("notes.txt", b"x")]),
+        tar_of(&[("nexttodo.db", db), ("files/notes.txt", b"x")]),
+        tar_of(&[("nexttodo.db", db), ("nexttodo.db", db)]),
+        tar_of(&[(unlisted, b"x")]),
+        // Without a file in use, with one of another size, or with one the database does not list.
+        tar_of(&[("nexttodo.db", db)]),
+        tar_of(&[(&attachment, b"pn"), ("nexttodo.db", db)]),
+        tar_of(&[(&attachment, b"png"), (unlisted, b"x"), ("nexttodo.db", db)]),
+    ];
+    for tar in odd.iter().chain(&cuts) {
+        let e = nexttodo_server::backup::prepare(&other, tar).unwrap_err();
+        assert_eq!(e.to_string(), "这不是 NextTodo 的备份，或者文件已损坏", "{}", tar.display());
+        assert!(!names(&other).contains(&"restore.part".to_owned()));
+    }
+
+    // A file gone that is in use stops the backup; one no longer used, cleared meanwhile, is left out.
+    std::fs::remove_file(mine.join("db").join(&attachment)).unwrap();
+    let e = local.backup(file.clone()).await.unwrap_err();
+    assert!(e.to_string().starts_with("无法读取附件的文件"), "{e:#}");
+    let detached = call(&local, "POST", "/tools/detach", &session, Some(json!({ "attachments": [id] }))).await;
+    assert_eq!(detached.0, 200, "{}", detached.1);
+    local.backup(file.clone()).await.unwrap();
+    assert_eq!(entries(&file).iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["nexttodo.db"]);
+    nexttodo_server::backup::prepare(&other, &file).unwrap();
+    clean([mine, other, file].into_iter().chain(odd).chain(cuts));
+}
+
+/// An entry of a tar: its name, where its header starts and what is in it.
+struct Entry {
+    name: String,
+    header: u64,
+    data: Vec<u8>,
+}
+
+fn entries(tar: &Path) -> Vec<Entry> {
+    let mut tar = tar::Archive::new(std::fs::File::open(tar).unwrap());
+    let read = |e: std::io::Result<tar::Entry<'_, std::fs::File>>| {
+        let mut e = e.unwrap();
+        let mut data = Vec::new();
+        e.read_to_end(&mut data).unwrap();
+        Entry { name: e.path().unwrap().display().to_string(), header: e.raw_header_position(), data }
+    };
+    tar.entries().unwrap().map(read).collect()
 }
 
 #[tokio::test]

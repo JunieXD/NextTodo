@@ -1,14 +1,19 @@
-//! Backing up and restoring local mode's data (docs/local.md#备份和恢复). Restoring needs no server
-//! running, so that it works when starting failed too: a backup is prepared on a copy beside the
-//! data, the user's go-ahead commits it, and the next start puts it in place.
+//! Backing up and restoring local mode's data (docs/local.md#备份和恢复). A backup is a tar of the
+//! database and its attachments' files. Restoring needs no server running, so that it works when
+//! starting failed too: a backup is prepared on a copy beside the data, the user's go-ahead commits
+//! it, and the next start puts it in place.
 
-use std::io::ErrorKind;
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::{ErrorKind, Read, Seek};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
+use nexttodo_core::model::{AttachmentId, MAX_FILE_SIZE};
 use rusqlite::Connection;
+use uuid::Uuid;
 
-use crate::{Clock, db, local};
+use crate::{Clock, db, files, local};
 
 /// A backup being prepared; not committed yet.
 const PART: &str = "restore.part";
@@ -16,22 +21,50 @@ const PART: &str = "restore.part";
 const READY: &str = "restore";
 pub(crate) const DB_DIR: &str = "db";
 pub(crate) const DB_FILE: &str = "nexttodo.db";
+/// The copy of the database a backup takes, in the data directory until it is in the backup.
+const COPY: &str = "backup.part";
 
-/// Writes a consistent copy of the database at `db` to `to`, replacing what is there in one step.
-pub(crate) fn write(db: &Path, to: &Path) -> anyhow::Result<()> {
+const NOT_OURS: &str = "这不是 NextTodo 的备份，或者文件已损坏";
+
+/// Writes a backup of the data in `dir` to `to`, replacing what is there in one step: a tar of the
+/// files a consistent copy of the database lists, `files/<id>`, and of the copy, `nexttodo.db`.
+pub(crate) fn write(dir: &Path, to: &Path) -> anyhow::Result<()> {
     let mut partial = to.as_os_str().to_owned();
     partial.push(".partial");
     let partial = PathBuf::from(partial);
+    let copy = dir.join(COPY);
     // Left by a backup cut short: VACUUM INTO won't write over it.
-    gone(std::fs::remove_file(&partial))?;
-    let name = partial.to_str().context("备份文件的路径无效")?;
-    let written = Connection::open(db).and_then(|c| c.execute("VACUUM INTO ?1", [name])).map_err(anyhow::Error::from);
-    let done = written.and_then(|_| Ok(std::fs::rename(&partial, to)?));
+    gone(std::fs::remove_file(&copy))?;
+    let done = pack(&dir.join(DB_DIR), &copy, &partial).and_then(|()| Ok(std::fs::rename(&partial, to)?));
+    // What failed is what to tell; the copy is of no more use, and a tar left is incomplete.
+    let _ = std::fs::remove_file(&copy);
     if done.is_err() {
-        // What failed is what to tell; this copy, if any, is incomplete.
         let _ = std::fs::remove_file(&partial);
     }
     done
+}
+
+/// Writes to `to` a tar of the database in `data`, copied to `copy` first, and of its files.
+fn pack(data: &Path, copy: &Path, to: &Path) -> anyhow::Result<()> {
+    let name = copy.to_str().context("数据目录的路径无效")?;
+    Connection::open(data.join(DB_FILE))?.execute("VACUUM INTO ?1", [name])?;
+    let listed: Vec<(String, bool)> = Connection::open(copy)?
+        .prepare("SELECT id, unused_at IS NOT NULL FROM files")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    let mut tar = tar::Builder::new(File::create(to)?);
+    tar.mode(tar::HeaderMode::Deterministic);
+    for (id, unused) in listed {
+        match tar.append_path_with_name(data.join(files::DIR).join(&id), format!("{}/{id}", files::DIR)) {
+            // Deleted by the daily clearing since the copy was taken: no one used it then already.
+            Err(e) if unused && e.kind() == ErrorKind::NotFound => {}
+            appended => appended.with_context(|| format!("无法读取附件的文件 {id}"))?,
+        }
+    }
+    // Last, so that a backup cut short at an entry's end, which reads as a whole tar, has none.
+    tar.append_path_with_name(copy, DB_FILE)?;
+    tar.into_inner()?.sync_all()?;
+    Ok(())
 }
 
 /// Prepares the backup at `from` to replace the data in `dir`: on a copy, checked and made the local
@@ -41,7 +74,7 @@ pub fn prepare(dir: &Path, from: &Path) -> anyhow::Result<()> {
     gone(std::fs::remove_dir_all(&part))?;
     local::private_dir(&part)?;
     let copy = part.join(DB_FILE);
-    let done = std::fs::copy(from, &copy).context("无法读取备份文件").and_then(|_| convert(&copy));
+    let done = unpack(from, &part).and_then(|files| convert(&copy, files));
     let done = done.and_then(|()| {
         // Writable: Windows flushes no file opened for reading only.
         std::fs::OpenOptions::new().write(true).open(&copy)?.sync_all()?;
@@ -55,12 +88,54 @@ pub fn prepare(dir: &Path, from: &Path) -> anyhow::Result<()> {
     done
 }
 
+/// Puts the backup at `from` in `part`: a tar's database and files, nothing else in it, returning the
+/// files' sizes; or a database alone, as backups were before there were attachments.
+fn unpack(from: &Path, part: &Path) -> anyhow::Result<Option<HashMap<AttachmentId, u64>>> {
+    let mut backup = File::open(from).context("无法读取备份文件")?;
+    let mut head = [0; 16];
+    if backup.read_exact(&mut head).is_ok() && &head == b"SQLite format 3\0" {
+        std::fs::copy(from, part.join(DB_FILE)).context("无法读取备份文件")?;
+        return Ok(None);
+    }
+    backup.rewind()?;
+    let dir = part.join(files::DIR);
+    std::fs::create_dir(&dir)?;
+    let (mut database, mut sizes) = (false, HashMap::new());
+    for entry in tar::Archive::new(backup).entries().context(NOT_OURS)? {
+        let mut entry = entry.context(NOT_OURS)?;
+        let name = entry.path().context(NOT_OURS)?.to_str().context(NOT_OURS)?.to_owned();
+        let id = match name.strip_prefix(&format!("{}/", files::DIR)) {
+            None if name == DB_FILE && !database => None,
+            Some(id) if entry.size() <= u64::from(MAX_FILE_SIZE) => {
+                let id = id.parse::<Uuid>().ok().and_then(|u| AttachmentId::try_from(u).ok());
+                Some(id.filter(|id| !sizes.contains_key(id)).context(NOT_OURS)?)
+            }
+            _ => bail!(NOT_OURS),
+        };
+        if !entry.header().entry_type().is_file() {
+            bail!(NOT_OURS);
+        }
+        let mut file = File::create(id.map_or_else(|| part.join(DB_FILE), |id| dir.join(id.to_string())))?;
+        let size = std::io::copy(&mut entry, &mut file)?;
+        file.sync_all()?;
+        match id {
+            Some(id) => _ = sizes.insert(id, size),
+            None => database = true,
+        }
+    }
+    if !database {
+        bail!(NOT_OURS);
+    }
+    sync_dir(&dir)?;
+    Ok(Some(sizes))
+}
+
 /// Checks that the database at `copy` is NextTodo's, of this version or an earlier one, with one
-/// user, then migrates it and makes it the local user's.
-fn convert(copy: &Path) -> anyhow::Result<()> {
+/// user, and that `files`, a tar's, are what it lists, then migrates it and makes it the local user's.
+fn convert(copy: &Path, files: Option<HashMap<AttachmentId, u64>>) -> anyhow::Result<()> {
     let mut c = Connection::open(copy)?;
     if !db::ours(&c)? {
-        bail!("这不是 NextTodo 的备份，或者文件已损坏");
+        bail!(NOT_OURS);
     }
     match c.query_row("SELECT count(*) FROM users", [], |r| r.get::<_, i64>(0))? {
         1 => {}
@@ -69,11 +144,34 @@ fn convert(copy: &Path) -> anyhow::Result<()> {
     }
     c.pragma_update(None, "foreign_keys", true)?;
     db::migrate(&mut c)?;
+    if let Some(files) = files {
+        listed(&c, files)?;
+    }
     local::local_user(&mut c, Clock::system().now())?;
     // Even a backup of this very device's: it is not the history the data has gone on with since.
     c.execute("UPDATE epoch SET value = lower(hex(randomblob(16)))", [])?;
     // One file, without a -wal beside it.
     c.pragma_update_and_check(None, "journal_mode", "DELETE", |_| Ok(()))?;
+    Ok(())
+}
+
+/// Checks that `files` are those the database `c` lists, each of the size recorded, with none in use
+/// missing; those not in use may be, deleted by the daily clearing as the backup was written.
+fn listed(c: &Connection, mut files: HashMap<AttachmentId, u64>) -> anyhow::Result<()> {
+    let listed: Vec<(AttachmentId, u32, bool)> = c
+        .prepare("SELECT id, size, unused_at IS NULL FROM files")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<Result<_, _>>()?;
+    for (id, size, used) in listed {
+        match files.remove(&id) {
+            Some(got) if got == u64::from(size) => {}
+            None if !used => {}
+            _ => bail!(NOT_OURS),
+        }
+    }
+    if !files.is_empty() {
+        bail!(NOT_OURS);
+    }
     Ok(())
 }
 

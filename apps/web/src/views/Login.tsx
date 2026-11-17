@@ -174,8 +174,8 @@ function Brand() {
 }
 
 /** Local mode would not open, its server or its data: why, and what can be done. `retry` when trying
- * again may help. */
-export function StartFailedPage({ message, retry, onRetry }: { message: string; retry: boolean; onRetry(): Promise<void> }) {
+ * again may help; `settings` when a setting of the app's in the system's settings keeps it closed. */
+export function StartFailedPage({ message, retry, settings, onRetry }: { message: string; retry: boolean; settings: boolean; onRetry(): Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState("");
   const { confirm } = useFeedback();
@@ -187,18 +187,26 @@ export function StartFailedPage({ message, retry, onRetry }: { message: string; 
       .finally(() => setBusy(false));
   };
   const restore = () => local.restore((body) => confirm({ title: "用备份替换这台设备上的全部数据？", body, ok: "恢复", danger: true }));
+  const again = (className: string) => (
+    <button className={className} disabled={busy} onClick={act("启动本机模式", onRetry)}>
+      重试
+    </button>
+  );
   return (
     <div className="login" data-tauri-drag-region="deep">
       <div className="login-card">
         <Brand />
         <p className="form-error">{message}</p>
         {failed && <p className="form-error">{failed}</p>}
-        {retry && (
-          <button className="filled-btn" disabled={busy} onClick={act("启动本机模式", onRetry)}>
-            重试
+        {settings ? (
+          <button className="filled-btn" disabled={busy} onClick={act("打开系统设置", () => NextTodo.openAppSettings())}>
+            前往设置
           </button>
+        ) : (
+          retry && again("filled-btn")
         )}
         <div className="login-local">
+          {settings && retry && again("text-btn")}
           <button className="text-btn" disabled={busy} onClick={act("恢复备份", restore)}>
             恢复备份
           </button>

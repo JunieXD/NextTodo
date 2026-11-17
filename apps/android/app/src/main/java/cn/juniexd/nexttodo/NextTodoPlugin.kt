@@ -311,14 +311,17 @@ class NextTodoPlugin : Plugin() {
 
     /** Local mode (`Local`): the server's address, the session's token, the local user and the epoch,
      * as the app's start left them. Should the server not have started, it tries again, and rejects
-     * with code `locked` while an earlier process of the app still has the data. */
+     * with code `locked` while an earlier process of the app still has the data; with code `blocked`
+     * while the system keeps the app from reaching it. */
     @PluginMethod
     fun openLocal(call: PluginCall) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                call.resolve(Local.open(context))
+                call.resolve(Local.open(context).also { Local.reach(it.getString("url")!!) })
             } catch (e: Local.StartFailed) {
                 call.reject(e.message, if (e.locked) "locked" else null)
+            } catch (e: Local.Blocked) {
+                call.reject(e.message, "blocked")
             } catch (e: Exception) {
                 call.reject(forUser("打开本机模式", e), kind(e), e)
             }

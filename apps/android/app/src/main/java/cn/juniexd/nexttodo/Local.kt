@@ -1,12 +1,17 @@
 package cn.juniexd.nexttodo
 
 import android.content.Context
+import android.net.Uri
+import android.system.ErrnoException
+import android.system.OsConstants
 import androidx.work.NetworkType
 import cn.juniexd.nexttodo.reminders.Reminders
 import cn.juniexd.nexttodo.widget.Widget
 import com.getcapacitor.JSObject
 import java.io.File
 import java.io.IOException
+import java.net.InetSocketAddress
+import java.net.Socket
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 
@@ -38,6 +43,23 @@ object Local {
 
     /** The server did not start; `locked` while an earlier process of the app still has its data. */
     class StartFailed(message: String, val locked: Boolean) : Exception(message)
+
+    /** The system keeps the app off the network, its own server included (docs/android.md#澎湃-os). */
+    class Blocked : Exception("系统禁止了 NextTodo 联网，连 App 内置的服务端也连不上。请前往设置，在“应用联网”里允许 WLAN 和移动数据，再点“重试”")
+
+    /** Throws `Blocked` when the system refuses the app a connection to its server at `url`. The
+     * system says nothing of it elsewhere. Other failures are the page's to find, as it connects. */
+    fun reach(url: String) {
+        val uri = Uri.parse(url)
+        try {
+            Socket().use { it.connect(InetSocketAddress(uri.host, uri.port), REACH_MS) }
+        } catch (e: IOException) {
+            val errno = (e.cause as? ErrnoException)?.errno
+            if (errno == OsConstants.EACCES || errno == OsConstants.EPERM) throw Blocked()
+        }
+    }
+
+    private const val REACH_MS = 2_000
 
     /** What the page needs, once the server has started and the app signed in to it. */
     private var opened: JSObject? = null

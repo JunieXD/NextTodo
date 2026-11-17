@@ -27,7 +27,7 @@ export interface Started {
   epoch: string;
 }
 
-/** How the app's native part says the server did not start. */
+/** How the app's native part says the server did not start, or cannot be reached. */
 type Rejected = { message: string; code?: string; locked?: boolean };
 
 /** What the app's native part does for local mode: `apps/desktop/src-tauri/src/local.rs`, and
@@ -39,7 +39,7 @@ const shell =
         mode: async () => (await Preferences.get({ key: "mode" })).value === "local",
         setMode: (on: boolean) => NextTodo.setLocalMode({ on }),
         start: () => NextTodo.openLocal(),
-        locked: (e: Rejected) => e.code === "locked",
+        reason: (e: Rejected): StartFailed["reason"] => (e.code === "locked" || e.code === "blocked" ? e.code : null),
         backup: async (name: string) => (await NextTodo.backupLocal({ name })).saved ?? null,
         prepareRestore: async () => (await NextTodo.prepareRestore()).picked,
         commitRestore: () => NextTodo.commitRestore(),
@@ -49,7 +49,7 @@ const shell =
         mode: () => invoke<boolean>("local_mode"),
         setMode: (on: boolean) => invoke<void>("set_local_mode", { on }),
         start: (renew: boolean) => invoke<Started>("start_local", { renew }),
-        locked: (e: Rejected) => !!e.locked,
+        reason: (e: Rejected): StartFailed["reason"] => (e.locked ? "locked" : null),
         backup: (name: string) => invoke<string | null>("backup_local", { name }),
         prepareRestore: () => invoke<boolean>("prepare_restore"),
         commitRestore: () => invoke<void>("commit_restore"),
@@ -71,11 +71,13 @@ async function setMode(on: boolean) {
   mode = on;
 }
 
-/** The server did not start; `locked` while an earlier process of the app still has its data. */
+/** The server did not start, or the page may not reach it: `locked` while an earlier process of the app
+ * still has its data, `blocked` while the system keeps the app off the network (Android). Trying again
+ * may help with either. */
 export class StartFailed extends Error {
   constructor(
     message: string,
-    readonly locked: boolean,
+    readonly reason: "locked" | "blocked" | null,
   ) {
     super(message);
   }
@@ -88,7 +90,7 @@ async function start(renew: boolean): Promise<Started> {
     return await shell.start(renew);
   } catch (e) {
     const rejected = e as Rejected;
-    throw new StartFailed(rejected.message, shell.locked(rejected));
+    throw new StartFailed(rejected.message, shell.reason(rejected));
   }
 }
 

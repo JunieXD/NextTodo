@@ -12,7 +12,7 @@ import { PanelOut } from "./views/Panel";
 type State =
   | { kind: "loading" }
   | { kind: "out"; notice?: string }
-  | { kind: "failed"; message: string; retry: boolean }
+  | { kind: "failed"; message: string; retry: boolean; settings: boolean }
   | { kind: "in"; session: Session };
 
 const resume = () => (local.inLocalMode() ? local.resume() : Session.resume());
@@ -22,10 +22,10 @@ const outcome = (opening: Promise<Session | null>): Promise<State> =>
   opening.then(
     (session) => (session ? { kind: "in", session } : { kind: "out" }),
     (e: Error): State => {
-      if (e instanceof local.StartFailed) return { kind: "failed", message: e.message, retry: e.locked };
+      if (e instanceof local.StartFailed) return { kind: "failed", message: e.message, retry: e.reason !== null, settings: e.reason === "blocked" };
       // The server started, but its data would not open: the page could not reach it, say. Not the
       // sign-in page, where in local mode there is nothing to sign in to.
-      if (local.inLocalMode()) return { kind: "failed", message: forUser("打开本机数据", e), retry: true };
+      if (local.inLocalMode()) return { kind: "failed", message: forUser("打开本机数据", e), retry: true, settings: false };
       return { kind: "out", notice: forUser("读取登录信息", e) };
     },
   );
@@ -56,7 +56,7 @@ export function App() {
   if (state.kind === "failed") {
     return (
       <Root className="app">
-        <StartFailedPage message={state.message} retry={state.retry} onRetry={() => outcome((resuming = local.resume(true))).then(setState)} />
+        <StartFailedPage message={state.message} retry={state.retry} settings={state.settings} onRetry={() => outcome((resuming = local.resume(true))).then(setState)} />
       </Root>
     );
   }

@@ -1,12 +1,12 @@
 // Local mode in the apps: the server runs inside the app, for this device alone (docs/local.md). On
-// the desktop the page starts it, the first time, and signs in to it each time it loads; on Android
-// the app does both as it starts, and the page asks for what it got. Where it listens and the
+// the desktop the page starts it, the first time, and signs in to it each time it loads; in the phone
+// apps the native side does both, and the page asks for what it got. Where it listens and the
 // session's token are kept by the page nowhere.
 
 import { Preferences } from "@capacitor/preferences";
 import { invoke } from "@tauri-apps/api/core";
-import { NextTodo } from "./android";
-import { ApiError, api, app, connectLocal, dropSession } from "./api/http";
+import { NextTodo } from "./mobile";
+import { ApiError, api, app, connectLocal, dropSession, phoneApp } from "./api/http";
 import type { DriveConfig } from "./api/types/DriveConfig";
 import type { DriveTurnOn } from "./api/types/DriveTurnOn";
 import type { User } from "./api/types/User";
@@ -31,9 +31,8 @@ export interface Started {
 type Rejected = { message: string; code?: string; locked?: boolean };
 
 /** What the app's native part does for local mode: `apps/desktop/src-tauri/src/local.rs`, and
- * `NextTodoPlugin` in `apps/android`. */
-const shell =
-  app === "android"
+ * `NextTodoPlugin` in `apps/android` and `apps/ios`. */
+const shell = phoneApp
     ? {
         // Capacitor's, which the app reads as it starts.
         mode: async () => (await Preferences.get({ key: "mode" })).value === "local",
@@ -100,11 +99,11 @@ export const resume = async (renew = false) => open(await start(renew));
 
 /** Enters local mode from the sign-in page, also when in it already, after the session ended say.
  * Changes of another account not sent yet would be lost: `confirm` is asked first, and null returned
- * when it declines. On Android, the app restarts into it. */
+ * when it declines. In the phone apps, the app restarts into it. */
 export async function enter(confirm: (unsent: number) => Promise<boolean>): Promise<Session | null> {
-  // Android's opens the data as it starts; its server starts here already, to say whose it is. The
-  // session the page had, if any, has ended.
-  const started = app === "android" ? null : await start(true);
+  // The phone apps' open the data as they start; their server starts here already, to say whose it
+  // is. The session the page had, if any, has ended.
+  const started = phoneApp ? null : await start(true);
   const unsent = await unsentOfOthers(started?.user ?? (await NextTodo.startLocal()).user);
   if (unsent && !(await confirm(unsent))) return null;
   // Should a server's token be kept, it never comes back: after local mode the app signs in afresh.
@@ -131,7 +130,7 @@ function open({ url, token, user, epoch }: Started): Promise<Session> {
 }
 
 /** Forgets local mode, when in it, for signing in to a server: the app's own server stops when the
- * app does. On Android the session goes with it, the local server's, or an earlier one's. */
+ * app does. In the phone apps the session goes with it, the local server's, or an earlier one's. */
 export async function forgetMode() {
   if (mode) await setMode(false);
 }
@@ -227,7 +226,7 @@ export async function restore(confirm: (body: string) => Promise<boolean>, sessi
   const lost = session ? session.store.getView().pending : await unsent();
   const body = [
     lost ? `还没发出的 ${lost} 项改动会丢弃，找不回来。` : "",
-    `现在的数据会留在数据目录的旧数据文件夹里；从现在到 NextTodo 重新启动之间，${app === "android" ? "小组件" : "agent "}和 AI 整理写入的改动也只在那里。`,
+    `现在的数据会留在数据目录的旧数据文件夹里；从现在到 NextTodo 重新启动之间，${app === "android" ? "小组件和 " : app === "desktop" ? "agent 和 " : ""}AI 整理写入的改动也只在那里。`,
   ].join("");
   if (!(await confirm(body))) return;
   // Should it fail, nothing has changed, and the session carries on.

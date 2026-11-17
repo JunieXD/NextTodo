@@ -45,7 +45,7 @@ private var cleared = false
 /** In the cache, the attachments' files written to be opened or saved. */
 private const val ATTACHMENTS = "attachments"
 
-/** What the web app asks of Android beyond the stock plugins: see `apps/web/src/android.ts`. Its
+/** What the web app asks of Android beyond the stock plugins: see `apps/web/src/mobile.ts`. Its
  * permission `calendar` is checked and asked for with the plugin's own `checkPermissions` and
  * `requestPermissions`; `notifications`, which Android asks for only from 13 on, with
  * `reminderSettings` and `allowNotifications`. */
@@ -69,7 +69,7 @@ class NextTodoPlugin : Plugin() {
         }
     }
 
-    /** Hands over the reminders, as JSON in the shape `apps/web/src/android.ts` gives
+    /** Hands over the reminders, as JSON in the shape `apps/web/src/mobile.ts` gives
      * (docs/android.md#截止提醒). The first time there are some, asks for notifications. */
     @PluginMethod
     fun setReminders(call: PluginCall) {

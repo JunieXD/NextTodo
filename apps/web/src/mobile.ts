@@ -1,10 +1,11 @@
-// What only the Android app does: deadline reminders shown by the device, the list the home-screen
-// widget shows, the changes the widget and reminders made, and the tasks written into the system
-// calendar. See docs/android.md.
+// What only the phone apps do: deadline reminders shown by the device, the changes the reminders made,
+// and on Android the list the home-screen widget shows, the changes it made and the tasks written into
+// the system calendar. See docs/android.md and docs/ios.md.
 
 import { App } from "@capacitor/app";
 import { type PermissionState, registerPlugin } from "@capacitor/core";
 import { navigate } from "wouter/use-browser-location";
+import { app } from "./api/http";
 import type { Attachment } from "./api/types/Attachment";
 import type { FolderId } from "./api/types/FolderId";
 import type { Mutation } from "./api/types/Mutation";
@@ -36,7 +37,8 @@ export interface ReminderSettings {
   overlay: boolean;
 }
 
-/** The app's own plugin, in `apps/android`. */
+/** The app's own plugin, in `apps/android` and `apps/ios`; iOS has what it needs only
+ * (docs/ios.md#结构). */
 interface NextTodoPlugin {
   /** Hands the device the reminders, as JSON in the shape `deviceReminders` gives; the first time
    * there are some, asks for notifications. */
@@ -80,9 +82,10 @@ interface NextTodoPlugin {
   clearCalendar(): Promise<void>;
   checkPermissions(): Promise<{ calendar: PermissionState }>;
   requestPermissions(o: { permissions: "calendar"[] }): Promise<{ calendar: PermissionState }>;
-  /** The system settings page of this app, where autostart and battery use are allowed. */
+  /** The system settings page of this app, where autostart and battery use are allowed; on iOS, its
+   * notification settings. */
   openAppSettings(): Promise<void>;
-  /** The APK's version, and its native version, which builds of the web app may need. */
+  /** The installed version, and its native version, which builds of the web app may need. */
   appInfo(): Promise<{ version: string; native: number }>;
   /** Says the web app has started, so that the build being tried is kept. */
   webReady(): Promise<void>;
@@ -100,7 +103,8 @@ interface NextTodoPlugin {
   startLocal(): Promise<{ user: string }>;
   /** Enters local mode or leaves it, from the next start. */
   setLocalMode(o: { on: boolean }): Promise<void>;
-  /** Ends the app's process and opens the app again. */
+  /** Ends the app's process and opens the app again; iOS, where an app cannot, stops local mode's
+   * server and loads the page again (docs/ios.md#本机模式). */
   restart(): Promise<void>;
   /** Asks where to save a backup, offering `name`, and writes it there; `saved` is what the file is
    * called, nothing when the user cancelled. */
@@ -219,8 +223,9 @@ export function setCalendarFolders(userId: string, folders: (FolderId | null)[])
   return inTurn(async () => await writeCalendar?.());
 }
 
-/** Keeps the reminders, the widget and the calendar in step with the local copy of `user`'s data, also
- * when the app comes back to the front: the time has moved on, and the permissions may have changed.
+/** Keeps the reminders, and on Android the widget and the calendar, in step with the local copy of
+ * `user`'s data, also when the app comes back to the front: the time has moved on, and the
+ * permissions may have changed.
  * Takes in the changes made by the widget and reminders meanwhile. An update that fails is reported to
  * `failed`; the next change tries again. Returns how to stop and clear them. */
 export function watch(store: Store, user: string, failed: (e: unknown) => void): () => Promise<void> {
@@ -231,7 +236,7 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
     // be behind the server.
     const start = board.nextStart();
     const nextStart = start ? [start.date, start.time].filter(Boolean).join(" ") : undefined;
-    await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board)), seq: store.since, nextStart });
+    if (app === "android") await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board)), seq: store.since, nextStart });
     await NextTodo.setReminders({ reminders: JSON.stringify(deviceReminders(board)) });
   };
   const calendar = () => NextTodo.updateCalendar({ events: JSON.stringify(calendarEvents(store.getView().board, calendarFolders(user))) });
@@ -242,7 +247,7 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
   // The calendar in a turn of its own: failing, it holds back neither the reminders nor the widget.
   const run = () => {
     inTurn(update).catch(failed);
-    inTurn(calendar).catch(failed);
+    if (app === "android") inTurn(calendar).catch(failed);
   };
   const changed = () => {
     timer ??= setTimeout(() => {
@@ -257,7 +262,7 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
   };
   const unsubscribe = store.subscribe(changed);
   document.addEventListener("visibilitychange", shown);
-  writeCalendar = calendar;
+  if (app === "android") writeCalendar = calendar;
   takeOver().catch(failed);
   run();
   return async () => {
@@ -270,12 +275,13 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
   };
 }
 
-/** Empties the widget, takes away every reminder, those shown already too, and the events written in
- * the calendar; after the updates under way. The calendar failing goes to `failed` and holds back
- * neither the rest nor the sign-out: what is left there stays noted, and the next session's first
- * update deletes it, reporting should it fail again. Before a session there is no one to tell, and
+/** Takes away every reminder, those shown already too, and on Android empties the widget and deletes
+ * the events written in the calendar; after the updates under way. The calendar failing goes to
+ * `failed` and holds back neither the rest nor the sign-out: what is left there stays noted, and the
+ * next session's first update deletes it, reporting should it fail again. Before a session there is no one to tell, and
  * that update alone reports. */
 export const clear = async (failed: (e: unknown) => void = () => {}) => {
+  if (app !== "android") return await inTurn(() => NextTodo.clearReminders());
   const calendar = inTurn(() => NextTodo.clearCalendar()).catch(failed);
   await inTurn(async () => {
     await NextTodo.updateWidget({ tasks: "[]" });
@@ -297,8 +303,8 @@ function open(url: string) {
   else if (kind === "add") navigate("/?add");
 }
 
-/** Listens for taps on notifications and the widget. The plugin keeps the one that started the app
- * until there is a listener. */
+/** Listens for taps on notifications and the widget, and for Android's back button. The plugin keeps
+ * the tap that started the app until there is a listener. */
 export async function listen() {
   await App.addListener("appUrlOpen", (e) => open(e.url));
   await App.addListener("backButton", () => {

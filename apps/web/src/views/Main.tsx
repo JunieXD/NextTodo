@@ -137,6 +137,7 @@ function Updates() {
   useEffect(() => {
     if (pending?.kind === "apk") snack({ text: `NextTodo ${pending.version} 可以安装`, action: "安装", onAction: () => void install(pending.url, snack), ms: 8000 });
     if (pending?.kind === "restart") snack({ text: "新版本已准备好，重启后生效", action: "重启", onAction: () => void restart(snack), ms: 8000 });
+    if (pending?.kind === "sidestore") snack({ text: `NextTodo ${pending.version} 已发布，在 SideStore 里更新`, ms: 8000 });
   }, [pending, snack]);
   return null;
 }

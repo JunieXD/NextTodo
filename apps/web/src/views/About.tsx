@@ -55,14 +55,17 @@ export function About() {
           <div className="row">
             <div className="row-inner">
               <span className="folder-main">
-                <span>{pending.kind === "apk" ? "有新版本" : "新版本已准备好"}</span>
-                <span className="folder-sub">{pending.kind === "apk" ? `${pending.version}，下载后由系统安装` : `${pending.version}，重启后生效`}</span>
+                <span>{pending.kind === "restart" ? "新版本已准备好" : "有新版本"}</span>
+                <span className="folder-sub">
+                  {pending.version}，{{ apk: "下载后由系统安装", restart: "重启后生效", sidestore: "在 SideStore 里更新" }[pending.kind]}
+                </span>
               </span>
-              {pending.kind === "apk" ? (
+              {pending.kind === "apk" && (
                 <button className="text-btn" onClick={() => void install(pending.url, snack)}>
                   下载安装
                 </button>
-              ) : (
+              )}
+              {pending.kind === "restart" && (
                 <button className="text-btn" onClick={() => void restart(snack)}>
                   重启
                 </button>

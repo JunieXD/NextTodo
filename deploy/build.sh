@@ -3,13 +3,15 @@
 #
 #   target/deploy           what the server image holds: static Linux server binaries for amd64 and
 #                           arm64, the web app, and under its `/app/` the apps' updates
-#   target/release-assets   what is downloaded: the Android APK, the macOS dmgs for Apple silicon and
-#                           Intel, the Windows setup, the command line for macOS, Linux and Windows,
-#                           and the apps' updates for local mode
+#   target/release-assets   what is downloaded: the Android APK, the iOS IPA and SideStore's source for
+#                           it, the macOS dmgs for Apple silicon and Intel, the Windows setup, the
+#                           command line for macOS, Linux and Windows, and the apps' updates for local
+#                           mode
 #
 # The apps are signed with keys given in the environment, never in the repository:
 # NEXTTODO_KEYSTORE and NEXTTODO_KEYSTORE_PASSWORD (docs/android.md#构建和签名),
-# TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD (docs/desktop.md#更新).
+# TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD (docs/desktop.md#更新). The iOS app
+# is not: SideStore signs it on the phone (docs/ios.md#构建和发布).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -40,6 +42,8 @@ pnpm install --frozen-lockfile
 # The apps carry this build of the web app, as it is before compressing it for the server.
 (cd apps/web && pnpm exec cap sync android)
 (cd apps/android && ./gradlew --quiet assembleRelease)
+(cd apps/web && pnpm exec cap sync ios)
+apps/ios/build.sh
 # CI keeps the dmg script from laying out the window in Finder, which needs a desktop session.
 (cd apps/desktop && CI=true pnpm tauri build --bundles app,dmg --config "$tauri")
 (cd apps/desktop && CI=true pnpm tauri build --target x86_64-apple-darwin --bundles app,dmg --config "$tauri")
@@ -88,6 +92,7 @@ jq -n --arg version "$version" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg
 
 # Without the version in their names, so that `releases/latest/download/<name>` always finds them.
 cp "$apk" "$assets/NextTodo-android.apk"
+cp apps/ios/build/NextTodo.ipa "$assets/NextTodo-ios.ipa"
 cp "$bundle/dmg/NextTodo_${version}_aarch64.dmg" "$assets/NextTodo-macos-arm64.dmg"
 cp "$intel/dmg/NextTodo_${version}_x64.dmg" "$assets/NextTodo-macos-x64.dmg"
 cp "$windows" "$assets/NextTodo-windows-x64-setup.exe"
@@ -105,5 +110,22 @@ cp "$intel/macos/NextTodo.app.tar.gz" "$assets/NextTodo-x64.app.tar.gz"
 jq --arg url "$release/NextTodo-android.apk" '.url = $url' "$app/android.json" > "$assets/android.json"
 jq --arg mac "$release/NextTodo.app.tar.gz" --arg intel "$release/NextTodo-x64.app.tar.gz" --arg windows "$release/NextTodo-windows-x64-setup.exe" \
   '.platforms["darwin-aarch64"].url = $mac | .platforms["darwin-x86_64"].url = $intel | .platforms["windows-x86_64"].url = $windows' "$app/desktop.json" > "$assets/desktop.json"
+# SideStore's source for the iOS app, which it also checks for updates (docs/ios.md#更新): this version
+# alone, its download named in full. The permissions are read from the app, as SideStore refuses one
+# whose permissions differ from its source's.
+plist=apps/ios/build/release/NextTodo.xcarchive/Products/Applications/App.app/Info.plist
+jq -n --arg version "$version" --arg build "${version##*.}" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --arg url "$release/NextTodo-ios.ipa" --argjson size "$(stat -f %z "$assets/NextTodo-ios.ipa")" \
+  --argjson privacy "$(plutil -convert json -o - "$plist" | jq 'with_entries(select(.key | endswith("UsageDescription")))')" \
+  '{name: "NextTodo", identifier: "cn.juniexd.nexttodo.source",
+    sourceURL: "https://github.com/JunieXD/NextTodo/releases/latest/download/sidestore.json",
+    website: "https://juniexd.github.io/NextTodo/", tintColor: "#2E8E6C",
+    apps: [{name: "NextTodo", bundleIdentifier: "cn.juniexd.nexttodo", developerName: "JunieXD",
+      subtitle: "理清先后，专注当下", localizedDescription: "以先后关系为核心的待办：事项之间可以设依赖，随时告诉你现在能做什么。",
+      iconURL: "https://raw.githubusercontent.com/JunieXD/NextTodo/main/apps/web/public/icon-maskable-512.png",
+      tintColor: "#2E8E6C", category: "utilities",
+      versions: [{version: $version, buildVersion: $build, date: $date, downloadURL: $url, size: $size, minOSVersion: "16.4"}],
+      appPermissions: {entitlements: [], privacy: $privacy}}],
+    news: []}' > "$assets/sidestore.json"
 (cd "$assets" && shasum -a 256 NextTodo* nexttodo-* > SHA256SUMS)
 echo "已构建 NextTodo $version：$stage、$assets"

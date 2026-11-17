@@ -2,7 +2,7 @@
 
 ## 定位
 
-待办应用，核心是事项之间的先后关系：事项和依赖组成一张有向无环图，首页随时列出“现在能做的事”。文件夹可以无限嵌套，用来分开不同的项目。手机优先，网页、Android、macOS、Windows 实时同步，离线也能用。agent 通过 API、命令行和 MCP 管理整个待办。支持多个账号，朋友凭邀请码注册；文件夹可以共享给同一台服务器上的其他人，几个人分工做一个项目，见[共享](#共享)。不想部署服务器的，App 可以只在本机使用，见[本机模式](local.md)。
+待办应用，核心是事项之间的先后关系：事项和依赖组成一张有向无环图，首页随时列出“现在能做的事”。文件夹可以无限嵌套，用来分开不同的项目。手机优先，网页、Android、iOS、macOS、Windows 实时同步，离线也能用。agent 通过 API、命令行和 MCP 管理整个待办。支持多个账号，朋友凭邀请码注册；文件夹可以共享给同一台服务器上的其他人，几个人分工做一个项目，见[共享](#共享)。不想部署服务器的，App 可以只在本机使用，见[本机模式](local.md)。
 
 ## 概念和规则
 
@@ -242,7 +242,7 @@ tasks:
 
 - 用户名加密码登录，密码用 Argon2id 存储。
 - 第一个管理员在服务器上用命令行创建。其他人注册需要邀请码，邀请码由管理员生成，每个只能用一次。
-- 登录后每台设备得到一个会话令牌：网页存在 HttpOnly Cookie 里，App 存在 App 私有的存储里（Android 是 SharedPreferences，小组件也要读；桌面 App 是 WebView 的 `localStorage`），没有另外加密。设置里可以看到并注销各设备。
+- 登录后每台设备得到一个会话令牌：网页存在 HttpOnly Cookie 里，App 存在 App 私有的存储里（Android 是 SharedPreferences，小组件也要读；iOS 是 UserDefaults；桌面 App 是 WebView 的 `localStorage`），没有另外加密。设置里可以看到并注销各设备。
 - 每个用户只能读写自己的数据和共享给自己的文件夹。所有表都带 `owner_id`，另有一张成员表记录谁是哪个共享的文件夹的成员；服务端在每个查询上按“自己的，加上自己是成员的文件夹里的”过滤。现有数据不用改。
 
 ## 同步
@@ -296,6 +296,13 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 - 可以把带截止时间的事项写进系统日历，见 [Android](android.md#写进系统日历)。
 - 用自签名的密钥打正式版 APK，直接安装。密钥不进仓库。
 
+### iOS
+
+- 和 Android 一样，Capacitor 外壳加载打包在安装包里的前端，有截止提醒和[本机模式](local.md)，见 [iOS](ios.md)。
+- 截止提醒用系统的本地通知，到点由系统弹出，App 不用运行。通知上可以直接“完成”，或推迟 15 分钟、1 小时、3 小时，只推迟这台手机上的这一次。
+- 没有小组件、弹窗提醒和写进系统日历。
+- 不上架 App Store：发布不签名的 IPA，用户用 SideStore 和自己的 Apple ID 安装、更新。
+
 ### 桌面（macOS 和 Windows）
 
 - Tauri 2 外壳加载打包在安装包里的前端，macOS 版和 Windows 版是同一套代码。
@@ -311,8 +318,10 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 | 服务端 `crates/server` | Rust：axum、tokio、rusqlite（SQLite，WAL 模式）、rmcp（MCP）、argon2 |
 | 命令行 `crates/cli` | Rust：clap、ureq（HTTP）、serde-saphyr（读 YAML 计划）、chrono（本机的日期，完成重复的事项时用） |
 | Android 本机模式 `crates/android` | Rust：jni，把服务端编译成 App 里的动态库，见[本机模式](local.md#android) |
+| iOS 本机模式 `crates/ios` | Rust：把服务端编译成静态库链接进 App，经 C 接口调用，见 [iOS](ios.md#本机模式) |
 | 前端 `apps/web` | React、Vite、TypeScript、Tailwind CSS、Radix、React Flow + elkjs、react-markdown + remark-gfm、vite-plugin-pwa、Lucide（图标）；动效用 CSS 动画 |
 | Android `apps/android` | Capacitor，小组件用 Kotlin + Jetpack Glance |
+| iOS `apps/ios` | Capacitor，原生部分用 Swift |
 | 桌面 `apps/desktop` | Tauri 2（macOS、Windows） |
 | 官网 `apps/site` | VitePress，发布到 GitHub Pages，见[官网](deploy.md#官网) |
 | 类型共享 | ts-rs 从 Rust 类型生成 TypeScript 类型 |
@@ -344,12 +353,13 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 |---|---|---|
 | Android | 热更新：只下载变了的文件，下次打开 App 生效，新版本打不开就退回 | 下载新 APK，由系统弹出安装确认 |
 | 桌面 | 网页打包在 App 里，随整包更新 | Tauri 官方更新插件：后台下载整个新版本、校验签名，重启生效 |
+| iOS | 网页打包在 App 里，随整包更新 | App 不能自己安装：提示有新版本，在 SideStore 里更新 |
 
 - 平时的改动几乎都在网页部分，Android 只在原生部分（`apps/android`、Capacitor 配置和插件）改了时才要装新 APK；桌面 App 每次发布都是整包，几 MB。
 - 只从登录的服务器经 HTTPS 下载，和网页端一样信任这台服务器。APK 由系统校验签名，必须和已装的一致；桌面更新包用单独的更新密钥签名，App 里带着公钥校验。
 - 每次构建除了服务端，还构建 Android 正式包和桌面更新包，连同版本说明一起放进镜像的 `/app/`。细节见 [Android](android.md#更新) 和[桌面 App](desktop.md#更新)。
-- 本机模式没有服务器，从 GitHub Releases 取更新，见[本机模式](local.md#更新)。
-- 设置页“关于”只显示一个版本号：正在用的这一份的版本，写法和服务器、Release 一样，是 `0.1.<提交数>`。浏览器里叫“网页版本”，App 里叫“App 版本”。Android 的网页部分单独热更新，常常比安装包新，两者不同时“App 版本”下面另写一行“安装包 0.1.<提交数>”；桌面 App 和本机模式的网页就在安装包里，版本总是相同，不另列。
+- 本机模式没有服务器，从 GitHub Releases 取更新，见[本机模式](local.md#更新)。iOS 总是从 GitHub 取：服务器上没有 iOS 的安装包，见 [iOS](ios.md#更新)。
+- 设置页“关于”只显示一个版本号：正在用的这一份的版本，写法和服务器、Release 一样，是 `0.1.<提交数>`。浏览器里叫“网页版本”，App 里叫“App 版本”。Android 的网页部分单独热更新，常常比安装包新，两者不同时“App 版本”下面另写一行“安装包 0.1.<提交数>”；桌面 App、iOS App 和本机模式的网页就在安装包里，版本总是相同，不另列。
 - 自动检查失败时不打扰，下次照常再查。设置页“关于”里点按“App 版本”一行，立即检查一次，不受检查间隔限制；这一行下面显示检查的结果：正在检查、已是最新版本（附上次检查的时间）、新版本已下载（Android 的网页部分，下次打开时生效），或者失败的原因：
   - 连不上服务器或 GitHub：“无法连接服务器（或 GitHub），请检查网络后重试”；
   - 服务器上暂时没有可用的更新文件，或下载期间换了版本：“暂时无法获取新版本，请稍后重试”；

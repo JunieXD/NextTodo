@@ -77,7 +77,7 @@ private object Colors {
 private val TaskKey = ActionParameters.Key<String>("task")
 private val TitleKey = ActionParameters.Key<String>("title")
 
-/** Opens the app at `nexttodo://…`, which the web app reads (`apps/web/src/android.ts`). */
+/** Opens the app at `nexttodo://…`, which the web app reads (`apps/web/src/mobile.ts`). */
 private fun open(context: Context, url: String) =
     actionStartActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url), context, MainActivity::class.java))
 

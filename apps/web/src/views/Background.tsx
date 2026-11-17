@@ -1,9 +1,10 @@
-// In the Android app: what reminders, the widget and the calendar need from the system, and where to
-// grant it.
+// In the phone apps: what reminders, and on Android the widget and the calendar, need from the system,
+// and where to grant it.
 
 import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
-import { type CalendarTarget, type DeviceCalendar, NextTodo, type ReminderSettings, calendarFolders, setCalendar, setCalendarFolders } from "../android";
+import { type CalendarTarget, type DeviceCalendar, NextTodo, type ReminderSettings, calendarFolders, setCalendar, setCalendarFolders } from "../mobile";
+import { app } from "../api/http";
 import type { FolderId } from "../api/types/FolderId";
 import { useSession, useView } from "../session";
 import { Select, Switch } from "../ui/controls";
@@ -16,6 +17,7 @@ const TIP_SEEN = "nexttodo.backgroundTip";
 type Allowed = ReminderSettings & { calendar: boolean };
 
 async function allowed(): Promise<Allowed> {
+  if (app === "ios") return { ...(await NextTodo.reminderSettings()), calendar: false };
   const [r, c] = await Promise.all([NextTodo.reminderSettings(), NextTodo.checkPermissions()]);
   return { ...r, calendar: c.calendar === "granted" };
 }
@@ -39,8 +41,8 @@ async function allowNotifications() {
   if (!(await NextTodo.allowNotifications()).notify) await NextTodo.openAppSettings();
 }
 
-/** The settings section: notifications, exact alarms, the reminder card, autostart, and the system
- * calendar. */
+/** The settings section: notifications, and on Android exact alarms, the reminder card, autostart,
+ * and the system calendar. */
 export function BackgroundSettings() {
   const [state, setState] = useState<Allowed | null>(null);
   const check = () => allowed().then(cardAllowed).then(setState);
@@ -60,10 +62,12 @@ export function BackgroundSettings() {
     await NextTodo.setCard({ on });
     await check();
   };
+  const notify = <Row title="通知" sub={state.notify ? "已允许" : "未允许时不会弹出截止提醒"} action={state.notify ? undefined : ["允许", () => allowNotifications().then(check)]} />;
+  if (app === "ios") return <div className="group">{notify}</div>;
   return (
     <>
       <div className="group">
-        <Row title="通知" sub={state.notify ? "已允许" : "未允许时不会弹出截止提醒"} action={state.notify ? undefined : ["允许", () => allowNotifications().then(check)]} />
+        {notify}
         <Row title="准时提醒" sub={state.exact ? "已允许" : "未允许时提醒可能延迟几分钟"} action={state.exact ? undefined : ["前往设置", () => NextTodo.openExactAlarmSettings()]} />
         <Switch label="弹窗提醒" sub="到点在屏幕底部弹出卡片，不点不收起" on={state.card} onChange={card} />
         {state.card && !state.overlay && <Row title="显示在其他应用上层" sub="未允许时弹窗提醒改用顶部横幅" action={["前往设置", () => NextTodo.openOverlaySettings()]} />}

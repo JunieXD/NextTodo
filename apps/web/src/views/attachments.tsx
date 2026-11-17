@@ -24,8 +24,8 @@ import {
 } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { useContext, useEffect, useRef, useState } from "react";
-import { NextTodo, writeAttachment } from "../android";
-import { ApiError, app } from "../api/http";
+import { NextTodo, writeAttachment } from "../mobile";
+import { ApiError, app, phoneApp } from "../api/http";
 import type { Attachment } from "../api/types/Attachment";
 import type { Mutation } from "../api/types/Mutation";
 import type { TaskId } from "../api/types/TaskId";
@@ -106,7 +106,7 @@ function useFileActions() {
   const failed = (what: string) => (e: unknown) => snack(forUser(what, e));
   return {
     open(a: Attachment) {
-      if (app === "android") {
+      if (phoneApp) {
         return void files
           .blob(a)
           .then((b) => writeAttachment(a, b))
@@ -132,7 +132,7 @@ function useFileActions() {
       );
     },
     save(a: Attachment) {
-      if (app === "android") {
+      if (phoneApp) {
         return void files
           .blob(a)
           .then((b) => writeAttachment(a, b))

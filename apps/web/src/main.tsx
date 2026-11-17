@@ -3,8 +3,8 @@ import { createRoot } from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
 import { App } from "./App";
 import { loadAiMode } from "./ai";
-import { app, desktopOs, loadServer, native } from "./api/http";
-import * as android from "./android";
+import { app, desktopOs, loadServer, native, phoneApp } from "./api/http";
+import * as mobile from "./mobile";
 import * as desktop from "./desktop";
 import { loadMode } from "./local";
 import { onSignInElsewhere } from "./session";
@@ -29,7 +29,7 @@ if (desktop.inPanel) {
 // The app carries its files in the package; only the web app needs a service worker for offline use.
 if (!native) registerSW({ immediate: true });
 await Promise.all([loadServer(), loadMode(), loadAiMode()]);
-if (app) await (app === "android" ? android : desktop).listen();
+if (app) await (phoneApp ? mobile : desktop).listen();
 createRoot(document.getElementById("app")!).render(
   <StrictMode>
     <ErrorBoundary>

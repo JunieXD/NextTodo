@@ -3,7 +3,7 @@
 // holds.
 
 import { createContext, useContext, useSyncExternalStore } from "react";
-import { ApiError, api, app, connectedLocally, dropSession, native, syncToken, syncUrl } from "./api/http";
+import { ApiError, api, app, connectedLocally, dropSession, native, phoneApp, syncToken, syncUrl } from "./api/http";
 import type { Effect } from "./api/types/Effect";
 import type { ErrorBody } from "./api/types/ErrorBody";
 import type { LogEntry } from "./api/types/LogEntry";
@@ -13,7 +13,7 @@ import type { Op } from "./api/types/Op";
 import type { SeqSnapshot } from "./api/types/SeqSnapshot";
 import type { User } from "./api/types/User";
 import { Rejected } from "./domain/apply";
-import * as android from "./android";
+import * as mobile from "./mobile";
 import * as desktop from "./desktop";
 import { type FileMessage, Files } from "./sync/files";
 import { type Saver, forget, forgetCopy, forgetOthers, load, saver } from "./sync/persist";
@@ -165,7 +165,7 @@ export class Session {
     tabs.addEventListener("message", this.heard);
     const failed = (e: unknown) => this.listeners.appFailed(e);
     // The main window hands the desktop app the reminders, not the panel too.
-    if (app === "android") this.unwatch = android.watch(this.store, user.id, failed);
+    if (phoneApp) this.unwatch = mobile.watch(this.store, user.id, failed);
     else if (app === "desktop" && !desktop.inPanel) this.unwatch = desktop.watch(this.store, failed);
   }
 
@@ -225,7 +225,7 @@ export class Session {
   static async resume(): Promise<Session | null> {
     // In the app, the session is the token kept on the device: without one, what the widget and the
     // reminders show is no one's. On the Mac they last only while the app runs.
-    if (app === "android" && !syncToken()) await android.clear();
+    if (phoneApp && !syncToken()) await mobile.clear();
     const copy = crypto.randomUUID();
     const found = await turn(async () => {
       const out = pendingSignOut();
@@ -251,7 +251,7 @@ export class Session {
         // In the app, the token goes too, as when a session ends.
         if (native) {
           await dropSession();
-          if (app === "android") await android.clear();
+          if (phoneApp) await mobile.clear();
         }
         return null;
       }
@@ -358,7 +358,7 @@ async function fresh({ id, user }: Login, copy: string): Promise<Session> {
 async function forgetUser(user: User) {
   await forget(user.id);
   // What the widget and reminders could not send yet is this data's too.
-  if (app === "android") await android.forget();
+  if (phoneApp) await mobile.forget();
   // The sign-in goes last: cut short before, there is no data left to open with.
   if (cachedLogin()?.user.id === user.id) localStorage.removeItem(LOGIN);
   tabs.postMessage({ signedOut: { id: next(), user } } satisfies Message);
@@ -376,7 +376,7 @@ async function finishSignOut(out: Login) {
   // reminders last only while the app runs.
   if (native) {
     await dropSession();
-    if (app === "android") await android.clear();
+    if (phoneApp) await mobile.clear();
   }
   if (loggedOut) localStorage.removeItem(SIGNED_OUT);
 }

@@ -1,7 +1,9 @@
 // Light, dark, or following the system. Switching cross-fades the whole page instead of letting
 // every element run its own transition.
 
+import { SystemBars, SystemBarsStyle } from "@capacitor/core";
 import { useSyncExternalStore } from "react";
+import { app } from "./api/http";
 
 export type Theme = "system" | "light" | "dark";
 
@@ -15,6 +17,8 @@ export function applyTheme() {
   const isDark = theme() === "dark" || (theme() === "system" && dark.matches);
   document.documentElement.dataset.theme = isDark ? "dark" : "light";
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", isDark ? "#0F1512" : "#F5FBF6");
+  // iOS colors the status bar's text by the system's appearance, not the page's.
+  if (app === "ios") void SystemBars.setStyle({ style: isDark ? SystemBarsStyle.Dark : SystemBarsStyle.Light });
 }
 
 const crossFade = (change: () => void) => (document.startViewTransition ? document.startViewTransition(change) : change());

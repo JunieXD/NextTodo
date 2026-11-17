@@ -163,14 +163,14 @@ pub fn app(state: AppState) -> Router {
     Router::new().nest("/api/v1", api).merge(mcp).layer(CompressionLayer::new()).layer(TraceLayer::new_for_http()).with_state(state)
 }
 
-/// Lets the Android app's page, at `https://localhost`, call the server: in local mode everything,
-/// otherwise the files, which are too large for the bridge to native HTTP. It sends the token in
-/// `Authorization`; no cookie (docs/api.md#附件). Nested, as in local mode, the inner layer's headers
-/// take the outer's place.
+/// Lets the apps' pages, at `https://localhost` on Android and `capacitor://localhost` on iOS, call the
+/// server: in local mode everything, otherwise the files, which are too large for the bridge to native
+/// HTTP. They send the token in `Authorization`; no cookie (docs/api.md#附件). Nested, as in local
+/// mode, the inner layer's headers take the outer's place.
 pub(crate) fn page_cors() -> tower_http::cors::CorsLayer {
     use axum::http::{Method, header};
     tower_http::cors::CorsLayer::new()
-        .allow_origin(HeaderValue::from_static("https://localhost"))
+        .allow_origin([HeaderValue::from_static("https://localhost"), HeaderValue::from_static("capacitor://localhost")])
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
         .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
         .max_age(std::time::Duration::from_secs(3600))
@@ -209,17 +209,17 @@ mod tests {
 
     use super::*;
 
-    /// In local mode on Android the whole app has the layer, and the files routes have it again.
+    /// In local mode in the apps the whole app has the layer, and the files routes have it again.
     #[tokio::test]
-    async fn the_page_is_allowed_once_where_the_layers_nest() {
+    async fn each_app_page_is_allowed_once_where_the_layers_nest() {
         let dir = std::env::temp_dir().join(format!("nexttodo-cors-{}", uuid::Uuid::now_v7()));
         let state = AppState::new(Db::open_in_memory().unwrap(), Clock::system(), Files::new(dir));
         let router = app(state).layer(page_cors());
-        let req = Request::get(format!("/api/v1/files/{}", uuid::Uuid::now_v7()))
-            .header(header::ORIGIN, "https://localhost")
-            .body(Body::empty())
-            .unwrap();
-        let res = router.oneshot(req).await.unwrap();
-        assert_eq!(res.headers().get_all(header::ACCESS_CONTROL_ALLOW_ORIGIN).iter().collect::<Vec<_>>(), ["https://localhost"]);
+        for origin in ["https://localhost", "capacitor://localhost"] {
+            let req =
+                Request::get(format!("/api/v1/files/{}", uuid::Uuid::now_v7())).header(header::ORIGIN, origin).body(Body::empty()).unwrap();
+            let res = router.clone().oneshot(req).await.unwrap();
+            assert_eq!(res.headers().get_all(header::ACCESS_CONTROL_ALLOW_ORIGIN).iter().collect::<Vec<_>>(), [origin]);
+        }
     }
 }

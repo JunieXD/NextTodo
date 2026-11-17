@@ -26,7 +26,7 @@ features:
   - title: 本机或服务器
     details: App 可以只在本机使用，不需要服务器和账号；也可以连接自己部署的服务器，在多台设备之间同步。
   - title: 各端一致，离线可用
-    details: 网页、Android、macOS 和 Windows 使用同一套界面；操作在本地立即生效，联网后自动同步。
+    details: 网页、Android、iOS、macOS 和 Windows 使用同一套界面；操作在本地立即生效，联网后自动同步。
 ---
 
 ## 视频介绍

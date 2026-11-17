@@ -1,7 +1,7 @@
 // Requests to the server. The web app is served by the server and signs in with an HttpOnly cookie,
-// so it handles no token. The Android and desktop apps talk to the server they were told about and
+// so it handles no token. The Android, iOS and desktop apps talk to the server they were told about and
 // sign in with a token, both kept in Capacitor Preferences (`localStorage` outside Capacitor), where
-// the Android widget reads them too. See docs/android.md and docs/desktop.md.
+// the native side reads them too. See docs/android.md, docs/ios.md and docs/desktop.md.
 
 import { Capacitor } from "@capacitor/core";
 import { Preferences } from "@capacitor/preferences";
@@ -9,7 +9,10 @@ import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { ErrorBody } from "./types/ErrorBody";
 
 /** The app this runs in, if any. */
-export const app = Capacitor.isNativePlatform() ? "android" : "__TAURI_INTERNALS__" in globalThis ? "desktop" : null;
+export const app = Capacitor.isNativePlatform() ? (Capacitor.getPlatform() as "android" | "ios") : "__TAURI_INTERNALS__" in globalThis ? "desktop" : null;
+
+/** Running in the Android or iOS app, whose native side is the same plugin (mobile.ts). */
+export const phoneApp = app === "android" || app === "ios";
 
 /** Running in an app rather than a browser. */
 export const native = app !== null;
@@ -96,10 +99,10 @@ const DIRECT = { proxy: { all: { url: "http://127.0.0.1:9", noProxy: "127.0.0.1"
  * sign in or out. Those that wait for a model give their own. */
 const TIMEOUT_MS = 20_000;
 
-/** Fetches `path` from the server. From another origin than the server's: the Android app's fetch
- * goes through CapacitorHttp, the desktop app's through Tauri's HTTP plugin, so that the server needs
- * no CORS. To the Android app's own server, the WebView's: CapacitorHttp would go through the
- * system's proxy. */
+/** Fetches `path` from the server. From another origin than the server's: the phone apps' fetch goes
+ * through CapacitorHttp, the desktop app's through Tauri's HTTP plugin, so that the server needs no
+ * CORS. To the phone apps' own server, the WebView's: CapacitorHttp would go through the system's
+ * proxy. */
 export function fetchServer(path: string, init?: RequestInit): Promise<Response> {
   const send = app === "desktop" ? tauriFetch : server.local ? window.CapacitorWebFetch : fetch;
   return send(`${server.url}${path}`, init);
@@ -109,14 +112,14 @@ export function fetchServer(path: string, init?: RequestInit): Promise<Response>
 const FILE_TIMEOUT_MS = 10 * 60_000;
 
 /** Sends or fetches an attachment's file (docs/web.md#附件), the whole of it within the time allowed:
- * the server's answer. Android's goes by the WebView's own fetch, which the server allows across
+ * the server's answer. The phone apps' goes by the WebView's own fetch, which the server allows across
  * origins: CapacitorHttp would pass the whole file over the bridge. Throws `ApiError`: the server's
  * refusal, or `OFFLINE` when it cannot be reached, the transfer breaks off or takes too long, or `stop`
  * aborts it. */
 export async function fileRequest(method: "GET" | "PUT", id: string, stop: AbortSignal, body?: { blob: Blob; type: string }): Promise<Blob> {
   const headers: Record<string, string> = body ? { "Content-Type": body.type } : {};
   if (server.token) headers.Authorization = `Bearer ${server.token}`;
-  const send = app === "desktop" ? tauriFetch : app === "android" ? window.CapacitorWebFetch : fetch;
+  const send = app === "desktop" ? tauriFetch : phoneApp ? window.CapacitorWebFetch : fetch;
   const abort = new AbortController();
   const stopped = () => abort.abort();
   stop.addEventListener("abort", stopped);
@@ -183,7 +186,7 @@ function parseError(text: string): Partial<ErrorBody> {
 
 /** How this browser shows up among the user's devices, such as `Chrome · macOS`. */
 export function deviceName(): string {
-  if (app) return `NextTodo App · ${app === "android" ? "Android" : desktopOs}`;
+  if (app) return `NextTodo App · ${app === "android" ? "Android" : app === "ios" ? "iOS" : desktopOs}`;
   const ua = navigator.userAgent;
   const browser = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "浏览器";
   const os = /iPhone|iPad/.test(ua) ? "iOS" : /Android/.test(ua) ? "Android" : /Mac OS/.test(ua) ? "macOS" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : "";

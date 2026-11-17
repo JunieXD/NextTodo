@@ -25,7 +25,7 @@ import java.time.LocalTime
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** A task's reminder, as the app hands them over (`apps/web/src/android.ts`): at `at`, in
+/** A task's reminder, as the app hands them over (`apps/web/src/mobile.ts`): at `at`, in
  * milliseconds; `waiting`, how many of its prerequisites are not done; `start` and `startTime`, when it
  * starts, at the start of the day without a time. */
 data class Reminder(

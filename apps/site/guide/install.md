@@ -1,6 +1,6 @@
 # 下载和安装
 
-NextTodo 有 Android、macOS 和 Windows App。连接自己的服务器时，也可以在浏览器里使用网页版。下面的下载链接总是最新版。
+NextTodo 有 Android、iOS、macOS 和 Windows App。连接自己的服务器时，也可以在浏览器里使用网页版。下面的下载链接总是最新版。
 
 ## Android
 
@@ -15,6 +15,26 @@ NextTodo 有 Android、macOS 和 Windows App。连接自己的服务器时，也
 桌面小组件：长按手机桌面的空白处，选择“小组件”，找到 NextTodo，拖到桌面上。小组件显示“接下来”，可以直接勾选完成；点右上角的 + 打开 App 的添加框，键盘随即弹出。没联网时勾选先存下，联网后自动补上。默认是 4×2 的大小，可以拖动边框调整：不到 3 格高时每项占一行、不显示文件夹，以便多放几项；更高时每项两行，第二行写着文件夹。文字大小在 App 的“设置 → 外观”里调。
 
 写进系统日历：在“设置 → 提醒和后台”里打开“写进系统日历”并允许读写日历，带截止时间的未完成事项就会出现在手机的日历里，只有日期的是全天日程。默认写进一个只在这台手机上的“NextTodo”日历；也可以在同一行换成 Google、小米等账号的日历，那样日程会随账号同步到云端。日程跟着事项更新，完成或删掉的会从日历里去掉。“NextTodo”日历是只读的；写进账号日历的，在日历里改了或删了，下次会按事项写回来。日程不带提醒，提醒仍由 NextTodo 发出。退出登录或改用服务器时，写进去的日程会删掉。
+
+## iOS
+
+要求 iOS 16.4 及以上（iPhone 8 及以后的机型）。
+
+NextTodo 不上架 App Store，用 [SideStore](https://sidestore.io) 安装：它用你自己的 Apple ID 给 App 签名，不用花钱，也不用越狱。
+
+1. 装好 SideStore：按 SideStore 官网的[安装指南](https://docs.sidestore.io/docs/installation/prerequisites)操作，需要用电脑装一次，同时会装上它要用的 LocalDevVPN。之后在 SideStore 里安装、更新和续签 App 时，都要先打开 LocalDevVPN。
+2. 在 iPhone 上打开 SideStore，进“Sources”（软件源）页，点 +，填入下面的地址并添加：
+
+   ```
+   https://github.com/JunieXD/NextTodo/releases/latest/download/sidestore.json
+   ```
+
+3. 在这个软件源里找到 NextTodo，点击安装。
+4. 打开 NextTodo，[选择用法](./#modes)。
+
+用免费 Apple ID 签名的 App 7 天后过期，过期后打不开，但数据还在。SideStore 会在后台自动续签；隔几天打开一次 LocalDevVPN 和 SideStore，在“My Apps”页点“Refresh All”最稳妥。免费 Apple ID 同时只能装 3 个这样签名的 App，SideStore 自己算一个。
+
+截止提醒：第一次设了提醒后，App 会请求发送通知，点“允许”。到点即使没打开 App 也会弹出通知；长按通知可以直接“完成”，或推迟 15 分钟、1 小时、3 小时。点了“不允许”的，到 App 的“设置 → 提醒”里点“允许”，在打开的系统设置里打开“允许通知”。
 
 ## macOS
 
@@ -56,9 +76,11 @@ NextTodo 有 Android、macOS 和 Windows App。连接自己的服务器时，也
 
 ## 更新
 
-不用手动更新：
+Android 和电脑上的 App 不用手动更新：
 
 - **连接服务器时**：App 从服务器获取更新，服务器升级后随之更新。Android 下次打开时生效，需要换安装包时会提示；电脑上在后台下载，提示“重启”后生效。
 - **在本机使用时**：App 从 GitHub 获取更新，有新版本时同样会提示。
+
+iOS 的 App 不能自己更新：有新版本时会提示，到 SideStore 的“My Apps”页更新。
 
 版本号在“设置 → 关于”里查看。点按“App 版本”可以立即检查更新，下方会显示检查结果；连不上服务器或 GitHub 时也会写明。Android 平时只更新界面部分，很少需要换安装包，所以安装包的版本常常比 App 版本旧，两者不同时“App 版本”下方另写着安装包的版本。

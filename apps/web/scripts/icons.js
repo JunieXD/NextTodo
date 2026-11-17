@@ -1,5 +1,5 @@
-// Draws the logo (docs/ui.md#产品图标) and writes every icon made from it: the web's, Android's and
-// the desktop app's. Run it from apps/web with `node scripts/icons.js` after changing the logo; it
+// Draws the logo (docs/ui.md#产品图标) and writes every icon made from it: the web's, Android's, iOS's
+// and the desktop app's. Run it from apps/web with `node scripts/icons.js` after changing the logo; it
 // needs rsvg-convert (librsvg) and macOS's iconutil.
 //
 // The logo is a list as the app draws one: a rail with three tasks on it, done, ready and waiting,
@@ -12,6 +12,7 @@ import { join } from "node:path";
 
 const ANDROID = "../android/app/src/main/res/drawable";
 const DESKTOP = "../desktop/src-tauri/icons";
+const IOS = "../ios/App/App/Assets.xcassets";
 
 // ---------- the drawing, on a 1024 tile ----------
 
@@ -205,6 +206,12 @@ writeFileSync(`${ANDROID}/ic_launcher_background.xml`, background);
 writeFileSync(`${ANDROID}/ic_launcher_foreground.xml`, vector(108, ADAPTIVE, COLOUR, "The app icon's logo, in the middle 72dp a launcher shows."));
 writeFileSync(`${ANDROID}/ic_launcher_monochrome.xml`, vector(108, ADAPTIVE, MONO("#FFFFFF"), "The logo in one colour, for themed icons."));
 writeFileSync(`${ANDROID}/ic_stat_nexttodo.xml`, vector(24, fit(24, 2), MONO("#FFFFFF"), "The notification icon: the logo, white on transparent as Android wants."));
+
+// iOS: the full square, which the system rounds, in the one size Xcode makes the others from; and the
+// logo for the launch screen, on Android's splash green there, at @2x and @3x of 88pt.
+png(square, 1024, `${IOS}/AppIcon.appiconset/AppIcon-512@2x.png`);
+png(glyphSvg(176, 0, COLOUR), 176, `${IOS}/Splash.imageset/splash@2x.png`);
+png(glyphSvg(264, 0, COLOUR), 264, `${IOS}/Splash.imageset/splash@3x.png`);
 
 // macOS: the tile inset with a shadow as macOS draws app icons, and a template image for the menu bar.
 const mac = tileSvg({ inset: 100, radius: 185, shadow: true });

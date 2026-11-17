@@ -1,6 +1,6 @@
 # AGENTS.md
 
-NextTodo 是以先后关系为核心的待办应用：事项之间可以设依赖，组成一张有向无环图，应用随时告诉你现在能做什么；文件夹可以无限嵌套，也可以共享给别人分工合作；手机优先，网页、Android、macOS、Windows 实时同步；agent 能通过 API、命令行和 MCP 直接管理整个待办。本文件是开发的总原则，人和编码 agent 都要遵守。
+NextTodo 是以先后关系为核心的待办应用：事项之间可以设依赖，组成一张有向无环图，应用随时告诉你现在能做什么；文件夹可以无限嵌套，也可以共享给别人分工合作；手机优先，网页、Android、iOS、macOS、Windows 实时同步；agent 能通过 API、命令行和 MCP 直接管理整个待办。本文件是开发的总原则，人和编码 agent 都要遵守。
 
 这些是原则，不是机械的条文：按本意判断；遇到不适用或互相冲突的情况，按产品原则取舍，并在汇报里说明。
 
@@ -82,7 +82,7 @@ NextTodo 是以先后关系为核心的待办应用：事项之间可以设依�
 
 ## 文档
 
-- 项目文档：[总体设计](docs/design.md)、[界面](docs/ui.md)、[数据模型](docs/data-model.md)、[API](docs/api.md)、[agent 接入](docs/agent.md)、[网页端](docs/web.md)、[Android](docs/android.md)、[桌面 App](docs/desktop.md)、[本机模式](docs/local.md)、[部署](docs/deploy.md)。
+- 项目文档：[总体设计](docs/design.md)、[界面](docs/ui.md)、[数据模型](docs/data-model.md)、[API](docs/api.md)、[agent 接入](docs/agent.md)、[网页端](docs/web.md)、[Android](docs/android.md)、[iOS](docs/ios.md)、[桌面 App](docs/desktop.md)、[本机模式](docs/local.md)、[部署](docs/deploy.md)。
 - 写现状和决定，不写讨论过程和改动历史。
 - 同一件事只在一处写细节，别处链接过去。
 - 行为或决定变了，在同一个改动里更新文档。

@@ -1,0 +1,29 @@
+[package]
+name = "nexttodo-ios"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+anyhow = "1.0.104"
+nexttodo-core = { path = "../core" }
+nexttodo-server = { path = "../server" }
+serde_json = "1.0.154"
+tokio = { version = "1.54.1", features = ["rt-multi-thread"] }
+# The server's events in the system's log, where Console and Xcode show them.
+tracing-oslog = "0.3.0"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry"] }
+
+[dev-dependencies]
+uuid = { version = "1.29.0", features = ["v7"] }
+
+# The workspace's, but for the entry points: C calls them by their unmangled names, and they take C
+# strings, which Rust counts as unsafe code. Each says so; nothing else may (docs/ios.md#本机模式).
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

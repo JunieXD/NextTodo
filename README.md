@@ -7,7 +7,7 @@
   <p>
     <a href="https://github.com/JunieXD/NextTodo/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/JunieXD/NextTodo?label=%E7%89%88%E6%9C%AC&color=2E8E6C"></a>
     <a href="LICENSE"><img alt="MIT 许可证" src="https://img.shields.io/badge/%E8%AE%B8%E5%8F%AF%E8%AF%81-MIT-2E8E6C"></a>
-    <img alt="网页、Android、macOS、Windows" src="https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-%E7%BD%91%E9%A1%B5%20%C2%B7%20Android%20%C2%B7%20macOS%20%C2%B7%20Windows-2E8E6C">
+    <img alt="网页、Android、iOS、macOS、Windows" src="https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-%E7%BD%91%E9%A1%B5%20%C2%B7%20Android%20%C2%B7%20iOS%20%C2%B7%20macOS%20%C2%B7%20Windows-2E8E6C">
   </p>
 </div>
 
@@ -62,12 +62,13 @@ App 可以只在本机使用，不需要服务器和账号；也可以连接自�
 | 平台 | 下载 | 要求 |
 |---|---|---|
 | Android | [NextTodo-android.apk](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-android.apk) | Android 8.0 及以上 |
+| iOS | 在 SideStore 里添加软件源 `https://github.com/JunieXD/NextTodo/releases/latest/download/sidestore.json` 后安装 | iOS 16.4 及以上 |
 | macOS | [NextTodo-macos-arm64.dmg](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-macos-arm64.dmg) | Apple 芯片，macOS 14 及以上 |
 | macOS | [NextTodo-macos-x64.dmg](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-macos-x64.dmg) | Intel 芯片，macOS 14 及以上 |
 | Windows | [NextTodo-windows-x64-setup.exe](https://github.com/JunieXD/NextTodo/releases/latest/download/NextTodo-windows-x64-setup.exe) | Windows 10 或 11，x64 |
 | 网页 | 用浏览器打开服务器的地址，可以安装为 PWA | 需要先部署服务端 |
 
-macOS 和 Windows 的安装包没有经过商业签名。macOS 首次打开会被拦下，到“系统设置 → 隐私与安全性”中点击“仍要打开”；Windows 出现 SmartScreen 提示时，点击“更多信息 → 仍要运行”。详见官网的[下载和安装](https://juniexd.github.io/NextTodo/guide/install)。
+iOS App 不上架 App Store，用 [SideStore](https://sidestore.io) 和自己的 Apple ID 安装，不用花钱，但每 7 天要在 SideStore 里续签一次。macOS 和 Windows 的安装包没有经过商业签名。macOS 首次打开会被拦下，到“系统设置 → 隐私与安全性”中点击“仍要打开”；Windows 出现 SmartScreen 提示时，点击“更多信息 → 仍要运行”。详见官网的[下载和安装](https://juniexd.github.io/NextTodo/guide/install)。
 
 ### 2. 选择用法
 
@@ -92,7 +93,6 @@ curl -fsSL https://juniexd.github.io/NextTodo/install.sh | sh
 
 打算做、还没开始的：
 
-- **iOS App（不上架 App Store）**：和 Android 一样用 Capacitor 外壳加载网页端，支持本机模式和截止提醒，先不做小组件。发布不签名的 IPA，用户用 SideStore 和自己的 Apple ID 安装，不用花钱，但每 7 天要在手机上续签一次。
 - **鸿蒙版**：在纯血鸿蒙（HarmonyOS NEXT）上运行的 App。
 
 ## 开发
@@ -106,10 +106,11 @@ curl -fsSL https://juniexd.github.io/NextTodo/install.sh | sh
 | 网页端检查 | `cd apps/web && pnpm check` |
 | 安装命令行 `nexttodo` | `cargo install --path crates/cli` |
 | 命令行连开发版 | `nexttodo login --url http://127.0.0.1:8080` |
+| 打包 iOS App（不签名的 IPA） | `cd apps/web && pnpm ios:build` |
 | 构建发布（服务端镜像内容和各端安装包） | `deploy/build.sh` |
 | 官网本地预览 | `cd apps/site && pnpm dev` |
 
-Android 和桌面 App 的构建见 [Android](docs/android.md#构建和签名) 和[桌面 App](docs/desktop.md#构建)，发布流程见[部署](docs/deploy.md#构建发布)。参与开发前请先读 [AGENTS.md](AGENTS.md)。
+Android、iOS 和桌面 App 的构建见 [Android](docs/android.md#构建和签名)、[iOS](docs/ios.md#构建和发布) 和[桌面 App](docs/desktop.md#构建)，发布流程见[部署](docs/deploy.md#构建发布)。参与开发前请先读 [AGENTS.md](AGENTS.md)。
 
 ## 文档
 
@@ -124,6 +125,7 @@ Android 和桌面 App 的构建见 [Android](docs/android.md#构建和签名) �
 | [本机模式](docs/local.md) | 不连服务器时的做法、备份和恢复、借网盘同步 |
 | [网页端](docs/web.md) | 前端结构、本地数据和同步 |
 | [Android](docs/android.md) | Android App 和小组件 |
+| [iOS](docs/ios.md) | iOS App、截止提醒和 SideStore 安装 |
 | [桌面 App](docs/desktop.md) | macOS 和 Windows App |
 | [部署](docs/deploy.md) | 自己部署、升级、备份、构建发布和官网 |
 

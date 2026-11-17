@@ -1,17 +1,18 @@
 // The apps' updates, from the server they are signed in to (docs/design.md#app-更新), or in local mode
 // from GitHub (docs/local.md#更新): on Android, newer builds of the web app downloaded for the next
 // start and newer APKs offered to install; on the desktop, newer versions downloaded for the next
-// start.
+// start. On iOS, newer versions told of, to update in SideStore, always from GitHub (docs/ios.md#更新).
 
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { useSyncExternalStore } from "react";
-import { app, serverUrl } from "./api/http";
-import { NextTodo } from "./android";
+import { app, phoneApp, serverUrl } from "./api/http";
+import { NextTodo } from "./mobile";
 import { inLocalMode } from "./local";
 
-/** What waits for the user: an APK to install, or a version downloaded that a restart runs. */
-export type Pending = { kind: "apk"; version: string; url: string } | { kind: "restart"; version: string } | null;
+/** What waits for the user: an APK to install, a version downloaded that a restart runs, or one to
+ * update to in SideStore. */
+export type Pending = { kind: "apk"; version: string; url: string } | { kind: "restart"; version: string } | { kind: "sidestore"; version: string } | null;
 
 /** Why updates could not be had, as the apps say (`Failure` in apps/desktop/src-tauri/src/updates.rs,
  * `kind` in apps/android): the place they come from out of reach, nothing to be had there for now, or
@@ -42,14 +43,15 @@ export const useChecking = () => useSyncExternalStore(subscribe, () => checking)
  * manifests name their downloads in full. */
 const GITHUB = "https://github.com/JunieXD/NextTodo/releases/latest/download";
 
-/** Where updates come from: the server signed in to, or GitHub. */
-const source = () => (inLocalMode() ? GITHUB : serverUrl());
+/** Where updates come from: the server signed in to, or GitHub. A server has no iOS app, and SideStore
+ * knows one source only. */
+const source = () => (inLocalMode() || app === "ios" ? GITHUB : serverUrl());
 
 /** The manifest `name` of `from`: the server has them under `/app/`. */
 const manifest = (from: string, name: string) => (from === GITHUB ? `${GITHUB}/${name}` : `${from}/app/${name}`);
 
 /** The installed app's version, which on Android the web app's updates outgrow; null in a browser. */
-export const appVersion = async () => (app === "android" ? (await NextTodo.appInfo()).version : app === "desktop" ? getVersion() : null);
+export const appVersion = async () => (phoneApp ? (await NextTodo.appInfo()).version : app === "desktop" ? getVersion() : null);
 
 /** How often to look again: the web app changes with nearly every release, the desktop app is a
  * download of a few MB. */
@@ -83,8 +85,8 @@ export async function check(now = false) {
   told();
   // Each on its own: a web build that fails to download does not keep back an APK that fixes it. In
   // local mode the web app comes with the APK only.
-  const web = from === GITHUB ? [] : [NextTodo.updateWeb({ server: from }).then((r) => (staged ||= !!r.staged))];
-  const jobs: Promise<unknown>[] = app === "android" ? [...web, checkApk(from)] : [checkDesktop(from)];
+  const web = () => (from === GITHUB ? [] : [NextTodo.updateWeb({ server: from }).then((r) => (staged ||= !!r.staged))]);
+  const jobs: Promise<unknown>[] = app === "android" ? [...web(), checkApk(from)] : app === "ios" ? [checkSideStore()] : [checkDesktop(from)];
   const failed = (await Promise.allSettled(jobs)).filter((r) => r.status === "rejected");
   checking = false;
   for (const f of failed) console.warn("检查更新失败", f.reason);
@@ -107,6 +109,16 @@ async function checkApk(of: string) {
   const newer = apk.native > (await NextTodo.appInfo()).native;
   if (of !== source()) return;
   set(newer ? { kind: "apk", version: apk.versionName, url: new URL(apk.url, `${of}/`).href } : null);
+}
+
+/** Tells of the version SideStore's source on GitHub lists when it is newer: its only one. */
+async function checkSideStore() {
+  const url = `${GITHUB}/sidestore.json`;
+  const res = await fetch(url).catch((e) => Promise.reject(new Failed("offline", `${url}：${e}`)));
+  if (!res.ok) throw new Failed("unavailable", `${url}：${res.status}`);
+  const listed: { apps: { versions: { version: string; buildVersion: string }[] }[] } = await res.json();
+  const [{ version, buildVersion }] = listed.apps[0].versions;
+  set(Number(buildVersion) > (await NextTodo.appInfo()).native ? { kind: "sidestore", version } : null);
 }
 
 /** Downloads the desktop version `of` gives when it is newer. */
@@ -135,7 +147,7 @@ function failureOf(e: unknown): Failure {
 /** What the user is told of `f`, which made `doing` fail. */
 export function failureText(doing: string, f: Failure) {
   const why = {
-    offline: `无法连接${inLocalMode() ? " GitHub" : "服务器"}，请检查网络后重试`,
+    offline: `无法连接${source() === GITHUB ? " GitHub" : "服务器"}，请检查网络后重试`,
     unavailable: "暂时无法获取新版本，请稍后重试",
     install: "新版本无法安装，请从官网下载最新版本",
   };

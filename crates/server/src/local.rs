@@ -81,6 +81,12 @@ impl Local {
     /// Starts the server on the data directory `dir`, listening on 127.0.0.1 at a port the system
     /// picks.
     pub async fn start(dir: &Path) -> Result<Local, StartError> {
+        Local::start_at(dir, 0).await
+    }
+
+    /// Starts the server listening at `port`: on iOS, where it started before it stopped, so that the
+    /// page's address holds (docs/ios.md#本机模式). 0 is one the system picks.
+    pub async fn start_at(dir: &Path, port: u16) -> Result<Local, StartError> {
         private_dir(dir)?;
         let lock = lock(&dir.join("lock"), LOCK_WAIT).await?;
         backup::finish(dir).context("无法完成恢复")?;
@@ -90,7 +96,7 @@ impl Local {
         let (started, (user, epoch)) = start::start(
             &db,
             dir.join("snapshots"),
-            (Ipv4Addr::LOCALHOST, 0).into(),
+            (Ipv4Addr::LOCALHOST, port).into(),
             Ai::new(None, Arc::new(Https { public_only: false })),
             Some(dir.to_owned()),
             move |c| Ok((local_user(c, now)?, db::epoch(c)?)),
@@ -100,8 +106,8 @@ impl Local {
         #[cfg(feature = "agent-port")]
         let agent_port = crate::agent_port::listen(dir).await?;
         let (state, router) = (started.state.clone(), app(started.state.clone()));
-        // On Android the page is at another origin (docs/local.md#页面直连).
-        #[cfg(target_os = "android")]
+        // In the phone apps the page is at another origin (docs/local.md#页面直连).
+        #[cfg(any(target_os = "android", target_os = "ios"))]
         let router = router.layer(crate::page_cors());
         #[cfg(feature = "agent-port")]
         agent_port.serve(router.clone());

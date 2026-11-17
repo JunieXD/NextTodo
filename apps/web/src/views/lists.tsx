@@ -6,7 +6,7 @@ import { Dialog } from "radix-ui";
 import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation, useSearchParams } from "wouter";
-import { NextTodo } from "../android";
+import { NextTodo } from "../mobile";
 import { app } from "../api/http";
 import type { Folder } from "../api/types/Folder";
 import type { FolderId } from "../api/types/FolderId";

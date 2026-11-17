@@ -27,3 +27,11 @@ lto = "fat"
 codegen-units = 1
 opt-level = "s"
 strip = true
+
+# The same in the iOS app (docs/ios.md#本机模式), but for `strip`: a static library is stripped as the
+# app is linked.
+[profile.ios]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+opt-level = "s"

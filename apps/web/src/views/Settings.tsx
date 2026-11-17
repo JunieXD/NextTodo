@@ -3,7 +3,7 @@
 import { Bell, ChevronRight, Copy, HardDrive, Info, KeyRound, type LucideIcon, Mail, Monitor, Palette, Paperclip, Plus, Sparkles, SquareTerminal } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { ApiError, api, app, desktopOs, serverUrl } from "../api/http";
+import { ApiError, api, app, desktopOs, phoneApp, serverUrl } from "../api/http";
 import type { CreatedToken } from "../api/types/CreatedToken";
 import type { Invite } from "../api/types/Invite";
 import type { Scope } from "../api/types/Scope";
@@ -14,7 +14,7 @@ import { fetchServerSettings, keepServerSettings, serverSettings } from "../atta
 import { ago } from "../domain/dates";
 import { type CliStatus, cli } from "../desktop";
 import { checkDisplayName, checkTokenName } from "../domain/text";
-import { NextTodo, type WidgetTextSize } from "../android";
+import { NextTodo, type WidgetTextSize } from "../mobile";
 import * as local from "../local";
 import { newer, useServerVersions } from "../server-update";
 import { useSession } from "../session";
@@ -40,7 +40,8 @@ const TITLES: Record<SettingsSection, string> = {
   account: "账号",
   local: "本机模式",
   appearance: "外观",
-  background: "提醒和后台",
+  // iOS has nothing to allow for running in the background (docs/ios.md#设置).
+  background: app === "ios" ? "提醒" : "提醒和后台",
   ai: "AI 整理",
   agent: "agent 接入",
   invites: "邀请注册",
@@ -162,7 +163,7 @@ export function SettingsPage({ section, onSignOut }: { section: SettingsSection;
     account: () => <Account onSignOut={onSignOut} />,
     local: () => <LocalMode />,
     appearance: () => <Appearance />,
-    background: () => (app === "android" ? <BackgroundSettings /> : <DesktopBackground />),
+    background: () => (phoneApp ? <BackgroundSettings /> : <DesktopBackground />),
     ai: () => <AiPage />,
     agent: () => <Agent />,
     invites: () => <Invites />,

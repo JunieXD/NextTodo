@@ -17,6 +17,8 @@ const config: CapacitorConfig = {
   plugins: {
     // Requests go out through native HTTP, so the server needs no CORS for the app's https://localhost pages.
     CapacitorHttp: { enabled: true },
+    // The page's safe area is read from the variables it writes in this mode (index.css).
+    SystemBars: { insetsHandling: "css" },
   },
 };
 

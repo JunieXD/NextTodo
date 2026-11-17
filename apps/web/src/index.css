@@ -637,7 +637,9 @@ a.text-btn { display: inline-flex; align-items: center; }
 /* The two ways to use the app, asked when it first opens. */
 .way { display: flex; align-items: center; gap: 14px; width: calc(100% - 32px); margin: 0 16px 12px; padding: 16px; border-radius: 14px; background: var(--group-bg); }
 .way:active { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 6%); }
-.way:disabled { opacity: .5; cursor: default; }
+/* Disabled only while local mode opens, which ends on another page (on Android, after a restart):
+   dimmed for that moment, the two would flash. */
+.way:disabled { cursor: default; }
 .way > svg:first-child { color: var(--primary); }
 .way > svg:last-child { color: var(--outline); }
 .way-text { flex: 1; display: flex; flex-direction: column; gap: 2px; }

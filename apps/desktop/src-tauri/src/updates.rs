@@ -44,6 +44,11 @@ impl Failure {
 /// not need to know its own address; GitHub's gives them in full.
 #[tauri::command]
 pub async fn update(app: AppHandle, downloaded: State<'_, Downloaded>, manifest: String) -> Result<Option<String>, Failure> {
+    // `tauri dev` runs from the build folder, not a bundle: the released app would be installed over
+    // the folder, and the one running would no longer be what macOS knows it as.
+    if tauri::is_dev() {
+        return Ok(None);
+    }
     let fetched = |e: reqwest::Error| {
         let e = e.without_url();
         Failure::fetching("检查更新", e.is_connect() || e.is_timeout(), e)

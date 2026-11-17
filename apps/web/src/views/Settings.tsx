@@ -130,8 +130,8 @@ export function SettingsHome() {
                   <LocalCard />
                 ) : (
                   <>
-                    <span>{TITLES[s]}</span>
-                    <span className="row-value">{values[s]}</span>
+                    <span className="row-name">{TITLES[s]}</span>
+                    <span className="row-value long">{values[s]}</span>
                   </>
                 )}
               </Entry>

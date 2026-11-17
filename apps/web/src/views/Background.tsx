@@ -197,7 +197,7 @@ function CalendarFolders() {
     <>
       <button className="row pick" onClick={() => setPicking(true)}>
         <div className="row-inner">
-          <span>写入的文件夹</span>
+          <span className="row-name">写入的文件夹</span>
           <span className="row-value long">{names}</span>
           <Icon of={ChevronRight} size={16} />
         </div>

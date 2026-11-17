@@ -111,7 +111,7 @@ export function Select<T extends string>({
         <Choice.Trigger className="row pick" aria-label={label}>
           <div className="row-inner">
             {/* Its name already: what is read out after it is the value. */}
-            <span aria-hidden>{label}</span>
+            <span className="row-name" aria-hidden>{label}</span>
             <span className="row-value">{text}</span>
             {chevron}
           </div>

@@ -183,6 +183,7 @@ async fn a_release_is_downloaded_checked_and_ready_to_switch_to() {
     assert_eq!(std::fs::read_to_string(dir.join("web/index.html")).unwrap(), "<p>new</p>");
     let out = std::process::Command::new(dir.join("nexttodo-server")).output().unwrap();
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "nexttodo-server 0.1.901");
+    std::fs::remove_dir_all(data).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -208,12 +209,14 @@ async fn a_release_that_does_not_check_out_is_not_kept() {
         assert_eq!(status["state"], "failed", "{what}: {status}");
         assert_eq!(status["version"], "0.1.901", "{what}");
         assert!(versions(&data).is_empty(), "{what}: {:?}", versions(&data));
+        std::fs::remove_dir_all(data).unwrap();
     }
 }
 
 #[tokio::test]
 async fn only_an_administrator_signed_in_upgrades_and_only_to_a_newer_version() {
-    let upgrade = Arc::new(Upgrade::new(temp(), v("0.1.900"), "http://127.0.0.1:9".into()).unwrap());
+    let data = temp();
+    let upgrade = Arc::new(Upgrade::new(data.clone(), v("0.1.900"), "http://127.0.0.1:9".into()).unwrap());
     let app = TestApp::with_upgrade(upgrade);
     let admin = app.admin().await;
     let user = app.user(&admin, "bob").await;
@@ -236,6 +239,7 @@ async fn only_an_administrator_signed_in_upgrades_and_only_to_a_newer_version() 
     let plain = TestApp::new();
     let admin = plain.admin().await;
     assert_eq!(plain.call("GET", "/admin/upgrade", Some(&admin), None).await.body, json!({ "state": "unsupported" }));
+    std::fs::remove_dir_all(data).unwrap();
 }
 
 /// The note a version writes before switching, which another, older one may read: its form stays.
@@ -266,6 +270,7 @@ async fn a_switch_that_did_not_start_goes_back_to_the_database_from_before() {
     // Nothing to go back from: nothing changes.
     upgrade::recover(&data, &database).unwrap();
     assert_eq!(std::fs::read_to_string(&database).unwrap(), "as 0.1.900 left it");
+    std::fs::remove_dir_all(data).unwrap();
 }
 
 /// Downloaded but not switched to, as when the server stopped in between: nothing to go back to, so
@@ -279,4 +284,5 @@ fn a_version_not_switched_to_is_not_run() {
     assert_eq!(versions(&data), ["0.1.901.part"]);
     upgrade::hand_over(&data, v("0.1.900"), true).unwrap();
     assert!(versions(&data).is_empty());
+    std::fs::remove_dir_all(data).unwrap();
 }

@@ -3,7 +3,7 @@
 // holds.
 
 import { createContext, useContext, useSyncExternalStore } from "react";
-import { ApiError, api, app, dropSession, native, syncToken, syncUrl } from "./api/http";
+import { ApiError, api, app, connectedLocally, dropSession, native, syncToken, syncUrl } from "./api/http";
 import type { Effect } from "./api/types/Effect";
 import type { ErrorBody } from "./api/types/ErrorBody";
 import type { LogEntry } from "./api/types/LogEntry";
@@ -366,6 +366,10 @@ async function forgetUser(user: User) {
 
 /** Finishes a sign-out cut short; in `turn`. */
 async function finishSignOut(out: Login) {
+  // Of a server's account, whose token went as local mode was entered: the session here, the widget
+  // and the reminders are the app's own server's now, and the sign-in that follows deletes the
+  // account's data as anyone else's.
+  if (connectedLocally()) return localStorage.removeItem(SIGNED_OUT);
   await forgetUser(out.user);
   const loggedOut = await logout();
   // In the app, the token goes too, and then what the widget and the reminders show; on the Mac

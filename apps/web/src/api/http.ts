@@ -44,6 +44,8 @@ export function connectLocal(url: string, token: string) {
   Object.assign(server, { url, token, local: true });
 }
 
+export const connectedLocally = () => server.local;
+
 /** Remembers the server and the session after signing in in the app. */
 export async function keepSession(token: string) {
   if (!native) return;

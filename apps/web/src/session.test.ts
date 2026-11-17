@@ -37,7 +37,7 @@ const server = {
   ended: new Set<Cookie>(),
   held: undefined as { path: string; enter(): void; until: Promise<void> } | undefined,
 };
-vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+async function answer(url: string, init: RequestInit) {
   const path = url.replace("/api/v1", "");
   // The cookie goes with the request as it is sent.
   const sent = server.cookie;
@@ -55,7 +55,10 @@ vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
   if (path === "/me") return json(sent.user);
   if (path === "/snapshot") return json({ user: sent.user.id, seq: 0, folders: [], tasks: [], dependencies: [], attachments: [], ai_jobs: [], shares: [], people: [] });
   throw new Error(`${init.method} ${path}`);
-});
+}
+vi.stubGlobal("fetch", answer);
+// What the page reaches the app's own server with, on Android.
+vi.stubGlobal("window", { CapacitorWebFetch: answer });
 
 /** Holds back requests to `path`: `entered` once one has come, until `release`. */
 function hold(path: string) {
@@ -323,6 +326,20 @@ test("a sign-out cut short is finished when the app opens next, with what it lef
   expect(await (await tab()).resume()).toBeNull();
   expect([server.cookie, login(), marked(), await saved(u)]).toEqual([null, null, undefined, [0, 0]]);
   await vi.waitFor(() => expect(heard.signedOut).toBe(true));
+});
+
+test("a server's sign-out cut short is not finished on the app's own server, signed in to already", async () => {
+  const u = user(22);
+  await signIn(u);
+  // Signed out offline, then into local mode: the page holds the session the app's server gave it.
+  localStorage.setItem("nexttodo.signedOut", JSON.stringify(login()));
+  const local = { user: user(23) };
+  server.cookie = local;
+  const Session = await tab();
+  const http = await import("./api/http");
+  http.connectLocal("", "the app's session");
+  const s = await Session.open(() => http.api<User>("GET", "/me"));
+  expect([s.user.id, server.ended.has(local), marked(), await saved(u)]).toEqual([local.user.id, false, undefined, [0, 0]]);
 });
 
 test("finishing a sign-out deletes the user's data also when the sign-in is gone", async () => {

@@ -1,8 +1,11 @@
 package cn.juniexd.nexttodo
 
 import android.app.Application
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.util.Log
+import cn.juniexd.nexttodo.reminders.ReminderReceiver
 import cn.juniexd.nexttodo.widget.Widget
 import java.io.File
 
@@ -13,6 +16,8 @@ class NextTodoApp : Application() {
         // `Restart`'s process, which ends this one, runs nothing of the app.
         if (processName() != packageName) return
         Channels.create(this)
+        // The system tells only receivers registered at run time of the phone being unlocked.
+        registerReceiver(ReminderReceiver(), IntentFilter(Intent.ACTION_USER_PRESENT))
         if (Local.on(this)) {
             try {
                 Local.open(this)

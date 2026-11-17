@@ -10,12 +10,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** The reminders' alarm, the phone starting or the app updated, which may have missed some; and
- * “完成” on a reminder. */
+/** The reminders' alarm, the phone starting or the app updated, which may have missed some; the phone
+ * unlocked, for the card to show what came due while it was locked; and “完成” on a reminder. */
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             ALARM, Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> Card.show(context, Reminders.show(context))
+            Intent.ACTION_USER_PRESENT -> Card.show(context, Reminders.unlocked(context))
             DONE -> {
                 val task = intent.data!!.lastPathSegment!!
                 // Gone at once; should the server turn it down, a toast says why.

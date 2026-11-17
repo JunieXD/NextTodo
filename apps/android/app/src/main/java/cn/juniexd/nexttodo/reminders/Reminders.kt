@@ -91,6 +91,10 @@ object Reminders {
     /** Whether the reminder card is on (docs/android.md#弹窗提醒). */
     private const val CARD = "card"
 
+    /** Reminders that came due for the card while the phone was locked or its screen off, by task:
+     * their time. The card shows them once it is unlocked. */
+    private const val LOCKED = "locked"
+
     /** Whether the app has asked for notifications, which it does once. */
     private const val ASKED = "asked"
 
@@ -169,7 +173,8 @@ object Reminders {
     }
 
     /** Shows the reminders that came due since the last time, those put off too, of those `which` picks,
-     * and sets the alarm for the next. Returns those to show on the reminder card as well, when it is to be. */
+     * and sets the alarm for the next. Returns those to show on the reminder card as well, when it is to
+     * be: with those that came due while the phone was locked, should it have been unlocked unheard. */
     @Synchronized
     fun show(context: Context, which: (Reminder, at: Long) -> Boolean = { _, _ -> true }): List<Reminder> {
         val now = System.currentTimeMillis()
@@ -179,10 +184,31 @@ object Reminders {
         for (r in due) snoozed.remove(r.task)
         prefs(context).edit().putLong(MARK, now).putString(SNOOZED, snoozed.toString()).commit()
         schedule(context)
-        val card = cardNow(context)
-        for (r in due) post(context, r, card)
-        return if (card) due else emptyList()
+        val card = card(context)
+        val present = present(context)
+        for (r in due) post(context, r, card && present)
+        if (!card) return emptyList()
+        if (present) return unlocked(context) + due
+        val locked = locked(context)
+        for (r in due) locked.put(r.task, r.at)
+        prefs(context).edit().putString(LOCKED, locked.toString()).commit()
+        return emptyList()
     }
+
+    /** The phone has been unlocked: the reminders that came due while it was locked, for the card. Only
+     * those still in a notification and not done, deleted, moved or put off since. */
+    @Synchronized
+    fun unlocked(context: Context): List<Reminder> {
+        val locked = locked(context)
+        if (locked.length() == 0) return emptyList()
+        prefs(context).edit().remove(LOCKED).commit()
+        if (!card(context)) return emptyList()
+        val shown = context.getSystemService(NotificationManager::class.java).activeNotifications
+            .mapNotNull { n -> n.notification.extras.getString(TASK)?.let { it to n.notification.extras.getLong(AT) } }.toSet()
+        return current(context).filter { locked.optLong(it.task) == it.at && (it.task to it.at) in shown }
+    }
+
+    private fun locked(context: Context) = JSONObject(prefs(context).getString(LOCKED, "{}"))
 
     /** Puts `task`'s reminder off for `minutes`: its notification goes, and comes again then. */
     @Synchronized
@@ -207,7 +233,7 @@ object Reminders {
     /** Signed out, or the data is gone: no reminders, none put off, none shown. */
     @Synchronized
     fun clear(context: Context) {
-        prefs(context).edit().remove(LIST).remove(SNOOZED).commit()
+        prefs(context).edit().remove(LIST).remove(SNOOZED).remove(LOCKED).commit()
         schedule(context)
         withdraw(context) { true }
     }
@@ -259,13 +285,14 @@ object Reminders {
         prefs(context).edit().putBoolean(CARD, on).commit()
     }
 
-    /** Whether to show the reminder card now: on, allowed, and the user is at the phone, unlocked and
-     * not to be disturbed. Otherwise the banner does. */
-    private fun cardNow(context: Context) =
+    /** Whether reminders go on the card: on, allowed, and not to disturb. Otherwise the banner does. */
+    private fun card(context: Context) =
         cardOn(context) && Settings.canDrawOverlays(context) &&
-            context.getSystemService(PowerManager::class.java).isInteractive &&
-            !context.getSystemService(KeyguardManager::class.java).isKeyguardLocked &&
             context.getSystemService(NotificationManager::class.java).currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_ALL
+
+    /** Whether the user is at the phone: its screen on and unlocked. */
+    private fun present(context: Context) =
+        context.getSystemService(PowerManager::class.java).isInteractive && !context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
 
     /** Whether to ask for notifications now: the first time there are reminders. */
     fun ask(context: Context): Boolean {

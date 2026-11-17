@@ -17,10 +17,14 @@ axum = { version = "0.8.9", features = ["ws", "macros"] }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 # For upgrading from the settings (src/upgrade.rs): the image's layers are gzipped tar files.
 flate2 = "1.1.10"
+# Signing requests to S3 (docs/local.md#只在不存在时写入).
+hmac = "0.13.0"
 http-body-util = "0.1.5"
 mime_guess = "2.0.5"
 hyper-util = { version = "0.1.21", features = ["server-auto", "tokio", "service"], optional = true }
 nexttodo-core = { path = "../core", features = ["sql"] }
+# The listings WebDAV and S3 answer with.
+quick-xml = "0.42.0"
 rand = "0.10.3"
 rcgen = { version = "0.14.10", optional = true }
 rmcp = { version = "3.8.0", default-features = false, features = ["server", "transport-streamable-http-server"] }

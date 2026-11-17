@@ -1,10 +1,12 @@
 //! Attachments' files (docs/design.md#附件), on disk in the data directory's `files/`, each named by
 //! its attachment's id. Nothing else reads, writes or deletes them: keeping them elsewhere, such as in
-//! S3, changes only this module.
+//! S3, changes only this module. Syncing through a drive, a file not here yet is fetched from it as it
+//! is read (docs/local.md#附件).
 
 use std::collections::HashSet;
 use std::io::{self, ErrorKind, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, PoisonError, RwLock};
 use std::time::{Duration, SystemTime};
 
 use axum::body::Body;
@@ -22,6 +24,14 @@ const PART: &str = ".part-";
 
 pub struct Files {
     dir: PathBuf,
+    /// Where the files not here are, while syncing through a drive.
+    origin: RwLock<Option<Arc<dyn Origin>>>,
+}
+
+/// Where files not here yet are kept.
+pub trait Origin: Send + Sync {
+    /// `id`'s file, none when there is none.
+    fn fetch(&self, id: AttachmentId) -> io::Result<Option<Vec<u8>>>;
 }
 
 /// A file written in full, flushed to disk, and not yet anyone's: published under an id, or deleted
@@ -56,7 +66,12 @@ impl From<io::Error> for ReceiveError {
 
 impl Files {
     pub fn new(dir: PathBuf) -> Self {
-        Files { dir }
+        Files { dir, origin: RwLock::default() }
+    }
+
+    /// Fetches the files not here from `origin` from now on, or, with none, no longer.
+    pub fn set_origin(&self, origin: Option<Arc<dyn Origin>>) {
+        *self.origin.write().unwrap_or_else(PoisonError::into_inner) = origin;
     }
 
     fn path(&self, id: AttachmentId) -> PathBuf {
@@ -110,10 +125,32 @@ impl Files {
 
     /// The whole of `id`'s file.
     pub fn read(&self, id: AttachmentId) -> io::Result<Vec<u8>> {
+        self.fetch(id)?;
         std::fs::read(self.path(id))
     }
 
-    /// Serves `id`'s file, answering ranges and conditional requests.
+    /// `id`'s file when it is here, without fetching it.
+    pub fn here(&self, id: AttachmentId) -> io::Result<Option<Vec<u8>>> {
+        match std::fs::read(self.path(id)) {
+            Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+            read => read.map(Some),
+        }
+    }
+
+    /// Brings `id`'s file here from the origin, when it is not here and is there. Blocks meanwhile.
+    pub fn fetch(&self, id: AttachmentId) -> io::Result<()> {
+        let origin = self.origin.read().unwrap_or_else(PoisonError::into_inner).clone();
+        let Some(origin) = origin else { return Ok(()) };
+        if self.path(id).exists() {
+            return Ok(());
+        }
+        match origin.fetch(id)? {
+            Some(bytes) => self.write(id, &bytes),
+            None => Ok(()),
+        }
+    }
+
+    /// Serves `id`'s file, answering ranges and conditional requests; `fetch` it first.
     pub fn serve(&self, id: AttachmentId) -> ServeFile {
         ServeFile::new(self.path(id))
     }

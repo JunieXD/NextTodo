@@ -7,6 +7,7 @@ pub mod attachments;
 pub mod auth;
 pub mod backup;
 pub mod db;
+pub mod drive;
 pub mod error;
 pub mod files;
 pub mod local;
@@ -19,7 +20,7 @@ pub mod tools;
 pub mod upgrade;
 pub mod ws;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -69,8 +70,10 @@ pub struct AppState {
     /// Only where the server can upgrade itself.
     pub upgrade: Option<Arc<upgrade::Upgrade>>,
     pub files: Arc<Files>,
-    /// In the app, for its one user (docs/local.md).
-    pub local: bool,
+    /// In the app, for its one user, with its data directory (docs/local.md).
+    pub local: Option<PathBuf>,
+    /// Syncing through a drive, every change to the shared data goes through it (docs/local.md#借网盘同步).
+    pub drive: Arc<drive::Syncing>,
 }
 
 impl AppState {
@@ -83,7 +86,8 @@ impl AppState {
             ai: Arc::new(ai::Ai::new(None, Arc::new(ai::llm::Https { public_only: true }))),
             upgrade: None,
             files: Arc::new(files),
-            local: false,
+            local: None,
+            drive: Arc::default(),
         }
     }
 
@@ -151,6 +155,7 @@ pub fn app(state: AppState) -> Router {
         .route("/ai/models", post(ai::models))
         .route("/ai/jobs/{id}/run", post(ai::run))
         .route("/ai/notes", get(ai::get_notes).put(ai::put_note))
+        .route("/local/sync", get(drive::setup::get).put(drive::setup::put).delete(drive::setup::delete))
         .fallback(|| async { ApiError::not_found("接口不存在") });
     let mcp = Router::new()
         .route_service("/mcp", mcp::service(state.clone()))

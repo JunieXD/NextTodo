@@ -509,20 +509,27 @@ pub struct StoredFile {
     pub size: FileSize,
 }
 
+/// The file `id`, none once it was cleared through a drive (docs/local.md#附件).
 pub fn load_file(c: &Connection, id: AttachmentId) -> rusqlite::Result<Option<StoredFile>> {
-    c.query_row("SELECT owner_id, type, size FROM files WHERE id = ?1", [id], |r| {
+    c.query_row("SELECT owner_id, type, size FROM files WHERE id = ?1 AND NOT purged", [id], |r| {
         Ok(StoredFile { owner: r.get(0)?, media_type: r.get(1)?, size: r.get(2)? })
     })
     .optional()
 }
 
-/// Records a file just uploaded, not attached yet.
-pub fn insert_file(c: &Connection, id: AttachmentId, f: &StoredFile, now: i64) -> rusqlite::Result<()> {
+/// Records a file just uploaded, not attached yet; `staged` on this device alone, syncing through a
+/// drive, until it is attached in a commit.
+pub fn insert_file(c: &Connection, id: AttachmentId, f: &StoredFile, now: i64, staged: bool) -> rusqlite::Result<()> {
     c.execute(
-        "INSERT INTO files (id, owner_id, type, size, created_at, unused_at) VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
-        params![id, f.owner, f.media_type, f.size, now],
+        "INSERT INTO files (id, owner_id, type, size, created_at, unused_at, staged) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6)",
+        params![id, f.owner, f.media_type, f.size, now, staged],
     )?;
     Ok(())
+}
+
+/// Whether file `id` was cleared through a drive: its id can't be used again.
+pub fn file_purged(c: &Connection, id: AttachmentId) -> rusqlite::Result<bool> {
+    c.query_row("SELECT EXISTS (SELECT 1 FROM files WHERE id = ?1 AND purged)", [id], |r| r.get(0))
 }
 
 pub fn attachment_id_taken(c: &Connection, id: AttachmentId) -> rusqlite::Result<bool> {

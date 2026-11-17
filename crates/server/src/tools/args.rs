@@ -6,11 +6,11 @@ use nexttodo_core::model::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer};
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NoArgs {}
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ListArgs {
     #[schemars(description = "文件夹路径，如 /工作/网站改版；默认根目录 /")]
@@ -22,7 +22,7 @@ pub struct ListArgs {
     pub limit: Option<u32>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NextArgs {
     #[schemars(description = "最多列出多少项，默认 50，最多 500", range(min = 1, max = 500))]
@@ -31,14 +31,14 @@ pub struct NextArgs {
 
 /// A task by number: `42` or `"#42"`, `"@alice#42"` in a folder someone else shares, which is
 /// alice's #42.
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(try_from = "TaskRefArg")]
 pub struct TaskRef {
     pub user: Option<String>,
     pub number: i64,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(untagged)]
 #[schemars(description = "事项编号：42 或 \"#42\"；别人共享给我的文件夹里的事项写成 \"@alice#42\"")]
 enum TaskRefArg {
@@ -78,14 +78,14 @@ pub fn task_ref(s: &str) -> Option<(Option<&str>, i64)> {
     Some((user, number.trim().parse().ok()?))
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ShowArgs {
     #[schemars(description = "事项编号")]
     pub task: TaskRef,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SearchArgs {
     #[schemars(description = "关键词")]
@@ -94,7 +94,7 @@ pub struct SearchArgs {
     pub limit: Option<u32>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GraphArgs {
     #[schemars(description = "文件夹路径，包含它的子文件夹；默认根目录 /，即全部事项")]
@@ -107,14 +107,14 @@ pub struct GraphArgs {
     pub mermaid: bool,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LogArgs {
     #[schemars(description = "条数，默认 10，最多 100", range(min = 1, max = 100))]
     pub limit: Option<u32>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AddArgs {
     #[schemars(with = "String", description = "标题，以动作表述")]
@@ -150,7 +150,7 @@ pub struct AddArgs {
     pub before: Vec<TaskRef>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EditArgs {
     #[schemars(description = "事项编号")]
@@ -197,7 +197,7 @@ pub struct EditArgs {
     pub unassign: Vec<String>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Replace {
     #[schemars(description = "描述里现有的一段原文")]
@@ -206,14 +206,14 @@ pub struct Replace {
     pub new: String,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TasksArgs {
     #[schemars(description = "事项编号", length(min = 1))]
     pub tasks: Vec<TaskRef>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DoneArgs {
     #[schemars(description = "事项编号", length(min = 1))]
@@ -223,14 +223,14 @@ pub struct DoneArgs {
     pub end_repeat: bool,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MkdirArgs {
     #[schemars(description = "文件夹路径，如 /工作/网站改版")]
     pub path: String,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RenameArgs {
     #[schemars(description = "文件夹路径；和 attachment 给且只给一个")]
@@ -241,14 +241,14 @@ pub struct RenameArgs {
     pub name: String,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AttachmentArgs {
     #[schemars(with = "String", description = "附件 ID（show 列出的）")]
     pub id: AttachmentId,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AttachArgs {
     #[schemars(description = "事项编号")]
@@ -262,14 +262,14 @@ pub struct AttachArgs {
     pub media_type: Option<MediaType>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DetachArgs {
     #[schemars(with = "Vec<String>", description = "要删除的附件 ID", length(min = 1))]
     pub attachments: Vec<AttachmentId>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MoveArgs {
     #[serde(default)]
@@ -282,7 +282,7 @@ pub struct MoveArgs {
     pub to: String,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DeleteArgs {
     #[serde(default)]
@@ -293,7 +293,7 @@ pub struct DeleteArgs {
     pub folders: Vec<String>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DepArgs {
     #[schemars(description = "前置事项的编号")]
@@ -302,7 +302,7 @@ pub struct DepArgs {
     pub after: TaskRef,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ShareArgs {
     #[schemars(description = "自己的文件夹的路径")]
@@ -311,7 +311,7 @@ pub struct ShareArgs {
     pub users: Vec<String>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UnshareArgs {
     #[schemars(description = "共享的文件夹的路径")]
@@ -321,7 +321,7 @@ pub struct UnshareArgs {
     pub users: Vec<String>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ApplyArgs {
     pub plan: Plan,
@@ -330,7 +330,7 @@ pub struct ApplyArgs {
     pub dry_run: bool,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Plan {
     #[schemars(description = "文件夹路径；默认根目录 /；不存在时一起新建")]
@@ -339,7 +339,7 @@ pub struct Plan {
     pub tasks: Vec<PlanTask>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PlanTask {
     #[serde(rename = "ref")]
@@ -380,14 +380,14 @@ pub struct PlanTask {
 
 /// A task in a plan: an existing task by number (`42`, `"#42"` or `"@alice#42"`), or a planned one by
 /// `ref`.
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum PlanRef {
     Number(i64),
     Name(String),
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UndoArgs {
     #[schemars(description = "批次号")]

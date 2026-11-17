@@ -179,6 +179,7 @@ pub fn run() {
                 let _ = window.hide();
             }
             WindowEvent::Focused(false) if window.label() == panel::LABEL => panel::blurred(window),
+            WindowEvent::Focused(true) => local::focused(window.app_handle()),
             _ => {}
         })
         .build(tauri::generate_context!())

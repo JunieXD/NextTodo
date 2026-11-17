@@ -118,7 +118,8 @@ const RETRY_MS = 5_000;
  * time: when the data or the settings change, such as a job submitted or one ending. The server
  * turns down a job it has not heard of yet, one already taken, and one while another is being
  * organized, which may be one deleted meanwhile and so seen nowhere: what changed meanwhile has it
- * look again, and otherwise it does after a while, waiting longer each time. Offline, the same. */
+ * look again, and otherwise it does after a while, waiting longer each time. Offline, the same; and
+ * when the drive it syncs through has not taken the start in time (docs/local.md#排定先后). */
 export function useLocalRunner(store: Store, userId: string) {
   useEffect(() => {
     let asking = false;
@@ -144,7 +145,7 @@ export function useLocalRunner(store: Store, userId: string) {
           () => (wait = RETRY_MS),
           (e) => {
             if (!(e instanceof ApiError)) throw e;
-            if (stopped || (e.status !== 409 && e.code !== OFFLINE)) return;
+            if (stopped || (e.status !== 409 && e.status !== 503 && e.code !== OFFLINE)) return;
             clearTimeout(retry);
             retry = setTimeout(look, wait);
             wait = Math.min(wait * 2, 120_000);

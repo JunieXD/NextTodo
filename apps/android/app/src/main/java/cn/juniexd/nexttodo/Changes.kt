@@ -11,7 +11,6 @@ import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -145,9 +144,8 @@ object Changes {
 
     /** Sends what is kept once online: after those waiting, should some be. */
     private fun retry(context: Context) {
-        val network = if (Local.on(context)) NetworkType.NOT_REQUIRED else NetworkType.CONNECTED
         val request = OneTimeWorkRequestBuilder<SendWorker>()
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(network).build())
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(Local.network(context)).build())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
         WorkManager.getInstance(context).enqueueUniqueWork(WORK, ExistingWorkPolicy.APPEND_OR_REPLACE, request)

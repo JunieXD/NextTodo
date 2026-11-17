@@ -142,7 +142,7 @@
 
 ### files
 
-附件的文件，存在数据目录的 `files/<id>` 里，不同步。
+附件的文件，存在数据目录的 `files/<id>` 里，不经同步协议传给设备；借网盘同步时传进网盘，各设备按需下载，见[附件](local.md#附件)。
 
 | 列 | 类型 | 说明 |
 |---|---|---|
@@ -152,8 +152,10 @@
 | size | INTEGER | |
 | created_at | INTEGER | |
 | unused_at | INTEGER，可空 | 没有附件用它时，从何时起：上传后还没加为附件，或附件已删除；有附件用它时为空 |
+| purged | INTEGER | 0 或 1：借网盘同步时已清理，文件删了、行留着，这个 ID 不能再用 |
+| staged | INTEGER | 0 或 1：借网盘同步时只上传了、还没在网盘的提交里加为附件，是这台设备自己的 |
 
-每天清理一次：在一个事务里删掉 `unused_at` 在 90 天以前的行，再删它们的文件；行删了以后，加附件和撤销都用不上它了，所以不会删掉刚恢复的文件。`files/` 里没有对应行的文件（写到一半的，或写完、还没记下就中断的）一天以后也删掉：在数据库的锁里逐个再查一次没有行才删，上传的文件也在这把锁里换上、记下，所以不会删掉刚记下的。
+每天清理一次：在一个事务里删掉 `unused_at` 在 90 天以前的行，再删它们的文件；行删了以后，加附件和撤销都用不上它了，所以不会删掉刚恢复的文件。`files/` 里没有对应行的文件（写到一半的，或写完、还没记下就中断的）一天以后也删掉：在数据库的锁里逐个再查一次没有行才删，上传的文件也在这把锁里换上、记下，所以不会删掉刚记下的。借网盘同步时改为写进网盘、各设备一起清理，见[附件](local.md#附件)。
 
 ### server_settings
 
@@ -179,6 +181,7 @@
 | state | TEXT | `waiting`（等待）、`running`（整理中）、`failed`（失败）或 `ready`（整理文件夹的建议待确认） |
 | error | TEXT，可空 | 失败的原因，只在 `failed` 时有 |
 | suggestions | TEXT，可空 | 建议，JSON 数组，每条按独有的字段区分：修改 `{task, title?, description?, due?, done?, folder?, after, unlink?, reason, was}`（`due` 为 `null` 是清除）、删除 `{delete, reason, was}`、新建 `{create, title, description?, due?, after, before, reason}`（`create` 是新事项的 ID）、调整顺序 `{order, reason}`；`was` 是整理时事项的 `{title, description, due}`。只在 `ready` 时有 |
+| run | TEXT，可空 | 借网盘同步时正在整理的这一轮：开始那次改动的 ID，只在 `running` 时有，见[运行](local.md#运行) |
 | created_at / updated_at | INTEGER | |
 
 ### ai_settings
@@ -249,6 +252,25 @@ AI 整理的[说明](ai.md#说明)，每个用户每个文件夹（含根目录�
 |---|---|---|
 | id | INTEGER PK | 固定为 1 |
 | value | TEXT | 32 位十六进制的随机串 |
+
+### sync_state
+
+本机模式[借网盘同步](local.md#借网盘同步)时，这台设备在网盘历史里的位置；没开着时没有行。最多一行，和读入的数据在同一个事务里写。
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | INTEGER PK | 固定为 1 |
+| generation | TEXT | 同步的这一代的代号 |
+| applied | INTEGER | 读到的提交的编号 |
+
+### sync_runs
+
+借网盘同步时，这台设备开始的 AI 整理，在写开始整理的提交之前记下，整理完或失败后删掉；启动时还在的记为失败，见[运行](local.md#运行)。
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| run | TEXT PK | 开始那次改动的 ID |
+| job_id | TEXT | 整理的请求 |
 
 ## 规则
 

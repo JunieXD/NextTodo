@@ -4,7 +4,7 @@
 pub(crate) mod args;
 mod read;
 mod text;
-mod write;
+pub(crate) mod write;
 
 pub use write::plan_into;
 pub(crate) use write::{Edit, edit_fields, new_due};
@@ -20,9 +20,11 @@ use rmcp::model::JsonObject;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use tokio::time::Instant;
 
 use crate::AppState;
 use crate::auth::Auth;
+use crate::drive::{self, Route};
 use crate::error::{ApiError, Json, from_value};
 use crate::files::Files;
 use crate::store;
@@ -76,7 +78,8 @@ pub struct Cx<'a> {
 }
 
 type ReadFn = Box<dyn FnOnce(&Connection, &Cx) -> Result<Output, ApiError> + Send>;
-type WriteFn = Box<dyn FnOnce(&WriteCx) -> Result<Write, ApiError> + Send>;
+/// Builds a write tool's operations; again each time the sync task tries it, from the data then.
+pub(crate) type WriteFn = Box<dyn Fn(&WriteCx) -> Result<Write, ApiError> + Send + Sync>;
 
 enum Call {
     Read(ReadFn),
@@ -100,7 +103,7 @@ macro_rules! tools {
         }
     };
     (@call Read, $run:path, $args:ident) => { Call::Read(Box::new(move |c, cx| $run(c, cx, $args))) };
-    (@call $kind:ident, $run:path, $args:ident) => { Call::Write(Box::new(move |w| $run(w, $args))) };
+    (@call $kind:ident, $run:path, $args:ident) => { Call::Write(Box::new(move |w| $run(w, $args.clone()))) };
 }
 
 tools! {
@@ -200,10 +203,18 @@ pub async fn call(st: &AppState, auth: Auth, name: &str, mut args: Value, id: Op
         }
         Call::Write(build) => {
             auth.require_write()?;
+            let id = id.unwrap_or_else(|| MutationId(uuid::Uuid::now_v7()));
+            let _direct = match st.drive.route().await {
+                Route::Drive(d) => {
+                    let output = d.tool(auth.into(), id, build, local, Some(Instant::now() + drive::WAIT)).await?;
+                    return Ok(Reply { output, seq: None });
+                }
+                Route::Direct(held) => held,
+            };
             let hub = st.hub.clone();
             st.db
                 .call(move |c| {
-                    let (output, to) = write::run(c, &auth, &files, id, now, local, build)?;
+                    let (output, to) = write::run(c, &auth, &files, id, now, local, &build)?;
                     hub.notify(&to);
                     Ok(Reply { output, seq: None })
                 })

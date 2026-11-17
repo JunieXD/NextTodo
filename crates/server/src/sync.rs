@@ -7,10 +7,12 @@ use nexttodo_core::model::{Effect, MutationId};
 use nexttodo_core::ops::Mutation;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
+use tokio::time::Instant;
 use ts_rs::TS;
 
 use crate::AppState;
 use crate::auth::Auth;
+use crate::drive::{self, Route};
 use crate::error::{ApiError, Json};
 use crate::mutate::{self, Actor, Applied};
 use crate::store;
@@ -93,6 +95,10 @@ pub fn changes_since(c: &Connection, user: &str, since: i64) -> Result<Changes, 
 
 pub async fn mutate(State(st): State<AppState>, auth: Auth, Json(m): Json<Mutation>) -> Result<Json<Applied>, ApiError> {
     auth.require_write()?;
+    let _direct = match st.drive.route().await {
+        Route::Drive(d) => return Ok(Json(d.mutate(auth.into(), m, Some(Instant::now() + drive::WAIT)).await?)),
+        Route::Direct(held) => held,
+    };
     let now = st.clock.now();
     let hub = st.hub.clone();
     let applied = st

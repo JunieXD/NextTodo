@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
+use nexttodo_core::model::AttachmentId;
 use rusqlite::{Connection, params};
 
 use crate::ai::{Ai, llm::Https};
@@ -86,18 +87,18 @@ impl Local {
         std::fs::create_dir_all(dir.join(DB_DIR))?;
         let db = dir.join(DB_DIR).join(DB_FILE);
         let now = crate::Clock::system().now();
-        let (mut started, (user, epoch)) = start::start(
+        let (started, (user, epoch)) = start::start(
             &db,
             dir.join("snapshots"),
             (Ipv4Addr::LOCALHOST, 0).into(),
             Ai::new(None, Arc::new(Https { public_only: false })),
+            Some(dir.to_owned()),
             move |c| Ok((local_user(c, now)?, db::epoch(c)?)),
         )
         .await?;
         let url = format!("http://{}", started.listener.local_addr()?);
         #[cfg(feature = "agent-port")]
         let agent_port = crate::agent_port::listen(dir).await?;
-        started.state.local = true;
         let (state, router) = (started.state.clone(), app(started.state.clone()));
         // On Android the page is at another origin (docs/local.md#页面直连).
         #[cfg(target_os = "android")]
@@ -116,14 +117,40 @@ impl Local {
     /// Writes a backup of the data to `to`, replacing the file there; not in the data directory, where
     /// it could take the database's place.
     pub async fn backup(&self, to: PathBuf) -> anyhow::Result<()> {
-        let dir = self.dir.clone();
+        let (dir, files) = (self.dir.clone(), self.state.files.clone());
+        let used: Vec<AttachmentId> = self
+            .state
+            .db
+            .call(|c| {
+                Ok(c.prepare("SELECT id FROM files WHERE unused_at IS NULL")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?)
+            })
+            .await?;
         tokio::task::spawn_blocking(move || {
             if to.parent().context("备份文件的路径无效")?.canonicalize()?.starts_with(dir.canonicalize()?) {
                 anyhow::bail!("备份不能放在 NextTodo 的数据目录里");
             }
+            // Syncing through a drive, those of other devices' attachments may not be here yet: a
+            // backup has every file in use (docs/local.md#停止).
+            for id in used {
+                files.fetch(id).context("有附件的文件还没有从网盘下载下来，请稍后重试")?;
+            }
             backup::write(&dir, &to)
         })
         .await?
+    }
+
+    /// Looks at the drive now, when syncing through one, waiting up to `wait` for what is new there to
+    /// be read in (docs/local.md#运行): as the app comes to the front, and before the widget lists the
+    /// tasks.
+    pub async fn pull(&self, wait: Duration) {
+        if let Some(drive) = self.state.drive.current().await {
+            drive.caught_up(wait).await;
+        }
+    }
+
+    /// Whether it syncs through a drive: what the app's own part sends then needs the network.
+    pub async fn syncing(&self) -> bool {
+        self.state.drive.current().await.is_some()
     }
 
     /// Signs the app in: a new session for this device, the earlier ones revoked with it.

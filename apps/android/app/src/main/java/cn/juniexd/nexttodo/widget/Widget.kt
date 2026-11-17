@@ -13,7 +13,6 @@ import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
@@ -260,9 +259,8 @@ object Widget {
     fun placed(context: Context) =
         AppWidgetManager.getInstance(context).getAppWidgetIds(ComponentName(context, NextWidgetReceiver::class.java)).isNotEmpty()
 
-    /** Refreshes come while online, but in local mode, whose server is in the app. */
-    private fun online(context: Context) =
-        Constraints.Builder().setRequiredNetworkType(if (Local.on(context)) NetworkType.NOT_REQUIRED else NetworkType.CONNECTED).build()
+    /** Refreshes come while online, but in local mode not syncing, whose server is in the app. */
+    private fun online(context: Context) = Constraints.Builder().setRequiredNetworkType(Local.network(context)).build()
 
     /** Every 15 minutes, the shortest WorkManager allows. Updates the refreshes there are to the mode
      * now, keeping when they come. */
@@ -326,9 +324,16 @@ object Widget {
 class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result =
         try {
+            // Syncing through a drive, with what other devices did meanwhile.
+            if (Local.on(applicationContext)) withContext(Dispatchers.IO) { Local.pull(PULL_WAIT_MS) }
             Widget.refresh(applicationContext)
             Result.success()
         } catch (e: Exception) {
             Result.retry()
         }
+
+    private companion object {
+        /** How long the list waits for what is new in the drive: it is fetched all the same then. */
+        const val PULL_WAIT_MS = 5_000L
+    }
 }

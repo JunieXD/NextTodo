@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import com.getcapacitor.Bridge
 import com.getcapacitor.BridgeActivity
+import kotlin.concurrent.thread
 
 class MainActivity : BridgeActivity() {
     private val handler = Handler(Looper.getMainLooper())
@@ -23,6 +24,12 @@ class MainActivity : BridgeActivity() {
         super.onCreate(savedInstanceState)
         // Without a WebView, Capacitor shows its error page and makes no bridge: nothing to give up.
         if (bridge != null && WebUpdate.trying(this)) handler.postDelayed(giveUp, READY_MS)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Syncing through a drive, what other devices did comes now, not within half a minute.
+        if (Local.on(this)) thread { Local.pull(0) }
     }
 
     override fun onDestroy() {

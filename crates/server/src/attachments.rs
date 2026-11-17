@@ -16,6 +16,7 @@ use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::auth::Auth;
+use crate::drive::Route;
 use crate::error::{ApiError, Json};
 use crate::files::{Files, ReceiveError};
 use crate::store::{self, StoredFile};
@@ -48,9 +49,17 @@ pub struct Uploaded {
     size: u32,
 }
 
-/// What a second upload of `id` gets: the first, when it was the same user's.
-fn uploaded_before(f: StoredFile, user: &str, id: AttachmentId) -> Result<Uploaded, ApiError> {
-    if f.owner == user { Ok(Uploaded { id, size: f.size.get() }) } else { Err(ApiError::conflict("附件 ID 已被别人用过")) }
+/// What an upload of `id` gets before it is taken in: what the first got, when it was the same
+/// user's; nothing when the id is new.
+fn uploaded_before(c: &Connection, user: &str, id: AttachmentId) -> Result<Option<Uploaded>, ApiError> {
+    match store::load_file(c, id)? {
+        Some(f) if f.owner == user => Ok(Some(Uploaded { id, size: f.size.get() })),
+        Some(_) => Err(ApiError::conflict("附件 ID 已被别人用过")),
+        // Used again, its file could still go from the drive, deleted late by the device that cleared it
+        // (docs/local.md#附件).
+        None if store::file_purged(c, id)? => Err(ApiError::conflict("附件 ID 已被用过")),
+        None => Ok(None),
+    }
 }
 
 pub async fn put_file(
@@ -67,8 +76,8 @@ pub async fn put_file(
         .map_err(|m| ApiError::invalid(m, Some("Content-Type".into())))?;
     let user = auth.user_id.clone();
     // Sent again after the reply was lost: no need to take it all in once more.
-    if let Some(f) = st.db.call(move |c| Ok(store::load_file(c, id)?)).await? {
-        return uploaded_before(f, &auth.user_id, id).map(Json);
+    if let Some(uploaded) = st.db.call(move |c| uploaded_before(c, &user, id)).await? {
+        return Ok(Json(uploaded));
     }
     let part = st.files.receive(body).await.map_err(|e| match e {
         ReceiveError::TooLarge => ApiError::too_large(),
@@ -76,17 +85,18 @@ pub async fn put_file(
         ReceiveError::Io(e) => e.into(),
     })?;
     let size = FileSize::try_from(part.size).map_err(|m| ApiError::invalid(m, None))?;
-    let (files, now) = (st.files.clone(), st.clock.now());
+    let route = st.drive.route().await;
+    let (files, now, staged, user) = (st.files.clone(), st.clock.now(), matches!(route, Route::Drive(_)), auth.user_id);
     let uploaded = st
         .db
         .call(move |c| {
             // Checked again and published holding the database: two uploads of the same id can't
             // both get in, and the daily clearing can't take the file before it is recorded.
             let tx = c.transaction()?;
-            if let Some(f) = store::load_file(&tx, id)? {
-                return uploaded_before(f, &user, id);
+            if let Some(uploaded) = uploaded_before(&tx, &user, id)? {
+                return Ok(uploaded);
             }
-            store::insert_file(&tx, id, &StoredFile { owner: user, media_type, size }, now)?;
+            store::insert_file(&tx, id, &StoredFile { owner: user, media_type, size }, now, staged)?;
             files.publish(part, id)?;
             tx.commit()?;
             Ok(Uploaded { id, size: size.get() })
@@ -122,6 +132,8 @@ pub async fn get_file(State(st): State<AppState>, auth: Auth, Path(id): Path<Str
         })
         .await?
         .ok_or_else(missing)?;
+    let files = st.files.clone();
+    tokio::task::spawn_blocking(move || files.fetch(id)).await.expect("fetching panicked")?;
     let Ok(res) = st.files.serve(id).oneshot(req).await;
     if res.status() == StatusCode::NOT_FOUND {
         return Err(missing());
@@ -171,7 +183,7 @@ pub async fn get_settings(State(st): State<AppState>, _: Auth) -> Result<Json<Se
 /// The administrator's, or in local mode the one user's.
 pub async fn put_settings(State(st): State<AppState>, auth: Auth, Json(s): Json<ServerSettings>) -> Result<Json<ServerSettings>, ApiError> {
     auth.require_device()?;
-    if !auth.is_admin && !st.local {
+    if !auth.is_admin && st.local.is_none() {
         return Err(ApiError::forbidden("仅管理员可以改服务器的设置"));
     }
     st.db
@@ -183,6 +195,11 @@ pub async fn put_settings(State(st): State<AppState>, auth: Auth, Json(s): Json<
         .map(Json)
 }
 
+/// Files no attachment has used since before this are cleared: undoing can't need them any more.
+pub fn unused_before(now: i64) -> i64 {
+    now - UNUSED_KEPT_MS
+}
+
 /// Deletes the files no attachment has used for as long as undoing could need them, and what
 /// uploads cut short and stops left behind. Holding the database all along, so that nothing is
 /// attached, restored or published meanwhile. Returns how many of each went.
@@ -190,14 +207,20 @@ pub fn clear(c: &mut Connection, files: &Files, now: i64) -> Result<(usize, usiz
     let tx = c.transaction()?;
     let expired: Vec<AttachmentId> = tx
         .prepare("DELETE FROM files WHERE unused_at < ?1 RETURNING id")?
-        .query_map([now - UNUSED_KEPT_MS], |r| r.get(0))?
+        .query_map([unused_before(now)], |r| r.get(0))?
         .collect::<Result<_, _>>()?;
     tx.commit()?;
     // Unrecorded now, nothing can bring them back: gone, or left for the sweep when this fails.
     for id in &expired {
         files.remove(*id)?;
     }
-    let known: HashSet<AttachmentId> = c.prepare("SELECT id FROM files")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
-    let swept = files.sweep(&known, STRAY_AGE)?;
-    Ok((expired.len(), swept))
+    Ok((expired.len(), sweep(c, files)?))
+}
+
+/// Deletes what uploads cut short and stops left behind, and files cleared through a drive that came
+/// back meanwhile; how many.
+pub fn sweep(c: &Connection, files: &Files) -> Result<usize, ApiError> {
+    let known: HashSet<AttachmentId> =
+        c.prepare("SELECT id FROM files WHERE NOT purged")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    Ok(files.sweep(&known, STRAY_AGE)?)
 }

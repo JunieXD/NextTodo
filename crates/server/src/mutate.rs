@@ -14,7 +14,7 @@ use std::num::NonZeroU32;
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
     AiJob, AiJobId, Attachment, AttachmentId, Change, Completions, Dependency, Due, Effect, Folder, FolderId, Holder, JobKind, JobState,
-    Link, MutationId, Person, Share, SortKey, Suggestion, Task, TaskId,
+    Link, MutationId, Person, Share, SortKey, Task, TaskId,
 };
 use nexttodo_core::ops::{MAX_OPS, Mutation, Op};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -131,17 +131,6 @@ pub fn set_job_state(
     change_job(c, actor, id, from, |j| AiJob { state: to, error, ..j }, now)
 }
 
-/// Makes a tidying being done ready, with what AI suggests; as `set_job_state` does.
-pub fn suggest(
-    c: &mut Connection,
-    actor: &Actor,
-    id: AiJobId,
-    suggestions: Vec<Suggestion>,
-    now: i64,
-) -> Result<Option<(AiJob, i64)>, ApiError> {
-    change_job(c, actor, id, JobState::Running, |j| AiJob { state: JobState::Ready, suggestions: Some(suggestions), ..j }, now)
-}
-
 fn change_job(
     c: &mut Connection,
     actor: &Actor,
@@ -151,16 +140,30 @@ fn change_job(
     now: i64,
 ) -> Result<Option<(AiJob, i64)>, ApiError> {
     let tx = c.transaction()?;
-    let Some(before) = store::load_job(&tx, actor.user, id)? else { return Ok(None) };
+    let Some((after, done)) = job_change(&tx, actor, id, from, change, now)? else { return Ok(None) };
+    let seq = record(&tx, actor, MutationId(Uuid::now_v7()), &[], &done, now)?.seq;
+    tx.commit()?;
+    Ok(Some((after, seq)))
+}
+
+/// Moves job `id` on from state `from` in the caller's transaction, as `change` has it: the job after,
+/// and what that did. Nothing when the job is gone or no longer `from`.
+pub fn job_change(
+    c: &Connection,
+    actor: &Actor,
+    id: AiJobId,
+    from: JobState,
+    change: impl FnOnce(AiJob) -> AiJob,
+    now: i64,
+) -> Result<Option<(AiJob, Done)>, ApiError> {
+    let Some(before) = store::load_job(c, actor.user, id)? else { return Ok(None) };
     if before.state != from {
         return Ok(None);
     }
-    let mut cx = Cx::new(&tx, actor, now);
+    let mut cx = Cx::new(c, actor, now);
     let after = change(before.clone());
     cx.update_job(before, after.clone(), actor.user)?;
-    let seq = record(&tx, actor, MutationId(Uuid::now_v7()), &[], &cx.done, now)?.seq;
-    tx.commit()?;
-    Ok(Some((after, seq)))
+    Ok(Some((after, cx.done)))
 }
 
 /// Tells everyone who knows a user that the user's name changed, as a change of its own.
@@ -218,6 +221,14 @@ impl Side {
 }
 
 impl Done {
+    /// A change read from the drive, as its effects were written here: local mode has one user,
+    /// who sees all of it (docs/local.md#读入).
+    pub(crate) fn replayed(effects: Vec<Effect>, user: &str) -> Done {
+        let side = Side::of(vec![user.to_owned()]);
+        let seen = effects.into_iter().map(|effect| Seen { effect, before: side.clone(), after: side.clone(), kept: false }).collect();
+        Done { seen, resync: Vec::new() }
+    }
+
     /// Everything it did.
     pub fn effects(&self) -> Vec<Effect> {
         self.seen.iter().filter(|s| !s.kept).map(|s| s.effect.clone()).collect()

@@ -2,6 +2,7 @@
 //! See docs/local.md.
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use nexttodo_server::backup;
 use nexttodo_server::error::for_user;
@@ -87,6 +88,17 @@ pub async fn start_local(app: AppHandle, server: State<'_, Server>, renew: bool)
         _ => running.token.insert(local.session().await.map_err(|e| Failed { message: e.describe(), locked: false })?).clone(),
     };
     Ok(Started { url: local.url.clone(), token, user: local.user.clone(), epoch: local.epoch.clone() })
+}
+
+/// Has the server look at the drive now, when it syncs through one, as a window of the app comes to the
+/// front (docs/local.md#运行).
+pub fn focused(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Some(local) = &app.state::<Server>().0.lock().await.local {
+            local.pull(Duration::ZERO).await;
+        }
+    });
 }
 
 /// The file dialog, attached to the window, for backups.

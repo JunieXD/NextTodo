@@ -1,6 +1,7 @@
 package cn.juniexd.nexttodo
 
 import android.content.Context
+import androidx.work.NetworkType
 import cn.juniexd.nexttodo.reminders.Reminders
 import cn.juniexd.nexttodo.widget.Widget
 import com.getcapacitor.JSObject
@@ -23,6 +24,15 @@ object Local {
     private const val EPOCH = "localEpoch"
 
     fun on(context: Context) = Server.prefs(context).getString(MODE, null) == LOCAL
+
+    /** What sending to the server needs: no network in local mode, but while it syncs through a drive
+     * (docs/local.md#借网盘同步). */
+    fun network(context: Context) =
+        if (on(context) && !LocalServer.syncing()) NetworkType.NOT_REQUIRED else NetworkType.CONNECTED
+
+    /** Has the server look at the drive now, when it syncs through one, waiting up to `waitMs` for
+     * what is new there to be read in (docs/local.md#运行). */
+    fun pull(waitMs: Long) = LocalServer.pull(waitMs)
 
     private fun dir(context: Context) = File(context.filesDir, "local").path
 
@@ -93,6 +103,10 @@ private object LocalServer {
     @JvmStatic external fun start(dir: String): String
 
     @JvmStatic external fun session(): String
+
+    @JvmStatic external fun pull(waitMs: Long)
+
+    @JvmStatic external fun syncing(): Boolean
 
     @JvmStatic external fun backup(to: String)
 

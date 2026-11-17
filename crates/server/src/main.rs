@@ -84,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Serve { listen, web } => {
             let _lock = lock(&cli.data, false)?;
             let ai = Ai::new(secret, Arc::new(Https { public_only: true }));
-            let (started, ()) = start::start(&db, cli.data.join("snapshots"), listen, ai, |_| Ok(())).await?;
+            let (started, ()) = start::start(&db, cli.data.join("snapshots"), listen, ai, None, |_| Ok(())).await?;
             let web = match (&installed, own) {
                 // Listening: the switch to it is done.
                 (Some(dir), Some(own)) => {

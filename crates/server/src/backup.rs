@@ -13,7 +13,7 @@ use nexttodo_core::model::{AttachmentId, MAX_FILE_SIZE};
 use rusqlite::Connection;
 use uuid::Uuid;
 
-use crate::{Clock, db, files, local};
+use crate::{Clock, db, drive, files, local};
 
 /// A backup being prepared; not committed yet.
 const PART: &str = "restore.part";
@@ -70,12 +70,22 @@ fn pack(data: &Path, copy: &Path, to: &Path) -> anyhow::Result<()> {
 /// Prepares the backup at `from` to replace the data in `dir`: on a copy, checked and made the local
 /// user's, with a new epoch. When it won't do, the copy goes again and nothing else has changed.
 pub fn prepare(dir: &Path, from: &Path) -> anyhow::Result<()> {
+    if drive::setup::configured(dir) {
+        // Its data is not the history the drive's goes on with (docs/local.md#停止).
+        bail!("借网盘同步开着时不能恢复备份，请先停止同步");
+    }
+    prepared(dir, |part| unpack(from, part).and_then(|files| convert(&part.join(DB_FILE), files)))
+}
+
+/// Prepares data to replace the data in `dir`, as `fill` makes it in the directory it is given: its
+/// database, `DB_FILE`, checked and made the local user's, and its files. When it won't do, it goes
+/// again and nothing else has changed.
+pub(crate) fn prepared(dir: &Path, fill: impl FnOnce(&Path) -> anyhow::Result<()>) -> anyhow::Result<()> {
     let part = dir.join(PART);
     gone(std::fs::remove_dir_all(&part))?;
     local::private_dir(&part)?;
     let copy = part.join(DB_FILE);
-    let done = unpack(from, &part).and_then(|files| convert(&copy, files));
-    let done = done.and_then(|()| {
+    let done = fill(&part).and_then(|()| {
         // Writable: Windows flushes no file opened for reading only.
         std::fs::OpenOptions::new().write(true).open(&copy)?.sync_all()?;
         sync_dir(&part)?;
@@ -132,7 +142,7 @@ fn unpack(from: &Path, part: &Path) -> anyhow::Result<Option<HashMap<AttachmentI
 
 /// Checks that the database at `copy` is NextTodo's, of this version or an earlier one, with one
 /// user, and that `files`, a tar's, are what it lists, then migrates it and makes it the local user's.
-fn convert(copy: &Path, files: Option<HashMap<AttachmentId, u64>>) -> anyhow::Result<()> {
+pub(crate) fn convert(copy: &Path, files: Option<HashMap<AttachmentId, u64>>) -> anyhow::Result<()> {
     let mut c = Connection::open(copy)?;
     if !db::ours(&c)? {
         bail!(NOT_OURS);
@@ -150,6 +160,8 @@ fn convert(copy: &Path, files: Option<HashMap<AttachmentId, u64>>) -> anyhow::Re
     local::local_user(&mut c, Clock::system().now())?;
     // Even a backup of this very device's: it is not the history the data has gone on with since.
     c.execute("UPDATE epoch SET value = lower(hex(randomblob(16)))", [])?;
+    // Of a backup taken as the device synced through a drive: it is in no drive's history now.
+    c.execute_batch("DELETE FROM sync_state; DELETE FROM sync_runs;")?;
     // One file, without a -wal beside it.
     c.pragma_update_and_check(None, "journal_mode", "DELETE", |_| Ok(()))?;
     Ok(())

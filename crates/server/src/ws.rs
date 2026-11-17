@@ -12,13 +12,15 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::mpsc;
 use tokio::time::Instant;
 use ts_rs::TS;
 
 use crate::AppState;
 use crate::auth::{self, Auth};
+use crate::drive::{Maker, Route};
 use crate::error::{ApiError, ErrorBody, from_value};
-use crate::mutate::{self, Actor};
+use crate::mutate;
 use crate::sync::{LogEntry, changes_since};
 
 const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
@@ -124,6 +126,8 @@ async fn connection(st: AppState, mut ws: WebSocket, presented: Option<String>) 
     if !push(&st, &mut ws, &auth, &mut sent, true).await? {
         return Ok(());
     }
+    // Answers to mutations the sync task makes later, while this goes on (docs/local.md#排定先后).
+    let (answers, mut answered) = mpsc::unbounded_channel();
     let mut ping = tokio::time::interval(PING_EVERY);
     ping.tick().await;
     // A client that stopped answering is gone, even if the connection looks open.
@@ -133,7 +137,7 @@ async fn connection(st: AppState, mut ws: WebSocket, presented: Option<String>) 
             msg = ws.recv() => match msg {
                 Some(Ok(Message::Text(text))) => {
                     heard = Instant::now();
-                    if let Err(e) = handle(&st, &mut ws, &secret, &text).await? {
+                    if let Err(e) = handle(&st, &mut ws, &secret, &text, &answers).await? {
                         return fail(&mut ws, e).await;
                     }
                 }
@@ -153,6 +157,10 @@ async fn connection(st: AppState, mut ws: WebSocket, presented: Option<String>) 
                     return Ok(());
                 }
             }
+            answer = answered.recv() => match answer.expect("this holds a sender") {
+                Ok(reply) => send(&mut ws, reply).await?,
+                Err(e) => return fail(&mut ws, e).await,
+            },
             _ = tokio::time::sleep_until(heard + SILENT_LIMIT) => return Ok(()),
             _ = ping.tick() => ws.send(Message::Ping(Default::default())).await?,
         }
@@ -195,33 +203,68 @@ async fn push(st: &AppState, ws: &mut WebSocket, auth: &Auth, sent: &mut i64, al
 /// Handles a message after `hello`. A mutation is acknowledged, or rejected when the change itself
 /// does not hold. Anything that is not a mutation carrying an id cannot be answered and ends the
 /// connection, as does a mutation after the session ended or one the server failed at: that is no
-/// fault of the change, which may still go through in the next session or after reconnecting.
-async fn handle(st: &AppState, ws: &mut WebSocket, secret: &str, text: &str) -> Result<Result<(), ApiError>, axum::Error> {
+/// fault of the change, which may still go through in the next session or after reconnecting. When
+/// syncing through a drive, the sync task makes it and the answer comes through `answers`.
+async fn handle(
+    st: &AppState,
+    ws: &mut WebSocket,
+    secret: &str,
+    text: &str,
+    answers: &mpsc::UnboundedSender<Result<ServerMessage, ApiError>>,
+) -> Result<Result<(), ApiError>, axum::Error> {
     let Ok(ClientMessage::Mutate { mutation }) = serde_json::from_str::<ClientMessage>(text) else {
         return Ok(Err(ApiError::invalid("无法识别的消息", None)));
     };
     let Some(id) = mutation.get("id").and_then(|id| serde_json::from_value::<MutationId>(id.clone()).ok()) else {
         return Ok(Err(ApiError::invalid("改动缺少有效的 id", None)));
     };
-    let reply = match apply(st, secret, mutation).await {
-        Ok(seq) => ServerMessage::Ack { id, seq },
-        Err(e) if matches!(e.code(), "unauthenticated" | "internal") => return Ok(Err(e)),
-        Err(e) => ServerMessage::Reject { id, error: e.body() },
+    let applied = match apply(st, secret, mutation).await {
+        Ok((maker, m)) => match st.drive.route().await {
+            Route::Drive(drive) => {
+                let waiting = drive.mutate(maker, m, None);
+                let answers = answers.clone();
+                tokio::spawn(async move {
+                    // The connection may have closed meanwhile.
+                    let _ = answers.send(reply(id, waiting.await.map(|a| a.seq)));
+                });
+                return Ok(Ok(()));
+            }
+            Route::Direct(_held) => direct(st, (maker, m)).await,
+        },
+        Err(e) => Err(e),
     };
-    send(ws, reply).await?;
+    match reply(id, applied) {
+        Ok(reply) => send(ws, reply).await?,
+        Err(e) => return Ok(Err(e)),
+    }
     Ok(Ok(()))
 }
 
-async fn apply(st: &AppState, secret: &str, mutation: Value) -> Result<i64, ApiError> {
-    // Checked on every mutation, so a token revoked meanwhile stops working at once.
+/// What to tell the client of mutation `id`: acknowledged, rejected, or, when the session ended or
+/// the server failed, nothing but the error that ends the connection.
+fn reply(id: MutationId, applied: Result<i64, ApiError>) -> Result<ServerMessage, ApiError> {
+    match applied {
+        Ok(seq) => Ok(ServerMessage::Ack { id, seq }),
+        Err(e) if matches!(e.code(), "unauthenticated" | "internal") => Err(e),
+        Err(e) => Ok(ServerMessage::Reject { id, error: e.body() }),
+    }
+}
+
+/// Who makes `mutation`, read, checked on every mutation so a token revoked meanwhile stops working
+/// at once.
+async fn apply(st: &AppState, secret: &str, mutation: Value) -> Result<(Maker, Mutation), ApiError> {
     let auth = auth::authenticate(st, secret.to_owned()).await?;
     auth.require_write()?;
     let m: Mutation = from_value(mutation)?;
+    Ok((auth.into(), m))
+}
+
+async fn direct(st: &AppState, (maker, m): (Maker, Mutation)) -> Result<i64, ApiError> {
     let now = st.clock.now();
     let hub = st.hub.clone();
     st.db
         .call(move |c| {
-            let (applied, to) = mutate::apply(c, &Actor { user: &auth.user_id, token_id: &auth.token_id, via: auth.via() }, &m, now)?;
+            let (applied, to) = mutate::apply(c, &maker.actor(), &m, now)?;
             hub.notify(&to);
             Ok(applied.seq)
         })

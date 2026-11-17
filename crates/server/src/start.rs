@@ -11,6 +11,7 @@ use rusqlite::Connection;
 use tokio::net::TcpListener;
 
 use crate::ai::{self, Ai};
+use crate::drive::{self, Route};
 use crate::error::ApiError;
 use crate::files::{self, Files};
 use crate::{AppState, Clock, Db, MUTATION_RETENTION_MS, attachments, db};
@@ -28,17 +29,22 @@ pub struct Started {
 
 /// Opens the database at `db`, runs `prepare` on it, fails the jobs a stop cut short and listens on
 /// `listen`. Attachments' files are beside the database, in `files/`; daily snapshots will go to
-/// `snapshots`.
+/// `snapshots`. In the app, `local` is its data directory: syncing through a drive goes on from there
+/// before any request.
 pub async fn start<T: Send + 'static>(
     db: &Path,
     snapshots: PathBuf,
     listen: SocketAddr,
     ai: Ai,
+    local: Option<PathBuf>,
     prepare: impl FnOnce(&mut Connection) -> Result<T, ApiError> + Send + 'static,
 ) -> anyhow::Result<(Started, T)> {
     let files = Files::new(db.parent().expect("a database in a directory").join(files::DIR));
-    let state = AppState::new(Db::open(db)?, Clock::system(), files).with_ai(ai);
+    let state = AppState { local, ..AppState::new(Db::open(db)?, Clock::system(), files).with_ai(ai) };
     let prepared = state.db.call(prepare).await?;
+    if let Some(dir) = &state.local {
+        drive::setup::resume(&state, dir).await?;
+    }
     // Before any request: a job the user starts would otherwise race these.
     ai::interrupted(&state).await?;
     let listener = TcpListener::bind(listen).await?;
@@ -66,8 +72,19 @@ async fn daily(state: AppState, db: PathBuf, snapshots: PathBuf) {
             tracing::info!(cleared, "pruned mutation log");
         }
         let (files, now) = (state.files.clone(), state.clock.now());
-        if let Ok((expired, swept)) = state.db.call(move |c| attachments::clear(c, &files, now)).await {
-            tracing::info!(expired, swept, "cleared files");
+        match state.drive.route().await {
+            Route::Drive(drive) => {
+                // Cleared on every device at once, through the drive (docs/local.md#附件).
+                tokio::spawn(drive.purge(attachments::unused_before(now)));
+                if let Ok(swept) = state.db.call(move |c| attachments::sweep(c, &files)).await {
+                    tracing::info!(swept, "swept files");
+                }
+            }
+            Route::Direct(_held) => {
+                if let Ok((expired, swept)) = state.db.call(move |c| attachments::clear(c, &files, now)).await {
+                    tracing::info!(expired, swept, "cleared files");
+                }
+            }
         }
         let (db, snapshots, now) = (db.clone(), snapshots.clone(), state.clock.now());
         match tokio::task::spawn_blocking(move || db::snapshot(&db, &snapshots, now, SNAPSHOTS_KEPT)).await.expect("snapshot task panicked")

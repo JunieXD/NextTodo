@@ -5,8 +5,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use nexttodo_server::local::Local;
 use serde_json::{Value, json};
@@ -58,6 +58,30 @@ fn proxy() -> (String, Arc<AtomicUsize>) {
         }
     });
     (url, count)
+}
+
+/// A server that reads each request and closes the connection unanswered, as when the answer is lost
+/// on the way back: the change ids the requests came with.
+fn unanswering() -> (String, Arc<Mutex<Vec<String>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let keys = Arc::new(Mutex::new(Vec::new()));
+    let heard = keys.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let mut reader = BufReader::new(stream.unwrap());
+            let mut line = String::new();
+            while reader.read_line(&mut line).unwrap() > 2 {
+                if let Some((name, value)) = line.split_once(':')
+                    && name.eq_ignore_ascii_case("idempotency-key")
+                {
+                    heard.lock().unwrap().push(value.trim().to_owned());
+                }
+                line.clear();
+            }
+        }
+    });
+    (url, keys)
 }
 
 /// Whether it succeeded, and what it printed and said on stderr.
@@ -211,4 +235,21 @@ async fn mcp_reads_the_address_again_for_each_message() {
     assert!(reply["result"]["tools"].as_array().is_some_and(|t| !t.is_empty()), "{reply}");
     drop(input);
     assert!(mcp.wait().unwrap().success());
+}
+
+#[test]
+fn a_change_whose_answers_are_all_lost_is_tried_as_one_and_named_to_send_again() {
+    let home = Home::new();
+    let (url, keys) = unanswering();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_nexttodo"));
+    command.env("HOME", &home.0).env("NEXTTODO_URL", &url).env("NEXTTODO_TOKEN", "nt_test");
+    for var in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"] {
+        command.env_remove(var);
+    }
+    let (ok, _, err) = run(command.args(["add", "写测试"]));
+    let keys = keys.lock().unwrap().clone();
+    assert!(!ok);
+    assert_eq!(keys.len(), 3, "{err}");
+    assert!(keys.iter().all(|k| *k == keys[0]), "{keys:?}");
+    assert!(err.contains(&format!("--request-id {}", keys[0])), "{err}");
 }

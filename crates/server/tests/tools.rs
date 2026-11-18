@@ -565,6 +565,8 @@ async fn permissions_idempotency_and_bad_arguments() {
     done("019a4b2c-0000-7000-8000-000000000044", 1).await;
     assert_eq!(done("019a4b2c-0000-7000-8000-000000000043", 2).await, first, "a retry gets the first answer, not one made now");
 
+    // A read makes no change: no id to check.
+    assert_eq!(t.tool(&s, "next", json!({ "request_id": "这不是 ID" })).await.status, StatusCode::OK);
     let r = t.tool(&s, "show", json!({ "task": "abc" })).await;
     assert_eq!((r.status, r.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("task")));
     assert_eq!(t.tool(&s, "show", json!({ "task": 1, "extra": true })).await.status, StatusCode::BAD_REQUEST);

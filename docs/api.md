@@ -165,7 +165,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | 413 | `too_large` | 上传的文件超过 20 MB |
 | 410 | `resync` | `since` 早于保留期，或者服务端恢复过快照，需要重新下载 `/snapshot` |
 | 503 | `unavailable` | 本机模式借网盘同步时连不上网盘：改动还没发出，没有生效，见[排定先后](local.md#排定先后)；开启时连不上网盘 |
-| 503 | `outcome_unknown` | 本机模式借网盘同步时，改动已经发出，网盘没有及时回应，可能已经生效；`details.mutation_id` 是改动 ID，用它原样重发不会重复生效，见[重试](agent.md#重试) |
+| 503 | `outcome_unknown` | 本机模式借网盘同步时，改动已经发出，网盘没有及时回应，可能已经生效；`details.mutation_id` 是改动 ID，用它原样重发不会重复生效，见[重试](agent.md#重试)；保存 AI 整理的说明没有改动 ID，再保存一次即可 |
 
 ## 同步协议
 

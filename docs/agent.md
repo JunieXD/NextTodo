@@ -256,7 +256,7 @@ bearer_token_env_var = "NEXTTODO_TOKEN"
 
 | 入口 | 改动 ID |
 |---|---|
-| 命令行 | 每条命令自动生成，网络出错时用它自动重试两次；`--request-id <uuidv7>` 指定 |
+| 命令行 | 每条写命令自动生成，网络出错时用它自动重试两次，都没有回应时错误里给出它；`--request-id <uuidv7>` 指定 |
 | MCP | 写工具的参数 `request_id`（UUIDv7），不给时服务端生成 |
 | 工具接口 | 请求头 `Idempotency-Key` 或参数 `request_id`，都给时必须相同，否则 400 |
 

@@ -469,23 +469,30 @@ impl Server {
         reply(status, &text)
     }
 
-    /// Calls a tool as change `key`, or a new one, and returns `(text, data)`. Network failures,
-    /// including a reply cut off on the way back, are retried with the same key, so a change that
-    /// reached the server applies once. In local mode that is the same run of the app: one restarted
-    /// since has another certificate, and the change never goes to a database restored meanwhile.
-    fn tool(&self, name: &str, token: &str, key: Option<&str>, args: &Value) -> anyhow::Result<(String, Value)> {
+    /// Calls a tool, a write as change `change`, and returns `(text, data)`. Network failures,
+    /// including a reply cut off on the way back, are retried, a write as the same change, so that one
+    /// which reached the server applies once. In local mode that is the same run of the app: one
+    /// restarted since has another certificate, and the change never goes to a database restored
+    /// meanwhile.
+    fn tool(&self, name: &str, token: &str, change: Option<&str>, args: &Value) -> anyhow::Result<(String, Value)> {
         let path = format!("/api/v1/tools/{name}");
-        let key = key.map_or_else(|| uuid::Uuid::now_v7().to_string(), str::to_owned);
         let mut attempt = 0;
         let (status, text) = loop {
-            match self.send(&path, Some(token), Some(&key), args) {
+            match self.send(&path, Some(token), change, args) {
                 Ok(res) => break res,
                 Err(e) if attempt < 2 && !self.mismatch(&e) => {
                     attempt += 1;
                     std::thread::sleep(Duration::from_millis(500 * attempt));
                     eprintln!("{}", printable(&format!("连接服务器失败（{e}），第 {attempt} 次重试")));
                 }
-                Err(e) => return Err(self.unreachable(e)),
+                Err(e) => {
+                    let e = self.unreachable(e);
+                    // It may have gone in, the answers lost on the way back (docs/agent.md#重试).
+                    return Err(match change {
+                        Some(id) => anyhow!("{e:#}；改动可能已经生效，重发时加上 --request-id {id}，不会重复生效"),
+                        None => e,
+                    });
+                }
             }
         };
         match reply(status, &text)? {
@@ -540,10 +547,20 @@ fn here(args: &mut Value) {
     args["time"] = now.format("%H:%M").to_string().into();
 }
 
-fn call(name: &str, mut args: Value, out: &Out) -> anyhow::Result<()> {
+/// Calls read tool `name` and prints what it gives.
+fn read(name: &str, args: Value, out: &Out) -> anyhow::Result<()> {
+    call(name, None, args, out)
+}
+
+/// Calls write tool `name`, which makes one change, and prints what it did.
+fn write(name: &str, args: Value, out: &Out) -> anyhow::Result<()> {
+    call(name, Some(&out.change()), args, out)
+}
+
+fn call(name: &str, change: Option<&str>, mut args: Value, out: &Out) -> anyhow::Result<()> {
     here(&mut args);
     let (server, token) = connect()?;
-    let (text, data) = server.tool(name, &token, out.request_id.as_deref(), &args)?;
+    let (text, data) = server.tool(name, &token, change, &args)?;
     if out.json {
         println!("{}", serde_json::to_string_pretty(&data)?);
     } else {
@@ -566,8 +583,8 @@ fn attach(task: &str, files: &[PathBuf], name: Option<String>, out: &Out) -> any
     server.timeout = Duration::from_secs(600);
     let mut made = Vec::new();
     let attached = files.iter().try_for_each(|file| {
-        let (text, data) = attach_one(&server, &token, task, file, name.as_deref(), out.request_id.as_deref())
-            .with_context(|| file.display().to_string())?;
+        let (text, data) =
+            attach_one(&server, &token, task, file, name.as_deref(), &out.change()).with_context(|| file.display().to_string())?;
         if !out.json {
             println!("{}", printable(&text));
         }
@@ -580,15 +597,8 @@ fn attach(task: &str, files: &[PathBuf], name: Option<String>, out: &Out) -> any
     attached
 }
 
-/// Attaches `file` to `task` as change `key`, as `name` or its own.
-fn attach_one(
-    server: &Server,
-    token: &str,
-    task: &str,
-    file: &Path,
-    name: Option<&str>,
-    key: Option<&str>,
-) -> anyhow::Result<(String, Value)> {
+/// Attaches `file` to `task` as change `change`, as `name` or its own.
+fn attach_one(server: &Server, token: &str, task: &str, file: &Path, name: Option<&str>, change: &str) -> anyhow::Result<(String, Value)> {
     // No more than one byte past the limit is read, whatever the file's size.
     let mut bytes = Vec::new();
     File::open(file).and_then(|f| f.take(u64::from(MAX_FILE_SIZE) + 1).read_to_end(&mut bytes)).context("无法读取")?;
@@ -601,7 +611,7 @@ fn attach_one(
     };
     let mut args = json!({ "task": task, "name": name, "data": BASE64.encode(&bytes) });
     here(&mut args);
-    server.tool("attach", token, key, &args)
+    server.tool("attach", token, Some(change), &args)
 }
 
 /// Saves attachment `id`'s file to `output`: a file, or a directory to put it in under the
@@ -815,26 +825,33 @@ struct Out {
     request_id: Option<String>,
 }
 
+impl Out {
+    /// The id of the change a write makes: as given, or a new one.
+    fn change(&self) -> String {
+        self.request_id.clone().unwrap_or_else(|| uuid::Uuid::now_v7().to_string())
+    }
+}
+
 fn run(cli: Cli) -> anyhow::Result<()> {
     let j = &Out { json: cli.json, request_id: cli.request_id };
     match cli.command {
         Command::Login { url, name, read_only } => login(url, name, read_only),
-        Command::Tree => call("tree", json!({}), j),
-        Command::Ls { folder, all, limit } => call("list", json!({ "folder": folder, "all": all, "limit": limit }), j),
+        Command::Tree => read("tree", json!({}), j),
+        Command::Ls { folder, all, limit } => read("list", json!({ "folder": folder, "all": all, "limit": limit }), j),
         Command::Next { folders, limit } => {
             let mut args = json!({ "limit": limit });
             // Only with a filter: servers before it turn down arguments they don't know.
             if let Some(folders) = folders {
                 args["folders"] = folders.into();
             }
-            call("next", args, j)
+            read("next", args, j)
         }
-        Command::Show { task } => call("show", json!({ "task": task }), j),
-        Command::Search { query, limit } => call("search", json!({ "query": query.join(" "), "limit": limit }), j),
-        Command::Graph { folder, all, mermaid } => call("graph", json!({ "folder": folder, "all": all, "mermaid": mermaid }), j),
-        Command::Log { limit } => call("log", json!({ "limit": limit }), j),
-        Command::Jobs => call("jobs", json!({}), j),
-        Command::Add { title, folder, description, start, due, remind, repeat, repeat_from, assign, after, before } => call(
+        Command::Show { task } => read("show", json!({ "task": task }), j),
+        Command::Search { query, limit } => read("search", json!({ "query": query.join(" "), "limit": limit }), j),
+        Command::Graph { folder, all, mermaid } => read("graph", json!({ "folder": folder, "all": all, "mermaid": mermaid }), j),
+        Command::Log { limit } => read("log", json!({ "limit": limit }), j),
+        Command::Jobs => read("jobs", json!({}), j),
+        Command::Add { title, folder, description, start, due, remind, repeat, repeat_from, assign, after, before } => write(
             "add",
             json!({
                 "title": title, "folder": folder, "description": description, "start": start, "due": due, "remind": remind,
@@ -895,31 +912,31 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             if !unassign.is_empty() {
                 args.insert("unassign".into(), unassign.into());
             }
-            call("edit", args.into(), j)
+            write("edit", args.into(), j)
         }
-        Command::Done { tasks, end_repeat } => call("done", json!({ "tasks": tasks, "end_repeat": end_repeat }), j),
-        Command::Reopen { tasks } => call("reopen", json!({ "tasks": tasks }), j),
-        Command::Mkdir { path } => call("mkdir", json!({ "path": path }), j),
-        Command::Rename { target, name, attachment: true } => call("rename", json!({ "attachment": target, "name": name }), j),
-        Command::Rename { target, name, attachment: false } => call("rename", json!({ "folder": target, "name": name }), j),
+        Command::Done { tasks, end_repeat } => write("done", json!({ "tasks": tasks, "end_repeat": end_repeat }), j),
+        Command::Reopen { tasks } => write("reopen", json!({ "tasks": tasks }), j),
+        Command::Mkdir { path } => write("mkdir", json!({ "path": path }), j),
+        Command::Rename { target, name, attachment: true } => write("rename", json!({ "attachment": target, "name": name }), j),
+        Command::Rename { target, name, attachment: false } => write("rename", json!({ "folder": target, "name": name }), j),
         Command::Attach { task, files, name } => attach(&task, &files, name, j),
-        Command::Detach { attachments } => call("detach", json!({ "attachments": attachments }), j),
+        Command::Detach { attachments } => write("detach", json!({ "attachments": attachments }), j),
         Command::Download { id, output } => download(&id, output, j.json),
         Command::Mv { items: mut list } => {
             let to = list.pop().expect("at least two arguments");
             let (tasks, folders) = items(&list);
-            call("move", json!({ "tasks": tasks, "folders": folders, "to": to }), j)
+            write("move", json!({ "tasks": tasks, "folders": folders, "to": to }), j)
         }
         Command::Rm { items: list } => {
             let (tasks, folders) = items(&list);
-            call("delete", json!({ "tasks": tasks, "folders": folders }), j)
+            write("delete", json!({ "tasks": tasks, "folders": folders }), j)
         }
-        Command::Dep { command: Dep::Add { before, after } } => call("dep_add", json!({ "before": before, "after": after }), j),
-        Command::Dep { command: Dep::Rm { before, after } } => call("dep_remove", json!({ "before": before, "after": after }), j),
-        Command::Apply { file, dry_run } => call("apply", json!({ "plan": plan(&file)?, "dry_run": dry_run }), j),
-        Command::Share { folder, users } => call("share", json!({ "folder": folder, "users": users }), j),
-        Command::Unshare { folder, users } => call("unshare", json!({ "folder": folder, "users": users }), j),
-        Command::Undo { batch } => call("undo", json!({ "batch": batch }), j),
+        Command::Dep { command: Dep::Add { before, after } } => write("dep_add", json!({ "before": before, "after": after }), j),
+        Command::Dep { command: Dep::Rm { before, after } } => write("dep_remove", json!({ "before": before, "after": after }), j),
+        Command::Apply { file, dry_run } => write("apply", json!({ "plan": plan(&file)?, "dry_run": dry_run }), j),
+        Command::Share { folder, users } => write("share", json!({ "folder": folder, "users": users }), j),
+        Command::Unshare { folder, users } => write("unshare", json!({ "folder": folder, "users": users }), j),
+        Command::Undo { batch } => write("undo", json!({ "batch": batch }), j),
         Command::Mcp => mcp(),
         Command::Skill { command: Skill::Install { dir } } => install_skill(dir),
     }

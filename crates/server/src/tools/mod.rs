@@ -178,11 +178,10 @@ struct RequestId {
     request_id: Option<MutationId>,
 }
 
-/// The change's id: the `request_id` given with a tool's arguments, taken out of them, or `header`, the
-/// `Idempotency-Key` sent with them. Read tools make no change, and leave it be.
-fn take_request_id(args: &mut Value, header: Option<MutationId>) -> Result<Option<MutationId>, ApiError> {
-    let Some(o) = args.as_object_mut() else { return Ok(header) };
-    let RequestId { request_id } = from_value(json!({ "request_id": o.remove("request_id") }))?;
+/// A write's change id: `request_id`, as given with its arguments, or `header`, the `Idempotency-Key`
+/// sent with them.
+fn change_id(request_id: Option<Value>, header: Option<MutationId>) -> Result<Option<MutationId>, ApiError> {
+    let RequestId { request_id } = from_value(json!({ "request_id": request_id }))?;
     match (header, request_id) {
         (Some(header), Some(id)) if header != id => {
             Err(ApiError::invalid("Idempotency-Key 和 request_id 不一致", Some("request_id".into())))
@@ -214,7 +213,8 @@ fn person<'a>(b: &Board<'a>, username: &str) -> Result<&'a Person, ApiError> {
 pub async fn call(st: &AppState, auth: Auth, name: &str, mut args: Value, id: Option<MutationId>) -> Result<Reply, ApiError> {
     let now = st.clock.now();
     let local = take_local(&mut args)?;
-    let id = take_request_id(&mut args, id)?;
+    // Read tools make no change, and leave it be.
+    let request_id = args.as_object_mut().and_then(|o| o.remove("request_id"));
     let files = st.files.clone();
     match parse_call(name, args)? {
         // The read and the sequence number come from the same call on the one connection: no
@@ -230,7 +230,7 @@ pub async fn call(st: &AppState, auth: Auth, name: &str, mut args: Value, id: Op
         }
         Call::Write(build) => {
             auth.require_write()?;
-            let id = id.unwrap_or_else(|| MutationId(uuid::Uuid::now_v7()));
+            let id = change_id(request_id, id)?.unwrap_or_else(|| MutationId(uuid::Uuid::now_v7()));
             let _direct = match st.drive.route().await {
                 Route::Drive(d) => {
                     let output = d.tool(auth.into(), id, build, local, Some(Instant::now() + drive::WAIT)).await?;

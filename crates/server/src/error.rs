@@ -110,14 +110,15 @@ impl ApiError {
         Self::new(StatusCode::SERVICE_UNAVAILABLE, "unavailable", message)
     }
 
-    /// Change `id` went to the drive, which did not answer in time: it may be made. Sent again as
-    /// the same change, it is made once at most, and answered as it was (docs/agent.md#重试).
+    /// A write went to the drive, which did not answer in time: it may be made. Change `id`, sent
+    /// again as the same change, is made once at most, and answered as it was (docs/agent.md#重试);
+    /// without one, it is a note for AI organizing, the same however often it is saved.
     pub fn outcome_unknown(id: Option<MutationId>) -> Self {
-        let mut e = Self::new(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "outcome_unknown",
-            "网盘没有回应，这次改动可能已经生效：用同一个改动 ID 重发，生效过的不会再生效一次",
-        );
+        let message = match id {
+            Some(_) => "网盘没有回应，这次改动可能已经生效：用同一个改动 ID 重发，生效过的不会再生效一次",
+            None => "网盘没有回应，可能已经保存：再保存一次也一样",
+        };
+        let mut e = Self::new(StatusCode::SERVICE_UNAVAILABLE, "outcome_unknown", message);
         e.details = id.map(|id| serde_json::json!({ "mutation_id": id }));
         e
     }

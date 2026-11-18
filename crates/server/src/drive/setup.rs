@@ -325,8 +325,9 @@ fn failed(f: Failed) -> ApiError {
 }
 
 /// Checks that `remote` can be synced through, writing where nothing is only (docs/local.md#开启),
-/// and reads what `nexttodo.json` says, if it is there.
-fn probe(r: &dyn Remote) -> Result<Option<Pointer>, ApiError> {
+/// and reads what `nexttodo.json` says, if it is there. Without it, the folder is to be NextTodo's
+/// alone: what is cleared there later goes by name.
+pub(super) fn probe(r: &dyn Remote) -> Result<Option<Pointer>, ApiError> {
     r.mkdir("").map_err(failed)?;
     r.mkdir("tmp").map_err(failed)?;
     let path = format!("tmp/{}", Uuid::now_v7());
@@ -336,7 +337,13 @@ fn probe(r: &dyn Remote) -> Result<Option<Pointer>, ApiError> {
     if written != (Created::Written, Created::Exists) {
         return Err(ApiError::invalid("这个网盘不能用来同步：同时写入时会互相覆盖", None));
     }
-    let Some(bytes) = r.get(POINTER).map_err(failed)? else { return Ok(None) };
+    let Some(bytes) = r.get(POINTER).map_err(failed)? else {
+        // What NextTodo leaves in a folder of its own: `tmp/`, and generations made halfway.
+        if r.list("").map_err(failed)?.iter().any(|name| name != "tmp" && !super::generation(name)) {
+            return Err(ApiError::invalid("这个文件夹里有别的文件，请换一个空文件夹或新的文件夹名", Some("folder".into())));
+        }
+        return Ok(None);
+    };
     Pointer::read(&bytes).map(Some).map_err(|t| ApiError::invalid(t.message(), None))
 }
 

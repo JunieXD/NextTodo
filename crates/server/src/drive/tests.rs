@@ -941,6 +941,55 @@ async fn snapshots_are_kept_as_commits_go_in_and_a_device_far_behind_reads_the_l
     assert_same(&devices);
 }
 
+/// A drive in memory with commits 1 to `last` of generation `g`, all of them long ago, its snapshots
+/// at `kept`, and `nexttodo.json` pointing to `pointer`.
+fn old_drive(last: i64, kept: &[i64], pointer: &str) -> (Arc<Store>, View) {
+    let store = Arc::new(Store::default());
+    let view = View::new(store.clone());
+    let long_ago = Uuid::new_v7(uuid::Timestamp::from_unix(uuid::NoContext, 1_000_000, 0));
+    for n in 1..=last {
+        view.create(&super::commit::path("g", n), json!({ "id": long_ago, "format": 1, "items": [] }).to_string().as_bytes()).unwrap();
+    }
+    for n in kept {
+        view.create(&format!("g/snapshots/{n}.db.gz"), b"x").unwrap();
+    }
+    view.create(setup::POINTER, &setup::pointer(pointer)).unwrap();
+    (store, view)
+}
+
+#[test]
+fn clearing_takes_the_commits_of_a_snapshot_that_was_never_kept_too() {
+    // The one at 200 failed to upload.
+    let (store, view) = old_drive(800, &[400, 600, 800], "g");
+    super::clear(&view, "g", Clock::system().now()).unwrap();
+    let left: Vec<i64> = log(&store).iter().map(|p| p.trim_start_matches("g/log/").trim_end_matches(".json").parse().unwrap()).collect();
+    assert_eq!((left.len(), left.iter().min()), (400, Some(&401)));
+    assert!(!store.paths().contains(&"g/snapshots/400.db.gz".to_owned()));
+}
+
+#[test]
+fn generations_left_behind_are_cleared_only_by_a_device_of_the_one_nexttodo_json_points_to() {
+    let other = Uuid::new_v7(uuid::Timestamp::from_unix(uuid::NoContext, 1_000_000, 0)).to_string();
+    for (pointer, kept) in [("g", false), (other.as_str(), true)] {
+        let (store, view) = old_drive(0, &[], pointer);
+        view.create(&format!("{other}/snapshots/0.db.gz"), b"x").unwrap();
+        super::clear(&view, "g", Clock::system().now()).unwrap();
+        assert_eq!(store.paths().contains(&format!("{other}/snapshots/0.db.gz")), kept, "pointing to {pointer}");
+    }
+}
+
+#[test]
+fn syncing_is_turned_on_in_an_empty_folder_or_one_of_nexttodos_own_only() {
+    let store = Arc::new(Store::default());
+    let view = View::new(store.clone());
+    // Left by enabling cut short.
+    view.create(&format!("{}/snapshots/0.db.gz", id()), b"x").unwrap();
+    assert!(setup::probe(&view).unwrap().is_none());
+    view.create("照片/1.jpg", b"x").unwrap();
+    let Err(e) = setup::probe(&view) else { panic!("turned on in a folder with other files") };
+    assert_eq!(e.to_string(), "这个文件夹里有别的文件，请换一个空文件夹或新的文件夹名");
+}
+
 /// Commits of format 1 as this version wrote them, one of each kind of item and of most operations:
 /// every later version reads them in, so a change to what commits hold that this would not read gets
 /// a format of its own (docs/local.md#格式版本).

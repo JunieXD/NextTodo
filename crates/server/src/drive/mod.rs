@@ -953,7 +953,11 @@ impl Worker {
         }
         let path = format!("{g}/snapshots/0.db.gz");
         self.call(move |r| r.create(&path, &snapshot)).await?;
-        let pointer = setup::pointer(&g);
+        // Before `nexttodo.json` may point to it: cut short after, the next start syncs on with it, or
+        // finds it is not the one and stops.
+        let g = self.generation.clone();
+        self.db.call(move |c| Ok(c.execute("INSERT INTO sync_state (id, generation, applied) VALUES (1, ?1, 0)", [g])?)).await?;
+        let pointer = setup::pointer(&self.generation);
         loop {
             let body = pointer.clone();
             match self.call(move |r| r.create(setup::POINTER, &body)).await {
@@ -969,8 +973,6 @@ impl Worker {
                 Err(trouble) => return Err(trouble),
             }
         }
-        let g = self.generation.clone();
-        self.db.call(move |c| Ok(c.execute("INSERT INTO sync_state (id, generation, applied) VALUES (1, ?1, 0)", [g])?)).await?;
         self.checked = true;
         Ok(())
     }
@@ -1061,6 +1063,11 @@ fn snapshots(names: &[String]) -> Vec<i64> {
     numbers
 }
 
+/// Whether `name` is that of a generation's folder, or of anything NextTodo names by a UUIDv7.
+fn generation(name: &str) -> bool {
+    Uuid::parse_str(name).ok().and_then(made_at).is_some()
+}
+
 /// When UUIDv7 `id` was made, in milliseconds.
 fn made_at(id: Uuid) -> Option<i64> {
     let (secs, nanos) = id.get_timestamp()?.to_unix();
@@ -1072,15 +1079,25 @@ fn clear(r: &dyn Remote, generation: &str, now: i64) -> Result<(), Failed> {
     let numbers = snapshots(&r.list(&format!("{generation}/snapshots"))?);
     // The latest two stay; one before them goes with the commits before it, once old enough.
     for &number in &numbers[..numbers.len().saturating_sub(2)] {
-        if number > 0 {
-            // Gone when clearing was cut short: it is deleted last.
-            let head = r.get(&commit::path(generation, number))?.and_then(|b| serde_json::from_slice::<Head>(&b).ok());
-            if head.and_then(|h| made_at(h.id)).is_some_and(|at| now - at < MUTATION_RETENTION_MS) {
-                break;
-            }
-            for n in number - SNAPSHOT_EVERY + 1..=number {
+        let head = r.get(&commit::path(generation, number))?;
+        if head
+            .as_deref()
+            .and_then(|b| serde_json::from_slice::<Head>(b).ok())
+            .and_then(|h| made_at(h.id))
+            .is_some_and(|at| now - at < MUTATION_RETENTION_MS)
+        {
+            break;
+        }
+        // The commits it stands for, `SNAPSHOT_EVERY` at a time back to those cleared already. Each
+        // lot's last goes last, so one there has its lot still to clear: cut short, or of a snapshot
+        // that was never kept.
+        let (mut last, mut there) = (number, head.is_some());
+        while there {
+            for n in last - SNAPSHOT_EVERY + 1..=last {
                 r.delete(&commit::path(generation, n))?;
             }
+            last -= SNAPSHOT_EVERY;
+            there = last > 0 && r.get(&commit::path(generation, last))?.is_some();
         }
         r.delete(&format!("{generation}/snapshots/{number}.db.gz"))?;
     }
@@ -1091,9 +1108,13 @@ fn clear(r: &dyn Remote, generation: &str, now: i64) -> Result<(), Failed> {
             r.delete(&format!("tmp/{name}"))?;
         }
     }
-    for name in r.list("")? {
-        if name != generation && stale(&name) {
-            remove(r, &name)?;
+    // Only while this generation is the one: another may be newer than this device knows.
+    let pointer = r.get(setup::POINTER)?.and_then(|b| setup::Pointer::read(&b).ok());
+    if pointer.is_some_and(|p| p.id == generation) {
+        for name in r.list("")? {
+            if name != generation && stale(&name) {
+                remove(r, &name)?;
+            }
         }
     }
     Ok(())

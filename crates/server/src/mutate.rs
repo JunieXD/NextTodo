@@ -1247,6 +1247,10 @@ impl<'a> Cx<'a> {
                 }
                 Effect::Task(Change::Updated { before: b, after: a }) => {
                     if let Some((cur, owner)) = self.visible_task(b.id)? {
+                        // Done again or taken back since: setting the count back would undo that too.
+                        if b.completions != a.completions && cur.completions != a.completions {
+                            return Err(ApiError::conflict(format!("“{}”的完成次数已经变了，不能再撤销这一次完成", cur.title.as_str())));
+                        }
                         let mut restored =
                             restore!(cur, b, a, folder_id, title, description, done_at, start, start_time, completions, sort_key);
                         // A time without its date, which was cleared since, goes too.

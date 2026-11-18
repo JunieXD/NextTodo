@@ -231,8 +231,12 @@ async fn a_repeating_task_counts_its_completions_and_can_end_done() {
     let s = t.admin().await;
     t.ok(&s, "add", json!({ "title": "读《三体》", "due": "2026-11-10", "repeat": "1d" })).await;
     t.ok(&s, "add", json!({ "title": "写读后感", "after": [1] })).await;
-    t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-10" })).await;
+    let first = t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-10" })).await;
     let second = t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-11" })).await;
+    // Done again since, the first time can't be taken back alone: setting the count back would take
+    // the second with it.
+    let r = t.tool(&s, "undo", json!({ "batch": first["data"]["batch"] })).await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.body);
     let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
     assert_eq!(shown["data"]["completions"], json!({ "count": 2, "last": "2026-11-11" }));
     assert!(text(&shown).contains("完成次数：2，最近 2026-11-11"), "{}", text(&shown));

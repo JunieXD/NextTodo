@@ -176,6 +176,16 @@ test("the last time a repeating task was done is found among the changes, also a
   expect(store.completedAt(id(1), 2)).toBe(redone);
 });
 
+test("a time done is not taken back once the task was done again since", () => {
+  const due = { date: "2026-11-10", repeat: { every: 1, unit: "day" as const, from: "due" as const } };
+  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  const { id: first } = store.commit([{ op: "task.update", id: id(1), done: true, today: "2026-11-10" }]);
+  store.commit([{ op: "task.update", id: id(1), done: true, today: "2026-11-11" }]);
+  // As offered on a copy that had not heard of the second time yet.
+  expect(() => store.commit([{ op: "undo", mutation: first }])).toThrow("完成次数已经变了");
+  expect(store.getView().board.task(id(1))!.completions?.count).toBe(2);
+});
+
 test("the last time is not offered to undo when made and done in one change", () => {
   const due = { date: "2026-11-10", repeat: { every: 1, unit: "day" as const, from: "due" as const } };
   const { store } = setup();

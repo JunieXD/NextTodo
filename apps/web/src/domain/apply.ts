@@ -674,6 +674,10 @@ class Applier {
         } else {
           const cur = this.d.tasks.get(e.before.id);
           const fields = ["folder_id", "title", "description", "done_at", "start", "start_time", "completions", "sort_key"] as const;
+          // Done again or taken back since: setting the count back would undo that too.
+          if (cur && !same(e.before.completions, e.after.completions) && !same(cur.completions, e.after.completions)) {
+            throw new Rejected("conflict", `“${cur.title}”的完成次数已经变了，不能再撤销这一次完成`);
+          }
           if (cur) {
             const restored = restore(cur, e.before, e.after, fields);
             this.updateTask(cur, {

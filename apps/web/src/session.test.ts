@@ -36,6 +36,8 @@ const server = {
   cookie: null as Cookie | null,
   ended: new Set<Cookie>(),
   held: undefined as { path: string; enter(): void; until: Promise<void> } | undefined,
+  /** A server from before attachments, whose snapshot has none. */
+  old: false,
 };
 async function answer(url: string, init: RequestInit) {
   const path = url.replace("/api/v1", "");
@@ -53,7 +55,10 @@ async function answer(url: string, init: RequestInit) {
     return new Response(null, { status: 204 });
   }
   if (path === "/me") return json(sent.user);
-  if (path === "/snapshot") return json({ user: sent.user.id, seq: 0, folders: [], tasks: [], dependencies: [], attachments: [], ai_jobs: [], shares: [], people: [] });
+  if (path === "/snapshot") {
+    const snapshot = { user: sent.user.id, seq: 0, folders: [], tasks: [], dependencies: [], ai_jobs: [], shares: [], people: [] };
+    return json(server.old ? snapshot : { ...snapshot, attachments: [] });
+  }
   throw new Error(`${init.method} ${path}`);
 }
 vi.stubGlobal("fetch", answer);
@@ -117,6 +122,14 @@ beforeEach(() => {
   localStorage.clear();
   server.cookie = null;
   server.held = undefined;
+  server.old = false;
+});
+
+test("a server from before attachments opens as one without any", async () => {
+  server.old = true;
+  const s = await (await tab()).open(as(user(9)));
+  change(s);
+  expect(s.store.getView().board.snapshot.attachments).toEqual([]);
 });
 
 test("a tab the server stops accepting leaves at once, also while another tab takes long to sign out", async () => {

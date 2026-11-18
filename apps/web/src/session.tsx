@@ -382,11 +382,12 @@ async function finishSignOut(out: Login) {
   if (loggedOut) localStorage.removeItem(SIGNED_OUT);
 }
 
-/** The user's data from the server, unless this browser has signed in as someone else by now. */
+/** The user's data from the server, unless this browser has signed in as someone else by now. A server
+ * from before attachments has none to send. */
 async function download(user: string): Promise<SeqSnapshot> {
-  const snapshot = await api<SeqSnapshot>("GET", "/snapshot");
+  const snapshot = await api<Omit<SeqSnapshot, "attachments"> & Partial<Pick<SeqSnapshot, "attachments">>>("GET", "/snapshot");
   if (snapshot.user !== user) throw new ApiError(401, "unauthenticated", "本机已切换账号，请重新登录");
-  return snapshot;
+  return { ...snapshot, attachments: snapshot.attachments ?? [] };
 }
 
 export const SessionContext = createContext<Session>(null!);

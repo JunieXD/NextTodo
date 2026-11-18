@@ -8,7 +8,9 @@ import {
   ChevronRight,
   CircleAlert,
   CloudOff,
+  Copy,
   Download,
+  ExternalLink,
   FileText,
   File as FileIcon,
   FolderOpen,
@@ -147,7 +149,24 @@ function useFileActions() {
       }
       files.blob(a).then((b) => download(a.name, b), failed("下载附件"));
     },
+    copy(a: Attachment) {
+      // Written now, while the click or key still allows it, with the picture to come.
+      void navigator.clipboard.write([new ClipboardItem({ "image/png": files.blob(a).then(png) })]).then(() => snack("已拷贝图片"), failed("拷贝图片"));
+    },
   };
+}
+
+/** Whether pictures can be copied: not in the phone apps, nor where the page is not served securely
+ * (a server on plain HTTP), as there is no clipboard to write to then. */
+const copyable = !phoneApp && "ClipboardItem" in window;
+
+/** A picture as PNG, the one kind of picture every clipboard takes. */
+async function png(b: Blob): Promise<Blob> {
+  if (b.type === "image/png") return b;
+  const picture = await createImageBitmap(b);
+  const canvas = new OffscreenCanvas(picture.width, picture.height);
+  canvas.getContext("2d")!.drawImage(picture, 0, 0);
+  return canvas.convertToBlob();
 }
 
 /** What can be done to an attachment, from its menu and the viewer's bar. */
@@ -160,17 +179,26 @@ function useAttachmentActions(refer: (a: Attachment) => void) {
     const name = await prompt({ title: "重命名附件", label: "名称", value: a.name, select: split(a.name)[0].length, ok: "保存", check: checkFileName });
     if (name !== null && name !== a.name) commit([{ op: "attachment.update", id: a.id, name }]);
   };
-  const remove = (a: Attachment) => {
+  /** `afterRemove`: what follows deleting it, once deleted. */
+  const remove = (a: Attachment, afterRemove?: () => void) => {
     const r = commit([{ op: "attachment.delete", id: a.id }]);
-    if (r) snack({ text: `已删除“${a.name}”`, action: "撤销", onAction: () => undo(r.id) });
+    if (!r) return;
+    snack({ text: `已删除“${a.name}”`, action: "撤销", onAction: () => undo(r.id) });
+    afterRemove?.();
   };
-  const menu = (a: Attachment): MenuItem[] => [
-    { icon: Quote, label: "在描述中引用", onSelect: () => refer(a) },
-    { icon: Pencil, label: "重命名", onSelect: () => void rename(a) },
-    { icon: Download, label: app ? "保存到…" : "下载", onSelect: () => file.save(a) },
-    { icon: Trash2, label: "删除", danger: true, onSelect: () => remove(a) },
-  ];
-  return { ...file, refer, rename, remove, menu };
+  const menu = (a: Attachment, afterRemove?: () => void): MenuItem[] => {
+    const picture = isPicture(a.type);
+    return [
+      { icon: Quote, label: "在描述中引用", onSelect: () => refer(a) },
+      { icon: Pencil, label: "重命名", onSelect: () => void rename(a) },
+      ...(picture && copyable ? [{ icon: Copy, label: "拷贝图片", onSelect: () => file.copy(a) }] : []),
+      // Any other file opens so as it is clicked.
+      ...(picture && app === "desktop" ? [{ icon: ExternalLink, label: "用默认应用打开", onSelect: () => file.open(a) }] : []),
+      { icon: Download, label: app ? "保存到…" : "下载", onSelect: () => file.save(a) },
+      { icon: Trash2, label: "删除", danger: true, onSelect: () => remove(a, afterRemove) },
+    ];
+  };
+  return { open: file.open, copy: file.copy, refer, remove, menu };
 }
 
 /** Keeps planned files on the device, to be uploaded once added: those kept, to act on at once; none
@@ -275,20 +303,35 @@ function Waiting() {
   return <span className={`att-state${offline ? "" : " spin"}`}>{<Icon of={offline ? CloudOff : LoaderCircle} size={14} />}</span>;
 }
 
-function Thumb({ a, waiting, menu, onOpen }: { a: Attachment; waiting: boolean; menu: MenuItem[]; onOpen(): void }) {
+/** A picture's thumbnail; with a mouse over it, the actions most used on it in its corner. */
+function Thumb({ a, waiting, actions, onOpen }: { a: Attachment; waiting: boolean; actions: ReturnType<typeof useAttachmentActions>; onOpen(): void }) {
   const { url, failed, unreadable } = useFileUrl(a.id, a.type);
   return (
-    <ContextMenu items={menu}>
-      <button type="button" className="att-thumb" onClick={onOpen} aria-label={a.name}>
-        {url ? (
-          <img src={url} alt="" draggable={false} onError={unreadable} />
-        ) : (
-          <span className={`att-empty${failed ? "" : " spin"}`}>
-            <Icon of={failed ? ImageIcon : LoaderCircle} />
-          </span>
-        )}
-        {waiting && <Waiting />}
-      </button>
+    <ContextMenu items={actions.menu(a)}>
+      <div className="att-thumb">
+        <button type="button" className="att-open" onClick={onOpen} aria-label={a.name}>
+          {url ? (
+            <img src={url} alt="" draggable={false} onError={unreadable} />
+          ) : (
+            <span className={`att-empty${failed ? "" : " spin"}`}>
+              <Icon of={failed ? ImageIcon : LoaderCircle} />
+            </span>
+          )}
+          {waiting && <Waiting />}
+        </button>
+        <span className="att-quick">
+          <Tip label="在描述中引用">
+            <button type="button" onClick={() => actions.refer(a)}>
+              <Icon of={Quote} size={16} />
+            </button>
+          </Tip>
+          <Tip label="删除">
+            <button type="button" onClick={() => actions.remove(a)}>
+              <Icon of={Trash2} size={16} />
+            </button>
+          </Tip>
+        </span>
+      </div>
     </ContextMenu>
   );
 }
@@ -320,7 +363,7 @@ export function useAttachments(task: TaskId, refer: (a: Attachment) => void, onA
   const [viewing, setViewing] = useState<number | null>(null);
   const list = board.attachments(task);
   const pictures = list.filter((a) => isPicture(a.type));
-  // The last one deleted in the viewer closes it.
+  // All deleted meanwhile, as on another device, it closes.
   if (viewing !== null && !pictures.length) setViewing(null);
   const waiting = waitingIn(store.queued);
   const open = (a: Attachment) => (isPicture(a.type) ? setViewing(pictures.findIndex((p) => p.id === a.id)) : actions.open(a));
@@ -333,7 +376,7 @@ export function useAttachments(task: TaskId, refer: (a: Attachment) => void, onA
         {pictures.length > 0 && (
           <div className="att-grid">
             {pictures.map((a) => (
-              <Thumb key={a.id} a={a} waiting={waiting.has(a.id)} menu={actions.menu(a)} onOpen={() => open(a)} />
+              <Thumb key={a.id} a={a} waiting={waiting.has(a.id)} actions={actions} onOpen={() => open(a)} />
             ))}
           </div>
         )}
@@ -364,15 +407,15 @@ function zoomAt(z: Zoom, scale: number, fx: number, fy: number): Zoom {
   return { scale: s, x: fx - ((fx - z.x) * s) / z.scale, y: fy - ((fy - z.y) * s) / z.scale };
 }
 
-/** The pictures full screen, one at a time from `start`: zoomed by pinching, Ctrl + wheel or a
- * trackpad's pinch, and dragged about then; a double tap or click goes between fitting the screen and
- * the picture's own size. Not zoomed, a swipe, the arrow keys or the ‹ › go to the next or the one
- * before. */
+/** The pictures full screen, one at a time from `start`: zoomed about the pointer by the wheel (a
+ * trackpad's scroll and pinch too), by pinching and by + − 0, and dragged about then; a double tap or
+ * click goes between fitting the window and the picture's own size. Not zoomed, a swipe, the arrow keys
+ * or the ‹ › go to the next or the one before. A tap off the picture closes it, as deleting it does. */
 function Viewer({ pictures, start, actions, onClose }: { pictures: Attachment[]; start: number; actions: ReturnType<typeof useAttachmentActions>; onClose(): void }) {
   const root = useContext(RootContext);
   const wide = !useMedia("(pointer: coarse)");
   const [index, setIndex] = useState(start);
-  // Deleted from here, the next one takes its place.
+  // One deleted meanwhile, as on another device: the next one takes its place.
   const at = Math.min(index, pictures.length - 1);
   const a = pictures[at];
   const [zoom, setZoom] = useState(FIT);
@@ -388,10 +431,12 @@ function Viewer({ pictures, start, actions, onClose }: { pictures: Attachment[];
     setIndex(next);
     setZoom(FIT);
   };
+  /** Zooms by `f` about the middle. */
+  const zoomBy = (f: number) => setZoom((z) => zoomAt(z, z.scale * f, 0, 0));
 
-  const latest = useRef({ zoom, go });
+  const latest = useRef({ zoom, go, close: onClose });
   useEffect(() => {
-    latest.current = { zoom, go };
+    latest.current = { zoom, go, close: onClose };
   });
 
   useEffect(() => {
@@ -405,6 +450,8 @@ function Viewer({ pictures, start, actions, onClose }: { pictures: Attachment[];
       const i = img.current;
       return i?.naturalWidth ? Math.max(2, i.naturalWidth / i.getBoundingClientRect().width) * latest.current.zoom.scale : 2;
     };
+    /** Where the picture is drawn now; nowhere while it loads, or when it can't be shown. */
+    const drawn = () => img.current?.getBoundingClientRect();
     const pointers = new Map<number, { x: number; y: number }>();
     let pinch: { distance: number; zoom: Zoom } | null = null;
     let press: { x: number; y: number; at: number; moved: boolean } | null = null;
@@ -414,6 +461,8 @@ function Viewer({ pictures, start, actions, onClose }: { pictures: Attachment[];
       return Math.hypot(p.x - q.x, p.y - q.y);
     };
     const down = (e: PointerEvent) => {
+      // A finger, a pen or a mouse's main button; the others leave the picture be.
+      if (e.button !== 0) return;
       el.setPointerCapture(e.pointerId);
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pointers.size === 2) {
@@ -447,40 +496,49 @@ function Viewer({ pictures, start, actions, onClose }: { pictures: Attachment[];
         if (latest.current.zoom.scale === 1 && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(e.clientY - p.y)) latest.current.go(dx < 0 ? 1 : -1);
         return;
       }
-      // A tap: a second one soon after, near the first, zooms.
+      // A tap: off the picture it closes; on it, a second one soon after, near the first, zooms.
+      const on = drawn();
+      if (!on || e.clientX < on.left || e.clientX > on.right || e.clientY < on.top || e.clientY > on.bottom) return latest.current.close();
       if (lastTap && e.timeStamp - lastTap.at < 300 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
         lastTap = null;
         const [fx, fy] = centre(e.clientX, e.clientY);
         setZoom((z) => (z.scale > 1 ? FIT : zoomAt(z, own(), fx, fy)));
       } else lastTap = { x: e.clientX, y: e.clientY, at: e.timeStamp };
     };
+    // Taken by the system, as by a swipe from the screen's edge: not a tap, a swipe or a pinch.
+    const cancel = (e: PointerEvent) => {
+      pointers.delete(e.pointerId);
+      pinch = null;
+      press = null;
+    };
     const wheel = (e: WheelEvent) => {
-      // A trackpad's pinch comes as the wheel with Ctrl.
-      if (!e.ctrlKey) return;
       e.preventDefault();
-      const [fx, fy] = centre(e.clientX, e.clientY);
-      setZoom((z) => zoomAt(z, z.scale * Math.exp(-e.deltaY / 100), fx, fy));
+      const on = drawn();
+      // Nothing to zoom yet.
+      if (!on) return;
+      // About the pointer, or the picture's nearest edge to it: about a point off the picture, zooming
+      // in would move it out of the window.
+      const within = (v: number, from: number, to: number) => Math.min(to, Math.max(from, v));
+      const [fx, fy] = centre(within(e.clientX, on.left, on.right), within(e.clientY, on.top, on.bottom));
+      // In pixels: Firefox gives a mouse wheel's in lines.
+      const dy = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY * 40 : e.deltaY;
+      // A trackpad's pinch comes as the wheel with Ctrl, in steps smaller than a wheel's.
+      setZoom((z) => zoomAt(z, z.scale * Math.exp(-dy / (e.ctrlKey ? 100 : 300)), fx, fy));
     };
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
-    el.addEventListener("pointercancel", up);
+    el.addEventListener("pointercancel", cancel);
     el.addEventListener("wheel", wheel, { passive: false });
     return () => {
       el.removeEventListener("pointerdown", down);
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", up);
-      el.removeEventListener("pointercancel", up);
+      el.removeEventListener("pointercancel", cancel);
       el.removeEventListener("wheel", wheel);
     };
   }, []);
 
-  const bar: [LucideIcon, string, () => void][] = [
-    [Quote, "在描述中引用", () => actions.refer(a)],
-    [Pencil, "重命名", () => void actions.rename(a)],
-    [Download, app ? "保存到…" : "下载", () => actions.save(a)],
-    [Trash2, "删除", () => actions.remove(a)],
-  ];
   return (
     <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
       <Dialog.Portal container={root}>
@@ -489,14 +547,24 @@ function Viewer({ pictures, start, actions, onClose }: { pictures: Attachment[];
           className="viewer enter"
           aria-describedby={undefined}
           onKeyDown={(e) => {
+            if (e.metaKey || e.ctrlKey) {
+              if (e.key === "c" && copyable) {
+                e.preventDefault();
+                actions.copy(a);
+              }
+              return;
+            }
             if (e.key === "ArrowLeft") go(-1);
             if (e.key === "ArrowRight") go(1);
+            if (e.key === "+" || e.key === "=") zoomBy(1.25);
+            if (e.key === "-") zoomBy(0.8);
+            if (e.key === "0") setZoom(FIT);
           }}
-          // The snackbar over it tells of what was done here, such as deleting a picture, and its undo
+          // The snackbar over it tells of what was done here, such as copying the picture; tapping it
           // leaves the viewer open.
           onInteractOutside={(e) => (e.target as Element).closest(".snackbar") && e.preventDefault()}
         >
-          <div className="viewer-bar">
+          <div className="viewer-bar" data-tauri-drag-region="deep">
             <Tip label="关闭">
               <Dialog.Close className="icon-btn">
                 <Icon of={X} />
@@ -510,10 +578,10 @@ function Viewer({ pictures, start, actions, onClose }: { pictures: Attachment[];
                 </span>
               )}
             </Dialog.Title>
-            {bar.map(([icon, label, act]) => (
-              <Tip key={label} label={label}>
-                <button className="icon-btn" onClick={act}>
-                  <Icon of={icon} />
+            {actions.menu(a, onClose).map((item) => (
+              <Tip key={item.label} label={item.label}>
+                <button className="icon-btn" onClick={item.onSelect}>
+                  <Icon of={item.icon} />
                 </button>
               </Tip>
             ))}

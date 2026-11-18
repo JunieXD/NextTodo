@@ -408,8 +408,15 @@ label.row { cursor: pointer; }
 .desk .att-grid { grid-template-columns: repeat(4, 1fr); }
 .att-grid + .row::before { display: none; }
 .att-thumb { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: var(--surface-container); }
+.att-open { display: block; width: 100%; height: 100%; }
 .att-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.att-thumb:active { opacity: .8; }
+.att-open:active { opacity: .8; }
+/* Inside: the thumbnail's rounded corners cut off what is outside. */
+.att-open:focus-visible { outline-offset: -2px; border-radius: 10px; }
+.att-quick { position: absolute; top: 4px; right: 4px; display: none; gap: 4px; }
+.att-quick button { width: 28px; height: 28px; border-radius: 14px; display: grid; place-items: center; background: rgba(0, 0, 0, .55); color: #fff; transition: background-color .15s; }
+.att-quick button:hover { background: rgba(0, 0, 0, .75); }
+@media (hover: hover) { .att-thumb:hover .att-quick, .att-thumb:focus-within .att-quick { display: flex; } }
 .att-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--outline); }
 .att-state { position: absolute; right: 4px; bottom: 4px; width: 22px; height: 22px; border-radius: 11px; display: grid; place-items: center; background: rgba(0, 0, 0, .55); color: #fff; }
 .att-file .row-inner { min-height: 52px; gap: 12px; cursor: default; }
@@ -444,7 +451,9 @@ label.row { cursor: pointer; }
 .viewer-title { flex: 1; min-width: 0; margin: 0 4px; display: flex; gap: 8px; align-items: baseline; font-size: 15px; font-weight: 500; }
 .viewer-title span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .viewer-title span + span { flex: none; font-size: 13px; opacity: .7; }
-.viewer-stage { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; touch-action: none; }
+/* Flex, not grid: WebKit sizes a grid's row to the picture's own height and centres the picture, kept
+   to the stage's height, in that. */
+.viewer-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: none; }
 .viewer-stage img { max-width: 100%; max-height: 100%; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .viewer-empty { opacity: .6; }
 .viewer-step { position: absolute; top: 50%; width: 48px; height: 48px; margin-top: -24px; border-radius: 24px; display: grid; place-items: center; background: rgba(255, 255, 255, .12); color: #fff; }
@@ -578,9 +587,9 @@ a.text-btn { display: inline-flex; align-items: center; }
 .macos .desk .main-tools { padding-top: 8px; transition: padding-left .32s var(--ease); }
 /* The window's buttons don't zoom with the page (docs/desktop.md#界面大小): what lines up with them is
    placed in the window's points, a pixel being `--zoom` of one. */
-.macos .desk .main-tools > *, .macos .phone .nav > * { translate: 0 calc(28px / var(--zoom) - 28px); }
+.macos .desk .main-tools > *, .macos .phone .nav > *, .macos .viewer-bar > * { translate: 0 calc(28px / var(--zoom) - 28px); }
 .macos .side-closed .main-tools { padding-left: calc(84px / var(--zoom)); }
-.macos .phone .nav { padding-left: calc(84px / var(--zoom)); }
+.macos .phone .nav, .macos .viewer-bar { padding-left: calc(84px / var(--zoom)); }
 
 /* ---------- the desktop app's menu bar or tray panel ---------- */
 /* On macOS the window is clear outside the panel's rounded corners (src-tauri/src/panel.rs). */

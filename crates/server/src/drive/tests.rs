@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use super::remote::Remote;
 use super::remote::memory::{Fault, Store, View};
-use super::{DAY_MS, Drive, MAYBE_MADE, Maker, NOT_MADE, StepFn, Trouble, setup};
+use super::{DAY_MS, Drive, Maker, NOT_MADE, StepFn, Trouble, setup};
 use crate::ai::llm::{Api, Config, Endpoint, Failure, Prompt};
 use crate::ai::{self, Ai};
 use crate::auth::{Auth, Scope, TokenKind};
@@ -406,24 +406,25 @@ async fn a_change_not_sent_by_its_deadline_is_not_made() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_change_that_may_be_in_the_drive_is_said_so_and_goes_in() {
+async fn a_change_that_may_be_in_the_drive_is_said_so_and_sent_again_is_answered_as_made_once() {
     let (store, devices) = devices(1).await;
     let d = &devices[0];
     // The write is lost as the connection drops: what became of it can't be found out for now.
     let gate = d.view.gate_next_write();
     d.view.fail_writes([Fault::RequestLost]);
-    let waiting = d.change(json!([{ "op": "task.create", "id": id(), "title": "一" }]), Some(Duration::from_millis(300)));
+    let m: Mutation = serde_json::from_value(json!({ "id": id(), "ops": [{ "op": "task.create", "id": id(), "title": "一" }] })).unwrap();
+    let waiting = d.drive().mutate(d.maker(), m.clone(), Some(Instant::now() + Duration::from_millis(300)));
     arrived(gate.arrived).await;
     d.view.set_offline(true);
     gate.open.send(()).unwrap();
     let e = waiting.await.unwrap_err();
-    assert_eq!((e.code(), e.to_string().as_str()), ("unavailable", MAYBE_MADE));
+    assert_eq!((e.code(), e.describe()), ("outcome_unknown", format!("{}（request_id：{}）", e, m.id)));
     d.view.set_offline(false);
+    // Answered once the commit sent is settled: it went in.
+    let again = d.drive().mutate(d.maker(), m, None).await.unwrap();
+    assert_eq!(again.seq, 1);
     caught_up(&store, &devices).await;
-    while d.count("SELECT count(*) FROM tasks") == 0 {
-        d.drive().pull();
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    assert_eq!(d.count("SELECT count(*) FROM tasks"), 1);
     assert_eq!(log(&store), ["g/log/1.json"]);
 }
 
@@ -435,9 +436,9 @@ async fn changes_are_answered_by_their_deadline_even_as_the_drive_hangs() {
     let sent = d.change(task("发出的"), Some(Duration::from_millis(300)));
     arrived(gate.arrived).await;
     let queued = d.change(task("排着的"), Some(Duration::from_millis(300)));
-    for (waiting, said) in [(sent, MAYBE_MADE), (queued, NOT_MADE)] {
+    for (waiting, said) in [(sent, "outcome_unknown"), (queued, "unavailable")] {
         let e = tokio::time::timeout(Duration::from_secs(5), waiting).await.expect("answered by the deadline").unwrap_err();
-        assert_eq!((e.code(), e.to_string().as_str()), ("unavailable", said));
+        assert_eq!(e.code(), said);
     }
     gate.open.send(()).unwrap();
     until(|| log(&store).len() == 1).await;

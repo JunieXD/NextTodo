@@ -146,7 +146,8 @@ pub async fn get_file(State(st): State<AppState>, auth: Auth, Path(id): Path<Str
     h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
     // An HTML or SVG file opened at this address runs nothing as the app.
     h.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static("sandbox"));
-    h.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=31536000, immutable"));
+    // Who may read it, and under what name, can change: asked each time. The apps keep files themselves.
+    h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     Ok(res)
 }
 

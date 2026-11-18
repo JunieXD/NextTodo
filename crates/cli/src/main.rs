@@ -30,6 +30,13 @@ const SKILL: &str = include_str!("../../../skills/nexttodo/SKILL.md");
 struct Cli {
     #[arg(long, global = true, help = "输出 JSON 数据")]
     json: bool,
+    #[arg(
+        long,
+        global = true,
+        value_name = "UUIDv7",
+        help = "写操作的改动 ID：报“可能已经生效”时，用错误里给的 ID 重发同一条命令，生效过的不会再生效一次"
+    )]
+    request_id: Option<String>,
     #[command(subcommand)]
     command: Command,
 }
@@ -182,9 +189,11 @@ enum Command {
     Mkdir { path: String },
     #[command(about = "文件夹或附件改名")]
     Rename {
-        #[arg(value_name = "文件夹或附件 ID")]
+        #[arg(value_name = "文件夹或附件 ID", help = "文件夹路径；带 --attachment 时是附件 ID")]
         target: String,
         name: String,
+        #[arg(long, help = "给附件改名")]
+        attachment: bool,
     },
     #[command(about = "移动事项（编号）或文件夹（路径）到另一个文件夹")]
     Mv {
@@ -460,12 +469,13 @@ impl Server {
         reply(status, &text)
     }
 
-    /// Calls a tool and returns `(text, data)`. Network failures, including a reply cut off on the
-    /// way back, are retried with the same idempotency key, so a change that reached the server
-    /// applies once. In local mode that is the same run of the app: one restarted since has another
-    /// certificate, and the change never goes to a database restored meanwhile.
-    fn tool(&self, name: &str, token: &str, args: &Value) -> anyhow::Result<(String, Value)> {
-        let (path, key) = (format!("/api/v1/tools/{name}"), uuid::Uuid::now_v7().to_string());
+    /// Calls a tool as change `key`, or a new one, and returns `(text, data)`. Network failures,
+    /// including a reply cut off on the way back, are retried with the same key, so a change that
+    /// reached the server applies once. In local mode that is the same run of the app: one restarted
+    /// since has another certificate, and the change never goes to a database restored meanwhile.
+    fn tool(&self, name: &str, token: &str, key: Option<&str>, args: &Value) -> anyhow::Result<(String, Value)> {
+        let path = format!("/api/v1/tools/{name}");
+        let key = key.map_or_else(|| uuid::Uuid::now_v7().to_string(), str::to_owned);
         let mut attempt = 0;
         let (status, text) = loop {
             match self.send(&path, Some(token), Some(&key), args) {
@@ -499,9 +509,12 @@ fn reply(status: StatusCode, text: &str) -> anyhow::Result<Value> {
     // A proxy in between may answer with a page of its own.
     let reply: Value = serde_json::from_str(text).unwrap_or_default();
     let message = reply["message"].as_str().map_or_else(|| format!("服务器返回 {status}"), str::to_owned);
-    match reply["details"]["field"].as_str() {
-        Some(field) => bail!("{message}（{field}）"),
-        None => bail!("{message}"),
+    let details = &reply["details"];
+    match (details["field"].as_str(), details["mutation_id"].as_str()) {
+        (Some(field), _) => bail!("{message}（{field}）"),
+        // What the command is sent again with (docs/agent.md#重试).
+        (None, Some(id)) => bail!("{message}（--request-id {id}）"),
+        (None, None) => bail!("{message}"),
     }
 }
 
@@ -527,11 +540,11 @@ fn here(args: &mut Value) {
     args["time"] = now.format("%H:%M").to_string().into();
 }
 
-fn call(name: &str, mut args: Value, json_out: bool) -> anyhow::Result<()> {
+fn call(name: &str, mut args: Value, out: &Out) -> anyhow::Result<()> {
     here(&mut args);
     let (server, token) = connect()?;
-    let (text, data) = server.tool(name, &token, &args)?;
-    if json_out {
+    let (text, data) = server.tool(name, &token, out.request_id.as_deref(), &args)?;
+    if out.json {
         println!("{}", serde_json::to_string_pretty(&data)?);
     } else {
         println!("{}", printable(&text));
@@ -539,42 +552,61 @@ fn call(name: &str, mut args: Value, json_out: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Attaches each file to `task`, one change each, as `name` or the file's own.
-fn attach(task: &str, files: &[PathBuf], name: Option<String>, json_out: bool) -> anyhow::Result<()> {
+/// Attaches each file to `task`, one change each, as `name` or the file's own. With `--json`, what each
+/// change did, as one array: those made before one failed too.
+fn attach(task: &str, files: &[PathBuf], name: Option<String>, out: &Out) -> anyhow::Result<()> {
     if name.is_some() && files.len() > 1 {
         bail!("--name 只能和一个文件一起给");
+    }
+    if out.request_id.is_some() && files.len() > 1 {
+        bail!("--request-id 只能和一个文件一起给：每个文件是一次改动");
     }
     let (mut server, token) = connect()?;
     // 20 MB as base64 over a slow line.
     server.timeout = Duration::from_secs(600);
-    for file in files {
-        // No more than one byte past the limit is read, whatever the file's size.
-        let mut bytes = Vec::new();
-        File::open(file)
-            .and_then(|f| f.take(u64::from(MAX_FILE_SIZE) + 1).read_to_end(&mut bytes))
-            .with_context(|| format!("无法读取 {}", file.display()))?;
-        if bytes.len() > MAX_FILE_SIZE as usize {
-            bail!("{} 超过 20 MB", file.display());
-        }
-        let name = match &name {
-            Some(n) => n.clone(),
-            None => file.file_name().context("文件路径没有文件名")?.to_string_lossy().into_owned(),
-        };
-        let mut args = json!({ "task": task, "name": name, "data": BASE64.encode(&bytes) });
-        here(&mut args);
-        let (text, data) = server.tool("attach", &token, &args)?;
-        if json_out {
-            println!("{}", serde_json::to_string_pretty(&data)?);
-        } else {
+    let mut made = Vec::new();
+    let attached = files.iter().try_for_each(|file| {
+        let (text, data) = attach_one(&server, &token, task, file, name.as_deref(), out.request_id.as_deref())
+            .with_context(|| file.display().to_string())?;
+        if !out.json {
             println!("{}", printable(&text));
         }
+        made.push(data);
+        anyhow::Ok(())
+    });
+    if out.json {
+        println!("{}", serde_json::to_string_pretty(&made)?);
     }
-    Ok(())
+    attached
+}
+
+/// Attaches `file` to `task` as change `key`, as `name` or its own.
+fn attach_one(
+    server: &Server,
+    token: &str,
+    task: &str,
+    file: &Path,
+    name: Option<&str>,
+    key: Option<&str>,
+) -> anyhow::Result<(String, Value)> {
+    // No more than one byte past the limit is read, whatever the file's size.
+    let mut bytes = Vec::new();
+    File::open(file).and_then(|f| f.take(u64::from(MAX_FILE_SIZE) + 1).read_to_end(&mut bytes)).context("无法读取")?;
+    if bytes.len() > MAX_FILE_SIZE as usize {
+        bail!("超过 20 MB");
+    }
+    let name = match name {
+        Some(n) => n.to_owned(),
+        None => file.file_name().context("文件路径没有文件名")?.to_string_lossy().into_owned(),
+    };
+    let mut args = json!({ "task": task, "name": name, "data": BASE64.encode(&bytes) });
+    here(&mut args);
+    server.tool("attach", token, key, &args)
 }
 
 /// Saves attachment `id`'s file to `output`: a file, or a directory to put it in under the
 /// attachment's name, as the server gives it. Never over a file already there.
-fn download(id: &str, output: Option<PathBuf>) -> anyhow::Result<()> {
+fn download(id: &str, output: Option<PathBuf>, json_out: bool) -> anyhow::Result<()> {
     let (mut server, token) = connect()?;
     server.timeout = Duration::from_secs(600);
     let req = server.agent.get(format!("{}/api/v1/files/{id}", server.url)).config().timeout_global(Some(server.timeout)).build();
@@ -585,11 +617,11 @@ fn download(id: &str, output: Option<PathBuf>) -> anyhow::Result<()> {
     }
     let disposition = res.headers().get("content-disposition").and_then(|v| v.to_str().ok()).unwrap_or_default();
     let name = disposition.split_once("filename*=UTF-8''").and_then(|(_, n)| decode(n)).context("服务器回复缺少附件的名称")?;
-    let name = FileName::try_from(name).map_err(|e| anyhow!("附件的名称无效：{e}"))?.on_disk();
+    let name = FileName::try_from(name).map_err(|e| anyhow!("附件的名称无效：{e}"))?;
     let path = match output {
-        Some(dir) if dir.is_dir() => dir.join(&name),
+        Some(dir) if dir.is_dir() => dir.join(name.on_disk()),
         Some(p) => p,
-        None => PathBuf::from(&name),
+        None => PathBuf::from(name.on_disk()),
     };
     let mut file =
         std::fs::OpenOptions::new().write(true).create_new(true).open(&path).with_context(|| format!("无法写入 {}", path.display()))?;
@@ -600,7 +632,11 @@ fn download(id: &str, output: Option<PathBuf>) -> anyhow::Result<()> {
         let _ = std::fs::remove_file(&path);
         return Err(anyhow::Error::new(e).context("下载中断"));
     }
-    println!("{}", printable(&format!("已下载到 {}", path.display())));
+    if json_out {
+        println!("{}", serde_json::to_string_pretty(&json!({ "id": id, "name": name.as_str(), "path": path }))?);
+    } else {
+        println!("{}", printable(&format!("已下载到 {}", path.display())));
+    }
     Ok(())
 }
 
@@ -686,9 +722,9 @@ fn install_skill(dirs: Vec<PathBuf>) -> anyhow::Result<()> {
 
 /// An MCP server on stdin and stdout that hands each message to the server's `/mcp` and its reply
 /// back: for local mode, whose address changes each time the app starts. The address is read again
-/// for each message, so a restart of the app is no break. Nothing is retried: a write made twice
-/// would be made twice, MCP having no idempotency key. Only messages go to stdout; what went wrong
-/// goes to stderr, and as an error reply to a request.
+/// for each message, so a restart of the app is no break. Nothing is retried here: the agent sends a
+/// write again with its `request_id` (docs/agent.md#重试). Only messages go to stdout; what went
+/// wrong goes to stderr, and as an error reply to a request.
 fn mcp() -> anyhow::Result<()> {
     // Agreed on in `initialize`, and sent with every message after it.
     let mut version: Option<String> = None;
@@ -773,13 +809,26 @@ fn plan(file: &PathBuf) -> anyhow::Result<Value> {
     serde_saphyr::from_str(&text).map_err(|e| anyhow!("计划不是有效的 YAML：{e}"))
 }
 
+/// How a command's result is put out, and the change it makes.
+struct Out {
+    json: bool,
+    request_id: Option<String>,
+}
+
 fn run(cli: Cli) -> anyhow::Result<()> {
-    let j = cli.json;
+    let j = &Out { json: cli.json, request_id: cli.request_id };
     match cli.command {
         Command::Login { url, name, read_only } => login(url, name, read_only),
         Command::Tree => call("tree", json!({}), j),
         Command::Ls { folder, all, limit } => call("list", json!({ "folder": folder, "all": all, "limit": limit }), j),
-        Command::Next { folders, limit } => call("next", json!({ "folders": folders, "limit": limit }), j),
+        Command::Next { folders, limit } => {
+            let mut args = json!({ "limit": limit });
+            // Only with a filter: servers before it turn down arguments they don't know.
+            if let Some(folders) = folders {
+                args["folders"] = folders.into();
+            }
+            call("next", args, j)
+        }
         Command::Show { task } => call("show", json!({ "task": task }), j),
         Command::Search { query, limit } => call("search", json!({ "query": query.join(" "), "limit": limit }), j),
         Command::Graph { folder, all, mermaid } => call("graph", json!({ "folder": folder, "all": all, "mermaid": mermaid }), j),
@@ -851,14 +900,11 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Done { tasks, end_repeat } => call("done", json!({ "tasks": tasks, "end_repeat": end_repeat }), j),
         Command::Reopen { tasks } => call("reopen", json!({ "tasks": tasks }), j),
         Command::Mkdir { path } => call("mkdir", json!({ "path": path }), j),
-        // An attachment's id is a UUID; a folder is a path.
-        Command::Rename { target, name } => match uuid::Uuid::parse_str(&target) {
-            Ok(_) => call("rename", json!({ "attachment": target, "name": name }), j),
-            Err(_) => call("rename", json!({ "folder": target, "name": name }), j),
-        },
+        Command::Rename { target, name, attachment: true } => call("rename", json!({ "attachment": target, "name": name }), j),
+        Command::Rename { target, name, attachment: false } => call("rename", json!({ "folder": target, "name": name }), j),
         Command::Attach { task, files, name } => attach(&task, &files, name, j),
         Command::Detach { attachments } => call("detach", json!({ "attachments": attachments }), j),
-        Command::Download { id, output } => download(&id, output),
+        Command::Download { id, output } => download(&id, output, j.json),
         Command::Mv { items: mut list } => {
             let to = list.pop().expect("at least two arguments");
             let (tasks, folders) = items(&list);

@@ -89,7 +89,7 @@ enum Call {
 macro_rules! tools {
     ($($kind:ident $name:literal($args:ty) => $run:path, $desc:literal;)*) => {
         pub fn list() -> Vec<Tool> {
-            vec![$(Tool { name: $name, description: $desc, kind: Kind::$kind, input_schema: with_today(schema_for_type::<$args>()) }),*]
+            vec![$(Tool { name: $name, description: $desc, kind: Kind::$kind, input_schema: with_common(schema_for_type::<$args>(), Kind::$kind) }),*]
         }
 
         fn parse_call(name: &str, args: Value) -> Result<Call, ApiError> {
@@ -134,8 +134,9 @@ tools! {
     Write "undo"(UndoArgs) => write::undo, "撤销一个批次（批次号见写操作的结果或 log）。撤销本身也是一个新批次。看得到全部改动、也有权做的批次才能撤销。";
 }
 
-/// A tool's arguments and `today` and `time`, which every tool takes (docs/agent.md#引用).
-fn with_today(schema: Arc<JsonObject>) -> Arc<JsonObject> {
+/// A tool's arguments and `today` and `time`, which every tool takes (docs/agent.md#引用); a write's
+/// also `request_id` (docs/agent.md#重试).
+fn with_common(schema: Arc<JsonObject>, kind: Kind) -> Arc<JsonObject> {
     let mut s = (*schema).clone();
     let properties = s.entry("properties").or_insert_with(|| json!({}));
     properties["today"] = json!({
@@ -146,6 +147,12 @@ fn with_today(schema: Arc<JsonObject>) -> Arc<JsonObject> {
         "type": "string",
         "description": "用户当地现在的时间，如 18:30，和 today 一起给：开始时间到了没有按它算。只给 today 时，那天开始的都算已经到了",
     });
+    if kind != Kind::Read {
+        properties["request_id"] = json!({
+            "type": "string",
+            "description": "这次改动的 ID，UUIDv7，可以不给。返回“可能已经生效”时，用错误里给的 request_id 原样重发：生效过的只返回第一次的结果，不会再生效一次",
+        });
+    }
     Arc::new(s)
 }
 
@@ -163,6 +170,24 @@ fn take_local(args: &mut Value) -> Result<Option<Now>, ApiError> {
         Local { today: Some(today), time } => Ok(Some(Now { today, time })),
         Local { today: None, time: None } => Ok(None),
         Local { today: None, time: Some(_) } => Err(ApiError::invalid("给了 time 也要给 today", Some("today".into()))),
+    }
+}
+
+#[derive(Deserialize)]
+struct RequestId {
+    request_id: Option<MutationId>,
+}
+
+/// The change's id: the `request_id` given with a tool's arguments, taken out of them, or `header`, the
+/// `Idempotency-Key` sent with them. Read tools make no change, and leave it be.
+fn take_request_id(args: &mut Value, header: Option<MutationId>) -> Result<Option<MutationId>, ApiError> {
+    let Some(o) = args.as_object_mut() else { return Ok(header) };
+    let RequestId { request_id } = from_value(json!({ "request_id": o.remove("request_id") }))?;
+    match (header, request_id) {
+        (Some(header), Some(id)) if header != id => {
+            Err(ApiError::invalid("Idempotency-Key 和 request_id 不一致", Some("request_id".into())))
+        }
+        (header, id) => Ok(header.or(id)),
     }
 }
 
@@ -184,10 +209,12 @@ fn person<'a>(b: &Board<'a>, username: &str) -> Result<&'a Person, ApiError> {
     b.person_named(username.trim()).ok_or_else(|| ApiError::not_found(format!("没有共享文件夹的成员“{}”", username.trim())))
 }
 
-/// Runs a tool. `id` makes a write idempotent: the same id returns the first result.
+/// Runs a tool. `id`, the `Idempotency-Key` sent with it, makes a write idempotent, as `request_id` in
+/// `args` does: the same id returns the first result.
 pub async fn call(st: &AppState, auth: Auth, name: &str, mut args: Value, id: Option<MutationId>) -> Result<Reply, ApiError> {
     let now = st.clock.now();
     let local = take_local(&mut args)?;
+    let id = take_request_id(&mut args, id)?;
     let files = st.files.clone();
     match parse_call(name, args)? {
         // The read and the sequence number come from the same call on the one connection: no

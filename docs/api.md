@@ -62,7 +62,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 [附件](design.md#附件)分两步加：先上传文件，再用改动 `attachment.add` 把它加为附件。网页端在文件上传完以前不发这个改动，见[网页端](web.md#附件)。
 
 - `PUT /files/{id}`：请求体是文件，`Content-Type` 是它的类型（`类型/子类型`，最长 100 字；不知道的用 `application/octet-stream`）。`id` 是客户端生成的 UUIDv7，之后也是附件的 ID。最多 20 MB，超过时返回 413。服务端边收边写进 `files/` 下的临时文件，收完以后在数据库的锁里再查一次这个 ID：没人用过就改名换上、记下这个文件，返回 `{id, size}`；同一个人已经传过（断线重传）就丢掉这份，直接返回原来的；别人用过返回 409。已经记下的文件不会被覆盖。只读令牌返回 403。
-- `GET /files/{id}`：文件。看得到它现在所属的事项或请求的人能下载；它不属于任何事项或请求时（还没加为附件，或者附件删除后文件还留着），上传的人也能。其余返回 404。响应头 `Content-Type` 是附件的类型，并且总有 `Content-Disposition: attachment; filename*=UTF-8''<名称>`、`X-Content-Type-Options: nosniff` 和 `Content-Security-Policy: sandbox`：上传的 HTML、SVG 即使在浏览器里被直接打开，也不会在这个网址下执行脚本、借用登录状态。文件不会变，`Cache-Control: private, max-age=31536000, immutable`。
+- `GET /files/{id}`：文件。看得到它现在所属的事项或请求的人能下载；它不属于任何事项或请求时（还没加为附件，或者附件删除后文件还留着），上传的人也能。其余返回 404。响应头 `Content-Type` 是附件的类型，并且总有 `Content-Disposition: attachment; filename*=UTF-8''<名称>`、`X-Content-Type-Options: nosniff` 和 `Content-Security-Policy: sandbox`：上传的 HTML、SVG 即使在浏览器里被直接打开，也不会在这个网址下执行脚本、借用登录状态。谁能读、叫什么名字会变，所以 `Cache-Control: no-store`，每次都问服务端；App 自己存着下载过的文件，见[网页端](web.md#附件)。
 - 跨域：这两个接口允许来源 `https://localhost`（Android App 的页面）和 `capacitor://localhost`（iOS App 的页面），方法 GET、PUT，请求头只允许 `Authorization` 和 `Content-Type`，不带 Cookie；预检请求不要求登录。手机 App 的其他请求走原生 HTTP，附件的文件大，经原生和网页之间的桥传会出问题，见 [Android](android.md#附件)。
 - 日志只记附件 ID、大小和结果，不记文件名。
 
@@ -164,7 +164,8 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | 409 | `files_not_here` | 停止借网盘同步时，在用的附件有文件还没能从网盘下载下来 |
 | 413 | `too_large` | 上传的文件超过 20 MB |
 | 410 | `resync` | `since` 早于保留期，或者服务端恢复过快照，需要重新下载 `/snapshot` |
-| 503 | `unavailable` | 本机模式借网盘同步时，改动没能及时写进网盘，`message` 说明是没有生效还是可能已经生效，见[排定先后](local.md#排定先后)；开启时连不上网盘 |
+| 503 | `unavailable` | 本机模式借网盘同步时连不上网盘：改动还没发出，没有生效，见[排定先后](local.md#排定先后)；开启时连不上网盘 |
+| 503 | `outcome_unknown` | 本机模式借网盘同步时，改动已经发出，网盘没有及时回应，可能已经生效；`details.mutation_id` 是改动 ID，用它原样重发不会重复生效，见[重试](agent.md#重试) |
 
 ## 同步协议
 

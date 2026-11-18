@@ -533,6 +533,13 @@ async fn permissions_idempotency_and_bad_arguments() {
     let first = t.app.clone().oneshot(add()).await.unwrap().into_body().collect().await.unwrap().to_bytes();
     let again = t.app.clone().oneshot(add()).await.unwrap().into_body().collect().await.unwrap().to_bytes();
     assert_eq!(first, again);
+    // The same change, named in the arguments too; and another, which the key and the arguments can't both name.
+    let r = t.tool(&s, "add", json!({ "title": "只加一次", "request_id": "019a4b2c-0000-7000-8000-000000000042" })).await;
+    assert_eq!(r.body, serde_json::from_slice::<Value>(&first).unwrap());
+    let mut mixed = add();
+    *mixed.body_mut() = Body::from(json!({ "title": "x", "request_id": "019a4b2c-0000-7000-8000-000000000045" }).to_string());
+    let res = t.app.clone().oneshot(mixed).await.unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     assert_eq!(t.snapshot(&s).await["tasks"].as_array().unwrap().len(), 1);
 
     t.ok(&s, "add", json!({ "title": "前置" })).await;
@@ -594,14 +601,23 @@ async fn mcp_serves_the_same_tools() {
     assert!(reply["result"]["instructions"].as_str().unwrap().contains("replace"), "{reply}");
 
     let (_, list) = rpc(Some(&s), "tools/list", json!({})).await;
-    let next = list["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == "next").unwrap().clone();
-    assert_eq!(next["annotations"]["readOnlyHint"], true);
+    let tool = |name: &str| list["result"]["tools"].as_array().unwrap().iter().find(|t| t["name"] == name).unwrap().clone();
+    assert_eq!(tool("next")["annotations"]["readOnlyHint"], true);
+    assert!(tool("next")["inputSchema"]["properties"].get("request_id").is_none());
+    assert!(tool("add")["inputSchema"]["properties"]["request_id"].is_object());
 
     let (_, called) = rpc(Some(&s), "tools/call", json!({ "name": "next", "arguments": {} })).await;
     assert_eq!(called["result"]["content"][0]["text"], "#1 交电费");
     let (_, failed) = rpc(Some(&s), "tools/call", json!({ "name": "show", "arguments": { "task": 9 } })).await;
     assert_eq!(failed["result"]["isError"], true);
     assert_eq!(failed["result"]["content"][0]["text"], "不存在事项 #9");
+
+    // Sent again with its request_id, as when the first answer did not come back: made once.
+    let add = json!({ "name": "add", "arguments": { "title": "取快递", "request_id": "019a4b2c-0000-7000-8000-000000000046" } });
+    let (_, first) = rpc(Some(&s), "tools/call", add.clone()).await;
+    let (_, again) = rpc(Some(&s), "tools/call", add).await;
+    assert_eq!(first["result"], again["result"]);
+    assert_eq!(t.snapshot(&s).await["tasks"].as_array().unwrap().len(), 2);
 }
 
 #[tokio::test]

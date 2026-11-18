@@ -54,7 +54,7 @@ async fn a_file_uploaded_and_attached_downloads_as_a_file_only_its_task_shows() 
     assert_eq!(h[header::CONTENT_DISPOSITION], "attachment; filename*=UTF-8''%E6%8A%A5%E4%BB%B7%20%3C%E7%BB%88%E7%89%88%3E.txt");
     assert_eq!(h[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
     assert_eq!(h[header::CONTENT_SECURITY_POLICY], "sandbox");
-    assert_eq!(h[header::CACHE_CONTROL], "private, max-age=31536000, immutable");
+    assert_eq!(h[header::CACHE_CONTROL], "no-store");
 
     assert_eq!(t.download(&bob, &a).await.0, StatusCode::NOT_FOUND);
     assert!(names(&t.snapshot(&bob).await).is_empty());

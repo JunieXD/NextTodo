@@ -5,7 +5,7 @@ use axum::body::Bytes;
 use axum::extract::{FromRequest, Request};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use nexttodo_core::model::TaskId;
+use nexttodo_core::model::{MutationId, TaskId};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -104,9 +104,22 @@ impl ApiError {
         Self::new(StatusCode::CONFLICT, "files_not_here", "有附件的文件还没有从网盘下载下来，现在停止同步，这些附件就打不开了")
     }
 
-    /// The drive local mode syncs through did not take the change in time (docs/local.md#排定先后).
+    /// What was asked could not be done for now, and nothing came of it: the drive local mode syncs
+    /// through was out of reach (docs/local.md#排定先后).
     pub fn unavailable(message: impl Into<String>) -> Self {
         Self::new(StatusCode::SERVICE_UNAVAILABLE, "unavailable", message)
+    }
+
+    /// Change `id` went to the drive, which did not answer in time: it may be made. Sent again as
+    /// the same change, it is made once at most, and answered as it was (docs/agent.md#重试).
+    pub fn outcome_unknown(id: Option<MutationId>) -> Self {
+        let mut e = Self::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "outcome_unknown",
+            "网盘没有回应，这次改动可能已经生效：用同一个改动 ID 重发，生效过的不会再生效一次",
+        );
+        e.details = id.map(|id| serde_json::json!({ "mutation_id": id }));
+        e
     }
 }
 
@@ -148,9 +161,12 @@ fn meaning(e: &(dyn std::error::Error + 'static)) -> Option<&'static str> {
 impl ApiError {
     /// The message, with the field it is about when there is one.
     pub fn describe(&self) -> String {
-        match self.details.as_ref().and_then(|d| d["field"].as_str()) {
-            Some(field) => format!("{}（{field}）", self.message),
-            None => self.message.clone(),
+        let detail = |key: &str| self.details.as_ref().and_then(|d| d[key].as_str());
+        match (detail("field"), detail("mutation_id")) {
+            (Some(field), _) => format!("{}（{field}）", self.message),
+            // What a tool is sent again with.
+            (None, Some(id)) => format!("{}（request_id：{id}）", self.message),
+            (None, None) => self.message.clone(),
         }
     }
 }

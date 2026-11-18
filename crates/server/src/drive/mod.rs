@@ -56,7 +56,6 @@ const SNAPSHOT_EVERY: i64 = 200;
 const DAY_MS: i64 = 24 * 3600 * 1000;
 
 const NOT_MADE: &str = "暂时连不上网盘，改动没有生效";
-const MAYBE_MADE: &str = "网盘没有回应，这次改动可能已经生效，请稍后用 log 查看";
 
 /// Whether local mode syncs through a drive now, and through which: turned on and off while the server
 /// runs. A change made directly holds `Route::Direct` as it is made, so that a drive turned on waits
@@ -226,6 +225,8 @@ impl Progress {
 
 /// A request queued, until it is answered.
 struct Queued<T> {
+    /// The change it makes, if it is one.
+    id: Option<MutationId>,
     answer: oneshot::Receiver<Result<T, ApiError>>,
     progress: Arc<Progress>,
 }
@@ -237,7 +238,7 @@ impl<T> Queued<T> {
             None => self.answer.await,
             Some(deadline) => match tokio::time::timeout_at(deadline, self.answer).await {
                 Ok(answer) => answer,
-                Err(_) if self.progress.give_up() => return Err(ApiError::unavailable(MAYBE_MADE)),
+                Err(_) if self.progress.give_up() => return Err(ApiError::outcome_unknown(self.id)),
                 Err(_) => return Err(ApiError::unavailable(NOT_MADE)),
             },
         };
@@ -442,10 +443,11 @@ impl Drive {
 
     fn queue<T>(&self, maker: Maker, work: impl FnOnce(Answer<T>) -> Work) -> Queued<T> {
         let (answer, receiver) = oneshot::channel();
-        let progress = Arc::new(Progress::default());
+        let request = Request { maker, work: work(Some(answer)), progress: Arc::new(Progress::default()) };
+        let (id, progress) = (request.id(), request.progress.clone());
         // Fails only once the task has stopped; the answer then says so.
-        let _ = self.requests.send(Request { maker, work: work(Some(answer)), progress: progress.clone() });
-        Queued { answer: receiver, progress }
+        let _ = self.requests.send(request);
+        Queued { id, answer: receiver, progress }
     }
 
     /// Looks at the drive now, as when the app comes to the front.

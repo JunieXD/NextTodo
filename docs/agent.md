@@ -44,7 +44,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `done` | `done <事项…> [--end-repeat]` | `tasks`、`today?`、`end_repeat?` | 标为完成，输出因此变成可做的事项；重复的事项改为顺延，输出下一次的截止时间。有重复的事项时必须给 `today`（用户当地的当天日期），命令行自动带上本机日期。`end_repeat` 让重复的事项结束重复、直接完成，用于打卡的长期事项全部做完时，见[总体设计](design.md#重复) |
 | `reopen` | `reopen <事项…>` | `tasks` | 重新打开 |
 | `mkdir` | `mkdir <路径>` | `path` | 新建文件夹，路径上缺的层级一起建；已存在时报错 |
-| `rename` | `rename <文件夹或附件 ID> <新名字>` | `folder?`、`attachment?`、`name` | 文件夹或附件改名，`folder` 和 `attachment` 正好给一个 |
+| `rename` | `rename <文件夹> <新名字>`、`rename --attachment <附件 ID> <新名字>` | `folder?`、`attachment?`、`name` | 文件夹或附件改名，`folder` 和 `attachment` 正好给一个 |
 | `move` | `mv <事项或文件夹…> <目标文件夹>` | `tasks?`、`folders?`、`to` | 移动到已有的文件夹，`/` 是根目录；移进、移出共享的文件夹时去掉连到外面的依赖和看不到的负责人，并换成新主人的编号，输出里写明 |
 | `delete` | `rm <事项或文件夹…>` | `tasks?`、`folders?` | 删除；文件夹连同里面的一切 |
 | `dep_add` | `dep add <前置> <后续>` | `before`、`after` | 加依赖，成环时拒绝并列出环上的事项 |
@@ -56,13 +56,13 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `unshare` | `unshare <文件夹> [用户名…]` | `folder`、`users?` | 共享人移除这些成员，不写就是停止共享；成员不写用户名就是自己退出 |
 | `undo` | `undo <批次>` | `batch` | 撤销一个批次，撤销本身也是一个新批次；看得到全部改动、也有权做的批次才能撤销，别的成员的也行 |
 
-- 命令行里 `mv`、`rm` 的参数像编号的是事项，其余是文件夹；`rename` 的参数是 UUID 时是附件。
+- 命令行里 `mv`、`rm` 的参数像编号的是事项，其余是文件夹。
 - `list`、`next`、`search` 最多列出 `limit` 项，默认 50，最多 500；没列完时最后一行说明还有多少项。`list` 先列未完成的，再列已完成的。
 - `edit` 的 `start` 给 `null`（命令行 `--no-start`）清除开始时间，`due` 同样；只写日期的 `start` 去掉原来的几点。改了截止或开始，开始晚于截止时报错。
 - `edit` 只改 `due` 不给 `remind` 时：新截止带具体时间就保留原来的提醒，否则去掉；重复总是保留，清除截止时间时一起清除。`repeat_from` 只能和 `repeat` 一起给。
 - 负责人只能是共享人和成员，只有共享的文件夹里的事项能设。`assign`、`unassign` 在服务端当时的负责人上加、减，两个人同时设也不会互相覆盖。
 - 依赖只能连在同一处：私人的事项之间，或同一个共享的文件夹里的事项之间，见[依赖](design.md#依赖)。
-- 每个写操作是一个批次，全部生效或全部不生效。
+- 每个写操作是一个批次，全部生效或全部不生效；重发不会重复生效，见[重试](#重试)。
 - 只读令牌只能用前 9 个查询工具。
 
 ## 计划
@@ -163,6 +163,8 @@ $ nexttodo graph 工作
 | `log` | `[{batch, user, actor, created_at, summary}]`，`user` 是做的人的用户名，自己为 `null`；`actor` 是令牌名，没用令牌为 `null` |
 | `jobs` | `[{id, kind, start, folder, state, updated_at}]`，`kind` 是 `organize` 或 `tidy`，`start` 是原文开头，`state` 是 `waiting`、`running`、`failed`、`ready`，失败的另有 `error` |
 | 写操作 | `{batch, changes: [变化]}`，预览时 `batch` 为 `null`；完成事项后有事项因此可做时另有 `unlocked: [事项]` |
+| `attach`（命令行） | 每个文件一项写操作的数据，按给出的顺序组成一个数组；中途失败时只列已经加上的，再报错，退出码为 1 |
+| `download`（命令行） | `{id, name, path}`：附件 ID、附件的名称、实际存到的路径 |
 
 写操作的变化只说做了什么，不带事项的内容。一处改动同时做了几件事（比如撤销时一项既重新打开又改回了标题，一个文件夹既改名又移动），每件各列一条，文件夹都用这处改动之前的路径：
 
@@ -218,7 +220,7 @@ nexttodo skill install                   # 见 Skill
 - `login` 用用户名和密码登录，生成一个以 `--name` 命名（默认“命令行”）的读写令牌，加 `--read-only` 生成只读令牌。令牌存在 `~/.config/nexttodo/config.json`（权限 600），登录用的会话随即注销。
 - 环境变量 `NEXTTODO_URL`、`NEXTTODO_TOKEN` 优先于配置文件，可以给不同的 agent 用不同的令牌，改动记录里就能分清是谁做的。
 - `NEXTTODO_URL` 写 `local` 时，连这台电脑上[本机模式](local.md#agent-接入)的 App。
-- 网络出错时，写操作用同一个幂等键自动重试两次，不会重复生效。
+- 网络出错时，写操作用同一个改动 ID 自动重试两次，不会重复生效；`--request-id` 指定改动 ID，见[重试](#重试)。
 
 ## MCP
 
@@ -246,7 +248,22 @@ bearer_token_env_var = "NEXTTODO_TOKEN"
 
 - `GET /api/v1/tools`：工具列表，每项 `{name, description, input_schema}`，和 MCP 的 `tools/list` 相同。
 - `POST /api/v1/tools/{name}`：请求体是参数 JSON（最大 28 MB，够 `attach` 带上 20 MB 文件的 base64），返回 `{text, data}`；`attachment` 的 `data` 里，图片的内容是 base64 的 `image`，文本文件的是 `text`；读工具还返回 `seq`：结果包含到这个序号为止的全部改动，编号同 [`/changes`](api.md#端点)。错误格式同 [API](api.md#错误)。
-- 写操作可以带请求头 `Idempotency-Key: <uuidv7>`，作为改动 ID：同一个键重发时原样返回第一次的结果（90 天内）；超过保留期，或者这个键是 App 提交的改动 ID 时，只返回批次号，不会再生效一次。
+- 写操作的改动 ID 用请求头 `Idempotency-Key: <uuidv7>` 或参数 `request_id` 给，见[重试](#重试)。
+
+## 重试
+
+每个写操作都有一个改动 ID。用同一个 ID 重发，生效过的不会再生效一次，原样返回第一次的结果（90 天内；超过保留期，或者这个 ID 是 App 提交的改动 ID 时，只返回批次号）。
+
+| 入口 | 改动 ID |
+|---|---|
+| 命令行 | 每条命令自动生成，网络出错时用它自动重试两次；`--request-id <uuidv7>` 指定 |
+| MCP | 写工具的参数 `request_id`（UUIDv7），不给时服务端生成 |
+| 工具接口 | 请求头 `Idempotency-Key` 或参数 `request_id`，都给时必须相同，否则 400 |
+
+[本机模式](local.md#排定先后)借网盘同步时，写操作最多等 15 秒，还没写进网盘的返回 503：
+
+- `unavailable`：还没发出，没有生效，可以直接重发。
+- `outcome_unknown`：已经发出，网盘没有回应，可能已经生效。`details.mutation_id` 是这次的改动 ID，MCP 的错误说明末尾写作“request_id：<ID>”，命令行的写作“--request-id <ID>”。用它原样重发：已经生效的返回第一次的结果，还在等网盘的再等一次。
 
 ## Skill
 

@@ -16,7 +16,7 @@ import { BatchTools, batchTitle, useBatch } from "./batch";
 import { Detail } from "./Detail";
 import { useTreeDrag } from "./drag";
 import { FolderContextMenu, FolderMenu, usePlaceFolder } from "./FolderMenu";
-import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, SearchResults } from "./lists";
+import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, NextFilter, QuickAdd, SearchResults } from "./lists";
 import { readyIn, useNextFolders } from "../next-folders";
 import { folderUrl, settingsUrl, useFolderView, useSelection } from "./nav";
 import { SettingsHome, SettingsPage, settingsTitle, useSectionAt } from "./Settings";
@@ -58,7 +58,16 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
     );
   } else if (at === "next") {
     main = (
-      <Page title="接下来" crumbs={formatToday(now)} add={<QuickAdd key="next" />}>
+      <Page
+        title="接下来"
+        crumbs={formatToday(now)}
+        actions={
+          <div className="head-actions">
+            <NextFilter />
+          </div>
+        }
+        add={<QuickAdd key="next" />}
+      >
         <NextBody now={now} />
       </Page>
     );

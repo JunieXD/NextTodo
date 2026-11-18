@@ -387,7 +387,7 @@ export function Tip({ label, children }: { label: string; children: ReactElement
         {children}
       </Tooltip.Trigger>
       <Tooltip.Portal container={root}>
-        <Tooltip.Content className="tip" sideOffset={6}>
+        <Tooltip.Content className="tip" sideOffset={6} collisionPadding={8}>
           {label}
         </Tooltip.Content>
       </Tooltip.Portal>

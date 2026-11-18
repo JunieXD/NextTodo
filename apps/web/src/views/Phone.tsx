@@ -17,7 +17,7 @@ import { BatchBar, BatchHead, useBatch } from "./batch";
 import { Detail } from "./Detail";
 import { FolderMenu } from "./FolderMenu";
 import { SharedWith, sharer } from "./share";
-import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, SearchResults } from "./lists";
+import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, NextFilter, QuickAdd, SearchResults } from "./lists";
 import { readyIn, useNextFolders } from "../next-folders";
 import { folderUrl, type SettingsSection, settingsUrl, useFolderView, useSelection } from "./nav";
 import { SettingsHome, SettingsPage, settingsTitle, useSectionAt } from "./Settings";
@@ -136,11 +136,14 @@ function NextScreen({ anim, now }: { anim: string; now: Date }) {
     <Screen title="接下来" anim={anim} after={<QuickAdd />}>
       <div className="hero">
         <h1 className="large-title">接下来</h1>
-        <Tip label="已完成">
-          <button className="icon-btn" onClick={() => navigate("/done")}>
-            <Icon of={History} />
-          </button>
-        </Tip>
+        <span className="hero-actions">
+          <NextFilter />
+          <Tip label="已完成">
+            <button className="icon-btn" onClick={() => navigate("/done")}>
+              <Icon of={History} />
+            </button>
+          </Tip>
+        </span>
       </div>
       <p className="subtitle">
         {formatToday(now)}，{readyIn(board, listed).length} 项可做

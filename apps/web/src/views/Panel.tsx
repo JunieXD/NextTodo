@@ -12,7 +12,7 @@ import { RootContext, Tip } from "../ui/feedback";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { BatchBar, BatchHead, useBatch } from "./batch";
-import { FolderBody, NextBody, QuickAdd } from "./lists";
+import { FolderBody, NextBody, NextFilter, QuickAdd } from "./lists";
 import { folderUrl } from "./nav";
 import { FolderName, folderIcon } from "./share";
 import { ConnectionNote } from "./status";
@@ -52,11 +52,14 @@ export function Panel() {
         ) : (
           <>
             <Pages folder={next ? undefined : folder} />
-            <Tip label="在主窗口打开">
-              <button className="icon-btn" onClick={() => void openMain(location)}>
-                <Icon of={AppWindow} />
-              </button>
-            </Tip>
+            <span className="hero-actions">
+              {next && <NextFilter />}
+              <Tip label="在主窗口打开">
+                <button className="icon-btn" onClick={() => void openMain(location)}>
+                  <Icon of={AppWindow} />
+                </button>
+              </Tip>
+            </span>
           </>
         )}
       </header>

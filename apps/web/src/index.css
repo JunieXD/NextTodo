@@ -272,8 +272,11 @@ label.row { cursor: pointer; }
 .graph-tools { display: flex; gap: 8px; padding: 10px 16px 8px; overflow-x: auto; flex: none; }
 .chip { height: 32px; border-radius: 8px; padding: 0 12px; border: 1px solid var(--outline-variant); display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; color: var(--on-surface-variant); white-space: nowrap; max-width: 100%; }
 .chip.on { background: var(--secondary-container); border-color: transparent; color: var(--on-secondary-container); }
-.chip-label { overflow: hidden; text-overflow: ellipsis; }
-.next-filter { padding: 0 16px 8px; }
+/* “接下来”'s folder filter, when it filters; when not, it is an icon button. Narrower on the narrowest
+   phones, for the large title to keep its one line. */
+.next-filter { height: 32px; max-width: min(180px, 40vw); border-radius: 16px; padding: 0 12px 0 10px; display: inline-flex; align-items: center; gap: 6px; background: var(--secondary-container); color: var(--on-secondary-container); font-size: 14px; font-weight: 500; white-space: nowrap; transition: opacity .15s; }
+.next-filter:active { opacity: .7; }
+.next-filter span { overflow: hidden; text-overflow: ellipsis; }
 .empty .text-btn { margin-top: 4px; }
 .fab { position: absolute; z-index: 4; right: 16px; bottom: calc(var(--tabbar-h) + 16px); height: 56px; border-radius: 16px; padding: 0 20px 0 16px; display: inline-flex; align-items: center; gap: 8px;
   background: var(--primary-container); color: var(--on-primary-container); font-size: 15px; font-weight: 600; box-shadow: var(--shadow-3); }
@@ -765,7 +768,7 @@ a.text-btn { display: inline-flex; align-items: center; }
 .stepper input { height: 30px; border: 0; outline: none; background: none; padding: 0; text-align: center; font: 600 15px var(--font); font-variant-numeric: tabular-nums; color: var(--on-surface); }
 
 /* What a button without words does, on hovering it. */
-.tip { z-index: 70; padding: 6px 10px; border-radius: 8px; background: var(--inverse-surface); color: var(--inverse-on-surface); font-size: 13px; line-height: 1.3; box-shadow: var(--shadow-1); pointer-events: none; }
+.tip { z-index: 70; max-width: var(--radix-tooltip-content-available-width); overflow-wrap: anywhere; padding: 6px 10px; border-radius: 8px; background: var(--inverse-surface); color: var(--inverse-on-surface); font-size: 13px; line-height: 1.3; box-shadow: var(--shadow-1); pointer-events: none; }
 .tip[data-state$="open"] { animation: fade .12s; }
 .detail-actions { margin: 22px 16px 0; --sep-left: 16px; }
 .detail-actions .end-repeat .row-inner { color: var(--primary); justify-content: center; font-weight: 500; }

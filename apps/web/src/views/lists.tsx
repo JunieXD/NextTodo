@@ -1,7 +1,7 @@
 // The bodies of the main pages: what is next, what is done, a folder (the root too), search results;
 // and the quick-add bar.
 
-import { ArrowUp, ChevronDown, ChevronRight, ChevronUp, Folder as FolderIcon, FolderPlus, List, Sparkles, Workflow } from "lucide-react";
+import { ArrowUp, ChevronDown, ChevronRight, ChevronUp, Folder as FolderIcon, FolderPlus, List, ListFilter, Sparkles, Workflow } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
@@ -69,7 +69,6 @@ export function NextBody({ now }: { now: Date }) {
   const jobs = board.snapshot.ai_jobs;
   return (
     <>
-      <NextFilter folders={folders} />
       {jobs.length > 0 && (
         <section>
           <h2 className="group-title">AI 整理</h2>
@@ -101,9 +100,10 @@ export function NextBody({ now }: { now: Date }) {
   );
 }
 
-/** Which folders “接下来” lists, and picking them (docs/ui.md#接下来的文件夹筛选). */
-function NextFilter({ folders }: { folders: (FolderId | null)[] }) {
+/** Which folders “接下来” lists, and picking them, in its title row (docs/ui.md#接下来的文件夹筛选). */
+export function NextFilter() {
   const { board } = useView();
+  const folders = useNextFolders(board);
   // While picking, none ticked is a step on the way to ticking some once the root is unticked; closed
   // so, it is all of them again.
   const [picking, setPicking] = useState<(FolderId | null)[] | null>(null);
@@ -116,16 +116,18 @@ function NextFilter({ folders }: { folders: (FolderId | null)[] }) {
     setPicking(null);
   };
   const all = folders.includes(null);
-  const label = all ? "全部文件夹" : folders.length > 2 ? `${folders.length} 个文件夹` : folders.map((f) => board.folderName(f)).join("、");
+  const names = folders.map((f) => board.folderName(f)).join("、");
   return (
-    <div className="next-filter">
-      <button className={`chip${all ? "" : " on"}`} aria-haspopup="dialog" onClick={() => setPicking(folders)}>
-        <span className="chip-label">{label}</span>
-        <Icon of={ChevronDown} size={16} />
-      </button>
+    <>
+      <Tip label={all ? "筛选文件夹" : `筛选文件夹：${names}`}>
+        <button className={all ? "icon-btn" : "next-filter"} aria-haspopup="dialog" onClick={() => setPicking(folders)}>
+          <Icon of={ListFilter} size={all ? undefined : 18} />
+          {!all && <span>{folders.length > 2 ? `${folders.length} 个文件夹` : names}</span>}
+        </button>
+      </Tip>
       {/* Without those deleted or no longer shared meanwhile. */}
       {picking && <FolderChecks title="只看这些文件夹" chosen={picking.filter((f) => board.hasFolder(f))} onChange={pick} onClose={close} />}
-    </div>
+    </>
   );
 }
 

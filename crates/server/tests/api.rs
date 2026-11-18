@@ -380,6 +380,23 @@ async fn a_time_done_is_not_taken_back_by_a_change_that_does_it_again_first() {
 }
 
 #[tokio::test]
+async fn a_change_that_did_a_task_twice_is_undone_whole() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let task = id();
+    let due = json!({ "date": "2026-11-10", "repeat": { "every": 1, "unit": "day", "from": "due" } });
+    t.mutate(&s, json!([{ "op": "task.create", "id": task, "title": "背单词", "due": due }])).await;
+    let both = id();
+    let done = |today| json!({ "op": "task.update", "id": task, "done": true, "today": today });
+    let r = t.call("POST", "/mutations", Some(&s), Some(json!({ "id": both, "ops": [done("2026-11-10"), done("2026-11-11")] }))).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    let r = t.mutate(&s, json!([{ "op": "undo", "mutation": both }])).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    let snap = t.snapshot(&s).await;
+    assert_eq!((&snap["tasks"][0]["completions"], &snap["tasks"][0]["due"]), (&Value::Null, &due));
+}
+
+#[tokio::test]
 async fn done_moves_a_repeating_task_on_by_the_day_on_the_device() {
     let t = TestApp::new();
     let s = t.admin().await;

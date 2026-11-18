@@ -1168,18 +1168,11 @@ impl<'a> Cx<'a> {
         Ok(())
     }
 
-    /// Restores what a mutation changed, newest change first. Entities that were removed come back
-    /// unchanged (same id, and number unless it is taken). Changes whose target is already gone or
-    /// back are skipped; bringing something back into a folder or onto a task that is gone fails.
-    ///
-    /// Only a change the user saw all of can be undone, someone else's in a shared folder too, the
-    /// AI jobs in it aside, with their attachments: those are each their owner's, who undoes their
-    /// own. An attachment moved from a job to a task is, to everyone else, made there.
-    /// How often task `id` was done, as each change after the one numbered `seq` changed it, in order,
-    /// up to this one so far.
-    fn completions_since(&self, seq: i64, id: TaskId) -> Result<Vec<Counted>, ApiError> {
+    /// How often task `id` was done, as each change since changed it, in order, up to this one so far:
+    /// `rest`, what came after in the mutation numbered `seq`, then the mutations after it.
+    fn completions_since(&self, seq: i64, id: TaskId, rest: &[Effect]) -> Result<Vec<Counted>, ApiError> {
         let mut since = self.c.prepare("SELECT effects FROM mutations WHERE seq > ?1 AND effects LIKE ?2 ORDER BY seq")?;
-        let mut effects = Vec::new();
+        let mut effects = rest.to_vec();
         for logged in since.query_map(params![seq, format!("%{id}%")], |r| r.get::<_, String>(0))? {
             effects.extend(serde_json::from_str::<Vec<Effect>>(&logged?)?);
         }
@@ -1195,6 +1188,13 @@ impl<'a> Cx<'a> {
             .collect())
     }
 
+    /// Restores what a mutation changed, newest change first. Entities that were removed come back
+    /// unchanged (same id, and number unless it is taken). Changes whose target is already gone or
+    /// back are skipped; bringing something back into a folder or onto a task that is gone fails.
+    ///
+    /// Only a change the user saw all of can be undone, someone else's in a shared folder too, the
+    /// AI jobs in it aside, with their attachments: those are each their owner's, who undoes their
+    /// own. An attachment moved from a job to a task is, to everyone else, made there.
     fn undo(&mut self, id: MutationId) -> Result<(), ApiError> {
         let row: Option<(i64, Option<String>, Option<String>)> = self
             .c
@@ -1246,7 +1246,7 @@ impl<'a> Cx<'a> {
                 self.numbers.entry(before.id).or_insert(before.number);
             }
         }
-        for effect in seen.into_iter().rev() {
+        for (i, effect) in seen.iter().cloned().enumerate().rev() {
             match effect {
                 Effect::Folder(Change::Created(f)) => {
                     if let Some((_, owner)) = self.visible_folder(f.id)? {
@@ -1289,7 +1289,7 @@ impl<'a> Cx<'a> {
                         // the count back would undo that too.
                         if b.completions != a.completions
                             && (cur.completions != a.completions
-                                || !still_last(&b.completions, &a.completions, self.completions_since(seq, b.id)?))
+                                || !still_last(&b.completions, &a.completions, self.completions_since(seq, b.id, &seen[i + 1..])?))
                         {
                             return Err(ApiError::conflict(format!("“{}”在这之后又完成或撤销过，请先撤销后来的那次", cur.title.as_str())));
                         }

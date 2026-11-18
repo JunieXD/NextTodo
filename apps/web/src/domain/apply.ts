@@ -641,22 +641,22 @@ class Applier {
     return undefined;
   }
 
-  /** Restores what a mutation changed, newest change first, as the server does: removed entities
-   * come back unchanged; changes whose target is already gone or back are skipped; bringing
-   * something back into a folder or onto a task that is gone fails. */
-  /** How often task `task` was done, as each change after mutation `id` changed it, in order, up to
-   * this one so far. */
-  private completionsSince(id: MutationId, task: TaskId) {
-    return [...this.cx.effectsAfter(id), this.effects]
+  /** How often task `task` was done, as each change since changed it, in order, up to this one so
+   * far: `rest`, what came after in mutation `id`, then the mutations after it. */
+  private completionsSince(id: MutationId, task: TaskId, rest: Effect[]) {
+    return [rest, ...this.cx.effectsAfter(id), this.effects]
       .flat()
       .flatMap((e) => (e.kind === "task" && e.before && e.after?.id === task && !same(e.before.completions, e.after.completions) ? [[e.before.completions, e.after.completions] as [Task["completions"], Task["completions"]]] : []));
   }
 
+  /** Restores what a mutation changed, newest change first, as the server does: removed entities
+   * come back unchanged; changes whose target is already gone or back are skipped; bringing
+   * something back into a folder or onto a task that is gone fails. */
   private undo(id: MutationId) {
     const effects = this.cx.effectsOf(id);
     if (!effects) throw new Rejected("not_found", "要撤销的改动不存在或已过期");
     const now = this.cx.now;
-    for (const e of [...effects].reverse()) {
+    for (const [i, e] of [...effects.entries()].reverse()) {
       if (e.kind === "folder") {
         if (!e.before) {
           if (this.d.folders.has(e.after!.id)) this.deleteFolder(e.after!.id);
@@ -690,7 +690,7 @@ class Applier {
           if (
             cur &&
             !same(before.completions, after.completions) &&
-            (!same(cur.completions, after.completions) || !stillLast(before.completions, after.completions, this.completionsSince(id, cur.id)))
+            (!same(cur.completions, after.completions) || !stillLast(before.completions, after.completions, this.completionsSince(id, cur.id, effects.slice(i + 1))))
           ) {
             throw new Rejected("conflict", `“${cur.title}”在这之后又完成或撤销过，请先撤销后来的那次`);
           }

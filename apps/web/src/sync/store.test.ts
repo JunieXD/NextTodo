@@ -211,6 +211,17 @@ test("times done are taken back one after another, the last first", () => {
   expect(store.getView().board.task(id(1))!.completions).toBeUndefined();
 });
 
+test("a change that did a task twice is undone whole", () => {
+  const due = { date: "2026-11-10", repeat: { every: 1, unit: "day" as const, from: "due" as const } };
+  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  const { id: both } = store.commit(
+    ["2026-11-10", "2026-11-11"].map((today) => ({ op: "task.update" as const, id: id(1), done: true, today })),
+  );
+  store.commit([{ op: "undo", mutation: both }]);
+  const t = store.getView().board.task(id(1))!;
+  expect([t.completions, t.due?.date]).toEqual([undefined, "2026-11-10"]);
+});
+
 test("the last time is not offered to undo when made and done in one change", () => {
   const due = { date: "2026-11-10", repeat: { every: 1, unit: "day" as const, from: "due" as const } };
   const { store } = setup();

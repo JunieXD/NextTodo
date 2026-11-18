@@ -8,7 +8,8 @@
 //   out when a tab hears the server's verdict, in the same transaction as that tab's copy, which then
 //   includes it.
 //
-// - `files`, keyed by [user id, attachment id]: attachments' files (`files.ts`).
+// - `files` and `fileInfo`, keyed by [user id, attachment id]: attachments' files, and what is known
+//   of them (`files.ts`).
 //
 // The drafts of the add boxes, and the AI settings kept on the device (ai.ts), are in localStorage
 // and go along with the rest.
@@ -23,13 +24,16 @@ import type { Copy, Pending, Saved } from "./store";
 let opened: Promise<IDBPDatabase> | undefined;
 export const db = () =>
   (opened ??= new Promise<IDBPDatabase>((resolve, reject) => {
-    openDB("nexttodo", 2, {
+    openDB("nexttodo", 3, {
       upgrade(db, from) {
         if (from < 1) {
           db.createObjectStore("copies");
           db.createObjectStore("outbox");
         }
+        // Version 2, never released, kept a file's bytes in one record with what changes of it.
+        if (from === 2) db.deleteObjectStore("files");
         db.createObjectStore("files");
+        db.createObjectStore("fileInfo");
       },
       // A page of an earlier version of the app has it open and does not give way: only closing that
       // page lets this one upgrade it.
@@ -189,7 +193,8 @@ export async function forget(userId: string) {
   forgetDrafts(userId);
   forgetAiConfig(userId);
   await forgetSynced(userId);
-  await (await db()).delete("files", all(userId));
+  const tx = (await db()).transaction(["files", "fileInfo"], "readwrite");
+  await Promise.all([tx.objectStore("files").delete(all(userId)), tx.objectStore("fileInfo").delete(all(userId)), tx.done]);
 }
 
 /** Deletes the user's copies and outbox, which belong to the server's history of their data; the
@@ -215,8 +220,9 @@ export async function unsentOfOthers(userId: string) {
 export async function forgetOthers(userId: string) {
   forgetOtherDrafts(userId);
   forgetOtherAiConfigs(userId);
-  const tx = (await db()).transaction(["copies", "outbox", "files"], "readwrite");
-  const stores = ["copies", "outbox", "files"].map((s) => tx.objectStore(s));
+  const names = ["copies", "outbox", "files", "fileInfo"];
+  const tx = (await db()).transaction(names, "readwrite");
+  const stores = names.map((s) => tx.objectStore(s));
   await Promise.all([...others(userId).flatMap((r) => stores.map((s) => s.delete(r))), tx.done]);
 }
 

@@ -56,6 +56,8 @@ export interface Hooks {
   rejected(m: Mutation, e: ErrorBody): void;
   /** Changes that arrived from elsewhere: other devices, or agents with a token. */
   arrived(entries: LogEntry[]): void;
+  /** Changes of the outbox the server confirmed, once they have left the saved outbox too. */
+  confirmed(ms: Mutation[]): void;
 }
 
 /** How many recent changes are kept for undo. */
@@ -221,8 +223,11 @@ export class Store {
       this.remember(e.id, e.effects);
     }
     this.seq = seq;
+    const confirmed = this.outbox.filter((p) => arrived.has(p.mutation.id)).map((p) => p.mutation);
     this.outbox = this.outbox.filter((p) => !arrived.has(p.mutation.id));
-    this.changed([], [...arrived]);
+    void this.changed([], [...arrived]).then(() => {
+      if (confirmed.length) this.hooks.confirmed(confirmed);
+    });
     const others = entries.filter((e) => !mine.has(e.id));
     if (others.length) this.hooks.arrived(others);
     this.flush();
@@ -232,9 +237,10 @@ export class Store {
    * which moves it into the base. But a base that already includes `seq` (downloaded afresh, or
    * merged from another tab's copy) has it already, and it won't arrive again: drop it here. */
   acked(id: MutationId, seq: number) {
-    if (seq > this.seq || !this.outbox.some((p) => p.mutation.id === id)) return;
-    this.outbox = this.outbox.filter((p) => p.mutation.id !== id);
-    this.changed([], [id]);
+    const pending = this.outbox.find((p) => p.mutation.id === id);
+    if (seq > this.seq || !pending) return;
+    this.outbox = this.outbox.filter((p) => p !== pending);
+    void this.changed([], [id]).then(() => this.hooks.confirmed([pending.mutation]));
     this.flush();
   }
 

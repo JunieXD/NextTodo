@@ -142,6 +142,7 @@ export class Session {
         this.listeners.rejected(m, e);
       },
       arrived: (entries) => this.listeners.arrived(entries),
+      confirmed: (ms) => this.files.confirmed(ms),
     });
     this.files = new Files(user.id, this.store, {
       broadcast: (m) => tabs.postMessage(m satisfies Message),

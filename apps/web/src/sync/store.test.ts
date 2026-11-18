@@ -59,6 +59,7 @@ function setup(saved: Saved = Store.empty()) {
     },
     rejected: (m, e) => rejected.push([m, e]),
     arrived: (e) => arrived.push(e),
+    confirmed() {},
   });
   const titles = () => store.getView().board.sort([...store.getView().board.snapshot.tasks]).map((t) => t.title);
   const hold = () => {

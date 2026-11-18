@@ -1,6 +1,7 @@
 import "fake-indexeddb/auto";
 import { openDB } from "idb";
-import { expect, test } from "vitest";
+import { IDBFactory } from "fake-indexeddb";
+import { expect, test, vi } from "vitest";
 import { draft, keepDraft, stagedFiles, withdraw, withdrawn } from "./drafts";
 import { forget, forgetCopy, forgetOthers, load, saver } from "./persist";
 import { type Copy, Store } from "./store";
@@ -14,7 +15,7 @@ const fail = (e: unknown) => {
 };
 
 /** The database as another tab would see it; each test first lets `load` set it up. */
-const raw = () => openDB("nexttodo", 2);
+const raw = () => openDB("nexttodo", 3);
 const mine = (u: string) => IDBKeyRange.bound([u], [u, []]);
 const outbox = async (u: string) => (await (await raw()).getAll("outbox", mine(u))).map((p) => p.at);
 
@@ -123,4 +124,23 @@ test("a change withdrawn into a draft leaves the outbox as the app opens, its te
   expect(opened!.outbox.map((p) => p.at)).toEqual([2]);
   // Still noted: a tab open meanwhile may have it, and is told by the tab that uploads.
   expect([draft(u, "root"), stagedFiles(u, "root"), withdrawn(u)]).toEqual(["买菜", [file], [pending(1).mutation.id]]);
+});
+
+test("the copies and outbox of the version released before attachments stay as it upgrades", async () => {
+  vi.stubGlobal("indexedDB", new IDBFactory());
+  vi.resetModules();
+  const old = await openDB("nexttodo", 1, {
+    upgrade(db) {
+      db.createObjectStore("copies");
+      db.createObjectStore("outbox");
+    },
+  });
+  const u = user(9);
+  await old.put("copies", copy(4), [u, "tab-a"]);
+  await old.put("outbox", pending(1), [u, pending(1).mutation.id]);
+  old.close();
+  const opened = await (await import("./persist")).load(someone(u), "here");
+  expect(opened!.seq).toBe(4);
+  expect(opened!.outbox).toEqual([pending(1)]);
+  vi.unstubAllGlobals();
 });

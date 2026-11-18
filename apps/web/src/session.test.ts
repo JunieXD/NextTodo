@@ -105,7 +105,7 @@ function watch(s: Session) {
 
 /** How many copies and pending changes of the user's are on the device. */
 async function saved(u: User) {
-  const db = await openDB("nexttodo", 2);
+  const db = await openDB("nexttodo", 3);
   const mine = IDBKeyRange.bound([u.id], [u.id, []]);
   return [await db.count("copies", mine), await db.count("outbox", mine)];
 }
@@ -236,7 +236,7 @@ test("a tab left open while the site's storage is cleared leaves a later sign-in
   const a = await signIn(u);
   localStorage.clear();
   server.cookie = null;
-  const db = await openDB("nexttodo", 2);
+  const db = await openDB("nexttodo", 3);
   await Promise.all([db.clear("copies"), db.clear("outbox")]);
   // Signed in again a minute later.
   const now = Date.now;

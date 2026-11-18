@@ -1,7 +1,7 @@
 //! The command line and its MCP bridge reaching the desktop app in local mode, through the address
 //! file the app writes in its data.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -60,9 +60,10 @@ fn proxy() -> (String, Arc<AtomicUsize>) {
     (url, count)
 }
 
-/// A server that reads each request and closes the connection unanswered, as when the answer is lost
-/// on the way back: the change ids the requests came with.
-fn unanswering() -> (String, Arc<Mutex<Vec<String>>>) {
+/// A server that reads each request and gives `answer`, raw, closing the connection unanswered when
+/// it is empty: as when the answer is lost on the way back, or a gateway answers in its place. The
+/// change ids the requests came with.
+fn answering(answer: &'static str) -> (String, Arc<Mutex<Vec<String>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     let keys = Arc::new(Mutex::new(Vec::new()));
@@ -70,15 +71,19 @@ fn unanswering() -> (String, Arc<Mutex<Vec<String>>>) {
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let mut reader = BufReader::new(stream.unwrap());
-            let mut line = String::new();
+            let (mut line, mut length) = (String::new(), 0);
             while reader.read_line(&mut line).unwrap() > 2 {
-                if let Some((name, value)) = line.split_once(':')
-                    && name.eq_ignore_ascii_case("idempotency-key")
-                {
-                    heard.lock().unwrap().push(value.trim().to_owned());
+                match line.split_once(':') {
+                    Some((name, value)) if name.eq_ignore_ascii_case("idempotency-key") => {
+                        heard.lock().unwrap().push(value.trim().to_owned())
+                    }
+                    Some((name, value)) if name.eq_ignore_ascii_case("content-length") => length = value.trim().parse().unwrap(),
+                    _ => {}
                 }
                 line.clear();
             }
+            reader.read_exact(&mut vec![0; length]).unwrap();
+            reader.into_inner().write_all(answer.as_bytes()).unwrap();
         }
     });
     (url, keys)
@@ -238,18 +243,22 @@ async fn mcp_reads_the_address_again_for_each_message() {
 }
 
 #[test]
-fn a_change_whose_answers_are_all_lost_is_tried_as_one_and_named_to_send_again() {
-    let home = Home::new();
-    let (url, keys) = unanswering();
-    let mut command = Command::new(env!("CARGO_BIN_EXE_nexttodo"));
-    command.env("HOME", &home.0).env("NEXTTODO_URL", &url).env("NEXTTODO_TOKEN", "nt_test");
-    for var in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"] {
-        command.env_remove(var);
+fn a_change_whose_answer_is_lost_is_tried_as_one_and_named_to_send_again() {
+    // No answer, tried three times; a gateway's, once.
+    let gateway = "HTTP/1.1 504 Gateway Timeout\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    for (answer, tries) in [("", 3), (gateway, 1)] {
+        let home = Home::new();
+        let (url, keys) = answering(answer);
+        let mut command = Command::new(env!("CARGO_BIN_EXE_nexttodo"));
+        command.env("HOME", &home.0).env("NEXTTODO_URL", &url).env("NEXTTODO_TOKEN", "nt_test");
+        for var in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"] {
+            command.env_remove(var);
+        }
+        let (ok, _, err) = run(command.args(["add", "写测试"]));
+        let keys = keys.lock().unwrap().clone();
+        assert!(!ok);
+        assert_eq!(keys.len(), tries, "{err}");
+        assert!(keys.iter().all(|k| *k == keys[0]), "{keys:?}");
+        assert!(err.contains(&format!("--request-id {}", keys[0])), "{err}");
     }
-    let (ok, _, err) = run(command.args(["add", "写测试"]));
-    let keys = keys.lock().unwrap().clone();
-    assert!(!ok);
-    assert_eq!(keys.len(), 3, "{err}");
-    assert!(keys.iter().all(|k| *k == keys[0]), "{keys:?}");
-    assert!(err.contains(&format!("--request-id {}", keys[0])), "{err}");
 }

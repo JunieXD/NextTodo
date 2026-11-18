@@ -10,7 +10,7 @@ import { groups, ops } from "./tidy";
 const ME = "019a4b2c-0000-7000-8000-0000000000ee";
 
 const id = (n: number) => `019a4b2c-0000-7000-8000-${String(n).padStart(12, "0")}`;
-const cx = { me: ME, now: 1000, effectsOf: () => undefined };
+const cx = { me: ME, now: 1000, effectsOf: () => undefined, effectsAfter: () => [] };
 const was = (title: string) => ({ title, description: "", due: null });
 
 function task(n: number, title: string, extra: Partial<Task> = {}): Task {

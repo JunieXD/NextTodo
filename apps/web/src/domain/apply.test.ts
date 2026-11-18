@@ -8,7 +8,12 @@ const ME = "019a4b2c-0000-7000-8000-0000000000ee";
 
 const id = (n: number) => `019a4b2c-0000-7000-8000-${String(n).padStart(12, "0")}`;
 const log = new Map<string, Effect[]>();
-const cx = { me: ME, now: 1000, effectsOf: (m: string) => log.get(m) };
+const cx = {
+  me: ME,
+  now: 1000,
+  effectsOf: (m: string) => log.get(m),
+  effectsAfter: (m: string) => [...log.entries()].slice([...log.keys()].indexOf(m) + 1).map(([, e]) => e),
+};
 
 function empty(): Data {
   return fromSnapshot({ folders: [], tasks: [], dependencies: [], attachments: [], ai_jobs: [], shares: [], people: [] });

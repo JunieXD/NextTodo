@@ -1157,16 +1157,28 @@ impl<'a> Cx<'a> {
     /// Only a change the user saw all of can be undone, someone else's in a shared folder too, the
     /// AI jobs in it aside, with their attachments: those are each their owner's, who undoes their
     /// own. An attachment moved from a job to a task is, to everyone else, made there.
+    /// Whether a change after the one numbered `seq` changed how often task `id` was done.
+    fn completed_since(&self, seq: i64, id: TaskId) -> Result<bool, ApiError> {
+        let mut since = self.c.prepare("SELECT effects FROM mutations WHERE seq > ?1 AND effects LIKE ?2")?;
+        for effects in since.query_map(params![seq, format!("%{id}%")], |r| r.get::<_, String>(0))? {
+            let effects: Vec<Effect> = serde_json::from_str(&effects?)?;
+            if effects.iter().any(|e| matches!(e, Effect::Task(Change::Updated { before, after }) if after.id == id && before.completions != after.completions)) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     fn undo(&mut self, id: MutationId) -> Result<(), ApiError> {
-        let row: Option<(Option<String>, Option<String>)> = self
+        let row: Option<(i64, Option<String>, Option<String>)> = self
             .c
             .query_row(
-                "SELECT m.effects, d.effects FROM mutations m JOIN deliveries d ON d.seq = m.seq AND d.user_id = ?2 WHERE m.id = ?1",
+                "SELECT m.seq, m.effects, d.effects FROM mutations m JOIN deliveries d ON d.seq = m.seq AND d.user_id = ?2 WHERE m.id = ?1",
                 params![id, self.user],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?;
-        let Some((Some(all), own)) = row else { return Err(ApiError::not_found("要撤销的改动不存在或已过期")) };
+        let Some((seq, Some(all), own)) = row else { return Err(ApiError::not_found("要撤销的改动不存在或已过期")) };
         let all: Vec<Effect> = serde_json::from_str(&all)?;
         let seen: Vec<Effect> = match own {
             Some(own) => serde_json::from_str(&own)?,
@@ -1247,9 +1259,10 @@ impl<'a> Cx<'a> {
                 }
                 Effect::Task(Change::Updated { before: b, after: a }) => {
                     if let Some((cur, owner)) = self.visible_task(b.id)? {
-                        // Done again or taken back since: setting the count back would undo that too.
-                        if b.completions != a.completions && cur.completions != a.completions {
-                            return Err(ApiError::conflict(format!("“{}”的完成次数已经变了，不能再撤销这一次完成", cur.title.as_str())));
+                        // Done again or taken back since, maybe to the same count on the same day: setting
+                        // the count back would undo that too.
+                        if b.completions != a.completions && self.completed_since(seq, b.id)? {
+                            return Err(ApiError::conflict(format!("“{}”在这之后又完成或撤销过，请先撤销后来的那次", cur.title.as_str())));
                         }
                         let mut restored =
                             restore!(cur, b, a, folder_id, title, description, done_at, start, start_time, completions, sort_key);

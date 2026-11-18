@@ -476,6 +476,12 @@ impl Server {
     /// meanwhile.
     fn tool(&self, name: &str, token: &str, change: Option<&str>, args: &Value) -> anyhow::Result<(String, Value)> {
         let path = format!("/api/v1/tools/{name}");
+        // The server's answer lost on the way back, or a gateway's in its place: it may have gone in
+        // (docs/agent.md#重试).
+        let lost = |e: anyhow::Error| match change {
+            Some(id) => anyhow!("{e:#}；改动可能已经生效，重发时加上 --request-id {id}，不会重复生效"),
+            None => e,
+        };
         let mut attempt = 0;
         let (status, text) = loop {
             match self.send(&path, Some(token), change, args) {
@@ -485,17 +491,12 @@ impl Server {
                     std::thread::sleep(Duration::from_millis(500 * attempt));
                     eprintln!("{}", printable(&format!("连接服务器失败（{e}），第 {attempt} 次重试")));
                 }
-                Err(e) => {
-                    let e = self.unreachable(e);
-                    // It may have gone in, the answers lost on the way back (docs/agent.md#重试).
-                    return Err(match change {
-                        Some(id) => anyhow!("{e:#}；改动可能已经生效，重发时加上 --request-id {id}，不会重复生效"),
-                        None => e,
-                    });
-                }
+                Err(e) => return Err(lost(self.unreachable(e))),
             }
         };
-        match reply(status, &text)? {
+        // A gateway's own answer, without the server's error in it.
+        let gateway = matches!(status.as_u16(), 502..=504) && serde_json::from_str::<Value>(&text).ok().is_none_or(|v| v["code"].is_null());
+        match reply(status, &text).map_err(|e| if gateway { lost(e) } else { e })? {
             Value::Object(mut reply) => match (reply.remove("text"), reply.remove("data")) {
                 (Some(Value::String(text)), Some(data)) => Ok((text, data)),
                 _ => bail!("服务器回复缺少 text 或 data"),

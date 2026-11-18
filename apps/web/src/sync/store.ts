@@ -284,8 +284,14 @@ export class Store {
   }
 
   private context(now: number) {
-    return { me: this.me, now, effectsOf: this.effectsOf };
+    return { me: this.me, now, effectsOf: this.effectsOf, effectsAfter: this.effectsAfter };
   }
+
+  /** What the changes after `id` did: those confirmed, then those made here and applied so far. */
+  private effectsAfter = (id: MutationId): Effect[][] => {
+    const known = [...this.log, ...this.local];
+    return known.slice(known.findIndex(([k]) => k === id) + 1).map(([, effects]) => effects);
+  };
 
   private remember(id: MutationId, effects: Effect[]) {
     this.log.delete(id);

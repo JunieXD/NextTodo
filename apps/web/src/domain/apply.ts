@@ -146,6 +146,8 @@ export interface Context {
   now: number;
   /** What an earlier mutation changed, for undoing it; `undefined` when this copy does not know. */
   effectsOf(id: MutationId): Effect[] | undefined;
+  /** What the changes after mutation `id`, up to the one being made, did, as far as this copy knows. */
+  effectsAfter(id: MutationId): Effect[][];
 }
 
 /** Applies the operations to `d` and returns what changed. On failure `d` is left as it was. */
@@ -674,9 +676,10 @@ class Applier {
         } else {
           const cur = this.d.tasks.get(e.before.id);
           const fields = ["folder_id", "title", "description", "done_at", "start", "start_time", "completions", "sort_key"] as const;
-          // Done again or taken back since: setting the count back would undo that too.
-          if (cur && !same(e.before.completions, e.after.completions) && !same(cur.completions, e.after.completions)) {
-            throw new Rejected("conflict", `“${cur.title}”的完成次数已经变了，不能再撤销这一次完成`);
+          // Done again or taken back since, maybe to the same count on the same day: setting the count
+          // back would undo that too.
+          if (cur && !same(e.before.completions, e.after.completions) && completedSince(this.cx, id, cur.id)) {
+            throw new Rejected("conflict", `“${cur.title}”在这之后又完成或撤销过，请先撤销后来的那次`);
           }
           if (cur) {
             const restored = restore(cur, e.before, e.after, fields);
@@ -761,6 +764,10 @@ export function lastKeys(keys: string[], n: number): string[] {
 
 /** A key after everything in `keys`, for something new at the end. */
 export const lastKey = (keys: string[]): string => lastKeys(keys, 1)[0];
+
+/** Whether a change after mutation `id` changed how often task `task` was done. */
+const completedSince = (cx: Context, id: MutationId, task: TaskId) =>
+  cx.effectsAfter(id).some((effects) => effects.some((e) => e.kind === "task" && e.before && e.after?.id === task && !same(e.before.completions, e.after.completions)));
 
 /** `cur` with the fields that changed from `before` to `after` set back to `before`, so that undoing
  * a change leaves later changes to other fields alone. */

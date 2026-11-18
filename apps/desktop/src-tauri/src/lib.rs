@@ -126,6 +126,7 @@ pub fn run() {
         .manage(panel::Hidden::default())
         .invoke_handler(tauri::generate_handler![
             open_main,
+            panel::hide_panel,
             reminders::set_reminders,
             reminders::clear_reminders,
             updates::update,

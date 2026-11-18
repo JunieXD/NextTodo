@@ -38,9 +38,19 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Opens it, with the quick add field focused.
+/// The app in front as it last opened, when another one (macOS): it has the focus back as it closes.
+#[cfg(target_os = "macos")]
+static FROM: Mutex<Option<i32>> = Mutex::new(None);
+
+/// Opens it, with the quick add field focused; again when open, from the menu.
 pub fn open(app: &AppHandle) {
     let panel = app.get_webview_window(LABEL).expect("made as the app starts");
+    // Open already, this app is in front: the one to go back to is that of before.
+    #[cfg(target_os = "macos")]
+    if !panel.is_visible().unwrap_or(false) {
+        let front = objc2_app_kit::NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier());
+        *FROM.lock().unwrap() = front.filter(|&pid| pid != std::process::id() as i32);
+    }
     place(app, &panel);
     // Nothing to do about a window that the system won't show.
     let _ = panel.show().and_then(|()| panel.set_focus());
@@ -51,10 +61,29 @@ pub fn open(app: &AppHandle) {
 pub fn toggle(app: &AppHandle) {
     let panel = app.get_webview_window(LABEL).expect("made as the app starts");
     if panel.is_visible().unwrap_or(false) {
-        let _ = panel.hide();
+        hide_panel(app.clone());
     } else {
         open(app);
     }
+}
+
+/// Closes it: with the icon or the shortcut, or Esc in the page. On macOS, opened from another app,
+/// it gives that app the focus back, hiding as it loses it: closed with this app still in front, it
+/// would leave the focus to the main window, which macOS brings forward. Should that app be gone, or
+/// not take the focus, it just hides.
+#[tauri::command]
+pub fn hide_panel(app: AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        let from = *FROM.lock().unwrap();
+        if from
+            .and_then(objc2_app_kit::NSRunningApplication::runningApplicationWithProcessIdentifier)
+            .is_some_and(|from| from.activateWithOptions(objc2_app_kit::NSApplicationActivationOptions::empty()))
+        {
+            return;
+        }
+    }
+    let _ = app.get_webview_window(LABEL).expect("made as the app starts").hide();
 }
 
 /// A click on the icon. On Windows the tray takes the focus first, which hides the panel: that click

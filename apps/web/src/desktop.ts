@@ -58,7 +58,8 @@ export const inPanel = app === "desktop" && getCurrentWindow().label === "panel"
 /** Shows `path` in the main window: the panel's task or page, which it closes for. */
 export const openMain = (path: string) => invoke<void>("open_main", { path });
 
-export const hidePanel = () => getCurrentWindow().hide();
+/** Closes the panel, giving the focus back to the app it was opened from (`src-tauri/src/panel.rs`). */
+export const hidePanel = () => invoke<void>("hide_panel");
 
 /** Hands attachment `a`'s file to the app (`src-tauri/src/attachments.rs`): the body is the file, not
  * JSON. */

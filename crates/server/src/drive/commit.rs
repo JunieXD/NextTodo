@@ -5,13 +5,17 @@ use nexttodo_core::ops::Op;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// How this version of the app writes commits, and the newest it reads: one more each time what an
+/// older version would not read changes, the operations and what they did included
+/// (docs/local.md#格式版本). Every format before it is still read.
+pub(crate) const FORMAT: i64 = 1;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct Commit {
     /// Tells this commit from another written at the same number: whose it is when the answer to
     /// writing it was lost.
     pub id: Uuid,
-    /// The migration version of the app that wrote it: an older app can't read what a newer wrote.
-    pub version: i64,
+    pub format: i64,
     pub items: Vec<Item>,
 }
 
@@ -69,11 +73,11 @@ pub(crate) struct Note {
     pub at: i64,
 }
 
-/// Just the id and version, read first: items of a newer app may not parse.
+/// Just the id and format, read first: items of a newer format may not parse.
 #[derive(Deserialize)]
 pub(crate) struct Head {
     pub id: Uuid,
-    pub version: i64,
+    pub format: i64,
 }
 
 pub(crate) fn path(generation: &str, number: i64) -> String {

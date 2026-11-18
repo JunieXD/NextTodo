@@ -18,18 +18,28 @@ use super::commit;
 use super::remote::{Created, Failed, Remote};
 use super::s3::S3;
 use super::webdav::WebDav;
-use super::{Drive, Status, read_in, snapshot, snapshots};
+use super::{Drive, Status, Trouble, read_in, snapshot, snapshots};
 use crate::auth::Auth;
 use crate::error::{ApiError, Json};
 use crate::{AppState, Db, backup};
 
 /// Which generation of the drive's folder is the one, written last when it is made.
 pub(crate) const POINTER: &str = "nexttodo.json";
-/// The layout of the folder this version of the app writes and reads.
+/// The layout of the folder this version of the app writes, and the newest it reads
+/// (docs/local.md#格式版本).
 const FORMAT: i64 = 1;
 /// Where the drive's settings are kept, in the data directory: not in the database, so that
 /// backups, snapshots and the drive never have them.
 const CONFIG: &str = "sync.json";
+/// How this version of the app keeps them, and the newest it reads (docs/local.md#格式版本).
+const CONFIG_FORMAT: i64 = 1;
+
+/// What `CONFIG` holds.
+#[derive(Serialize, Deserialize)]
+struct Kept {
+    format: i64,
+    drive: Config,
+}
 
 #[derive(Deserialize)]
 pub(crate) struct Pointer {
@@ -38,10 +48,11 @@ pub(crate) struct Pointer {
 }
 
 impl Pointer {
-    pub(crate) fn read(bytes: &[u8]) -> Result<Pointer, String> {
-        let p: Pointer = serde_json::from_slice(bytes).map_err(|_| "网盘的文件夹里有不是 NextTodo 写的 nexttodo.json".to_owned())?;
+    pub(super) fn read(bytes: &[u8]) -> Result<Pointer, Trouble> {
+        let p: Pointer =
+            serde_json::from_slice(bytes).map_err(|_| Trouble::Unreadable("网盘的文件夹里有不是 NextTodo 写的 nexttodo.json".into()))?;
         if p.format > FORMAT {
-            return Err("网盘里的数据来自更新版本的 NextTodo，请先更新 App".into());
+            return Err(Trouble::NewerVersion);
         }
         Ok(p)
     }
@@ -121,12 +132,21 @@ impl Config {
         }
     }
 
+    /// As kept; one a newer version of the app kept is not read, and stays as it is.
     fn load(dir: &Path) -> anyhow::Result<Option<Config>> {
-        match std::fs::read(dir.join(CONFIG)) {
-            Ok(bytes) => Ok(Some(serde_json::from_slice(&bytes)?)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(e.into()),
+        #[derive(Deserialize)]
+        struct Head {
+            format: i64,
         }
+        let bytes = match std::fs::read(dir.join(CONFIG)) {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+        if serde_json::from_slice::<Head>(&bytes)?.format > CONFIG_FORMAT {
+            return Err(crate::db::Newer.into());
+        }
+        Ok(Some(serde_json::from_slice::<Kept>(&bytes)?.drive))
     }
 
     /// Keeps it in `dir`, readable by the user alone, in place of what was there in one step.
@@ -137,7 +157,8 @@ impl Config {
         #[cfg(unix)]
         std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
         let mut file = options.open(&part)?;
-        std::io::Write::write_all(&mut file, &serde_json::to_vec(self).expect("JSON"))?;
+        let kept = Kept { format: CONFIG_FORMAT, drive: self.clone() };
+        std::io::Write::write_all(&mut file, &serde_json::to_vec(&kept).expect("JSON"))?;
         file.sync_all()?;
         std::fs::rename(&part, dir.join(CONFIG))
     }
@@ -316,7 +337,7 @@ fn probe(r: &dyn Remote) -> Result<Option<Pointer>, ApiError> {
         return Err(ApiError::invalid("这个网盘不能用来同步：同时写入时会互相覆盖", None));
     }
     let Some(bytes) = r.get(POINTER).map_err(failed)? else { return Ok(None) };
-    Pointer::read(&bytes).map(Some).map_err(|m| ApiError::invalid(m, None))
+    Pointer::read(&bytes).map(Some).map_err(|t| ApiError::invalid(t.message(), None))
 }
 
 /// Prepares the drive's data to replace this device's, as a restore does: its latest snapshot, with

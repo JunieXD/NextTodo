@@ -32,14 +32,23 @@ pub(crate) const MIGRATIONS: &[&str] = &[
 #[derive(Clone)]
 pub struct Db(Arc<Mutex<Connection>>);
 
-/// The migrations a database at `version` still needs; an error when it is not one of ours, or from
-/// a newer version of NextTodo.
+/// Data a newer version of NextTodo wrote, which this one can't read.
+#[derive(Debug)]
+pub(crate) struct Newer;
+
+impl std::fmt::Display for Newer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("数据来自更新版本的 NextTodo，请先更新 App")
+    }
+}
+
+impl std::error::Error for Newer {}
+
+/// The migrations a database at `version` still needs; an error when it is not one of ours, or
+/// `Newer`.
 pub(crate) fn pending(version: i64) -> anyhow::Result<&'static [&'static str]> {
     let Ok(done) = usize::try_from(version) else { bail!("数据库损坏") };
-    match MIGRATIONS.get(done..) {
-        Some(pending) => Ok(pending),
-        None => bail!("数据来自更高版本的 NextTodo，请先更新"),
-    }
+    MIGRATIONS.get(done..).ok_or_else(|| Newer.into())
 }
 
 impl Db {

@@ -110,7 +110,7 @@ async fn a_database_with_more_users_is_not_opened() {
 
 #[tokio::test]
 async fn a_database_not_ours_or_from_a_newer_version_is_left_alone() {
-    for (version, error) in [(99, "数据来自更高版本的 NextTodo，请先更新"), (-1, "数据库损坏")] {
+    for (version, error) in [(99, "数据来自更新版本的 NextTodo，请先更新 App"), (-1, "数据库损坏")] {
         let dir = data_dir();
         std::fs::create_dir_all(dir.join("db")).unwrap();
         let c = Connection::open(db_file(&dir)).unwrap();
@@ -254,7 +254,8 @@ async fn a_backup_has_the_attachments_files_and_a_tar_with_anything_else_is_refu
     let id: String = Connection::open(db_file(&mine)).unwrap().query_row("SELECT id FROM attachments", [], |r| r.get(0)).unwrap();
     let packed = entries(&file);
     let attachment = format!("files/{id}");
-    assert_eq!(packed.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), [attachment.as_str(), "nexttodo.db"]);
+    assert_eq!(packed.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["backup.json", attachment.as_str(), "nexttodo.db"]);
+    assert_eq!(packed[0].data, br#"{"format":1}"#);
     assert!(!names(&mine).contains(&"backup.part".to_owned()), "the copy taken goes");
 
     drop(existing(&other, &["alice"]).await);
@@ -263,24 +264,28 @@ async fn a_backup_has_the_attachments_files_and_a_tar_with_anything_else_is_refu
     drop(Local::start(&other).await.unwrap());
     assert_eq!(std::fs::read(other.join("db").join("files").join(&id)).unwrap(), b"png");
 
-    let db = &packed[1].data;
+    let (manifest, db) = (("backup.json", &packed[0].data[..]), &packed[2].data);
     let unlisted = "files/019a4b2c-0000-7000-8000-000000000001";
     let whole = std::fs::read(&file).unwrap();
     // Cut short at an entry's end, which reads as a whole tar, or within the database.
-    let cuts = [packed[1].header, packed[1].header + 512 + db.len() as u64 / 2].map(|at| {
+    let cuts = [packed[2].header, packed[2].header + 512 + db.len() as u64 / 2].map(|at| {
         let cut = data_dir().with_extension("tar");
         std::fs::write(&cut, &whole[..at as usize]).unwrap();
         cut
     });
     let odd = [
-        tar_of(&[("nexttodo.db", db), ("notes.txt", b"x")]),
-        tar_of(&[("nexttodo.db", db), ("files/notes.txt", b"x")]),
-        tar_of(&[("nexttodo.db", db), ("nexttodo.db", db)]),
-        tar_of(&[(unlisted, b"x")]),
+        tar_of(&[manifest, ("nexttodo.db", db), ("notes.txt", b"x")]),
+        tar_of(&[manifest, ("nexttodo.db", db), ("files/notes.txt", b"x")]),
+        tar_of(&[manifest, ("nexttodo.db", db), ("nexttodo.db", db)]),
+        tar_of(&[manifest, (unlisted, b"x")]),
         // Without a file in use, with one of another size, or with one the database does not list.
-        tar_of(&[("nexttodo.db", db)]),
-        tar_of(&[(&attachment, b"pn"), ("nexttodo.db", db)]),
-        tar_of(&[(&attachment, b"png"), (unlisted, b"x"), ("nexttodo.db", db)]),
+        tar_of(&[manifest, ("nexttodo.db", db)]),
+        tar_of(&[manifest, (&attachment, b"pn"), ("nexttodo.db", db)]),
+        tar_of(&[manifest, (&attachment, b"png"), (unlisted, b"x"), ("nexttodo.db", db)]),
+        // Without the manifest first, or with one of another kind.
+        tar_of(&[(&attachment, b"png"), ("nexttodo.db", db)]),
+        tar_of(&[(&attachment, b"png"), manifest, ("nexttodo.db", db)]),
+        tar_of(&[("backup.json", b"[]"), (&attachment, b"png"), ("nexttodo.db", db)]),
     ];
     for tar in odd.iter().chain(&cuts) {
         let e = nexttodo_server::backup::prepare(&other, tar).unwrap_err();
@@ -295,9 +300,13 @@ async fn a_backup_has_the_attachments_files_and_a_tar_with_anything_else_is_refu
     let detached = call(&local, "POST", "/tools/detach", &session, Some(json!({ "attachments": [id] }))).await;
     assert_eq!(detached.0, 200, "{}", detached.1);
     local.backup(file.clone()).await.unwrap();
-    assert_eq!(entries(&file).iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["nexttodo.db"]);
+    assert_eq!(entries(&file).iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["backup.json", "nexttodo.db"]);
     nexttodo_server::backup::prepare(&other, &file).unwrap();
-    clean([mine, other, file].into_iter().chain(odd).chain(cuts));
+    // One a later version of the app wrote, of a format this one does not know.
+    let newer = tar_of(&[("backup.json", br#"{"format":2}"#), ("nexttodo.db", db)]);
+    let e = nexttodo_server::backup::prepare(&other, &newer).unwrap_err();
+    assert_eq!(e.to_string(), "数据来自更新版本的 NextTodo，请先更新 App");
+    clean([mine, other, file, newer].into_iter().chain(odd).chain(cuts));
 }
 
 /// An entry of a tar: its name, where its header starts and what is in it.
@@ -388,7 +397,7 @@ async fn a_backup_that_wont_do_changes_nothing() {
         (source.join("text.db"), not_ours),
         (source.join("empty.db"), not_ours),
         (other, not_ours),
-        (newer, "数据来自更高版本的 NextTodo，请先更新"),
+        (newer, "数据来自更新版本的 NextTodo，请先更新 App"),
         (db_file(&two), "备份里有多个用户，不能在本机使用"),
         (db_file(&none), "备份里没有数据"),
     ] {

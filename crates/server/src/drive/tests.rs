@@ -1,5 +1,6 @@
 //! The sync task, with several devices on one drive in memory.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
@@ -938,4 +939,37 @@ async fn snapshots_are_kept_as_commits_go_in_and_a_device_far_behind_reads_the_l
     a.drive().pull();
     until(|| a.applied() == 601).await;
     assert_same(&devices);
+}
+
+/// Commits of format 1 as this version wrote them, one of each kind of item and of most operations:
+/// every later version reads them in, so a change to what commits hold that this would not read gets
+/// a format of its own (docs/local.md#格式版本).
+#[test]
+fn commits_of_format_1_are_read_in() {
+    let commits: Vec<serde_json::Value> = serde_json::from_str(include_str!("../../../../fixtures/drive-commits-1.json")).unwrap();
+    let (db, user) = (own(), "019a0000-0000-7000-8000-00000000a11c");
+    db.hold(|c| {
+        c.execute_batch(&format!("UPDATE users SET id = '{user}'; INSERT INTO sync_state (id, generation, applied) VALUES (1, 'g', 0);"))
+            .unwrap()
+    });
+    for (n, commit) in (1..).zip(&commits) {
+        let commit = super::parse(commit.to_string().as_bytes()).unwrap();
+        db.hold(|c| super::read_in(c, user, commit, n, &HashMap::new(), &HashMap::new()).unwrap());
+    }
+    let text = |s: &str| Value::Text(s.into());
+    assert_eq!(
+        dump(&db, "SELECT title, done_at IS NOT NULL, due_date FROM tasks ORDER BY number"),
+        [
+            [text("订好搬家公司"), Value::Integer(1), text("2026-11-20")],
+            // Repeating, done once: due a week on.
+            [text("浇花"), Value::Integer(0), text("2026-11-26")],
+            // Organized by AI.
+            [text("设备 1"), Value::Integer(0), Value::Null],
+        ]
+    );
+    // Both attachments went, one with its task, and their files and one never attached were cleared.
+    assert_eq!(dump(&db, "SELECT count(*) FROM attachments"), [[Value::Integer(0)]]);
+    assert_eq!(dump(&db, "SELECT count(*) FROM files WHERE purged"), [[Value::Integer(3)]]);
+    assert_eq!(dump(&db, "SELECT text FROM ai_notes"), [[text("周末前搬完")]]);
+    assert_eq!(dump(&db, "SELECT count(*) FROM mutations"), [[Value::Integer(15)]]);
 }

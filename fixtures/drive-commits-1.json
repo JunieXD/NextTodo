@@ -1,0 +1,825 @@
+[
+  {
+    "id": "01a1efd1-c482-712a-88e8-a243af260597",
+    "format": 1,
+    "items": [
+      {
+        "mutation": {
+          "at": 1795024864385,
+          "effects": [
+            {
+              "after": {
+                "created_at": 1795024864385,
+                "id": "01a1efd1-c47f-71a1-b545-fb9aae8f18ba",
+                "name": "搬家",
+                "parent_id": null,
+                "sort_key": "a0",
+                "updated_at": 1795024864385
+              },
+              "before": null,
+              "kind": "folder"
+            }
+          ],
+          "id": "01a1efd1-c47f-71a1-b545-fb9fb5267a34",
+          "ops": [
+            {
+              "id": "01a1efd1-c47f-71a1-b545-fb9aae8f18ba",
+              "name": "搬家",
+              "op": "folder.create"
+            }
+          ],
+          "via": null
+        }
+      }
+    ]
+  },
+  {
+    "id": "01a1efd1-c485-7070-a5f9-c1e2aa5bc201",
+    "format": 1,
+    "items": [
+      {
+        "mutation": {
+          "at": 1795024864387,
+          "effects": [
+            {
+              "after": {
+                "assignees": [],
+                "created_at": 1795024864387,
+                "created_by": "019a0000-0000-7000-8000-00000000a11c",
+                "created_via": null,
+                "description": "**比价**三家",
+                "done_at": null,
+                "due": {
+                  "date": "2026-11-20",
+                  "remind_before": 30,
+                  "time": "18:00"
+                },
+                "folder_id": "01a1efd1-c47f-71a1-b545-fb9aae8f18ba",
+                "id": "01a1efd1-c47f-71a1-b545-fb9b3c7fc566",
+                "number": 1,
+                "sort_key": "a0",
+                "start": "2026-11-18",
+                "start_time": "09:30",
+                "title": "订搬家公司",
+                "updated_at": 1795024864387,
+                "updated_by": "019a0000-0000-7000-8000-00000000a11c",
+                "updated_via": null
+              },
+              "before": null,
+              "kind": "task"
+            },
+            {
+              "after": {
+                "assignees": [],
+                "created_at": 1795024864387,
+                "created_by": "019a0000-0000-7000-8000-00000000a11c",
+                "created_via": null,
+                "description": "",
+                "done_at": null,
+                "due": null,
+                "folder_id": "01a1efd1-c47f-71a1-b545-fb9aae8f18ba",
+                "id": "01a1efd1-c47f-71a1-b545-fb9c9f9b6334",
+                "number": 2,
+                "sort_key": "a1",
+                "start": null,
+                "title": "打包书",
+                "updated_at": 1795024864387,
+                "updated_by": "019a0000-0000-7000-8000-00000000a11c",
+                "updated_via": null
+              },
+              "before": null,
+              "kind": "task"
+            },
+            {
+              "after": {
+                "after": "01a1efd1-c47f-71a1-b545-fb9c9f9b6334",
+                "before": "01a1efd1-c47f-71a1-b545-fb9b3c7fc566",
+                "created_at": 1795024864387
+              },
+              "before": null,
+              "kind": "dependency"
+            }
+          ],
+          "id": "01a1efd1-c483-75c9-bb4a-d7c57c9c1bd6",
+          "ops": [
+            {
+              "description": "**比价**三家",
+              "due": {
+                "date": "2026-11-20",
+                "remind_before": 30,
+                "time": "18:00"
+              },
+              "folder_id": "01a1efd1-c47f-71a1-b545-fb9aae8f18ba",
+              "id": "01a1efd1-c47f-71a1-b545-fb9b3c7fc566",
+              "op": "task.create",
+              "start": "2026-11-18",
+              "start_time": "09:30",
+              "title": "订搬家公司"
+            },
+            {
+              "folder_id": "01a1efd1-c47f-71a1-b545-fb9aae8f18ba",
+              "id": "01a1efd1-c47f-71a1-b545-fb9c9f9b6334",
+              "op": "task.create",
+              "title": "打包书"
+            },
+            {
+              "after": "01a1efd1-c47f-71a1-b545-fb9c9f9b6334",
+              "before": "01a1efd1-c47f-71a1-b545-fb9b3c7fc566",
+              "op": "dep.add"
+            }
+          ],
+          "via": null
+        }
+      }
+    ]
+  },
+  {
+    "id": "01a1efd1-c487-7639-9238-1aec9c69bf6f",
+    "format": 1,
+    "items": [
+      {
+        "mutation": {
+          "at": 1795024864390,
+          "effects": [
+            {
+              "after": {
+                "assignees": [],
+                "created_at": 1795024864390,
+                "created_by": "019a0000-0000-7000-8000-00000000a11c",
+                "created_via": null,
+                "description": "",
+                "done_at": null,
+                "due": {
+                  "date": "2026-11-19",
+                  "repeat": {
+                    "every": 1,
+                    "from": "done",
+                    "unit": "week"
+                  }
+                },
+                "folder_id": null,
+                "id": "01a1efd1-c47f-71a1-b545-fb9d329d7d6f",
+                "number": 3,
+                "sort_key": "a0",
+                "start": null,
+                "title": "浇花",
+                "updated_at": 1795024864390,
+                "updated_by": "019a0000-0000-7000-8000-00000000a11c",
+                "updated_via": null
+              },
+              "before": null,
+              "kind": "task"
+            }
+          ],
+          "id": "01a1efd1-c486-7001-bdf0-d3ca597eb2e4",
+          "ops": [
+            {
+              "due": {
+                "date": "2026-11-19",
+                "repeat": {
+                  "every": 1,
+                  "from": "done",
+                  "unit": "week"
+                }
+              },
+              "id": "01a1efd1-c47f-71a1-b545-fb9d329d7d6f",
+              "op": "task.create",
+              "title": "浇花"
+            }
+          ],
+          "via": null
+        }
+      }
+    ]
+  },
+  {
+    "id": "01a1efd1-c488-741a-a38a-a2b32ae439c2",
+    "format": 1,
+    "items": [
+      {
+        "mutation": {
+          "at": 1795024864391,
+          "effects": [
+            {
+              "after": {
+                "assignees": [],
+                "completions": {
+                  "count": 1,
+                  "last": "2026-11-19"
+                },
+                "created_at": 1795024864390,
+                "created_by": "019a0000-0000-7000-8000-00000000a11c",
+                "created_via": null,
+                "description": "",
+                "done_at": null,
+                "due": {
+                  "date": "2026-11-26",
+                  "repeat": {
+                    "every": 1,
+                    "from": "done",
+                    "unit": "week"
+                  }
+                },
+                "folder_id": null,
+                "id": "01a1efd1-c47f-71a1-b545-fb9d329d7d6f",
+                "number": 3,
+                "sort_key": "a0",
+                "start": null,
+                "title": "浇花",
+                "updated_at": 1795024864391,
+                "updated_by": "019a0000-0000-7000-8000-00000000a11c",
+                "updated_via": null
+              },
+              "before": {
+                "assignees": [],
+                "created_at": 1795024864390,
+                "created_by": "019a0000-0000-7000-8000-00000000a11c",
+                "created_via": null,
+                "description": "",
+                "done_at": null,
+                "due": {
+                  "date": "2026-11-19",
+                  "repeat": {
+                    "every": 1,
+                    "from": "done",
+                    "unit": "week"
+                  }
+                },
+                "folder_id": null,
+                "id": "01a1efd1-c47f-71a1-b545-fb9d329d7d6f",
+                "number": 3,
+                "sort_key": "a0",
+                "start": null,
+                "title": "浇花",
+                "updated_at": 1795024864390,
+                "updated_by": "019a0000-0000-7000-8000-00000000a11c",
+                "updated_via": null
+              },
+              "kind": "task"
+            }
+          ],
+          "id": "01a1efd1-c487-7639-9238-1aed2a776987",
+          "ops": [
+            {
+              "done": true,
+              "id": "01a1efd1-c47f-71a1-b545-fb9d329d7d6f",
+              "op": "task.update",
+              "today": "2026-11-19"
+            }
+          ],
+          "via": null
+        }
+      }
+    ]
+  },
+  {
+    "id": "01a1efd1-c489-76d6-90d4-0ae491528c1b",
+    "format": 1,
+    "items": [
+      {
+        "mutation": {
+          "at": 1795024864393,
+          "effects": [
+            {
+              "after": {
+                "assignees": [],
+                "created_at": 1795024864387,
+                "created_by": "019a0000-0000-7000-8000-00000000a11c",
+                "created_via": null,
+                "description": "**比价**三家",
+                "done_at": 1795024864393,
+                "due": {
+                  "date": "2026-11-20",
+                  "remind_before": 30,
+                  "time": "18:00"
+                },
+                "folder_id": "01a1efd1-c47f-71a1-b545-fb9aae8f18ba",
+                "id": "01a1efd1-c47f-71a1-b545-fb9b3c7fc566",
+                "number": 1,
+                "sort_key": "a0",
+                "start": "2026-11-18",
+                "start_time": "09:30",
+                "title": "订好搬家公司",
+                "updated_at": 1795024864393,
+                "updated_by": "019a0000-0000-7000-8000-00000000a11c",
+                "updated_via": null
+              },
+              "before": {
+                "assignees": [],
+                "created_at": 1795024864387,
+                "created_by": "019a0000-0000-7000-8000-00000000a11c",
+                "created_via": null,
+                "description": "**比价**三家",
+                "done_at": null,
+                "due": {
+                  "date": "2026-11-20",
+                  "remind_before": 30,
+                  "time": "18:00"
+                },
+                "folder_id": "01a1efd1-c47f-71a1-b545-fb9aae8f18ba",
+                "id": "01a1efd1-c47f-71a1-b545-fb9b3c7fc566",
+                "number": 1,
+                "sort_key": "a0",
+                "start": "2026-11-18",
+                "start_time": "09:30",
+                "title": "订搬家公司",
+                "updated_at": 1795024864387,
+                "updated_by": "019a0000-0000-7000-8000-00000000a11c",
+                "updated_via": null
+              },
+              "kind": "task"
+            }
+          ],
+          "id": "01a1efd1-c489-76d6-90d4-0ae336759d17",
+          "ops": [
+            {
+              "done": true,
+              "id": "01a1efd1-c47f-71a1-b545-fb9b3c7fc566",
+              "op": "task.update",
+              "title": "订好搬家公司"
+            }
+          ],
+          "via": null
+        }
+      }
+    ]
+  },
+  {
+    "id": "01a1efd1-c498-7143-921a-5995e23d9a44",
+    "format": 1,
+    "items": [
+      {
+        "mutation": {
+          "at": 1795024864407,
+          "effects": [
+            {
+              "after": {
+                "created_at": 1795024864407,
+                "id": "01a1efd1-c47f-71a1-b545-fb9eb9c35ff7",
+                "job_id": null,
+                "name": "清单.txt",
+                "size": 6,
+                "task_id": "01a1efd1-c47f-71a1-b545-fb9c9f9b6334",
+                "type": "text/plain"
+              },
+              "before": null,
+              "kind": "attachment"
+            }
+          ],
+          "id": "01a1efd1-c497-77b0-8838-0e5cec0f418d",
+          "ops": [
+            {
+              "id": "01a1efd1-c47f-71a1-b545-fb9eb9c35ff7",
+              "name": "清单.txt",
+              "op": "attachment.add",
+              "size": 6,
+              "task_id": "01a1efd1-c47f-71a1-b545-fb9c9f9b6334",
+              "type": "text/plain"
+            }
+          ],
+          "via": null
+        }
+      }
+    ]
+  },
+  {
+    "id": "01a1efd1-c499-7133-ab5a-4e5a04b9de44",
+    "format": 1,
+    "items": [
+      {
+        "mutation": {
+          "at": 1795024864408,
+          "effects": [
+            {
+              "after": {
+                "created_at": 1795024864407,
+                "id": "01a1efd1-c47f-71a1-b545-fb9eb9c35ff7",
+                "job_id": null,
+                "name": "物品清单.txt",
+                "size": 6,
+                "task_id": "01a1efd1-c47f-71a1-b545-fb9c9f9b6334",
+                "type": "text/plain"
+              },
+              "before": {
+                "created_at": 1795024864407,
+                "id": "01a1efd1-c47f-71a1-b545-fb9eb9c35ff7",
+                "job_id": null,
+                "name": "清单.txt",
+                "size": 6,
+                "task_id": "01a1efd1-c47f-71a1-b545-fb9c9f9b6334",
+                "type": "text/plain"
+              },
+              "kind": "attachment"
+            }
+          ],
+          "id": "01a1efd1-c498-7143-921a-5996e41ba8f7",
+          "ops": [
+            {
+              "id": "01a1efd1-c47f-71a1-b545-fb9eb9c35ff7",
+              "name": "物品清单.txt",
+              "op": "attachment.update"
+            }
+          ],
+          "via": null
+        }
+      }
+    ]
+  },
+  {
+    "id": "01a1efd1-c49a-7621-a5be-644b6f7b08b1",
+    "format": 1,
+    "items": [
+      {
+        "mutation": {
+          "at": 1795024864409,
+          "effects": [
+            {
+              "after": null,
+              "before": {
+                "created_at": 1795024864407,
+                "id": "01a1efd1-c47f-71a1-b545-fb9eb9c35ff7",
+                "job_id": null,
+                "name": "物品清单.txt",
+                "size": 6,
+                "task_id": "01a1efd1-c47f-71a1-b545-fb9c9f9b6334",
+                "type": "text/plain"
+              },
+              "kind": "attachment"
+            }
+          ],
+          "id": "01a1efd1-c499-7133-ab5a-4e5b20f2ead0",
+          "ops": [
+            {
+              "id": "01a1efd1-c47f-71a1-b545-fb9eb9c35ff7",
+              "op": "attachment.delete"
+            }
+          ],
+          "via": null
+        }
+      }
+    ]
+  },
+  {
+    "id": "01a1efd1-c49b-761f-8aae-95a5a2b638fe",
+    "format": 1,
+    "items": [
+      {
+        "mutation": {
+          "at": 1795024864410,
+          "effects": [
+            {
+              "after": {
+                "created_at": 1795024864407,
+                "id": "01a1efd1-c47f-71a1-b545-fb9eb9c35ff7",
+                "job_id": null,
+                "name": "物品清单.txt",
+                "size": 6,
+                "task_id": "01a1efd1-c47f-71a1-b545-fb9c9f9b6334",
+                "type": "text/plain"
+              },
+              "before": null,
+              "kind": "attachment"
+            }
+          ],
+          "id": "01a1efd1-c49a-7621-a5be-644cde50956e",
+          "ops": [
+            {
+              "mutation": "01a1efd1-c499-7133-ab5a-4e5b20f2ead0",
+              "op": "undo"
+            }
+          ],
+          "via": null
+        }
+      }
+    ]
+  },
+  {
+    "id": "01a1efd1-c49d-7062-98c9-c7e48311ce72",
+    "format": 1,
+    "items": [
+      {
+        "note": {
+          "at": 1795024864412,
+          "folder_id": "01a1efd1-c47f-71a1-b545-fb9aae8f18ba",
+          "text": "周末前搬完"
+        }
+      }
+    ]
+  },
+  {
+    "id": "01a1efd1-c49d-7062-98c9-c7e799e503ef",
+    "format": 1,
+    "items": [
+      {
+        "mutation": {
+          "at": 1795024864413,
+          "effects": [
+            {
+              "after": {
+                "created_at": 1795024864413,
+                "error": null,
+                "folder_id": "01a1efd1-c47f-71a1-b545-fb9aae8f18ba",
+                "id": "01a1efd1-c49d-7062-98c9-c7e5d1f702fa",
+                "kind": "organize",
+                "local_time": "2026-11-19 10:00",
+                "state": "waiting",
+                "suggestions": null,
+                "text": "买纸箱和胶带",
+                "updated_at": 1795024864413
+              },
+              "before": null,
+              "kind": "ai_job"
+            }
+          ],
+          "id": "01a1efd1-c49d-7062-98c9-c7e6ac13b1fa",
+          "ops": [
+            {
+              "folder_id": "01a1efd1-c47f-71a1-b545-fb9aae8f18ba",
+              "id": "01a1efd1-c49d-7062-98c9-c7e5d1f702fa",
+              "local_time": "2026-11-19 10:00",
+              "op": "ai_job.create",
+              "text": "买纸箱和胶带"
+            }
+          ],
+          "via": null
+        }
+      }
+    ]
+  },
+  {
+    "id": "01a1efd1-c49e-72d5-af92-8426a1da0e6c",
+    "format": 1,
+    "items": [
+      {
+        "mutation": {
+          "at": 1795024864414,
+          "effects": [
+            {
+              "after": {
+                "created_at": 1795024864413,
+                "error": null,
+                "folder_id": "01a1efd1-c47f-71a1-b545-fb9aae8f18ba",
+                "id": "01a1efd1-c49d-7062-98c9-c7e5d1f702fa",
+                "kind": "organize",
+                "local_time": "2026-11-19 10:00",
+                "state": "running",
+                "suggestions": null,
+                "text": "买纸箱和胶带",
+                "updated_at": 1795024864414
+              },
+              "before": {
+                "created_at": 1795024864413,
+                "error": null,
+                "folder_id": "01a1efd1-c47f-71a1-b545-fb9aae8f18ba",
+                "id": "01a1efd1-c49d-7062-98c9-c7e5d1f702fa",
+                "kind": "organize",
+                "local_time": "2026-11-19 10:00",
+                "state": "waiting",
+                "suggestions": null,
+                "text": "买纸箱和胶带",
+                "updated_at": 1795024864413
+              },
+              "kind": "ai_job"
+            }
+          ],
+          "id": "01a1efd1-c49e-72d5-af92-8425a6357fe6",
+          "ops": [],
+          "via": "AI 整理"
+        }
+      }
+    ]
+  },
+  {
+    "id": "01a1efd1-c4a1-71ee-b88a-7de4a848b309",
+    "format": 1,
+    "items": [
+      {
+        "mutation": {
+          "at": 1795024864416,
+          "effects": [
+            {
+              "after": {
+                "assignees": [],
+                "created_at": 1795024864416,
+                "created_by": "019a0000-0000-7000-8000-00000000a11c",
+                "created_via": "AI 整理",
+                "description": "",
+                "done_at": null,
+                "due": null,
+                "folder_id": "01a1efd1-c47f-71a1-b545-fb9aae8f18ba",
+                "id": "01a1efd1-c4a1-71ee-b88a-7de387cedb83",
+                "number": 4,
+                "sort_key": "a2",
+                "start": null,
+                "title": "设备 1",
+                "updated_at": 1795024864416,
+                "updated_by": "019a0000-0000-7000-8000-00000000a11c",
+                "updated_via": "AI 整理"
+              },
+              "before": null,
+              "kind": "task"
+            },
+            {
+              "after": null,
+              "before": {
+                "created_at": 1795024864413,
+                "error": null,
+                "folder_id": "01a1efd1-c47f-71a1-b545-fb9aae8f18ba",
+                "id": "01a1efd1-c49d-7062-98c9-c7e5d1f702fa",
+                "kind": "organize",
+                "local_time": "2026-11-19 10:00",
+                "state": "running",
+                "suggestions": null,
+                "text": "买纸箱和胶带",
+                "updated_at": 1795024864414
+              },
+              "kind": "ai_job"
+            }
+          ],
+          "id": "01a1efd1-c4a0-7581-8c26-a24ab1806ad2",
+          "ops": [
+            {
+              "folder_id": "01a1efd1-c47f-71a1-b545-fb9aae8f18ba",
+              "id": "01a1efd1-c4a1-71ee-b88a-7de387cedb83",
+              "op": "task.create",
+              "title": "设备 1"
+            },
+            {
+              "id": "01a1efd1-c49d-7062-98c9-c7e5d1f702fa",
+              "op": "ai_job.delete"
+            }
+          ],
+          "via": "AI 整理"
+        }
+      }
+    ]
+  },
+  {
+    "id": "01a1efd1-c4ad-7369-acc9-0b57e0f6543b",
+    "format": 1,
+    "items": [
+      {
+        "mutation": {
+          "at": 1795024864428,
+          "effects": [
+            {
+              "after": null,
+              "before": {
+                "after": "01a1efd1-c47f-71a1-b545-fb9c9f9b6334",
+                "before": "01a1efd1-c47f-71a1-b545-fb9b3c7fc566",
+                "created_at": 1795024864387
+              },
+              "kind": "dependency"
+            },
+            {
+              "after": null,
+              "before": {
+                "created_at": 1795024864407,
+                "id": "01a1efd1-c47f-71a1-b545-fb9eb9c35ff7",
+                "job_id": null,
+                "name": "物品清单.txt",
+                "size": 6,
+                "task_id": "01a1efd1-c47f-71a1-b545-fb9c9f9b6334",
+                "type": "text/plain"
+              },
+              "kind": "attachment"
+            },
+            {
+              "after": null,
+              "before": {
+                "assignees": [],
+                "created_at": 1795024864387,
+                "created_by": "019a0000-0000-7000-8000-00000000a11c",
+                "created_via": null,
+                "description": "",
+                "done_at": null,
+                "due": null,
+                "folder_id": "01a1efd1-c47f-71a1-b545-fb9aae8f18ba",
+                "id": "01a1efd1-c47f-71a1-b545-fb9c9f9b6334",
+                "number": 2,
+                "sort_key": "a1",
+                "start": null,
+                "title": "打包书",
+                "updated_at": 1795024864387,
+                "updated_by": "019a0000-0000-7000-8000-00000000a11c",
+                "updated_via": null
+              },
+              "kind": "task"
+            }
+          ],
+          "id": "01a1efd1-c4ac-75cf-b742-d7bdc05bc26a",
+          "ops": [
+            {
+              "id": "01a1efd1-c47f-71a1-b545-fb9c9f9b6334",
+              "op": "task.delete"
+            }
+          ],
+          "via": null
+        }
+      }
+    ]
+  },
+  {
+    "id": "01a1efd1-c4c0-72f9-b4d8-ac18575933f8",
+    "format": 1,
+    "items": [
+      {
+        "mutation": {
+          "at": 1795024864447,
+          "effects": [
+            {
+              "after": {
+                "created_at": 1795024864447,
+                "id": "01a1efd1-c4ae-7520-965f-9f2580e1673d",
+                "job_id": null,
+                "name": "旧.txt",
+                "size": 3,
+                "task_id": "01a1efd1-c47f-71a1-b545-fb9d329d7d6f",
+                "type": "text/plain"
+              },
+              "before": null,
+              "kind": "attachment"
+            }
+          ],
+          "id": "01a1efd1-c4bf-7253-8a1b-0769b5aa791a",
+          "ops": [
+            {
+              "id": "01a1efd1-c4ae-7520-965f-9f2580e1673d",
+              "name": "旧.txt",
+              "op": "attachment.add",
+              "size": 3,
+              "task_id": "01a1efd1-c47f-71a1-b545-fb9d329d7d6f",
+              "type": "text/plain"
+            }
+          ],
+          "via": null
+        }
+      }
+    ]
+  },
+  {
+    "id": "01a1efd1-c4c1-72ad-83f7-5e8eed91b69c",
+    "format": 1,
+    "items": [
+      {
+        "mutation": {
+          "at": 1795024864448,
+          "effects": [
+            {
+              "after": null,
+              "before": {
+                "created_at": 1795024864447,
+                "id": "01a1efd1-c4ae-7520-965f-9f2580e1673d",
+                "job_id": null,
+                "name": "旧.txt",
+                "size": 3,
+                "task_id": "01a1efd1-c47f-71a1-b545-fb9d329d7d6f",
+                "type": "text/plain"
+              },
+              "kind": "attachment"
+            }
+          ],
+          "id": "01a1efd1-c4c0-72f9-b4d8-ac19123da0b3",
+          "ops": [
+            {
+              "id": "01a1efd1-c4ae-7520-965f-9f2580e1673d",
+              "op": "attachment.delete"
+            }
+          ],
+          "via": null
+        }
+      }
+    ]
+  },
+  {
+    "id": "01a1efd1-c4c1-72ad-83f7-5e8f0dedb311",
+    "format": 1,
+    "items": [
+      {
+        "purge": [
+          {
+            "created_at": 1795024864407,
+            "id": "01a1efd1-c47f-71a1-b545-fb9eb9c35ff7",
+            "size": 6,
+            "type": "text/plain",
+            "unused_at": 1795024864428
+          },
+          {
+            "created_at": 1795024864447,
+            "id": "01a1efd1-c4ae-7520-965f-9f2580e1673d",
+            "size": 3,
+            "type": "text/plain",
+            "unused_at": 1795024864448
+          },
+          {
+            "created_at": 1795024864434,
+            "id": "01a1efd1-c4ae-7520-965f-9f267524c992",
+            "size": 6,
+            "type": "text/plain",
+            "unused_at": 1795024864434
+          }
+        ]
+      }
+    ]
+  }
+]

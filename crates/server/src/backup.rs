@@ -23,6 +23,10 @@ pub(crate) const DB_DIR: &str = "db";
 pub(crate) const DB_FILE: &str = "nexttodo.db";
 /// The copy of the database a backup takes, in the data directory until it is in the backup.
 const COPY: &str = "backup.part";
+/// What a backup is, first in it: `{"format": 1}`.
+const MANIFEST: &str = "backup.json";
+/// How this version of the app writes backups, and the newest it reads (docs/local.md#格式版本).
+const FORMAT: i64 = 1;
 
 const NOT_OURS: &str = "这不是 NextTodo 的备份，或者文件已损坏";
 
@@ -54,6 +58,11 @@ fn pack(data: &Path, copy: &Path, to: &Path) -> anyhow::Result<()> {
         .collect::<Result<_, _>>()?;
     let mut tar = tar::Builder::new(File::create(to)?);
     tar.mode(tar::HeaderMode::Deterministic);
+    let manifest = serde_json::to_vec(&serde_json::json!({ "format": FORMAT })).expect("JSON");
+    let mut header = tar::Header::new_gnu();
+    header.set_size(manifest.len() as u64);
+    header.set_mode(0o644);
+    tar.append_data(&mut header, MANIFEST, manifest.as_slice())?;
     for (id, unused) in listed {
         match tar.append_path_with_name(data.join(files::DIR).join(&id), format!("{}/{id}", files::DIR)) {
             // Deleted by the daily clearing since the copy was taken: no one used it then already.
@@ -98,8 +107,9 @@ pub(crate) fn prepared(dir: &Path, fill: impl FnOnce(&Path) -> anyhow::Result<()
     done
 }
 
-/// Puts the backup at `from` in `part`: a tar's database and files, nothing else in it, returning the
-/// files' sizes; or a database alone, as backups were before there were attachments.
+/// Puts the backup at `from` in `part`: a tar's database and files, after its manifest and nothing
+/// else in it, returning the files' sizes; or a database alone, as backups were before there were
+/// attachments. One a newer version of the app wrote is `db::Newer`.
 fn unpack(from: &Path, part: &Path) -> anyhow::Result<Option<HashMap<AttachmentId, u64>>> {
     let mut backup = File::open(from).context("无法读取备份文件")?;
     let mut head = [0; 16];
@@ -111,7 +121,22 @@ fn unpack(from: &Path, part: &Path) -> anyhow::Result<Option<HashMap<AttachmentI
     let dir = part.join(files::DIR);
     std::fs::create_dir(&dir)?;
     let (mut database, mut sizes) = (false, HashMap::new());
-    for entry in tar::Archive::new(backup).entries().context(NOT_OURS)? {
+    let mut archive = tar::Archive::new(backup);
+    let mut entries = archive.entries().context(NOT_OURS)?;
+    let mut manifest = entries.next().context(NOT_OURS)?.context(NOT_OURS)?;
+    if manifest.path().context(NOT_OURS)?.to_str() != Some(MANIFEST) || manifest.size() > 1024 {
+        bail!(NOT_OURS);
+    }
+    #[derive(serde::Deserialize)]
+    struct Manifest {
+        format: i64,
+    }
+    let mut bytes = Vec::new();
+    manifest.read_to_end(&mut bytes)?;
+    if serde_json::from_slice::<Manifest>(&bytes).context(NOT_OURS)?.format > FORMAT {
+        return Err(db::Newer.into());
+    }
+    for entry in entries {
         let mut entry = entry.context(NOT_OURS)?;
         let name = entry.path().context(NOT_OURS)?.to_str().context(NOT_OURS)?.to_owned();
         let id = match name.strip_prefix(&format!("{}/", files::DIR)) {

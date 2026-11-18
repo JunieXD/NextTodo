@@ -31,13 +31,13 @@ use tokio::time::Instant;
 use uuid::Uuid;
 
 use crate::auth::Auth;
-use crate::db::MIGRATIONS;
+
 use crate::error::ApiError;
 use crate::files::{Files, Origin};
 use crate::mutate::{self, Actor, Applied, Done};
 use crate::tools::write::{self, Attempt};
 use crate::tools::{Output, WriteFn};
-use crate::{AppState, Clock, Db, Hub, MUTATION_RETENTION_MS, ai, backup, store};
+use crate::{AppState, Clock, Db, Hub, MUTATION_RETENTION_MS, ai, backup, db, store};
 use commit::{Cleared, Commit, Head, Item, Made, Note};
 use remote::{Created, Failed, Remote, remove};
 
@@ -470,7 +470,9 @@ impl Drive {
 enum Trouble {
     Drive(Failed),
     Here(ApiError),
-    /// A commit from a newer version of the app, or one that does not parse.
+    /// Something in the drive a newer version of the app wrote: the folder, a commit or a snapshot.
+    NewerVersion,
+    /// Something in the drive that does not parse.
     Unreadable(String),
     /// `nexttodo.json` no longer points to this generation: the folder was deleted, or made anew by
     /// another device. Syncing stops.
@@ -488,8 +490,8 @@ impl Trouble {
             Trouble::Stopped => "同步已停止".into(),
             Trouble::Drive(f) => f.message().to_owned(),
             Trouble::Here(e) => format!("本机的数据出错：{e}"),
-            Trouble::Unreadable(m) if m.contains("请先更新") => m.clone(),
-            Trouble::Unreadable(_) => "网盘里的改动无法读取".into(),
+            Trouble::NewerVersion => "网盘里有更新版本的 NextTodo 写的数据，请先更新 App".into(),
+            Trouble::Unreadable(why) => format!("网盘里的数据无法读取：{why}"),
             Trouble::Replaced => "网盘里的文件夹换过了，请重新开启同步".into(),
             Trouble::Taken => "别的设备刚刚开启了同步，请重新开启：会用网盘里的数据替换这台设备上的全部数据".into(),
         }
@@ -588,7 +590,7 @@ impl Worker {
                 Err(trouble) => {
                     tracing::warn!(?trouble, "sync with the drive held up");
                     self.report(|s| s.problem = Some(trouble.message()));
-                    let wait = if matches!(trouble, Trouble::Unreadable(_)) { POLL } else { backoff };
+                    let wait = if matches!(trouble, Trouble::NewerVersion | Trouble::Unreadable(_)) { POLL } else { backoff };
                     backoff = (backoff * 2).min(BACKOFF_MAX);
                     wait
                 }
@@ -741,7 +743,7 @@ impl Worker {
             self.requeue(kept);
             return Ok(true);
         }
-        let commit = Commit { id: Uuid::now_v7(), version: i64::try_from(MIGRATIONS.len()).expect("few migrations"), items };
+        let commit = Commit { id: Uuid::now_v7(), format: commit::FORMAT, items };
         let body = serde_json::to_vec(&commit).expect("commits serialize");
         let sent = Sent { id: commit.id, body, requests: kept };
         self.create(sent).await
@@ -898,6 +900,7 @@ impl Worker {
                 })
                 .await
                 .map_err(Trouble::from),
+            Err(e) if e.is::<db::Newer>() => Err(Trouble::NewerVersion),
             Err(e) => Err(Trouble::Unreadable(format!("{e:#}"))),
         };
         // What failed is what to tell.
@@ -910,12 +913,11 @@ impl Worker {
 
     /// Whether `nexttodo.json` points to this generation.
     async fn check(&mut self) -> Result<(), Trouble> {
-        match self.get(setup::POINTER.into()).await?.map(|b| setup::Pointer::read(&b)) {
-            Some(Ok(p)) if p.id == self.generation => {
+        match self.get(setup::POINTER.into()).await?.map(|b| setup::Pointer::read(&b)).transpose()? {
+            Some(p) if p.id == self.generation => {
                 self.checked = true;
                 Ok(())
             }
-            Some(Err(m)) => Err(Trouble::Unreadable(m)),
             _ => Err(Trouble::Replaced),
         }
     }
@@ -1097,12 +1099,11 @@ fn clear(r: &dyn Remote, generation: &str, now: i64) -> Result<(), Failed> {
     Ok(())
 }
 
-/// A commit as read from the drive: one a newer version of the app wrote, or one that does not
-/// parse, is not read.
+/// A commit as read from the drive: one of a newer format, or one that does not parse, is not read.
 fn parse(body: &[u8]) -> Result<Commit, Trouble> {
     let head: Head = serde_json::from_slice(body).map_err(|e| Trouble::Unreadable(e.to_string()))?;
-    if head.version > i64::try_from(MIGRATIONS.len()).expect("few migrations") {
-        return Err(Trouble::Unreadable("网盘里有更新版本的 NextTodo 写的改动，请先更新 App".into()));
+    if head.format > commit::FORMAT {
+        return Err(Trouble::NewerVersion);
     }
     serde_json::from_slice(body).map_err(|e| Trouble::Unreadable(e.to_string()))
 }

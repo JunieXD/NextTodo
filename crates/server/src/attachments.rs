@@ -120,20 +120,20 @@ pub async fn get_file(State(st): State<AppState>, auth: Auth, Path(id): Path<Str
     let missing = || ApiError::not_found("附件不存在");
     let id = file_id(&id).ok_or_else(missing)?;
     let user = auth.user_id.clone();
-    let (name, media_type) = st
+    let (name, media_type, size) = st
         .db
         .call(move |c| {
             if let Some(a) = visible(c, &user, id)? {
-                return Ok(Some((a.name.as_str().to_owned(), a.media_type)));
+                return Ok(Some((a.name.as_str().to_owned(), a.media_type, a.size)));
             }
             // Its uploader's until it is attached.
             let unattached = store::load_attachment(c, id)?.is_none();
-            Ok(store::load_file(c, id)?.filter(|f| unattached && f.owner == user).map(|f| (id.to_string(), f.media_type)))
+            Ok(store::load_file(c, id)?.filter(|f| unattached && f.owner == user).map(|f| (id.to_string(), f.media_type, f.size)))
         })
         .await?
         .ok_or_else(missing)?;
     let files = st.files.clone();
-    tokio::task::spawn_blocking(move || files.fetch(id)).await.expect("fetching panicked")?;
+    tokio::task::spawn_blocking(move || files.fetch(id, size)).await.expect("fetching panicked")?;
     let Ok(res) = st.files.serve(id).oneshot(req).await;
     if res.status() == StatusCode::NOT_FOUND {
         return Err(missing());

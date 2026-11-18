@@ -9,7 +9,7 @@ use std::time::Duration;
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
-use nexttodo_core::model::{AiJob, AiJobId, AttachmentId, JobState};
+use nexttodo_core::model::{AiJob, AiJobId, AttachmentId, FileSize, JobState};
 
 use nexttodo_core::model::MutationId;
 use nexttodo_core::ops::Mutation;
@@ -667,6 +667,11 @@ fn file(id: &str) -> AttachmentId {
     serde_json::from_value(json!(id)).unwrap()
 }
 
+/// The size of a file of `text`.
+fn size(text: &str) -> FileSize {
+    serde_json::from_value(json!(text.len())).unwrap()
+}
+
 /// Makes a task and attaches file `file`, uploaded on `d`, to it.
 async fn attach(d: &Device, file: &str) {
     let task = id();
@@ -689,8 +694,43 @@ async fn an_attachment_added_on_one_device_is_read_on_another_from_the_drive() {
     assert_same(&devices);
     assert!(store.paths().contains(&format!("g/files/{f}")));
     assert_eq!(b.st.files.here(file(&f)).unwrap(), None);
-    assert_eq!(b.st.files.read(file(&f)).unwrap(), "你好".as_bytes());
+    assert_eq!(b.st.files.read(file(&f), size("你好")).unwrap(), "你好".as_bytes());
     assert!(b.st.files.here(file(&f)).unwrap().is_some(), "kept here once fetched");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_in_the_drive_not_of_the_size_recorded_is_not_kept() {
+    let (store, devices) = devices(2).await;
+    let (a, b) = (&devices[0], &devices[1]);
+    let f = id();
+    attach(a, &f).await;
+    caught_up(&store, &devices).await;
+    let path = format!("g/files/{f}");
+    a.view.delete(&path).unwrap();
+    a.view.create(&path, "你".as_bytes()).unwrap();
+    assert!(b.st.files.read(file(&f), size("你好")).is_err());
+    assert_eq!(b.st.files.here(file(&f)).unwrap(), None);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_attachment_whose_id_another_file_has_in_the_drive_is_turned_down() {
+    let (store, devices) = devices(1).await;
+    let a = &devices[0];
+    let (f, task) = (id(), id());
+    a.view.create(&format!("g/files/{f}"), "再见".as_bytes()).unwrap();
+    a.upload(&f, "你好").await.unwrap();
+    let added = a
+        .made(json!([
+            { "op": "task.create", "id": task, "title": "看附件" },
+            { "op": "attachment.add", "id": f, "name": "说明.txt", "type": "text/plain", "size": "你好".len(), "task_id": task },
+        ]))
+        .await;
+    assert_eq!(added.unwrap_err().code(), "conflict");
+    // The same again, as one device does when it was not told: there already, it goes in.
+    let g = id();
+    a.view.create(&format!("g/files/{g}"), "你好".as_bytes()).unwrap();
+    attach(a, &g).await;
+    assert_eq!(log(&store).len(), 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -750,7 +790,7 @@ async fn a_device_turning_syncing_on_puts_its_data_in_the_drive_and_one_joining_
     assert_same(&devices);
     assert_eq!(b.titles(), [[Value::Text("开启时改的".into())], [Value::Text("看附件".into())]]);
     assert_ne!(dump(a.db(), "SELECT value FROM epoch"), dump(b.db(), "SELECT value FROM epoch"));
-    assert_eq!(b.st.files.read(file(&f)).unwrap(), "你好".as_bytes());
+    assert_eq!(b.st.files.read(file(&f), size("你好")).unwrap(), "你好".as_bytes());
     b.made(task("加入后改的")).await.unwrap();
     caught_up(&store, &devices).await;
     assert_same(&devices);
@@ -821,11 +861,14 @@ async fn stopping_ends_the_sync_task_at_once_and_it_writes_nothing_here_after() 
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn stopping_downloads_the_files_in_use_first_or_asks_before_going_on_without() {
+async fn stopping_downloads_the_files_still_of_use_first_or_asks_before_going_on_without() {
     let (store, devices) = devices(3).await;
     let (a, b, c) = (&devices[0], &devices[1], &devices[2]);
-    let f = id();
+    let (f, deleted) = (id(), id());
     attach(a, &f).await;
+    // Deleted, which undoing brings back.
+    attach(a, &deleted).await;
+    a.made(json!([{ "op": "attachment.delete", "id": deleted }])).await.unwrap();
     caught_up(&store, &devices).await;
     for d in [b, c] {
         d.view.set_offline(true);
@@ -834,7 +877,9 @@ async fn stopping_downloads_the_files_in_use_first_or_asks_before_going_on_witho
     }
     b.view.set_offline(false);
     assert_eq!(b.stop(false).await.unwrap(), StatusCode::NO_CONTENT);
-    assert_eq!(b.st.files.read(file(&f)).unwrap(), "你好".as_bytes());
+    for f in [&f, &deleted] {
+        assert_eq!(b.st.files.here(file(f)).unwrap().as_deref(), Some("你好".as_bytes()));
+    }
     assert_eq!(c.stop(true).await.unwrap(), StatusCode::NO_CONTENT);
     assert!(c.syncing().is_none());
     assert_eq!(c.st.files.here(file(&f)).unwrap(), None);
@@ -858,7 +903,7 @@ async fn stopping_downloads_too_the_files_of_attachments_read_in_as_it_stops() {
         gate.open.send(()).unwrap();
     });
     assert_eq!(stopped.unwrap(), StatusCode::NO_CONTENT);
-    assert_eq!(b.st.files.read(file(&f)).unwrap(), "你好".as_bytes());
+    assert_eq!(b.st.files.read(file(&f), size("你好")).unwrap(), "你好".as_bytes());
     assert_eq!(b.job(&job).unwrap().0, "failed");
     held.send(()).unwrap();
 }

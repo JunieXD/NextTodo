@@ -529,6 +529,12 @@ pub fn insert_file(c: &Connection, id: AttachmentId, f: &StoredFile, now: i64, s
     Ok(())
 }
 
+/// The files not cleared, by id with their sizes: those in use, and those no longer, which undoing may
+/// bring back until they are.
+pub fn kept_files(c: &Connection) -> rusqlite::Result<Vec<(AttachmentId, FileSize)>> {
+    c.prepare("SELECT id, size FROM files WHERE NOT purged")?.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect()
+}
+
 /// Whether file `id` was cleared through a drive: its id can't be used again.
 pub fn file_purged(c: &Connection, id: AttachmentId) -> rusqlite::Result<bool> {
     c.query_row("SELECT EXISTS (SELECT 1 FROM files WHERE id = ?1 AND purged)", [id], |r| r.get(0))

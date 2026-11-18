@@ -714,14 +714,16 @@ impl Worker {
                 Ok((requests, tried))
             })
             .await?;
-        let mut items = Vec::new();
-        let mut kept = Vec::new();
+        let (mut items, mut kept) = (Vec::new(), Vec::new());
+        // For each item, its request's place in `kept`.
+        let mut makers = Vec::new();
         for (mut r, tried) in requests.into_iter().zip(tried) {
             match tried {
                 Err(e) => r.fail(e),
                 Ok(Tried::Preview(output)) => r.show(output),
                 Ok(Tried::Moot) => r.moot(),
                 Ok(Tried::Made(item)) => {
+                    makers.push(kept.len());
                     items.push(item);
                     kept.push(r);
                 }
@@ -733,9 +735,18 @@ impl Worker {
             self.answer(kept).await?;
             return Ok(true);
         }
-        if let Err(trouble) = self.upload(&items).await {
-            self.requeue(kept);
-            return Err(trouble);
+        match self.upload(&items).await {
+            Ok(None) => {}
+            Ok(Some(item)) => {
+                kept.remove(makers[item]).fail(ApiError::conflict("网盘里已经有另一个文件用了这个附件 ID"));
+                // Made again without it: what they did may have rested on it.
+                self.requeue(kept);
+                return Ok(true);
+            }
+            Err(trouble) => {
+                self.requeue(kept);
+                return Err(trouble);
+            }
         }
         // Each is sent from now on, unless the one waiting gave up meanwhile: then made again
         // without it.
@@ -855,23 +866,31 @@ impl Worker {
     }
 
     /// Puts the files of the attachments `items` add into the drive, those here: one not here was
-    /// attached before, and is there already.
-    async fn upload(&self, items: &[Item]) -> Result<(), Trouble> {
-        for id in items.iter().flat_map(Item::attached) {
-            self.upload_file(id).await?;
+    /// attached before, and is there already. The item, if any, whose file another is there in place
+    /// of.
+    async fn upload(&self, items: &[Item]) -> Result<Option<usize>, Trouble> {
+        for (i, item) in items.iter().enumerate() {
+            for id in item.attached() {
+                if !self.upload_file(id).await? {
+                    return Ok(Some(i));
+                }
+            }
         }
-        Ok(())
+        Ok(None)
     }
 
-    /// Puts attachment `id`'s file into the drive, when it is here.
-    async fn upload_file(&self, id: AttachmentId) -> Result<(), Trouble> {
+    /// Puts attachment `id`'s file into the drive, when it is here: whether what is there is it.
+    async fn upload_file(&self, id: AttachmentId) -> Result<bool, Trouble> {
         let files = self.files.clone();
         let here = tokio::task::spawn_blocking(move || files.here(id)).await.expect("reading a file panicked").map_err(ApiError::from)?;
-        let Some(bytes) = here else { return Ok(()) };
+        let Some(bytes) = here else { return Ok(true) };
         let path = commit::file_path(&self.generation, id);
-        // There already from an earlier try.
-        self.call(move |r| r.create(&path, &bytes)).await?;
-        Ok(())
+        self.call(move |r| match r.create(&path, &bytes)? {
+            Created::Written => Ok(true),
+            // There from an earlier try, or another device's file under the same id.
+            Created::Exists => Ok(r.get(&path)?.is_some_and(|there| there == bytes)),
+        })
+        .await
     }
 
     /// Reads snapshot `number` in place of the commits up to it (docs/local.md#运行).
@@ -949,6 +968,7 @@ impl Worker {
             })
             .await?;
         for id in ids {
+            // A generation's first: whatever is there was put there by this device.
             self.upload_file(id).await?;
         }
         let path = format!("{g}/snapshots/0.db.gz");

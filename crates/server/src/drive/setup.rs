@@ -8,7 +8,6 @@ use std::sync::Arc;
 use axum::extract::rejection::QueryRejection;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
-use nexttodo_core::model::AttachmentId;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -21,7 +20,7 @@ use super::webdav::WebDav;
 use super::{Drive, Status, Trouble, read_in, snapshot, snapshots};
 use crate::auth::Auth;
 use crate::error::{ApiError, Json};
-use crate::{AppState, Db, backup};
+use crate::{AppState, Db, backup, store};
 
 /// Which generation of the drive's folder is the one, written last when it is made.
 pub(crate) const POINTER: &str = "nexttodo.json";
@@ -264,15 +263,14 @@ pub async fn delete(State(st): State<AppState>, auth: Auth, query: Result<Query<
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Brings here the files of the attachments in use that are only in the drive yet.
+/// Brings here the files still of use that are only in the drive yet: those of deleted attachments
+/// too, which undoing brings back.
 async fn download(st: &AppState) -> Result<(), ApiError> {
-    let used: Vec<AttachmentId> = st
-        .db
-        .call(|c| Ok(c.prepare("SELECT id FROM files WHERE unused_at IS NULL")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?))
-        .await?;
+    let kept = st.db.call(|c| Ok(store::kept_files(c)?)).await?;
     let files = st.files.clone();
-    let fetched =
-        tokio::task::spawn_blocking(move || used.into_iter().try_for_each(|id| files.fetch(id))).await.expect("fetching panicked");
+    let fetched = tokio::task::spawn_blocking(move || kept.into_iter().try_for_each(|(id, size)| files.fetch(id, size)))
+        .await
+        .expect("fetching panicked");
     fetched.map_err(|e| {
         tracing::warn!("downloading the files in use before syncing stops: {e}");
         ApiError::files_not_here()

@@ -8,14 +8,13 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
-use nexttodo_core::model::AttachmentId;
 use rusqlite::{Connection, params};
 
 use crate::ai::{Ai, llm::Https};
 use crate::auth::{self, TokenKind};
 use crate::backup::{self, DB_DIR, DB_FILE};
 use crate::error::ApiError;
-use crate::{AppState, app, db, start};
+use crate::{AppState, app, db, start, store};
 
 const USERNAME: &str = "local";
 /// The local user's display name, and the name of the app's session.
@@ -124,21 +123,16 @@ impl Local {
     /// it could take the database's place.
     pub async fn backup(&self, to: PathBuf) -> anyhow::Result<()> {
         let (dir, files) = (self.dir.clone(), self.state.files.clone());
-        let used: Vec<AttachmentId> = self
-            .state
-            .db
-            .call(|c| {
-                Ok(c.prepare("SELECT id FROM files WHERE unused_at IS NULL")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?)
-            })
-            .await?;
+        let kept = self.state.db.call(|c| Ok(store::kept_files(c)?)).await?;
         tokio::task::spawn_blocking(move || {
             if to.parent().context("备份文件的路径无效")?.canonicalize()?.starts_with(dir.canonicalize()?) {
                 anyhow::bail!("备份不能放在 NextTodo 的数据目录里");
             }
             // Syncing through a drive, those of other devices' attachments may not be here yet: a
-            // backup has every file in use (docs/local.md#停止).
-            for id in used {
-                files.fetch(id).context("有附件的文件还没有从网盘下载下来，请稍后重试")?;
+            // backup has every file still of use, deleting an attachment can be undone for a while
+            // (docs/local.md#停止).
+            for (id, size) in kept {
+                files.fetch(id, size).context("有附件的文件还没有从网盘下载下来，请稍后重试")?;
             }
             backup::write(&dir, &to)
         })

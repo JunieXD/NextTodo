@@ -11,7 +11,7 @@ use std::time::{Duration, SystemTime};
 
 use axum::body::Body;
 use http_body_util::BodyExt;
-use nexttodo_core::model::{AttachmentId, MAX_FILE_SIZE};
+use nexttodo_core::model::{AttachmentId, FileSize, MAX_FILE_SIZE};
 use tokio::io::AsyncWriteExt;
 use tower_http::services::ServeFile;
 use uuid::Uuid;
@@ -123,9 +123,9 @@ impl Files {
         self.publish(part, id)
     }
 
-    /// The whole of `id`'s file.
-    pub fn read(&self, id: AttachmentId) -> io::Result<Vec<u8>> {
-        self.fetch(id)?;
+    /// The whole of `id`'s file, of `size` bytes.
+    pub fn read(&self, id: AttachmentId, size: FileSize) -> io::Result<Vec<u8>> {
+        self.fetch(id, size)?;
         std::fs::read(self.path(id))
     }
 
@@ -137,14 +137,17 @@ impl Files {
         }
     }
 
-    /// Brings `id`'s file here from the origin, when it is not here and is there. Blocks meanwhile.
-    pub fn fetch(&self, id: AttachmentId) -> io::Result<()> {
+    /// Brings `id`'s file, of `size` bytes, here from the origin, when it is not here and is there.
+    /// Blocks meanwhile.
+    pub fn fetch(&self, id: AttachmentId, size: FileSize) -> io::Result<()> {
         let origin = self.origin.read().unwrap_or_else(PoisonError::into_inner).clone();
         let Some(origin) = origin else { return Ok(()) };
         if self.path(id).exists() {
             return Ok(());
         }
         match origin.fetch(id)? {
+            // Cut short or replaced there: not kept, so that it is fetched again.
+            Some(bytes) if bytes.len() != size.get() as usize => Err(io::Error::other("网盘里附件的文件和记录的大小不一样")),
             Some(bytes) => self.write(id, &bytes),
             None => Ok(()),
         }

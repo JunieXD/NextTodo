@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use nexttodo_core::board::Board;
-use nexttodo_core::model::{AiJob, Attachment, AttachmentId, Due, Task, TaskId};
+use nexttodo_core::model::{AiJob, Attachment, AttachmentId, Due, FileSize, Task, TaskId};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -103,12 +103,13 @@ pub struct Shown {
 pub struct PictureFile {
     caption: String,
     id: AttachmentId,
+    size: FileSize,
     media_type: String,
 }
 
 impl PictureFile {
     pub fn read(self, files: &Files) -> std::io::Result<Picture> {
-        let data = STANDARD.encode(files.read(self.id)?);
+        let data = STANDARD.encode(files.read(self.id, self.size)?);
         Ok(Picture { caption: self.caption, url: format!("data:{};base64,{data}", self.media_type) })
     }
 }
@@ -155,8 +156,12 @@ pub fn prompt(
         let media_type = a.media_type.as_str();
         let image = vision && PICTURE_TYPES.contains(&media_type) && a.size.get() <= PICTURE_SIZE && pictures.len() < PICTURES;
         if image {
-            pictures
-                .push(PictureFile { caption: format!("附件 {r}：{}", a.name.as_str()), id: a.id, media_type: media_type.to_owned() });
+            pictures.push(PictureFile {
+                caption: format!("附件 {r}：{}", a.name.as_str()),
+                id: a.id,
+                size: a.size,
+                media_type: media_type.to_owned(),
+            });
         }
         listed.push(json!({ "ref": r, "name": a.name.as_str(), "type": media_type, "image": image }));
     }

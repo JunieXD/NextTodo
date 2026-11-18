@@ -263,11 +263,11 @@ pub fn attachment(c: &Connection, cx: &Cx, a: AttachmentArgs) -> Result<Output, 
     let mut lines = vec![format!("{}，{of}", attachment_line(at))];
     let mut data = attachment_view(at);
     if showable_image(at) {
-        data["image"] = BASE64.encode(cx.files.read(at.id)?).into();
+        data["image"] = BASE64.encode(cx.files.read(at.id, at.size)?).into();
         lines.push("图片随结果返回".into());
     } else if is_text(at)
         && at.size.get() <= MAX_TEXT
-        && let Ok(content) = String::from_utf8(cx.files.read(at.id)?)
+        && let Ok(content) = String::from_utf8(cx.files.read(at.id, at.size)?)
     {
         lines.push(String::new());
         lines.push(content.clone());

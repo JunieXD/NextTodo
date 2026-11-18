@@ -117,7 +117,8 @@ export function FolderChecks({
 }
 
 /** Picks a task to come before (`pred`) or after (`succ`) `task`, of those it can be linked to, in the
- * same place (docs/design.md#依赖): folder by folder, as the folders page has them, starting in the
+ * same place (docs/design.md#依赖), finished ones too, to tie a task to how it came about: folder by
+ * folder, finished ones last, as the folders page has them, starting in the
  * task's own and up to the shared folder it is in, if any; or by searching them all. Tasks that would
  * close a loop are shown but cannot be picked. One not there yet is created from the search, in the
  * folder the panel is at. */
@@ -150,15 +151,16 @@ export function TaskPicker({
     field.current!.parentElement!.scrollTo(0, 0);
   }, [at, searching]);
   const linked = new Set([task.id, ...(dir === "pred" ? board.before(task) : board.after(task)).map((t) => t.id)]);
-  const choice = (t: Task) => t.done_at === null && !linked.has(t.id) && board.together(t, task);
+  const choice = (t: Task) => !linked.has(t.id) && board.together(t, task);
   const choices = board.snapshot.tasks.filter(choice);
   const row = (t: Task, path: boolean) => {
     const loop = dir === "pred" ? board.chain(task.id, t.id) : board.chain(t.id, task.id);
     const note = loop ? "添加后将形成循环" : path && board.place(t.folder_id);
+    const status = board.status(t);
     return (
-      <button key={t.id} className="row dep" disabled={!!loop} onClick={() => (onPick(t), onClose())}>
+      <button key={t.id} className={`row dep ${status}`} disabled={!!loop} onClick={() => (onPick(t), onClose())}>
         <div className="row-inner">
-          <span className={`dot ${board.status(t)}`} />
+          <span className={`dot ${status}`} />
           <span className="dep-main">
             <span className="dep-title">{t.title}</span>
             {note && <span className="dep-path">{note}</span>}
@@ -171,7 +173,11 @@ export function TaskPicker({
   const q = query.trim().toLowerCase();
   let list;
   if (q) {
-    const found = board.sort(choices.filter((t) => matches(t, q))).slice(0, 100);
+    // Finished ones last, as in the search's results.
+    const found = board
+      .sort(choices.filter((t) => matches(t, q)))
+      .sort((a, b) => Number(a.done_at !== null) - Number(b.done_at !== null))
+      .slice(0, 100);
     const title = checkTitle(query);
     list = (
       <>

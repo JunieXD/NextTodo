@@ -164,7 +164,8 @@ enum Reminders {
 }
 
 /// What the user does with a notification: opens the task, marks it done, or puts it off; set as the
-/// app starts, so that one done in the background, the app not running, is heard.
+/// app starts, so that one done in the background, the app not running, is heard. UIKit takes `done`
+/// on the main thread only: called on another, it ends the app.
 final class NotificationActions: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationActions()
 
@@ -192,13 +193,13 @@ final class NotificationActions: NSObject, UNUserNotificationCenterDelegate {
                     if case let .refused(message) = Changes.complete(task: task, title: request.content.title, at: Reminders.at(of: request.content)) {
                         Reminders.queue.sync { Reminders.refused(id: Server.uuid7(), what: "完成“\(request.content.title)”", message: message) }
                     }
-                    done()
+                    DispatchQueue.main.async(execute: done)
                 }
             }
         case let action where action.hasPrefix("snooze-"):
             Reminders.queue.async {
                 Reminders.snooze(task: task, content: request.content, minutes: Int(action.dropFirst("snooze-".count))!)
-                done()
+                DispatchQueue.main.async(execute: done)
             }
         case UNNotificationDefaultActionIdentifier:
             Opening.open(URL(string: "nexttodo://task/\(task)")!)

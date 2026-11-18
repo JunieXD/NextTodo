@@ -2,7 +2,7 @@
 // open task's details on the right.
 
 import { ChevronLeft, ChevronRight, CircleCheck, FolderRoot, History, ListChecks, PanelLeft, Search } from "lucide-react";
-import { Fragment, type ReactNode, useRef, useState } from "react";
+import { type CSSProperties, Fragment, type ReactNode, useRef, useState } from "react";
 import { Link, Redirect, useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
 import { formatToday } from "../domain/dates";
@@ -13,6 +13,7 @@ import { Fold } from "../ui/fold";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { BatchTools, batchTitle, useBatch } from "./batch";
+import { useColumns } from "./columns";
 import { Detail } from "./Detail";
 import { useTreeDrag } from "./drag";
 import { FolderContextMenu, FolderMenu, usePlaceFolder } from "./FolderMenu";
@@ -29,6 +30,7 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
   const { selected, close } = useSelection();
   // As on phones, a task not here (yet) shows nothing: one opened from outside may still be on its way.
   const open = selected !== null && board.task(selected) !== undefined;
+  const columns = useColumns({ sidebar: sideOpen, pane: open });
   useBack("panel", open ? close : null);
   // The pane keeps showing the task it was closed on while it slides away, and lets go of it after.
   const [shown, setShown] = useState(open ? selected : null);
@@ -143,11 +145,14 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
   const label = `${sideOpen ? "收起" : "展开"}左侧栏`;
   return (
     <div
-      className={`desk-cols${sideOpen ? "" : " side-closed"}${open ? "" : " pane-closed"}`}
+      className={`desk-cols${sideOpen ? "" : " side-closed"}${open ? "" : " pane-closed"}${columns.dragging ? " resizing" : ""}`}
+      style={{ "--sidebar": `${columns.shown.sidebar}px`, "--pane": `${columns.shown.pane}px` } as CSSProperties}
       onTransitionEnd={(e) => e.target === e.currentTarget && !open && setShown(null)}
     >
       <Sidebar at={query.trim() ? null : at} query={query} setQuery={search} />
       <main className={`main${batch.on ? " choosing" : ""}`}>
+        {sideOpen && <div className="col-edge sidebar-edge" {...columns.edge("sidebar")} />}
+        {open && <div className="col-edge pane-edge" {...columns.edge("pane")} />}
         <div className="main-tools" data-tauri-drag-region="deep">
           <Tip label={label}>
             <button className="icon-btn" onClick={() => setSideOpen(!sideOpen)} aria-pressed={sideOpen}>

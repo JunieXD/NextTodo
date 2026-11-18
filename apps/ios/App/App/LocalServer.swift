@@ -24,6 +24,9 @@ enum LocalServer {
 
     static func pull(waitMs: UInt64) { nexttodo_pull(waitMs) }
 
+    /// Whether it is still the one at its address, not another program given its port meanwhile.
+    static func answers() -> Bool { nexttodo_answers() }
+
     static func backup(to: URL) throws { _ = try value(to.path.withCString(nexttodo_backup)) }
 
     static func prepare(dir: URL, from: URL) throws {

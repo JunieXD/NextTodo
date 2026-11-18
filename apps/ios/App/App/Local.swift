@@ -77,13 +77,14 @@ enum Local {
     }
 
     /// Back in the front, or woken in the background for a reminder's action: the system may have
-    /// taken the server's port while the app was suspended. It starts again at the same one, where the
-    /// page goes on; when it cannot, the page loads again, for a new address, and false. Then it looks
-    /// at the drive now (docs/local.md#运行).
+    /// taken the server's port while the app was suspended, and given it to another program since,
+    /// which would get the token. It starts again at the same one, where the page goes on; when it
+    /// cannot, the page loads again, for a new address, and false. Then it looks at the drive now
+    /// (docs/local.md#运行).
     static func resume() -> Bool {
         dispatchPrecondition(condition: .onQueue(queue))
         let url = opened!["url"] as! String
-        if !Server.answers(url) {
+        if !LocalServer.answers() {
             LocalServer.stop()
             do {
                 _ = try LocalServer.start(dir: dir, port: UInt16(URLComponents(string: url)!.port!))

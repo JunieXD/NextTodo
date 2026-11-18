@@ -144,6 +144,19 @@ async fn a_new_session_revokes_the_earlier_ones() {
 }
 
 #[tokio::test]
+async fn the_server_tells_itself_from_another_program_at_its_address() {
+    let (a_dir, b_dir) = (data_dir(), data_dir());
+    let mut a = Local::start(&a_dir).await.unwrap();
+    let b = Local::start(&b_dir).await.unwrap();
+    assert!(a.answers().await);
+    // Its port taken while the app was suspended, by another program that answers there.
+    a.url = b.url.clone();
+    assert!(!a.answers().await);
+    assert!(b.answers().await);
+    clean([a_dir, b_dir]);
+}
+
+#[tokio::test]
 async fn jobs_cut_short_have_failed_by_the_first_request() {
     let dir = data_dir();
     drop(existing(&dir, &["alice"]).await);

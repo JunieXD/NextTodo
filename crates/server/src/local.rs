@@ -4,10 +4,12 @@
 use std::fs::{File, OpenOptions, TryLockError};
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
+use axum::extract::Request;
+use axum::middleware::Next;
 use rusqlite::{Connection, params};
 
 use crate::ai::{Ai, llm::Https};
@@ -22,6 +24,8 @@ const NAME: &str = "本机";
 
 /// How long starting waits for an earlier process of the app to let go of the data directory.
 const LOCK_WAIT: Duration = Duration::from_secs(10);
+/// The header `answers` asks with.
+const PROBE: &str = "nexttodo-probe";
 
 #[derive(Debug)]
 pub enum StartError {
@@ -72,6 +76,8 @@ pub struct Local {
     state: AppState,
     /// The data directory.
     dir: PathBuf,
+    /// The last `PROBE` the server heard.
+    heard: Arc<Mutex<Option<String>>>,
     /// Held while the process runs; the system lets go of it when the process ends.
     _lock: File,
 }
@@ -110,13 +116,37 @@ impl Local {
         let router = router.layer(crate::page_cors());
         #[cfg(feature = "agent-port")]
         agent_port.serve(router.clone());
+        let heard = Arc::new(Mutex::new(None));
+        let hears = heard.clone();
+        let router = router.layer(axum::middleware::from_fn(move |req: Request, next: Next| {
+            if let Some(probe) = req.headers().get(PROBE).and_then(|v| v.to_str().ok()) {
+                *hears.lock().unwrap_or_else(PoisonError::into_inner) = Some(probe.to_owned());
+            }
+            next.run(req)
+        }));
         let serving = started.serve(router);
         tokio::spawn(async move {
             if let Err(e) = serving.await {
                 tracing::error!("local server stopped: {e}");
             }
         });
-        Ok(Local { url, user, epoch, state, dir: dir.to_owned(), _lock: lock })
+        Ok(Local { url, user, epoch, state, dir: dir.to_owned(), heard, _lock: lock })
+    }
+
+    /// Whether this server still answers at its address: the system takes the port of an iOS app
+    /// suspended a while, and another program may have it since, which would answer too, and get the
+    /// token (docs/ios.md#本机模式). Asked with a value no other program knows, which this server
+    /// tells it heard.
+    pub async fn answers(&self) -> bool {
+        let probe = auth::random_string(22);
+        let (url, sent) = (format!("{}/api/v1/me", self.url), probe.clone());
+        let asked = tokio::task::spawn_blocking(move || {
+            let config = ureq::Agent::config_builder().proxy(None).timeout_global(Some(Duration::from_secs(2))).http_status_as_error(false);
+            ureq::Agent::from(config.build()).get(url).header(PROBE, sent).call().map(drop)
+        })
+        .await
+        .expect("asking panicked");
+        asked.is_ok() && self.heard.lock().unwrap_or_else(PoisonError::into_inner).as_deref() == Some(probe.as_str())
     }
 
     /// Writes a backup of the data to `to`, replacing the file there; not in the data directory, where

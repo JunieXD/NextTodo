@@ -117,6 +117,14 @@ pub extern "C" fn nexttodo_pull(wait_ms: u64) {
     }
 }
 
+/// Whether the server, once started, is still the one at its address: the system may have given its
+/// port to another program while the app was suspended (`Local::answers`). False when not running.
+#[allow(unsafe_code, reason = "C calls it by its unmangled name")]
+#[unsafe(no_mangle)]
+pub extern "C" fn nexttodo_answers() -> bool {
+    running().is_ok_and(|(runtime, local)| runtime.block_on(local.answers()))
+}
+
 /// Writes a backup of the data to the file `to`.
 #[allow(unsafe_code, reason = "C calls it by its unmangled name")]
 #[unsafe(no_mangle)]
@@ -189,11 +197,13 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("nexttodo-ios-{}", uuid::Uuid::now_v7()));
         let path = CString::new(dir.to_str().unwrap()).unwrap();
         let first = take(nexttodo_start(path.as_ptr(), 0))["value"].clone();
+        assert!(nexttodo_answers());
         let session = take(nexttodo_session());
         assert!(session["value"].is_string());
         let port: u16 = first["url"].as_str().unwrap().rsplit_once(':').unwrap().1.parse().unwrap();
         nexttodo_stop();
         assert!(take(nexttodo_session())["error"].is_string());
+        assert!(!nexttodo_answers());
         let again = take(nexttodo_start(path.as_ptr(), port))["value"].clone();
         assert_eq!(again, first);
 

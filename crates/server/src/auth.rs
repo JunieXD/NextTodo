@@ -28,7 +28,7 @@ const BASE62: &[u8] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrst
 /// Skip writing `last_used_at` when it was updated less than this long ago.
 const LAST_USED_RESOLUTION_MS: i64 = 60_000;
 
-fn random_string(len: usize) -> String {
+pub(crate) fn random_string(len: usize) -> String {
     (0..len).map(|_| char::from(BASE62[rand::random_range(0..BASE62.len())])).collect()
 }
 

@@ -31,15 +31,21 @@ enum Server {
         request.httpBody = try JSONSerialization.data(withJSONObject: ["id": id, "ops": ops])
         let (data, response) = try send(request)
         guard (200..<300).contains(response.statusCode) else {
-            let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["message"] as? String
+            let message = (try? JSONDecoder().decode(Refusal.self, from: data))?.message
             throw HttpError(status: response.statusCode, message: message ?? "服务器错误（\(response.statusCode)），请稍后重试")
         }
-        return ((try JSONSerialization.jsonObject(with: data) as! [String: Any])["seq"] as! NSNumber).int64Value
+        // Not as the server answers, as from a proxy in between: kept, to send again.
+        return try JSONDecoder().decode(Applied.self, from: data).seq
     }
 
-    /// Whether the server at `url` answers at all.
-    static func answers(_ url: String) -> Bool {
-        (try? send(URLRequest(url: URL(string: url + "/api/v1/me")!, timeoutInterval: 2))) != nil
+    /// What the server answers a change with, as far as it is used.
+    private struct Applied: Decodable {
+        let seq: Int64
+    }
+
+    /// What the server says to turn something down.
+    private struct Refusal: Decodable {
+        let message: String
     }
 
     /// The app's own server, on this device, is reached directly: the system's proxy would get the token

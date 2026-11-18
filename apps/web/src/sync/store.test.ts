@@ -153,6 +153,48 @@ test("changes the server has not seen yet can be undone here", async () => {
   expect(store.unconfirmed).toHaveLength(2);
 });
 
+test("the last time a repeating task was done is found among the changes, also after undoing it, one time after another", () => {
+  const due = { date: "2026-11-10", repeat: { every: 1, unit: "day" as const, from: "due" as const } };
+  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  // Done once on another device, then here.
+  const first = task(1, "背单词", { due: { ...due, date: "2026-11-11" }, completions: { count: 1, last: "2026-11-10" } });
+  store.receive([{ seq: 1, id: id(70), user: ME, actor: null, effects: [{ kind: "task", before: task(1, "背单词", { due }), after: first }], created_at: 0 }], 1);
+  const { id: second } = store.commit([{ op: "task.update", id: id(1), done: true, today: "2026-11-11" }]);
+  store.commit([{ op: "task.update", id: id(1), title: "背单词 30 个" }]);
+  const count = () => store.getView().board.task(id(1))!.completions?.count;
+  expect([count(), store.completedAt(id(1), 2)]).toEqual([2, second]);
+
+  const { id: undone } = store.commit([{ op: "undo", mutation: second }]);
+  expect([count(), store.completedAt(id(1), 1)]).toEqual([1, id(70)]);
+  // Undoing the undo is the last time again.
+  const { id: redone } = store.commit([{ op: "undo", mutation: undone }]);
+  expect([count(), store.completedAt(id(1), 2)]).toEqual([2, redone]);
+  // Brought back after being deleted, it was not done one more time.
+  const { id: deleted } = store.commit([{ op: "task.delete", id: id(1) }]);
+  store.commit([{ op: "undo", mutation: deleted }]);
+  expect(store.completedAt(id(1), 2)).toBe(redone);
+});
+
+test("the last time is not offered to undo when made and done in one change", () => {
+  const due = { date: "2026-11-10", repeat: { every: 1, unit: "day" as const, from: "due" as const } };
+  const { store } = setup();
+  store.commit([
+    { op: "task.create", id: id(1), title: "背单词", sort_key: "a1", due },
+    { op: "task.update", id: id(1), done: true, today: "2026-11-10" },
+  ]);
+  expect([store.getView().board.task(id(1))!.completions?.count, store.completedAt(id(1), 1)]).toEqual([1, undefined]);
+});
+
+test("the last time is not offered to undo when done together with other tasks", () => {
+  const due = { date: "2026-11-10", repeat: { every: 1, unit: "day" as const, from: "due" as const } };
+  const tasks = [task(1, "背单词", { due }), task(2, "跑步", { due })];
+  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks, dependencies: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  store.commit([1, 2].map((n) => ({ op: "task.update" as const, id: id(n), done: true, today: "2026-11-10" })));
+  // Undoing both would take back the run done since as well.
+  store.commit([{ op: "task.update", id: id(2), done: true, today: "2026-11-11" }]);
+  expect(store.completedAt(id(1), 1)).toBeUndefined();
+});
+
 test("a refused change is not queued", () => {
   const { store, sent } = setup();
   expect(() => store.commit([{ op: "task.update", id: id(9), title: "x" }])).toThrow("事项不存在");

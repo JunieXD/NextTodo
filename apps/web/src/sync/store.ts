@@ -11,6 +11,7 @@ import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
 import type { SeqSnapshot } from "../api/types/SeqSnapshot";
 import type { Snapshot } from "../api/types/Snapshot";
+import type { TaskId } from "../api/types/TaskId";
 import { type Data, Rejected, apply, copy, fromSnapshot, replay, toSnapshot } from "../domain/apply";
 import { Board, before, cmp, nowOf } from "../domain/board";
 
@@ -192,6 +193,20 @@ export class Store {
       for (const p of fresh) this.saving.delete(p.mutation.id);
       this.flush();
     });
+  }
+
+  /** The latest change this copy knows of that did a task one more time, up to `count`: undoing it
+   * takes back the last time a repeating task was done (docs/ui.md#弹窗对话框提示条). Only a change of
+   * that task alone: undoing one of several, done together, would take back what was done to the
+   * others since, too. */
+  completedAt(task: TaskId, count: number): MutationId | undefined {
+    const changes = [...this.log.keys(), ...this.outbox.map((p) => p.mutation.id)].reverse();
+    // A change stuck in the outbox has no effects here yet.
+    const id = changes.find((id) =>
+      this.effectsOf(id)?.some((e) => e.kind === "task" && e.before && e.after?.id === task && e.after.completions?.count === count && (e.before.completions?.count ?? 0) === count - 1),
+    );
+    // Nor one that made it too: undoing that deletes it.
+    return id && this.effectsOf(id)!.every((e) => e.kind === "task" && e.before && e.after?.id === task) ? id : undefined;
   }
 
   /** What a change did, as far as this copy knows. */

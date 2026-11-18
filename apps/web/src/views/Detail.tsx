@@ -108,6 +108,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
   if (closing && panel) setPanel(null);
   const update = (fields: TaskFields) => commit([{ op: "task.update", id, ...fields }]);
   const { store } = useSession();
+  const undo = useUndo();
   /** Puts text where the description is being edited, while it is. */
   const editing = useRef<((text: string) => void) | null>(null);
   const refer = (a: Attachment) => {
@@ -129,6 +130,11 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
   if (!t) return <div className="detail-empty">该事项已删除</div>;
   const status = board.status(t);
   const shared = board.sharedRoot(t.folder_id);
+  const lastDone = t.completions && store.completedAt(t.id, t.completions.count);
+  const undoLastDone = (m: MutationId) => {
+    const r = commit([{ op: "undo", mutation: m }]);
+    if (r) snack({ text: "已撤销上一次完成", action: "撤销", onAction: () => undo(r.id) });
+  };
 
   return (
     <div className="detail" {...dropping.handlers}>
@@ -228,6 +234,11 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
         {t.updated_at !== t.created_at && `，${who(board, t.updated_by, t.updated_via)}修改于 ${formatMoment(t.updated_at, now)}`}
       </p>
       <div className="group detail-actions">
+        {lastDone && (
+          <button className="row end-repeat" onClick={() => undoLastDone(lastDone)}>
+            <div className="row-inner">撤销上一次完成</div>
+          </button>
+        )}
         {t.due?.repeat && (
           <button className="row end-repeat" onClick={() => actions.endRepeat(t)}>
             <div className="row-inner">结束重复并完成</div>

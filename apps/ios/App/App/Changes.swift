@@ -37,12 +37,16 @@ enum Changes {
     /// What `KEPT` holds, oldest first: in a format of its own, which later versions read in. One not
     /// read, of another format, counts as none.
     private struct Kept: Codable {
-        var format = 1
+        static let current = 1
+        var format = current
         let changes: [Change]
     }
 
     private static var kept: [Change] {
-        get { UserDefaults.standard.data(forKey: KEPT).flatMap { try? JSONDecoder().decode(Kept.self, from: $0) }?.changes ?? [] }
+        get {
+            let read = UserDefaults.standard.data(forKey: KEPT).flatMap { try? JSONDecoder().decode(Kept.self, from: $0) }
+            return read.flatMap { $0.format == Kept.current ? $0.changes : nil } ?? []
+        }
         set { UserDefaults.standard.set(try! JSONEncoder().encode(Kept(changes: newValue)), forKey: KEPT) }
     }
 
@@ -79,8 +83,9 @@ enum Changes {
                 _ = try Server.mutate(url: url, token: token, id: id, ops: change.ops)
                 kept.removeAll { $0.id == id }
                 if id == mine { outcome = .sent }
-            } catch let e as HttpError where e.status == 401 || e.status >= 500 {
-                // Kept: for when the same user signs in again, as the page keeps its own; or for later.
+            } catch let e as HttpError where e.status == 401 || e.status == 408 || e.status == 429 || e.status >= 500 {
+                // Kept: for when the same user signs in again, as the page keeps its own; or for later,
+                // past what may pass.
                 return outcome
             } catch let e as HttpError {
                 kept.removeAll { $0.id == id }

@@ -109,7 +109,8 @@ object Changes {
                     Widget.ended(context, token)
                     return outcome to false
                 }
-                if (e.status >= 500) return outcome to true
+                // What may pass: sent again later.
+                if (e.status == 408 || e.status == 429 || e.status >= 500) return outcome to true
                 keep(context, kept(context).objects().filter { it.getString("id") != id })
                 val message = forUser(change.getString("what"), e)
                 if (id == mine) outcome = Outcome.Refused(message) else refused(context, change, message)

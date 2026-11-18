@@ -46,9 +46,9 @@ iOS App（iPhone 和 iPad）：和 [Android](android.md) 一样，Capacitor 外�
 
 ### 原生发出的改动
 
-通知上的“完成”不经过网页，由原生调用 `POST /mutations`，规则同 [Android](android.md#原生发出的改动)：原生生成改动 ID，按用户记下；连不上服务器或 5xx 时先存下（`UserDefaults`）；App 打开会话和回到前台时把它们接过去；补发时才被拒绝的，发一条通知写明是哪一项、为什么。
+通知上的“完成”不经过网页，由原生调用 `POST /mutations`，规则同 [Android](android.md#原生发出的改动)：原生生成改动 ID，按用户记下；连不上服务器、5xx、超时或限流（408、429）时先存下（`UserDefaults`）；App 打开会话和回到前台时把它们接过去；补发时才被拒绝的，发一条通知写明是哪一项、为什么。
 
-- 存下的格式：`UserDefaults` 里一份 JSON `{"format": 1, "changes": [{id, task, today, what, user}]}`，`task` 是完成的事项，`today` 是点完成那天，`what` 是通知里写的“完成“交房租””，`user` 是当时登录的人。读不了的（格式不对）当作没有，不会让 App 崩溃；以后改格式时升 `format`，把旧的读进来。
+- 存下的格式：`UserDefaults` 里一份 JSON `{"format": 1, "changes": [{id, task, today, what, user}]}`，`task` 是完成的事项，`today` 是点完成那天，`what` 是通知里写的“完成“交房租””，`user` 是当时登录的人。读不了的（格式不对，或 `format` 不是 1）当作没有，不会让 App 崩溃，也不会照旧的意思发出新版本存的改动；以后改格式时升 `format`，把旧的读进来。
 - 存下的在下次点“完成”和 App 回到前台时补发。iOS 没有 WorkManager 那样联网后叫醒 App 的办法，不在后台自己补发；App 回到前台时页面也会接过去发出，两边由服务端按 ID 去重。
 - 系统在后台处理通知操作时给 App 约 30 秒。本机模式下，这时服务端还没启动的，先启动它。
 

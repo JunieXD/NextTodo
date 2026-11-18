@@ -32,10 +32,10 @@ enum Local {
     }
 
     /// Starts the server and signs the app in: its address, the session's token, the local user and
-    /// the epoch. Once done, the same each time, until the server stops.
+    /// the epoch. Once done, the same each time, while the server is still at its address.
     static func open() throws -> [String: Any] {
         dispatchPrecondition(condition: .onQueue(queue))
-        if let opened { return opened }
+        if let opened, keepAddress() { return opened }
         // The last run's, at a port no longer this app's: should the server not start, nothing goes there.
         Prefs.remove("server")
         Prefs.remove("token")
@@ -80,16 +80,18 @@ enum Local {
     /// still at its address, then looks at the drive now (docs/local.md#运行). False when it is not.
     static func resume() -> Bool {
         dispatchPrecondition(condition: .onQueue(queue))
-        guard keepAddress() else { return false }
+        guard keepAddress() else {
+            DispatchQueue.main.async { MainViewController.shown?.loadWebView() }
+            return false
+        }
         LocalServer.pull(waitMs: 0)
         return true
     }
 
-    /// The system may have taken the server's port while the app was suspended, and given it to another
-    /// program since, which would get the token. It starts again at the same one, where the page goes on;
-    /// when it cannot, the page loads again, for a new address, and false.
-    static func keepAddress() -> Bool {
-        dispatchPrecondition(condition: .onQueue(queue))
+    /// Whether the server is still at its address: the system may have taken its port while the app was
+    /// suspended, and given it to another program since, which would get the token. It starts again at
+    /// the same one, where the page goes on; when it cannot, the address is forgotten, and false.
+    private static func keepAddress() -> Bool {
         if LocalServer.answers() { return true }
         let url = opened!["url"] as! String
         LocalServer.stop()
@@ -101,7 +103,6 @@ enum Local {
             opened = nil
             Prefs.remove("server")
             Prefs.remove("token")
-            DispatchQueue.main.async { MainViewController.shown?.loadWebView() }
             return false
         }
     }

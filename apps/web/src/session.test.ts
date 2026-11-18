@@ -366,6 +366,10 @@ test("nothing goes to the app's own server until it is known to be at its addres
   vi.stubGlobal("window", { CapacitorWebFetch: asked });
   const connections = sockets.length;
   const opening = Session.open(() => http.api<User>("GET", "/me"));
+  // Hidden again before that check is done: the one after it is waited for.
+  const first = checked;
+  http.holdLocal(new Promise<void>((resolve) => (checked = resolve)));
+  first();
   await new Promise((resolve) => setTimeout(resolve));
   expect(asked).not.toHaveBeenCalled();
   checked();

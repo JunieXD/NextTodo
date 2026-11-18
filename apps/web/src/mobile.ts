@@ -100,9 +100,6 @@ interface NextTodoPlugin {
   /** Local mode (docs/local.md), as the app's start opened it; should the server not have started,
    * tries again, and rejects with code `locked` while an earlier process of the app has the data. */
   openLocal(): Promise<Started>;
-  /** iOS, back in the front: resolves once local mode's server is known to be at its address still;
-   * rejects when it is not, the page loading again for a new one (docs/ios.md#本机模式). */
-  resumeLocal(): Promise<void>;
   /** Starts local mode's server, to enter it: whose data it has. */
   startLocal(): Promise<{ user: string }>;
   /** Enters local mode or leaves it, from the next start. */

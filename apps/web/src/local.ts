@@ -6,7 +6,7 @@
 import { Preferences } from "@capacitor/preferences";
 import { invoke } from "@tauri-apps/api/core";
 import { NextTodo } from "./mobile";
-import { ApiError, api, app, connectLocal, connectedLocally, dropSession, holdLocal, phoneApp } from "./api/http";
+import { ApiError, api, app, connectLocal, connectedLocally, dropSession, holdLocal, phoneApp, serverUrl, syncToken } from "./api/http";
 import type { DriveConfig } from "./api/types/DriveConfig";
 import type { DriveTurnOn } from "./api/types/DriveTurnOn";
 import type { User } from "./api/types/User";
@@ -20,15 +20,29 @@ import type { Store } from "./sync/store";
 const EPOCH = "nexttodo.localEpoch";
 
 // iOS takes back the port of a suspended app, and may give it to another program, which would get the
-// token and the data: from the moment the page is hidden, what goes to the app's server waits until
-// the app has made sure the port is still its own (docs/ios.md#本机模式).
+// token and the data: from the moment the page is hidden, or loads hidden, what goes to the app's
+// server waits until it is shown and the address is checked (docs/ios.md#本机模式).
 if (app === "ios") {
-  let shown = () => {};
+  let shown: (() => void) | undefined;
+  const hide = () => {
+    if (!shown) holdLocal(new Promise<void>((resolve) => (shown = resolve)).then(checkAddress));
+  };
+  if (document.visibilityState === "hidden") hide();
   document.addEventListener("visibilitychange", () => {
-    if (!connectedLocally()) return;
-    if (document.visibilityState === "hidden") holdLocal(new Promise<void>((resolve) => (shown = resolve)).then(() => NextTodo.resumeLocal()));
-    else shown();
+    if (document.visibilityState === "hidden") return hide();
+    shown?.();
+    shown = undefined;
   });
+}
+
+/** Asks the app for the address again, which it makes sure is still its own first. When it gives
+ * another, or the server does not start, the page loads again, sending nothing more meanwhile. */
+async function checkAddress() {
+  if (!mode) return;
+  const now = await NextTodo.openLocal().catch(() => null);
+  if (!connectedLocally() || (now?.url === serverUrl() && now.token === syncToken())) return;
+  location.reload();
+  return new Promise<void>(() => {});
 }
 
 /** What the page needs to open the local user's data. */

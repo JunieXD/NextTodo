@@ -53,13 +53,20 @@ export const connectedLocally = () => server.local;
  * the requests and the sync connection, waits for that. */
 let atAddress = Promise.resolve();
 
-/** Holds what goes to the app's own server until `checked` settles; rejected, it fails. */
+/** Holds what goes to the app's own server until `checked` settles, in place of any check before. */
 export function holdLocal(checked: Promise<void>) {
   atAddress = checked;
 }
 
-/** Settles once the server may be sent to. */
-export const reachable = () => (server.local ? atAddress : Promise.resolve());
+/** Settles once the server may be sent to: once the latest check has, not one that a later took the
+ * place of while it was waited for. */
+export async function reachable() {
+  while (server.local) {
+    const checked = atAddress;
+    await checked;
+    if (checked === atAddress) return;
+  }
+}
 
 /** Remembers the server and the session after signing in in the app. */
 export async function keepSession(token: string) {

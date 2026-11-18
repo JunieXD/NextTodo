@@ -116,12 +116,21 @@ fn listed(xml: &[u8]) -> Result<Vec<String>, Failed> {
 fn hrefs(xml: &[u8]) -> Result<Vec<String>, Failed> {
     let unreadable = |e: quick_xml::Error| Failed::Unknown(format!("网盘的回复无法读取：{e}"));
     let mut reader = Reader::from_reader(xml);
-    let (mut buf, mut found, mut in_href) = (Vec::new(), Vec::new(), false);
+    let (mut buf, mut found, mut href) = (Vec::new(), Vec::new(), None::<String>);
     loop {
         match reader.read_event_into(&mut buf).map_err(unreadable)? {
-            Event::Start(e) => in_href = e.local_name().into_inner() == "href",
-            Event::Text(t) if in_href => found.push(t.xml10_content().trim().to_owned()),
-            Event::End(_) => in_href = false,
+            Event::Start(e) => href = (e.local_name().into_inner() == "href").then(String::new),
+            Event::Text(t) => {
+                if let Some(h) = &mut href {
+                    h.push_str(&t.xml10_content());
+                }
+            }
+            Event::GeneralRef(r) => {
+                if let Some(h) = &mut href {
+                    h.push_str(&http::referred(&r)?);
+                }
+            }
+            Event::End(_) => found.extend(href.take().map(|h| h.trim().to_owned())),
             Event::Eof => return Ok(found),
             _ => {}
         }
@@ -142,6 +151,10 @@ mod tests {
               <d:response><d:href>/dav/%E5%90%8C%E6%AD%A5/g/snapshots/400.db.gz</d:href></d:response>
             </d:multistatus>"#;
         assert_eq!(listed(xml).unwrap(), ["200.db.gz", "400.db.gz"]);
+        // A reference in XML text, as for `&` where the server does not percent-encode it.
+        let xml = br#"<d:multistatus xmlns:d="DAV:"><d:response><d:href>/dav/Work&amp;Home/</d:href></d:response>
+            <d:response><d:href>/dav/Work&amp;Home/a&#38;b</d:href></d:response></d:multistatus>"#;
+        assert_eq!(listed(xml).unwrap(), ["a&b"]);
         assert_eq!(
             WebDav::new("https://dav.example.com/dav/", "u", "p", "同步").url("g/"),
             "https://dav.example.com/dav/%E5%90%8C%E6%AD%A5/g/"

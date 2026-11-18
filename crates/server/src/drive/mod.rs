@@ -1087,11 +1087,20 @@ fn snapshots(names: &[String]) -> Vec<i64> {
 
 /// Whether `name` is that of a generation's folder, or of anything NextTodo names by a UUIDv7.
 fn generation(name: &str) -> bool {
-    Uuid::parse_str(name).ok().and_then(made_at).is_some()
+    named_at(name).is_some()
 }
 
-/// When UUIDv7 `id` was made, in milliseconds.
+/// When what NextTodo named `name` was made: its name is a UUIDv7.
+fn named_at(name: &str) -> Option<i64> {
+    Uuid::parse_str(name).ok().and_then(made_at)
+}
+
+/// When UUIDv7 `id` was made, in milliseconds. Other versions have times too, which no id of
+/// NextTodo's is: a folder named so is someone else's.
 fn made_at(id: Uuid) -> Option<i64> {
+    if id.get_version_num() != 7 {
+        return None;
+    }
     let (secs, nanos) = id.get_timestamp()?.to_unix();
     Some(i64::try_from(secs).ok()? * 1000 + i64::from(nanos / 1_000_000))
 }
@@ -1124,7 +1133,7 @@ fn clear(r: &dyn Remote, generation: &str, now: i64) -> Result<(), Failed> {
         r.delete(&format!("{generation}/snapshots/{number}.db.gz"))?;
     }
     // Left by writes and by enabling cut short, or lost to another device.
-    let stale = |name: &str| Uuid::parse_str(name).ok().and_then(made_at).is_some_and(|at| now - at > DAY_MS);
+    let stale = |name: &str| named_at(name).is_some_and(|at| now - at > DAY_MS);
     for name in r.list("tmp")? {
         if stale(&name) {
             r.delete(&format!("tmp/{name}"))?;

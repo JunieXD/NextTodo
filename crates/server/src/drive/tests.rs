@@ -144,7 +144,8 @@ fn own() -> Db {
 /// syncing yet.
 fn device(db: Db, store: &Arc<Store>, model: Arc<Model>, dir: PathBuf) -> Device {
     let user = db.hold(|c| c.query_row("SELECT id FROM users", [], |r| r.get(0)).unwrap());
-    let files = Files::new(dir.join(crate::files::DIR));
+    // Where the app keeps them: beside the database, which a backup takes them with.
+    let files = Files::new(dir.join(backup::DB_DIR).join(crate::files::DIR));
     let (ahead, system) = (Arc::new(AtomicI64::new(0)), Clock::system());
     let by = ahead.clone();
     let clock = Clock(Arc::new(move || system.now() + by.load(Ordering::SeqCst)));
@@ -929,6 +930,28 @@ async fn a_backup_taken_while_syncing_restores_to_data_that_can_be_synced_anew()
     assert_eq!(d.titles(), [[Value::Text("备份前改的".into())], [Value::Text("恢复后改的".into())]]);
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn a_backup_taken_while_syncing_has_the_files_only_in_the_drive_and_those_undoing_brings_back() {
+    let (store, devices) = devices(2).await;
+    let (a, b) = (&devices[0], &devices[1]);
+    let (f, deleted) = (id(), id());
+    attach(a, &f).await;
+    attach(a, &deleted).await;
+    a.made(json!([{ "op": "attachment.delete", "id": deleted }])).await.unwrap();
+    caught_up(&store, &devices).await;
+    let db = b.dir.join(backup::DB_DIR);
+    std::fs::create_dir_all(&db).unwrap();
+    b.db().hold(|c| crate::db::copy(c, &db.join(backup::DB_FILE))).unwrap();
+    let to = b.dir.with_extension("tar");
+    backup::write(&b.dir, &b.st.files, &to).unwrap();
+    let mut tar = tar::Archive::new(std::fs::File::open(&to).unwrap());
+    let names: Vec<String> = tar.entries().unwrap().map(|e| e.unwrap().path().unwrap().to_string_lossy().into_owned()).collect();
+    std::fs::remove_file(&to).unwrap();
+    for f in [&f, &deleted] {
+        assert!(names.contains(&format!("files/{f}")), "{names:?}");
+    }
+}
+
 /// Has `d` make `n` changes, one after another.
 async fn many(d: &Device, n: usize) {
     for i in 0..n {
@@ -1031,9 +1054,21 @@ fn syncing_is_turned_on_in_an_empty_folder_or_one_of_nexttodos_own_only() {
     // Left by enabling cut short.
     view.create(&format!("{}/snapshots/0.db.gz", id()), b"x").unwrap();
     assert!(setup::probe(&view).unwrap().is_none());
-    view.create("照片/1.jpg", b"x").unwrap();
-    let Err(e) = setup::probe(&view) else { panic!("turned on in a folder with other files") };
-    assert_eq!(e.to_string(), "这个文件夹里有别的文件，请换一个空文件夹或新的文件夹名");
+    // Named by a UUID with a time in it too, yet not one of NextTodo's.
+    for other in ["f81d4fae-7dec-11d0-a765-00a0c91e6bf6/a.txt", "照片/1.jpg"] {
+        let view = View::new(Arc::new(Store::default()));
+        view.create(other, b"x").unwrap();
+        let Err(e) = setup::probe(&view) else { panic!("turned on in a folder with {other}") };
+        assert_eq!(e.to_string(), "这个文件夹里有别的文件，请换一个空文件夹或新的文件夹名");
+    }
+}
+
+#[test]
+fn a_folder_or_commit_of_a_newer_format_asks_for_an_update_whatever_else_changed() {
+    let newer = json!({ "format": 2, "generation": { "name": "g" }, "entries": [{ "kind": "unknown" }] }).to_string();
+    assert!(matches!(setup::Pointer::read(newer.as_bytes()), Err(Trouble::NewerVersion)));
+    let newer = json!({ "format": 2, "id": id(), "entries": [] }).to_string();
+    assert!(matches!(super::parse(newer.as_bytes()), Err(Trouble::NewerVersion)));
 }
 
 /// Commits of format 1 as this version wrote them, one of each kind of item and of most operations:

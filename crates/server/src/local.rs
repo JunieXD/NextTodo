@@ -14,7 +14,7 @@ use crate::ai::{Ai, llm::Https};
 use crate::auth::{self, TokenKind};
 use crate::backup::{self, DB_DIR, DB_FILE};
 use crate::error::ApiError;
-use crate::{AppState, app, db, start, store};
+use crate::{AppState, app, db, start};
 
 const USERNAME: &str = "local";
 /// The local user's display name, and the name of the app's session.
@@ -123,18 +123,11 @@ impl Local {
     /// it could take the database's place.
     pub async fn backup(&self, to: PathBuf) -> anyhow::Result<()> {
         let (dir, files) = (self.dir.clone(), self.state.files.clone());
-        let kept = self.state.db.call(|c| Ok(store::kept_files(c)?)).await?;
         tokio::task::spawn_blocking(move || {
             if to.parent().context("备份文件的路径无效")?.canonicalize()?.starts_with(dir.canonicalize()?) {
                 anyhow::bail!("备份不能放在 NextTodo 的数据目录里");
             }
-            // Syncing through a drive, those of other devices' attachments may not be here yet: a
-            // backup has every file still of use, deleting an attachment can be undone for a while
-            // (docs/local.md#停止).
-            for (id, size) in kept {
-                files.fetch(id, size).context("有附件的文件还没有从网盘下载下来，请稍后重试")?;
-            }
-            backup::write(&dir, &to)
+            backup::write(&dir, &files, &to)
         })
         .await?
     }

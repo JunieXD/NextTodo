@@ -161,20 +161,28 @@ struct Listed {
 fn listed(xml: &[u8], prefix: &str) -> Result<Listed, Failed> {
     let unreadable = |e: quick_xml::Error| Failed::Unknown(format!("网盘的回复无法读取：{e}"));
     let mut reader = Reader::from_reader(xml);
-    let (mut buf, mut path, mut found, mut next) = (Vec::new(), Vec::<String>::new(), Vec::new(), None);
+    let (mut buf, mut path, mut text) = (Vec::new(), Vec::<String>::new(), String::new());
+    let (mut found, mut next) = (Vec::new(), None);
     loop {
         match reader.read_event_into(&mut buf).map_err(unreadable)? {
-            Event::Start(e) => path.push(e.local_name().into_inner().to_owned()),
-            Event::End(_) => _ = path.pop(),
-            Event::Text(t) if matches!(path.as_slice(), [.., a, b] if (a == "Contents" && b == "Key") || (a == "CommonPrefixes" && b == "Prefix")) =>
-            {
-                let key = t.xml10_content();
-                if let Some(name) = key.strip_prefix(prefix).map(|n| n.trim_end_matches('/')).filter(|n| !n.is_empty()) {
-                    found.push(name.to_owned());
-                }
+            Event::Start(e) => {
+                path.push(e.local_name().into_inner().to_owned());
+                text.clear();
             }
-            Event::Text(t) if matches!(path.as_slice(), [.., a] if a == "NextContinuationToken") => {
-                next = Some(t.xml10_content().into_owned())
+            Event::Text(t) => text.push_str(&t.xml10_content()),
+            Event::GeneralRef(r) => text.push_str(&http::referred(&r)?),
+            Event::End(_) => {
+                match path.as_slice() {
+                    [.., a, b] if (a == "Contents" && b == "Key") || (a == "CommonPrefixes" && b == "Prefix") => {
+                        if let Some(name) = text.strip_prefix(prefix).map(|n| n.trim_end_matches('/')).filter(|n| !n.is_empty()) {
+                            found.push(name.to_owned());
+                        }
+                    }
+                    [.., a] if a == "NextContinuationToken" => next = Some(text.clone()),
+                    _ => {}
+                }
+                path.pop();
+                text.clear();
             }
             Event::Eof => return Ok(Listed { names: found, next }),
             _ => {}
@@ -254,5 +262,10 @@ mod tests {
             <Contents><Key>NextTodo/tmp/a</Key></Contents></ListBucketResult>"#;
         let next = Some("1ueGcxLPRx1Tr/XYExHnhbYLgveDs2J/wm36Hy4vbOwM=".to_owned());
         assert_eq!(listed(more, "NextTodo/tmp/").unwrap(), Listed { names: vec!["a".into()], next });
+        // XML writes some characters as references, in the folder's name as in the others.
+        let escaped = br#"<ListBucketResult><Contents><Key>Work&amp;Home/a&#x26;b&lt;c</Key></Contents>
+            <CommonPrefixes><Prefix>Work&amp;Home/0193a1b2-0000-7000-8000-000000000000/</Prefix></CommonPrefixes></ListBucketResult>"#;
+        let names = ["a&b<c", "0193a1b2-0000-7000-8000-000000000000"].map(str::to_owned).to_vec();
+        assert_eq!(listed(escaped, "Work&Home/").unwrap(), Listed { names, next: None });
     }
 }

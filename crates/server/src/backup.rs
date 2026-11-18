@@ -9,11 +9,12 @@ use std::io::{ErrorKind, Read, Seek};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
-use nexttodo_core::model::{AttachmentId, MAX_FILE_SIZE};
+use nexttodo_core::model::{AttachmentId, FileSize, MAX_FILE_SIZE};
 use rusqlite::Connection;
 use uuid::Uuid;
 
-use crate::{Clock, db, drive, files, local};
+use crate::files::{self, Files};
+use crate::{Clock, db, drive, local};
 
 /// A backup being prepared; not committed yet.
 const PART: &str = "restore.part";
@@ -32,14 +33,15 @@ const NOT_OURS: &str = "这不是 NextTodo 的备份，或者文件已损坏";
 
 /// Writes a backup of the data in `dir` to `to`, replacing what is there in one step: a tar of the
 /// files a consistent copy of the database lists, `files/<id>`, and of the copy, `nexttodo.db`.
-pub(crate) fn write(dir: &Path, to: &Path) -> anyhow::Result<()> {
+/// `files` are those of the data, brought from the drive when syncing through one.
+pub(crate) fn write(dir: &Path, files: &Files, to: &Path) -> anyhow::Result<()> {
     let mut partial = to.as_os_str().to_owned();
     partial.push(".partial");
     let partial = PathBuf::from(partial);
     let copy = dir.join(COPY);
     // Left by a backup cut short: VACUUM INTO won't write over it.
     gone(std::fs::remove_file(&copy))?;
-    let done = pack(&dir.join(DB_DIR), &copy, &partial).and_then(|()| Ok(std::fs::rename(&partial, to)?));
+    let done = pack(&dir.join(DB_DIR), files, &copy, &partial).and_then(|()| Ok(std::fs::rename(&partial, to)?));
     // What failed is what to tell; the copy is of no more use, and a tar left is incomplete.
     let _ = std::fs::remove_file(&copy);
     if done.is_err() {
@@ -49,12 +51,13 @@ pub(crate) fn write(dir: &Path, to: &Path) -> anyhow::Result<()> {
 }
 
 /// Writes to `to` a tar of the database in `data`, copied to `copy` first, and of its files.
-fn pack(data: &Path, copy: &Path, to: &Path) -> anyhow::Result<()> {
+fn pack(data: &Path, files: &Files, copy: &Path, to: &Path) -> anyhow::Result<()> {
     let name = copy.to_str().context("数据目录的路径无效")?;
     Connection::open(data.join(DB_FILE))?.execute("VACUUM INTO ?1", [name])?;
-    let listed: Vec<(String, bool)> = Connection::open(copy)?
-        .prepare("SELECT id, unused_at IS NOT NULL FROM files")?
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+    // All not cleared: those in use, and those undoing a deletion brings back (docs/local.md#备份).
+    let listed: Vec<(AttachmentId, FileSize, bool)> = Connection::open(copy)?
+        .prepare("SELECT id, size, unused_at IS NOT NULL FROM files WHERE NOT purged")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
         .collect::<Result<_, _>>()?;
     let mut tar = tar::Builder::new(File::create(to)?);
     tar.mode(tar::HeaderMode::Deterministic);
@@ -63,8 +66,10 @@ fn pack(data: &Path, copy: &Path, to: &Path) -> anyhow::Result<()> {
     header.set_size(manifest.len() as u64);
     header.set_mode(0o644);
     tar.append_data(&mut header, MANIFEST, manifest.as_slice())?;
-    for (id, unused) in listed {
-        match tar.append_path_with_name(data.join(files::DIR).join(&id), format!("{}/{id}", files::DIR)) {
+    for (id, size, unused) in listed {
+        // Syncing through a drive, another device's may not be here yet.
+        files.fetch(id, size).context("有附件的文件还没有从网盘下载下来，请稍后重试")?;
+        match tar.append_path_with_name(data.join(files::DIR).join(id.to_string()), format!("{}/{id}", files::DIR)) {
             // Deleted by the daily clearing since the copy was taken: no one used it then already.
             Err(e) if unused && e.kind() == ErrorKind::NotFound => {}
             appended => appended.with_context(|| format!("无法读取附件的文件 {id}"))?,

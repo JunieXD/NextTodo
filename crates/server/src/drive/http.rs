@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use quick_xml::events::BytesRef;
 use ureq::Timeout;
 use ureq::http::Response;
 
@@ -58,6 +59,16 @@ pub(crate) fn folder(dir: &str) -> String {
 /// The whole body of `res`.
 pub(crate) fn body(res: Response<ureq::Body>) -> Result<Vec<u8>, Failed> {
     res.into_body().with_config().limit(MAX_READ).read_to_vec().map_err(transport)
+}
+
+/// What a reference in XML text stands for: `&amp;` and the like, or a character by number. The text
+/// around it comes apart from it, and is put together with it.
+pub(crate) fn referred(r: &BytesRef) -> Result<String, Failed> {
+    let unreadable = || Failed::Unknown("网盘的回复无法读取：XML 里有不认得的引用".into());
+    if let Some(c) = r.resolve_char_ref().map_err(|_| unreadable())? {
+        return Ok(c.to_string());
+    }
+    quick_xml::escape::resolve_predefined_entity(r).map(str::to_owned).ok_or_else(unreadable)
 }
 
 /// `s` as a part of a path or a query's value: all but the unreserved characters percent-encoded.

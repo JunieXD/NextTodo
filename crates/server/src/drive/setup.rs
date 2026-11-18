@@ -40,20 +40,24 @@ struct Kept {
     drive: Config,
 }
 
+/// Just the format of a file, read first: in a newer one, the rest may be anything.
+#[derive(Deserialize)]
+struct Format {
+    format: i64,
+}
+
 #[derive(Deserialize)]
 pub(crate) struct Pointer {
-    format: i64,
     pub id: String,
 }
 
 impl Pointer {
     pub(super) fn read(bytes: &[u8]) -> Result<Pointer, Trouble> {
-        let p: Pointer =
-            serde_json::from_slice(bytes).map_err(|_| Trouble::Unreadable("网盘的文件夹里有不是 NextTodo 写的 nexttodo.json".into()))?;
-        if p.format > FORMAT {
+        let not_ours = |_| Trouble::Unreadable("网盘的文件夹里有不是 NextTodo 写的 nexttodo.json".into());
+        if serde_json::from_slice::<Format>(bytes).map_err(not_ours)?.format > FORMAT {
             return Err(Trouble::NewerVersion);
         }
-        Ok(p)
+        serde_json::from_slice(bytes).map_err(not_ours)
     }
 }
 
@@ -133,16 +137,12 @@ impl Config {
 
     /// As kept; one a newer version of the app kept is not read, and stays as it is.
     fn load(dir: &Path) -> anyhow::Result<Option<Config>> {
-        #[derive(Deserialize)]
-        struct Head {
-            format: i64,
-        }
         let bytes = match std::fs::read(dir.join(CONFIG)) {
             Ok(bytes) => bytes,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(e) => return Err(e.into()),
         };
-        if serde_json::from_slice::<Head>(&bytes)?.format > CONFIG_FORMAT {
+        if serde_json::from_slice::<Format>(&bytes)?.format > CONFIG_FORMAT {
             return Err(crate::db::Newer.into());
         }
         Ok(Some(serde_json::from_slice::<Kept>(&bytes)?.drive))

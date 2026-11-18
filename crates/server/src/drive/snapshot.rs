@@ -33,21 +33,31 @@ pub(crate) fn take(db: &Db, dir: &Path) -> anyhow::Result<Vec<u8>> {
 /// What a snapshot keeps of each table (docs/local.md#共享的和本机的). Every table is named, and every
 /// column of those partly this device's own: a test fails on one that is not, so that whoever adds it
 /// says which it is. The columns of an entity's table are all shared: they go in the drive's commits.
+/// The shared tables are swapped in this order, each after those it refers to, which a test checks.
 const TABLES: &[(&str, Kept)] = &[
-    ("ai_jobs", Kept::Shared),
-    ("ai_notes", Kept::Shared),
-    ("ai_settings", Kept::Own),
-    ("assignees", Kept::Shared),
-    ("attachments", Kept::Shared),
-    ("deliveries", Kept::Own),
+    (
+        "users",
+        Kept::Partly(&[
+            ("id", None),
+            ("username", None),
+            ("display_name", None),
+            ("password_hash", Some("''")),
+            ("is_admin", None),
+            ("next_task_number", None),
+            ("pruned_seq", Some("0")),
+            ("created_at", None),
+        ]),
+    ),
+    ("folders", Kept::Shared),
+    ("tasks", Kept::Shared),
     ("dependencies", Kept::Shared),
-    // A new one is given by whoever reads the snapshot.
-    ("epoch", Kept::Partly(&[("id", None), ("value", Some("''"))])),
+    ("members", Kept::Shared),
+    ("assignees", Kept::Shared),
+    ("ai_jobs", Kept::Shared),
     // Without those uploaded here and not attached in a commit yet (`clear`).
     ("files", Kept::Shared),
-    ("folders", Kept::Shared),
-    ("invites", Kept::Own),
-    ("members", Kept::Shared),
+    ("attachments", Kept::Shared),
+    ("ai_notes", Kept::Shared),
     (
         "mutations",
         Kept::Partly(&[
@@ -62,25 +72,21 @@ const TABLES: &[(&str, Kept)] = &[
             ("created_at", None),
         ]),
     ),
+    // A new one is given by whoever reads the snapshot.
+    ("epoch", Kept::Partly(&[("id", None), ("value", Some("''"))])),
     ("server_settings", Kept::Partly(&[("id", None), ("compress_images", Some("1"))])),
+    ("ai_settings", Kept::Own),
+    ("deliveries", Kept::Own),
+    ("invites", Kept::Own),
     ("sync_runs", Kept::Own),
     ("sync_state", Kept::Own),
-    ("tasks", Kept::Shared),
     ("tokens", Kept::Own),
-    (
-        "users",
-        Kept::Partly(&[
-            ("id", None),
-            ("username", None),
-            ("display_name", None),
-            ("password_hash", Some("''")),
-            ("is_admin", None),
-            ("next_task_number", None),
-            ("pruned_seq", Some("0")),
-            ("created_at", None),
-        ]),
-    ),
 ];
+
+/// The tables of the shared entities, in the order of `TABLES`.
+fn shared() -> impl DoubleEndedIterator<Item = &'static str> {
+    TABLES.iter().filter(|(_, kept)| matches!(kept, Kept::Shared)).map(|(table, _)| *table)
+}
 
 enum Kept {
     /// Shared: as it is.
@@ -107,10 +113,6 @@ fn clear(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch("DELETE FROM files WHERE staged; VACUUM;")
 }
 
-/// The tables of the shared entities, each after those it refers to (docs/local.md#共享的和本机的).
-/// `files`, which `attachments` refer to, keeps what is this device's own, and the log its numbering.
-const ENTITIES: &[&str] = &["folders", "tasks", "dependencies", "members", "assignees", "ai_jobs", "attachments", "ai_notes"];
-
 /// Replaces the shared data in `c` with that of the snapshot database at `path`, read up to commit
 /// `number`, in one transaction; what is this device's own stays (docs/local.md#运行).
 pub(crate) fn swap(c: &mut Connection, path: &Path, number: i64) -> rusqlite::Result<()> {
@@ -122,14 +124,12 @@ pub(crate) fn swap(c: &mut Connection, path: &Path, number: i64) -> rusqlite::Re
 
 fn replace(c: &mut Connection, number: i64) -> rusqlite::Result<()> {
     let tx = c.transaction()?;
-    for table in ENTITIES.iter().rev() {
-        tx.execute(&format!("DELETE FROM main.{table}"), [])?;
+    for table in shared().rev() {
+        // Those uploaded here and not attached yet stay this device's own, unless the snapshot has them.
+        let which = if table == "files" { " WHERE NOT staged OR id IN (SELECT id FROM s.files)" } else { "" };
+        tx.execute(&format!("DELETE FROM main.{table}{which}"), [])?;
     }
-    tx.execute_batch(
-        "DELETE FROM main.files WHERE NOT staged OR id IN (SELECT id FROM s.files);
-         INSERT INTO main.files SELECT * FROM s.files;",
-    )?;
-    for table in ENTITIES {
+    for table in shared() {
         tx.execute(&format!("INSERT INTO main.{table} SELECT * FROM s.{table}"), [])?;
     }
     tx.execute_batch(
@@ -166,7 +166,7 @@ mod tests {
     use flate2::read::GzDecoder;
     use rusqlite::Connection;
 
-    use super::{Kept, TABLES};
+    use super::{Kept, TABLES, shared};
     use crate::Db;
 
     #[test]
@@ -193,6 +193,26 @@ mod tests {
             })
             .collect();
         assert_eq!(said, schema);
+    }
+
+    #[test]
+    fn each_shared_table_comes_after_those_it_refers_to() {
+        let db = Db::open_in_memory().unwrap();
+        let order: Vec<&str> = shared().collect();
+        for (i, table) in order.iter().enumerate() {
+            let refers: Vec<String> = db.hold(|c| {
+                c.prepare(&format!("SELECT \"table\" FROM pragma_foreign_key_list('{table}')"))
+                    .unwrap()
+                    .query_map([], |r| r.get(0))
+                    .unwrap()
+                    .collect::<Result<_, _>>()
+                    .unwrap()
+            });
+            // One referring to its own rows, such as a folder to its parent, goes in in one statement.
+            for to in refers.iter().filter(|to| order.contains(&to.as_str())) {
+                assert!(order[..=i].contains(&to.as_str()), "{table} refers to {to}, which comes after it");
+            }
+        }
     }
 
     fn columns(c: &Connection, table: &str) -> Vec<String> {

@@ -6,7 +6,7 @@
 import { Preferences } from "@capacitor/preferences";
 import { invoke } from "@tauri-apps/api/core";
 import { NextTodo } from "./mobile";
-import { ApiError, api, app, connectLocal, dropSession, phoneApp } from "./api/http";
+import { ApiError, api, app, connectLocal, connectedLocally, dropSession, holdLocal, phoneApp } from "./api/http";
 import type { DriveConfig } from "./api/types/DriveConfig";
 import type { DriveTurnOn } from "./api/types/DriveTurnOn";
 import type { User } from "./api/types/User";
@@ -18,6 +18,18 @@ import type { Store } from "./sync/store";
 /** The epoch of the database the local user's data on this device came from. Kept on leaving local
  * mode, as the data is, for coming back. Should it be lost, the data is downloaded again. */
 const EPOCH = "nexttodo.localEpoch";
+
+// iOS takes back the port of a suspended app, and may give it to another program, which would get the
+// token and the data: from the moment the page is hidden, what goes to the app's server waits until
+// the app has made sure the port is still its own (docs/ios.md#本机模式).
+if (app === "ios") {
+  let shown = () => {};
+  document.addEventListener("visibilitychange", () => {
+    if (!connectedLocally()) return;
+    if (document.visibilityState === "hidden") holdLocal(new Promise<void>((resolve) => (shown = resolve)).then(() => NextTodo.resumeLocal()));
+    else shown();
+  });
+}
 
 /** What the page needs to open the local user's data. */
 export interface Started {

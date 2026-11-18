@@ -1,5 +1,6 @@
 // The WebSocket to the server. See `docs/api.md#同步协议` and `docs/web.md#同步`.
 
+import { reachable } from "../api/http";
 import type { ClientMessage } from "../api/types/ClientMessage";
 import type { Mutation } from "../api/types/Mutation";
 import type { ServerMessage } from "../api/types/ServerMessage";
@@ -26,6 +27,8 @@ const LAST_RETRY = 30_000;
 
 export class Socket {
   private ws: WebSocket | null = null;
+  /** Waiting to connect until the server may be sent to. */
+  private waiting = false;
   private synced = false;
   private retry = FIRST_RETRY;
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -59,7 +62,7 @@ export class Socket {
 
   /** Back in front, or back online: reconnect now rather than at the next retry. */
   private wake = () => {
-    if (document.visibilityState === "visible" && !this.ws && !this.resyncing && !this.stopped) {
+    if (document.visibilityState === "visible" && !this.ws && !this.waiting && !this.resyncing && !this.stopped) {
       clearTimeout(this.timer);
       this.connect();
     }
@@ -67,6 +70,20 @@ export class Socket {
 
   private connect() {
     this.opts.status("connecting");
+    this.waiting = true;
+    reachable().then(
+      () => {
+        this.waiting = false;
+        if (!this.stopped) this.open();
+      },
+      () => {
+        this.waiting = false;
+        this.retryLater();
+      },
+    );
+  }
+
+  private open() {
     const ws = new WebSocket(this.opts.url);
     this.ws = ws;
     ws.onopen = () => this.write({ type: "hello", token: this.opts.token, since: this.store.since, user: this.opts.user });

@@ -24,7 +24,7 @@ public class NextTodoPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDelega
     public let jsName = "NextTodo"
     public let pluginMethods: [CAPPluginMethod] = [
         "setReminders", "clearReminders", "reminderSettings", "allowNotifications", "signIn", "takeChanges", "forgetChanges",
-        "openAppSettings", "appInfo", "openLocal", "startLocal", "setLocalMode", "restart", "backupLocal", "prepareRestore",
+        "openAppSettings", "appInfo", "openLocal", "resumeLocal", "startLocal", "setLocalMode", "restart", "backupLocal", "prepareRestore",
         "commitRestore", "writeAttachment", "openAttachment", "saveAttachment",
     ].map { CAPPluginMethod(name: $0, returnType: CAPPluginReturnPromise)! }
 
@@ -130,6 +130,14 @@ public class NextTodoPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDelega
             } catch {
                 call.reject(forUser("打开本机模式", error))
             }
+        }
+    }
+
+    /// Back in the front: resolves once local mode's server is known to be at its address still, which
+    /// the page waits for before it sends it anything; rejects when it is not, the page loading again.
+    @objc func resumeLocal(_ call: CAPPluginCall) {
+        Local.queue.async {
+            if Local.running, Local.keepAddress() { call.resolve() } else { call.reject("App 内置的服务端换了地址") }
         }
     }
 

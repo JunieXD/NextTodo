@@ -355,6 +355,35 @@ test("a server's sign-out cut short is not finished on the app's own server, sig
   expect([s.user.id, server.ended.has(local), marked(), await saved(u)]).toEqual([local.user.id, false, undefined, [0, 0]]);
 });
 
+test("nothing goes to the app's own server until it is known to be at its address still", async () => {
+  server.cookie = { user: user(24) };
+  const Session = await tab();
+  const http = await import("./api/http");
+  http.connectLocal("", "the app's session");
+  let checked!: () => void;
+  http.holdLocal(new Promise<void>((resolve) => (checked = resolve)));
+  const asked = vi.fn(answer);
+  vi.stubGlobal("window", { CapacitorWebFetch: asked });
+  const connections = sockets.length;
+  const opening = Session.open(() => http.api<User>("GET", "/me"));
+  await new Promise((resolve) => setTimeout(resolve));
+  expect(asked).not.toHaveBeenCalled();
+  checked();
+  const s = await opening;
+  expect([s.user.id, sockets.length]).toEqual([user(24).id, connections + 1]);
+  // Hidden again: connecting meanwhile, after the connection was lost say, waits for the check too.
+  http.holdLocal(new Promise<void>((resolve) => (checked = resolve)));
+  const { Socket } = await import("./sync/socket");
+  const socket = new Socket(s.store, { url: "", user: s.user.id, resync: async () => {}, signedOut() {}, status() {} });
+  socket.start();
+  await new Promise((resolve) => setTimeout(resolve));
+  expect(sockets.length).toBe(connections + 1);
+  checked();
+  await vi.waitFor(() => expect(sockets.length).toBe(connections + 2));
+  socket.stop();
+  vi.stubGlobal("window", { CapacitorWebFetch: answer });
+});
+
 test("finishing a sign-out deletes the user's data also when the sign-in is gone", async () => {
   const u = user(14);
   await signIn(u);

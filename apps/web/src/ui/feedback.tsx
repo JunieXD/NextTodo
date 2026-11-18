@@ -56,6 +56,9 @@ interface Prompt {
 
 interface Feedback {
   snack(s: Snack | string): void;
+  /** The user has made a change: the snackbar offering to undo the one before goes, that one no longer
+   * being the last. */
+  committed(): void;
   confirm(c: Confirm): Promise<boolean>;
   prompt(p: Prompt): Promise<string | null>;
 }
@@ -78,6 +81,9 @@ export function FeedbackProvider({ outside, children }: { outside: boolean; chil
     () => ({
       snack(s) {
         setSnack({ ...(typeof s === "string" ? { text: s } : s), key: Date.now() });
+      },
+      committed() {
+        setSnack((s) => (s?.action === "撤销" ? null : s));
       },
       // A dialog asked for while another is open takes its place, which is answered as cancelled.
       confirm: (c) =>
@@ -112,7 +118,7 @@ export function FeedbackProvider({ outside, children }: { outside: boolean; chil
   return (
     <FeedbackContext value={feedback}>
       {children}
-      {snack && <Snackbar key={snack.key} text={snack.text} action={snack.action} ms={snack.ms ?? 5000} onAction={act} onClose={close} />}
+      {snack && <Snackbar key={snack.key} text={snack.text} action={snack.action} ms={snack.ms ?? (snack.action ? 5000 : 3000)} onAction={act} onClose={close} />}
       {open?.kind === "confirm" && <ConfirmDialog {...open} close={(ok) => (setOpen(null), open.resolve(ok))} />}
       {open?.kind === "prompt" && <PromptDialog {...open} close={(value) => (setOpen(null), open.resolve(value))} />}
     </FeedbackContext>

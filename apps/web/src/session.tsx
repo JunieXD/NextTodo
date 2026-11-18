@@ -407,10 +407,12 @@ export function useConnection(): Connection {
 /** Makes a change, telling the user when it cannot be made. Returns what changed, or `null`. */
 export function useCommit() {
   const { store } = useSession();
-  const { snack } = useFeedback();
+  const { snack, committed } = useFeedback();
   return (ops: Op[]): { id: MutationId; effects: Effect[] } | null => {
     try {
-      return store.commit(ops);
+      const made = store.commit(ops);
+      committed();
+      return made;
     } catch (e) {
       if (!(e instanceof Rejected)) throw e;
       snack(e.message);

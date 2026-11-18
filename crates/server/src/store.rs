@@ -12,7 +12,9 @@ use rusqlite::{Connection, OptionalExtension, Params, Row, params};
 
 const FOLDER_COLUMNS: &str = "id, parent_id, name, sort_key, created_at, updated_at";
 const JOB_COLUMNS: &str = "id, folder_id, kind, text, local_time, state, error, suggestions, created_at, updated_at";
-const ATTACHMENT_COLUMNS: &str = "id, task_id, job_id, name, type, size, created_at";
+/// Attachments, with what their files are.
+const ATTACHMENTS: &str =
+    "SELECT a.id, a.task_id, a.job_id, a.name, f.type, f.size, a.created_at FROM attachments a JOIN files f ON f.id = a.id";
 macro_rules! task_columns {
     () => {
         "id, number, folder_id, title, description, done_at, due_date, due_time, remind_before, sort_key, created_at, updated_at, created_via, updated_via, repeat_every, repeat_unit, repeat_from, repeat_days, completion_count, last_completed, repeat_monthdays, start_date, created_by, updated_by, start_time"
@@ -453,16 +455,16 @@ pub fn delete_job(c: &Connection, id: AiJobId) -> rusqlite::Result<()> {
 }
 
 pub fn load_attachment(c: &Connection, id: AttachmentId) -> rusqlite::Result<Option<Attachment>> {
-    c.query_row(&format!("SELECT {ATTACHMENT_COLUMNS} FROM attachments WHERE id = ?1"), [id], attachment_row).optional()
+    c.query_row(&format!("{ATTACHMENTS} WHERE a.id = ?1"), [id], attachment_row).optional()
 }
 
 /// A task's attachments, in the order they were added.
 pub fn task_attachments(c: &Connection, task: TaskId) -> rusqlite::Result<Vec<Attachment>> {
-    all(c, &format!("SELECT {ATTACHMENT_COLUMNS} FROM attachments WHERE task_id = ?1 ORDER BY id"), [task], attachment_row)
+    all(c, &format!("{ATTACHMENTS} WHERE a.task_id = ?1 ORDER BY a.id"), [task], attachment_row)
 }
 
 pub fn job_attachments(c: &Connection, job: AiJobId) -> rusqlite::Result<Vec<Attachment>> {
-    all(c, &format!("SELECT {ATTACHMENT_COLUMNS} FROM attachments WHERE job_id = ?1 ORDER BY id"), [job], attachment_row)
+    all(c, &format!("{ATTACHMENTS} WHERE a.job_id = ?1 ORDER BY a.id"), [job], attachment_row)
 }
 
 /// The attachments of the tasks in the subtree rooted at `id`.
@@ -470,8 +472,8 @@ pub fn subtree_attachments(c: &Connection, id: FolderId) -> rusqlite::Result<Vec
     all(
         c,
         &format!(
-            "{SUBTREE} SELECT {ATTACHMENT_COLUMNS} FROM attachments
-             WHERE task_id IN (SELECT id FROM tasks WHERE folder_id IN (SELECT id FROM sub)) ORDER BY id"
+            "{SUBTREE} {ATTACHMENTS}
+             WHERE a.task_id IN (SELECT id FROM tasks WHERE folder_id IN (SELECT id FROM sub)) ORDER BY a.id"
         ),
         [id],
         attachment_row,
@@ -482,8 +484,8 @@ pub fn subtree_attachments(c: &Connection, id: FolderId) -> rusqlite::Result<Vec
 pub fn insert_attachment(c: &Connection, a: &Attachment) -> rusqlite::Result<()> {
     let (task, job) = holder_columns(a.holder);
     c.execute(
-        &format!("INSERT INTO attachments ({ATTACHMENT_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"),
-        params![a.id, task, job, a.name, a.media_type, a.size, a.created_at],
+        "INSERT INTO attachments (id, task_id, job_id, name, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![a.id, task, job, a.name, a.created_at],
     )?;
     c.execute("UPDATE files SET unused_at = NULL WHERE id = ?1", [a.id])?;
     Ok(())
@@ -679,9 +681,9 @@ pub fn snapshot(c: &Connection, user: &str) -> rusqlite::Result<Snapshot> {
         attachments: all(
             c,
             &format!(
-                "{SHARED} SELECT {ATTACHMENT_COLUMNS} FROM attachments
-                 WHERE task_id IN (SELECT id FROM tasks WHERE {visible}) OR job_id IN (SELECT id FROM ai_jobs WHERE owner_id = ?1)
-                 ORDER BY id"
+                "{SHARED} {ATTACHMENTS}
+                 WHERE a.task_id IN (SELECT id FROM tasks WHERE {visible}) OR a.job_id IN (SELECT id FROM ai_jobs WHERE owner_id = ?1)
+                 ORDER BY a.id"
             ),
             [user],
             attachment_row,

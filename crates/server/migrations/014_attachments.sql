@@ -1,13 +1,20 @@
 -- Attachments (docs/design.md#附件). A file is uploaded first, kept under the data directory's
 -- `files/` by its id, and then attached to a task, or to an AI job until the job is organized. A file
--- no attachment uses, not attached yet or its attachment deleted, goes 90 days after.
+-- no attachment uses, not attached yet or its attachment deleted, goes 90 days after. What a file is,
+-- its type and size, is here alone: an attachment is only where it is and what it is called.
 CREATE TABLE files (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     type TEXT NOT NULL,
     size INTEGER NOT NULL CHECK (size BETWEEN 1 AND 20971520),
     created_at INTEGER NOT NULL,
-    unused_at INTEGER
+    unused_at INTEGER,
+    -- Syncing through a drive (docs/local.md#附件): cleared, kept as a record so that its id is never
+    -- used again; and uploaded on this device, not attached in a commit yet, this device's alone.
+    purged INTEGER NOT NULL DEFAULT 0 CHECK (purged IN (0, 1)),
+    staged INTEGER NOT NULL DEFAULT 0 CHECK (staged IN (0, 1)),
+    -- Only a file no one uses is cleared, and then it is everyone's.
+    CHECK (NOT purged OR (unused_at IS NOT NULL AND NOT staged))
 ) STRICT;
 CREATE INDEX files_unused ON files (unused_at) WHERE unused_at IS NOT NULL;
 
@@ -16,8 +23,6 @@ CREATE TABLE attachments (
     task_id TEXT REFERENCES tasks (id) ON DELETE CASCADE,
     job_id TEXT REFERENCES ai_jobs (id) ON DELETE CASCADE,
     name TEXT NOT NULL,
-    type TEXT NOT NULL,
-    size INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     CHECK ((task_id IS NULL) <> (job_id IS NULL))
 ) STRICT;

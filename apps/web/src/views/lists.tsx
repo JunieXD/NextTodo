@@ -18,6 +18,7 @@ import { aiReady, setAiMode, useAiMode, useAiVision } from "../ai";
 import { type DueKind, dueKind, formatDay, localTime } from "../domain/dates";
 import { checkJobText, checkTitle } from "../domain/text";
 import { useCommit, useSession, useView } from "../session";
+import { readyIn, setNextFolders, useNextFolders } from "../next-folders";
 import { addOps, filesIn, isPicture, plan, unseen } from "../attach";
 import { type Staged, draft, keepDraft, keepStaged, onDrafts, stagedFiles } from "../sync/drafts";
 import { dropFiles } from "../sync/files";
@@ -38,7 +39,7 @@ import { useMarks } from "./marks";
 import { folderUrl, settingsUrl, useFolderView, useSelection } from "./nav";
 import { JobRows } from "./jobs";
 import { useKeepDone } from "./keep-done";
-import { FolderPicker } from "./pickers";
+import { FolderChecks, FolderPicker } from "./pickers";
 import { FolderRow, RailList, TaskRow } from "./rows";
 
 const GROUPS: [DueKind | "none", string, string][] = [
@@ -55,7 +56,9 @@ export function NextBody({ now }: { now: Date }) {
   const { linger, leaving } = useMarks();
   const { selected } = useSelection();
   const actions = useTaskActions();
-  const ready = board.next();
+  const folders = useNextFolders(board);
+  const all = folders.includes(null);
+  const ready = readyIn(board, folders);
   const lingering = [...linger].map((id) => board.task(id)).filter((t): t is Task => !!t && t.done_at !== null);
   const groups = new Map<string, Task[]>();
   for (const t of board.byDue([...ready, ...lingering])) {
@@ -66,6 +69,7 @@ export function NextBody({ now }: { now: Date }) {
   const jobs = board.snapshot.ai_jobs;
   return (
     <>
+      <NextFilter folders={folders} />
       {jobs.length > 0 && (
         <section>
           <h2 className="group-title">AI 整理</h2>
@@ -74,7 +78,15 @@ export function NextBody({ now }: { now: Date }) {
           </div>
         </section>
       )}
-      {!groups.size && !jobs.length && <p className="empty">暂无可做的事项。可在文件夹中添加，或让 agent 拆分计划。</p>}
+      {!groups.size && !jobs.length && all && <p className="empty">暂无可做的事项。可在文件夹中添加，或让 agent 拆分计划。</p>}
+      {!groups.size && !all && (
+        <div className="empty">
+          <p>这些文件夹里现在没有能做的事</p>
+          <button className="text-btn" onClick={() => setNextFolders(board.me, [null])}>
+            看全部
+          </button>
+        </div>
+      )}
       {GROUPS.filter(([g]) => groups.has(g)).map(([g, label, cls]) => (
         <section key={g}>
           <h2 className={`group-title ${cls}`}>{label}</h2>
@@ -86,6 +98,34 @@ export function NextBody({ now }: { now: Date }) {
         </section>
       ))}
     </>
+  );
+}
+
+/** Which folders “接下来” lists, and picking them (docs/ui.md#接下来的文件夹筛选). */
+function NextFilter({ folders }: { folders: (FolderId | null)[] }) {
+  const { board } = useView();
+  // While picking, none ticked is a step on the way to ticking some once the root is unticked; closed
+  // so, it is all of them again.
+  const [picking, setPicking] = useState<(FolderId | null)[] | null>(null);
+  const pick = (to: (FolderId | null)[]) => {
+    setPicking(to);
+    if (to.length) setNextFolders(board.me, to);
+  };
+  const close = () => {
+    if (!picking?.length) setNextFolders(board.me, [null]);
+    setPicking(null);
+  };
+  const all = folders.includes(null);
+  const label = all ? "全部文件夹" : folders.length > 2 ? `${folders.length} 个文件夹` : folders.map((f) => board.folderName(f)).join("、");
+  return (
+    <div className="next-filter">
+      <button className={`chip${all ? "" : " on"}`} aria-haspopup="dialog" onClick={() => setPicking(folders)}>
+        <span className="chip-label">{label}</span>
+        <Icon of={ChevronDown} size={16} />
+      </button>
+      {/* Without those deleted or no longer shared meanwhile. */}
+      {picking && <FolderChecks title="只看这些文件夹" chosen={picking.filter((f) => board.hasFolder(f))} onChange={pick} onClose={close} />}
+    </div>
   );
 }
 
@@ -336,11 +376,13 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   const ai = useAiMode();
   const vision = useAiVision(user.id, ai && staged.some((f) => isPicture(f.type)));
   const hidden = ai && vision !== undefined ? unseen(staged, vision) : undefined;
-  const [target, setTarget] = useState<FolderId | null>(null);
+  // In “接下来” until one is picked, the first folder it lists, so that a new task shows there.
+  const [target, setTarget] = useState<FolderId | null>();
+  const listed = useNextFolders(board);
   const [picking, setPicking] = useState(false);
   const [tall, setTall] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const into = folder !== undefined ? folder : target && board.folder(target) ? target : null;
+  const into = folder !== undefined ? folder : target !== undefined && board.hasFolder(target) ? target : (board.folderTree().find((f) => listed.includes(f)) ?? null);
   const area = useRef<HTMLTextAreaElement>(null);
   const focus = () => area.current?.focus();
   // The Android widget opens `/?add` to type a new task straight away, and so does the desktop app's

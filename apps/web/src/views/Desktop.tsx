@@ -17,6 +17,7 @@ import { Detail } from "./Detail";
 import { useTreeDrag } from "./drag";
 import { FolderContextMenu, FolderMenu, usePlaceFolder } from "./FolderMenu";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, SearchResults } from "./lists";
+import { readyIn, useNextFolders } from "../next-folders";
 import { folderUrl, settingsUrl, useFolderView, useSelection } from "./nav";
 import { SettingsHome, SettingsPage, settingsTitle, useSectionAt } from "./Settings";
 import { FolderName, SharedWith, folderIcon, sharer } from "./share";
@@ -175,6 +176,7 @@ function Page(p: { title: string; crumbs?: ReactNode; actions?: ReactNode; add?:
 
 function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "root" | "settings" | null; query: string; setQuery(q: string): void }) {
   const { board, pending } = useView();
+  const listed = useNextFolders(board);
   const { user } = useSession();
   const connection = useConnection();
   const [, navigate] = useLocation();
@@ -260,7 +262,7 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ro
             <span className="tw" />
             <Icon of={CircleCheck} size={18} />
             <span>接下来</span>
-            <span className="count">{board.next().length}</span>
+            <span className="count">{readyIn(board, listed).length}</span>
           </button>
           <button className={`sb-item${at === "done" ? " on" : ""}`} onClick={() => go("/done")}>
             <span className="tw" />

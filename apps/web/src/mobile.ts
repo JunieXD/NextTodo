@@ -14,6 +14,7 @@ import { reminders } from "./domain/reminders";
 import type { Started } from "./local";
 import type { Store } from "./sync/store";
 import { back } from "./ui/back";
+import { nextFolders, onNextFolders, readyIn } from "./next-folders";
 
 export type WidgetTextSize = "small" | "standard" | "large";
 
@@ -65,7 +66,7 @@ interface NextTodoPlugin {
   /** Hands the widget its list, as JSON in the shape of the `next` tool's `tasks`, as of the change
    * `seq`; without one, as when signing out, it replaces whatever the widget has. At `nextStart`, as
    * the `next` tool's `next_start` gives it, the widget fetches its list itself. */
-  updateWidget(o: { tasks: string; seq?: number; nextStart?: string }): Promise<void>;
+  updateWidget(o: { tasks: string; seq?: number; nextStart?: string; folders?: string }): Promise<void>;
   /** How large the widget's text is, which it keeps. */
   widgetTextSize(): Promise<{ size: WidgetTextSize }>;
   setWidgetTextSize(o: { size: WidgetTextSize }): Promise<void>;
@@ -166,9 +167,9 @@ function inTurn(f: () => Promise<void>) {
   return done;
 }
 
-/** What the widget lists: the ready tasks, as the `next` tool gives them. */
-export const widgetTasks = (board: Board) =>
-  board.next().map((t) => ({
+/** What the widget lists: the ready tasks in the folders “接下来” lists, as the `next` tool gives them. */
+export const widgetTasks = (board: Board, folders: (FolderId | null)[]) =>
+  readyIn(board, folders).map((t) => ({
     id: t.id,
     number: t.number,
     title: t.title,
@@ -238,7 +239,12 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
     // be behind the server.
     const start = board.nextStart();
     const nextStart = start ? [start.date, start.time].filter(Boolean).join(" ") : undefined;
-    if (app === "android") await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board)), seq: store.since, nextStart });
+    if (app === "android") {
+      const listed = nextFolders(board);
+      // Their paths, for the widget to fetch its list by itself (docs/android.md#小组件).
+      const folders = listed.includes(null) ? undefined : JSON.stringify(listed.map((f) => board.folderPath(f)));
+      await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board, listed)), seq: store.since, nextStart, folders });
+    }
     await NextTodo.setReminders({ reminders: JSON.stringify(deviceReminders(board)) });
   };
   const calendar = () => NextTodo.updateCalendar({ events: JSON.stringify(calendarEvents(store.getView().board, calendarFolders(user))) });
@@ -263,6 +269,7 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
     changed();
   };
   const unsubscribe = store.subscribe(changed);
+  const unpicked = onNextFolders(changed);
   document.addEventListener("visibilitychange", shown);
   if (app === "android") writeCalendar = calendar;
   takeOver().catch(failed);
@@ -271,6 +278,7 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
     // The next session may have started watching already.
     if (writeCalendar === calendar) writeCalendar = undefined;
     unsubscribe();
+    unpicked();
     document.removeEventListener("visibilitychange", shown);
     clearTimeout(timer);
     await clear(failed);

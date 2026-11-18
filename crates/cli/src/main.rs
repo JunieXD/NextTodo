@@ -58,6 +58,8 @@ enum Command {
     },
     #[command(about = "接下来：现在就能做的事项")]
     Next {
+        #[arg(long = "folder", num_args = 1.., value_name = "路径", help = "只看这些文件夹（含子文件夹）里的")]
+        folders: Option<Vec<String>>,
         #[arg(long, help = "最多列出多少项，默认 50，最多 500")]
         limit: Option<u32>,
     },
@@ -777,7 +779,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Login { url, name, read_only } => login(url, name, read_only),
         Command::Tree => call("tree", json!({}), j),
         Command::Ls { folder, all, limit } => call("list", json!({ "folder": folder, "all": all, "limit": limit }), j),
-        Command::Next { limit } => call("next", json!({ "limit": limit }), j),
+        Command::Next { folders, limit } => call("next", json!({ "folders": folders, "limit": limit }), j),
         Command::Show { task } => call("show", json!({ "task": task }), j),
         Command::Search { query, limit } => call("search", json!({ "query": query.join(" "), "limit": limit }), j),
         Command::Graph { folder, all, mermaid } => call("graph", json!({ "folder": folder, "all": all, "mermaid": mermaid }), j),

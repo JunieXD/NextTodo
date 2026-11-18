@@ -25,6 +25,8 @@ pub struct ListArgs {
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NextArgs {
+    #[schemars(description = "只列这些文件夹（含子文件夹）里的，路径如 /工作、@alice/装修；有 / 时就是全部")]
+    pub folders: Option<Vec<String>>,
     #[schemars(description = "最多列出多少项，默认 50，最多 500", range(min = 1, max = 500))]
     pub limit: Option<u32>,
 }

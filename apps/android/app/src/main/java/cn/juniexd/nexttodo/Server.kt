@@ -33,12 +33,13 @@ object Server {
         return true
     }
 
-    /** The first `limit` of the ready tasks and how many there are, as the `next` tool's data gives
-     * them, `{tasks, total}`, and the change they are as of. */
-    suspend fun next(context: Context, token: String, limit: Int): Pair<JSONObject, Long> {
+    /** The first `limit` of the ready tasks, in `folders` when given, and how many there are, as the
+     * `next` tool's data gives them, `{tasks, total}`, and the change they are as of. */
+    suspend fun next(context: Context, token: String, limit: Int, folders: JSONArray?): Pair<JSONObject, Long> {
         // Starts come by the day and time here (docs/design.md#开始时间).
         val now = LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES)
         val args = JSONObject().put("limit", limit).put("today", now.toLocalDate().toString()).put("time", now.toLocalTime().toString())
+        folders?.let { args.put("folders", it) }
         val reply = JSONObject(post(context, token, "/tools/next", args))
         return reply.getJSONObject("data") to reply.getLong("seq")
     }

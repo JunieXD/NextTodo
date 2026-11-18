@@ -18,6 +18,7 @@ import { Detail } from "./Detail";
 import { FolderMenu } from "./FolderMenu";
 import { SharedWith, sharer } from "./share";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, QuickAdd, SearchResults } from "./lists";
+import { readyIn, useNextFolders } from "../next-folders";
 import { folderUrl, type SettingsSection, settingsUrl, useFolderView, useSelection } from "./nav";
 import { SettingsHome, SettingsPage, settingsTitle, useSectionAt } from "./Settings";
 import { ConnectionNote } from "./status";
@@ -128,6 +129,7 @@ function Back({ to, label }: { to: string; label: string }) {
 
 function NextScreen({ anim, now }: { anim: string; now: Date }) {
   const { board } = useView();
+  const listed = useNextFolders(board);
   const connection = useConnection();
   const [, navigate] = useLocation();
   return (
@@ -141,7 +143,7 @@ function NextScreen({ anim, now }: { anim: string; now: Date }) {
         </Tip>
       </div>
       <p className="subtitle">
-        {formatToday(now)}，{board.next().length} 项可做
+        {formatToday(now)}，{readyIn(board, listed).length} 项可做
       </p>
       <ConnectionNote connection={connection} />
       {app === "android" && <BackgroundTip />}

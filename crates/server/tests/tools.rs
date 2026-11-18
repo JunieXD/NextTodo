@@ -351,6 +351,29 @@ async fn a_task_with_a_start_time_waits_for_that_moment_and_keeps_the_time() {
 }
 
 #[tokio::test]
+async fn next_lists_only_the_folders_asked_for() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "写周报", "folder": "/工作" })).await;
+    t.ok(&s, "add", json!({ "title": "改首页", "folder": "/工作/网站" })).await;
+    t.ok(&s, "add", json!({ "title": "背单词", "folder": "/学习" })).await;
+    t.ok(&s, "add", json!({ "title": "买菜" })).await;
+    let titles = async |folders: Value| {
+        let next = t.ok(&s, "next", json!({ "folders": folders })).await;
+        next["data"]["tasks"].as_array().unwrap().iter().map(|t| t["title"].as_str().unwrap().to_owned()).collect::<Vec<_>>()
+    };
+    assert_eq!(titles(json!(["/工作"])).await, ["写周报", "改首页"], "with its subfolders");
+    assert_eq!(titles(json!(["/学习"])).await, ["背单词"]);
+    assert_eq!(titles(json!(["/学习", "/"])).await, ["买菜", "写周报", "改首页", "背单词"], "the root is all of them");
+    assert_eq!(titles(json!(["/旧项目", "/"])).await.len(), 4, "also with a folder gone");
+    let none = t.ok(&s, "next", json!({ "folders": ["/学习"], "limit": 1 })).await;
+    assert_eq!(none["data"]["total"], 1);
+    t.ok(&s, "done", json!({ "tasks": [3] })).await;
+    assert_eq!(text(&t.ok(&s, "next", json!({ "folders": ["/学习"] })).await), "这些文件夹里暂无可做的事项。");
+    assert_eq!(t.tool(&s, "next", json!({ "folders": ["/生活"] })).await.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn next_says_which_step_a_task_is() {
     let t = TestApp::new();
     let s = t.admin().await;

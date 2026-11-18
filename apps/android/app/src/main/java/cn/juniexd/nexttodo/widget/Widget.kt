@@ -77,6 +77,10 @@ object Widget {
     private const val TEXT_SIZE = "text_size"
     private val SCALES = mapOf("small" to 0.88f, "standard" to 1f, "large" to 1.15f)
 
+    /** The paths of the folders “接下来” lists on this phone, as a JSON array, which the widget's own
+     * fetches ask for too (docs/android.md#小组件); none for all of them. */
+    private const val FOLDERS = "folders"
+
     /** Until when what the widget last drawn says of the time holds, as `until` gave it then. */
     private const val UNTIL = "until"
 
@@ -131,11 +135,17 @@ object Widget {
      * change `seq` its copy has. The app's lists come in the order of its sign-ins and sign-outs. Drawn
      * again only when the tasks it lists change, it signs in or out, or what it says of the time no
      * longer holds: the app hands its list over each time it starts, and Glance draws on the main
-     * thread, which holds back the app's first frame. With the list, `start`: see `refreshAt`. */
-    suspend fun show(context: Context, tasks: String, seq: Long?, start: String?) = update(context) { prefs ->
+     * thread, which holds back the app's first frame. With the list, `start`: see `refreshAt`; and
+     * `folders`: see `FOLDERS`. A list of other folders than the one kept, but older, is not taken
+     * either: the widget fetches the list of those folders itself. */
+    suspend fun show(context: Context, tasks: String, seq: Long?, start: String?, folders: String?) = update(context) { prefs ->
+        val refiltered = prefs.getString(FOLDERS, null) != folders
+        prefs.edit().putString(FOLDERS, folders).apply()
         val was = drawn(prefs)
         // A list older than the one kept is not taken, but what that one says of the time may be stale.
-        val changed = keep(context, prefs, tasks, 0, seq, start) && drawn(prefs) != was
+        val kept = keep(context, prefs, tasks, 0, seq, start)
+        if (refiltered && !kept) started(context)
+        val changed = kept && drawn(prefs) != was
         changed || prefs.getString(UNTIL, null) != until(listed(prefs).first, LocalDateTime.now()).toString()
     }
 
@@ -215,18 +225,26 @@ object Widget {
     }
 
     /** Fetches the list from the server when signed in. An answer for a session that has ended
-     * meanwhile is dropped. */
+     * meanwhile is dropped. A folder listed that has been renamed or deleted elsewhere leaves the list
+     * as it is until the app hands over the paths as they are now. */
     suspend fun refresh(context: Context) {
         val token = Server.token(context) ?: return
+        val picked = prefs(context).getString(FOLDERS, null)
+        val folders = picked?.let(::JSONArray)
         val (data, seq) = try {
-            Server.next(context, token, MOST)
+            Server.next(context, token, MOST, folders)
         } catch (e: HttpError) {
             if (e.status == 401) return ended(context, token)
+            if (e.status == 404 && folders != null) return
             throw e
         }
         val tasks = data.getJSONArray("tasks")
         val start = data.optString("next_start").ifEmpty { null }
-        update(context) { Server.token(context) == token && keep(context, it, tasks.toString(), data.getInt("total") - tasks.length(), seq, start) }
+        // Other folders chosen meanwhile, it is a list of the ones before.
+        update(context) {
+            Server.token(context) == token && it.getString(FOLDERS, null) == picked &&
+                keep(context, it, tasks.toString(), data.getInt("total") - tasks.length(), seq, start)
+        }
     }
 
     /** Shows `task` done where it is in the list, whatever lists come, while it is being completed in
@@ -306,7 +324,8 @@ object Widget {
         }
     }
 
-    /** A task has started, by the alarm `refreshAt` set: the list now, as soon as online. */
+    /** A task has started, by the alarm `refreshAt` set, or other folders are chosen than the list
+     * kept is of: the list now, as soon as online. */
     fun started(context: Context) {
         val request = OneTimeWorkRequestBuilder<RefreshWorker>().setConstraints(online(context)).build()
         WorkManager.getInstance(context).enqueueUniqueWork(START, ExistingWorkPolicy.REPLACE, request)

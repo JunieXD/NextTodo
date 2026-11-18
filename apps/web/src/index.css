@@ -270,8 +270,11 @@ label.row { cursor: pointer; }
 
 /* chips & fab */
 .graph-tools { display: flex; gap: 8px; padding: 10px 16px 8px; overflow-x: auto; flex: none; }
-.chip { height: 32px; border-radius: 8px; padding: 0 12px; border: 1px solid var(--outline-variant); display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; color: var(--on-surface-variant); white-space: nowrap; }
+.chip { height: 32px; border-radius: 8px; padding: 0 12px; border: 1px solid var(--outline-variant); display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; color: var(--on-surface-variant); white-space: nowrap; max-width: 100%; }
 .chip.on { background: var(--secondary-container); border-color: transparent; color: var(--on-secondary-container); }
+.chip-label { overflow: hidden; text-overflow: ellipsis; }
+.next-filter { padding: 0 16px 8px; }
+.empty .text-btn { margin-top: 4px; }
 .fab { position: absolute; z-index: 4; right: 16px; bottom: calc(var(--tabbar-h) + 16px); height: 56px; border-radius: 16px; padding: 0 20px 0 16px; display: inline-flex; align-items: center; gap: 8px;
   background: var(--primary-container); color: var(--on-primary-container); font-size: 15px; font-weight: 600; box-shadow: var(--shadow-3); }
 .fab.on { background: var(--primary); color: var(--on-primary); }

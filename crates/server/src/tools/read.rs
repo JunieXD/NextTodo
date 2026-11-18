@@ -134,10 +134,16 @@ pub fn next(c: &Connection, cx: &Cx, a: NextArgs) -> Result<Output, ApiError> {
     let b = Board::new(&snap, cx.local.clone(), cx.user);
     let steps = b.steps();
     let mut tasks = b.next();
+    // The root is all of them, those others share too, whatever else is asked for.
+    if let Some(paths) = a.folders.as_ref().filter(|paths| !paths.iter().any(|p| b.find_folder(p) == Some(None))) {
+        let folders = paths.iter().map(|p| find_folder(&b, p)).collect::<Result<Vec<_>, _>>()?;
+        let picked: HashSet<TaskId> = folders.into_iter().flat_map(|f| b.within(f)).map(|t| t.id).collect();
+        tasks.retain(|t| picked.contains(&t.id));
+    }
     let total = tasks.len();
     tasks.truncate(limit);
     let text = if tasks.is_empty() {
-        "暂无可做的事项。".to_owned()
+        if a.folders.is_some() { "这些文件夹里暂无可做的事项。" } else { "暂无可做的事项。" }.to_owned()
     } else {
         let lines = tasks.iter().map(|t| task_line(&b, t, t.folder_id.is_some(), false, steps.get(&t.id).copied())).collect();
         listed(lines, tasks.len(), total).join("\n")

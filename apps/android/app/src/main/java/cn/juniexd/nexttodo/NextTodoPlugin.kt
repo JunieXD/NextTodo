@@ -169,8 +169,9 @@ class NextTodoPlugin : Plugin() {
         // Not `getLong`: that gives nothing for a number small enough to arrive as an Int.
         val seq = call.data.takeIf { it.has("seq") }?.getLong("seq")
         val nextStart = call.getString("nextStart")
+        val folders = call.getString("folders")
         work(call, "更新小组件") {
-            Widget.show(context, tasks, seq, nextStart)
+            Widget.show(context, tasks, seq, nextStart, folders)
             JSObject()
         }
     }

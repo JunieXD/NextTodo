@@ -32,7 +32,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 |---|---|---|---|
 | `tree` | `tree` | | 文件夹树，每个文件夹里（含子文件夹）的待办数和可做数；共享的文件夹注明成员，别人共享给我的列在后面 |
 | `list` | `ls [文件夹] [--all] [--limit 条数]` | `folder?`、`all?`、`limit?` | 文件夹的子文件夹和事项，按[文件夹内顺序](design.md#排序)；默认不含已完成；文件夹里有 [AI 整理](ai.md)请求时开头注明；在共享的文件夹里时开头写共享人和成员 |
-| `next` | `next [--limit 条数]` | `limit?` | 接下来：[我的事项](design.md#共享)里可做的，按[接下来的顺序](design.md#排序) |
+| `next` | `next [--folder 路径…] [--limit 条数]` | `folders?`、`limit?` | 接下来：[我的事项](design.md#共享)里可做的，按[接下来的顺序](design.md#排序)；给了 `folders` 只列这些文件夹（含子文件夹）里的，有 `/` 时就是全部 |
 | `show` | `show <事项>` | `task` | 事项详情：负责人、开始、截止、提醒、完成次数（重复的事项）、前置、后续、附件（ID、名称、类型、大小）、来源、描述 |
 | `search` | `search <关键词> [--limit 条数]` | `query`、`limit?` | 标题和描述里包含关键词的事项（不区分大小写） |
 | `graph` | `graph [文件夹] [--all] [--mermaid]` | `folder?`、`all?`、`mermaid?` | 文件夹（含子文件夹）里的事项和依赖，按先后顺序；连到外面的事项也列出并注明文件夹 |
@@ -156,7 +156,7 @@ $ nexttodo graph 工作
 | 事项 | `{id, number, title, status, folder}`；`status` 是 `ready`、`waiting`、`done`，`folder` 是路径；别人共享给我的文件夹里的事项另有 `owner`（共享人的用户名，引用写成 `@owner#number`），有负责人时另有 `assignees`（用户名）；`waiting_on`（还在等的前置数）、`unlocks`（解锁数）不为 0 时才有，`start`、`due`、`done_at`、`completions`（`{count, last}`，重复的事项完成过时）有值时才有 |
 | `tree` | `[{path, name, depth, pending, ready}]`，先序排列，第一项是根目录，别人共享给我的文件夹在最后；共享的文件夹另有 `owner` 和 `members`（用户名） |
 | `list` | `{folder, folders: [{path, name, pending, ready}], tasks: [事项], total}`，`total` 是没截断时的事项数；有 AI 整理请求时另有 `jobs: {waiting, running, failed, ready}`，只含不为 0 的；在共享的文件夹里时另有 `owner` 和 `members` |
-| `next` | `{tasks: [事项], total}`；有前置或后续的事项另有 `step: [2, 5]`（第几步、共几步）；我的事项里有还没到开始时间的，或者等的[重复事项](design.md#重复)这一次还没开始的，另有 `next_start`：其中最早的那个时刻（`2026-11-14` 或 `2026-11-14 09:30`），到时列表可能变，可以再取一次 |
+| `next` | `{tasks: [事项], total}`；有前置或后续的事项另有 `step: [2, 5]`（第几步、共几步）；我的事项里有还没到开始时间的，或者等的[重复事项](design.md#重复)这一次还没开始的，另有 `next_start`：其中最早的那个时刻（`2026-11-14` 或 `2026-11-14 09:30`），到时列表可能变，可以再取一次；它不受 `folders` 和 `limit` 限制 |
 | `show` | 事项加上 `created_at, updated_at`；`description`、`created_by`、`updated_by`（用户名，自己时没有）、`created_via`、`updated_via`（令牌名，没用令牌时没有）、`before: [事项]`、`after: [事项]` 有内容时才有 |
 | `search` | `{tasks: [事项], total}` |
 | `graph` | `{tasks: [事项], edges: [{before, after}]}`，边用编号，别人共享给我的文件夹里的事项写成 `"@alice#42"` |

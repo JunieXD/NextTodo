@@ -1,7 +1,12 @@
 import { expect, test } from "vitest";
 import type { Effect } from "../api/types/Effect";
 import type { Op } from "../api/types/Op";
-import { type Data, Rejected, apply, fromSnapshot, revert } from "./apply";
+import cases from "../../../../fixtures/undo-done.json";
+import { type Data, Rejected, apply, fromSnapshot, revert, stillLast } from "./apply";
+
+test.each(cases)("a time done is still the last as the fixtures say: $name", ({ done, later, last }) => {
+  expect(stillLast(done[0], done[1], later as [number, number][])).toBe(last);
+});
 
 /** The user whose data it is. */
 const ME = "019a4b2c-0000-7000-8000-0000000000ee";

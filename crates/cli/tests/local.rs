@@ -244,9 +244,10 @@ async fn mcp_reads_the_address_again_for_each_message() {
 
 #[test]
 fn a_change_whose_answer_is_lost_is_tried_as_one_and_named_to_send_again() {
-    // No answer, tried three times; a gateway's, once.
+    // No answer, tried three times; a gateway's, once, with a body of its own or none.
     let gateway = "HTTP/1.1 504 Gateway Timeout\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-    for (answer, tries) in [("", 3), (gateway, 1)] {
+    let with_json = "HTTP/1.1 504 Gateway Timeout\r\nContent-Type: application/json\r\nContent-Length: 40\r\nConnection: close\r\n\r\n{\"code\":504,\"message\":\"Gateway Timeout\"}";
+    for (answer, tries) in [("", 3), (gateway, 1), (with_json, 1)] {
         let home = Home::new();
         let (url, keys) = answering(answer);
         let mut command = Command::new(env!("CARGO_BIN_EXE_nexttodo"));

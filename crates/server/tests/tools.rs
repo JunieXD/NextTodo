@@ -248,11 +248,15 @@ async fn a_repeating_task_counts_its_completions_and_can_end_done() {
     let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
     assert_eq!(shown["data"]["completions"], json!({ "count": 2, "last": "2026-11-11" }));
     assert!(text(&shown).contains("完成次数：2，最近 2026-11-11"), "{}", text(&shown));
-    // Undone, the count goes back with the due date.
+    // Undone, the count goes back with the due date; and the time before, one after another.
     t.ok(&s, "undo", json!({ "batch": second["data"]["batch"] })).await;
     let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
     assert_eq!(shown["data"]["completions"], json!({ "count": 1, "last": "2026-11-10" }));
     assert_eq!(shown["data"]["due"]["date"], "2026-11-11");
+    let undone = t.ok(&s, "undo", json!({ "batch": first["data"]["batch"] })).await;
+    assert_eq!(t.ok(&s, "show", json!({ "task": 1 })).await["data"]["due"]["date"], "2026-11-10");
+    t.ok(&s, "undo", json!({ "batch": undone["data"]["batch"] })).await;
+    assert_eq!(t.ok(&s, "show", json!({ "task": 1 })).await["data"]["completions"], json!({ "count": 1, "last": "2026-11-10" }));
 
     // Ending the repeat, it is done at once, which isn't one more time, and what waits on it starts:
     // due today, it held that up again.

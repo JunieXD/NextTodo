@@ -363,6 +363,23 @@ async fn users_cannot_see_or_touch_each_others_data() {
 }
 
 #[tokio::test]
+async fn a_time_done_is_not_taken_back_by_a_change_that_does_it_again_first() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let task = id();
+    let due = json!({ "date": "2026-11-10", "repeat": { "every": 1, "unit": "day", "from": "due" } });
+    t.mutate(&s, json!([{ "op": "task.create", "id": task, "title": "背单词", "due": due }])).await;
+    let first = id();
+    let done = json!({ "op": "task.update", "id": task, "done": true, "today": "2026-11-10" });
+    let r = t.call("POST", "/mutations", Some(&s), Some(json!({ "id": first, "ops": [done] }))).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    let r = t.mutate(&s, json!([done, { "op": "undo", "mutation": first }])).await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.body);
+    let snap = t.snapshot(&s).await;
+    assert_eq!(snap["tasks"][0]["completions"], json!({ "count": 1, "last": "2026-11-10" }), "nothing of it made");
+}
+
+#[tokio::test]
 async fn done_moves_a_repeating_task_on_by_the_day_on_the_device() {
     let t = TestApp::new();
     let s = t.admin().await;

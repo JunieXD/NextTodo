@@ -196,7 +196,19 @@ test("a time done, taken back and done again that day, is not taken back by undo
   // The same count on the same day as after the first, yet not the first.
   expect(() => store.commit([{ op: "undo", mutation: first }])).toThrow("又完成或撤销过");
   expect(() => store.commit([{ op: "undo", mutation: undone }])).toThrow("又完成或撤销过");
+  // Nor by a change that does it again first.
+  expect(() => store.commit([done, { op: "undo", mutation: first }])).toThrow("又完成或撤销过");
   expect(store.getView().board.task(id(1))!.completions?.count).toBe(1);
+});
+
+test("times done are taken back one after another, the last first", () => {
+  const due = { date: "2026-11-10", repeat: { every: 1, unit: "day" as const, from: "due" as const } };
+  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  const { id: first } = store.commit([{ op: "task.update", id: id(1), done: true, today: "2026-11-10" }]);
+  const { id: second } = store.commit([{ op: "task.update", id: id(1), done: true, today: "2026-11-11" }]);
+  store.commit([{ op: "undo", mutation: second }]);
+  store.commit([{ op: "undo", mutation: first }]);
+  expect(store.getView().board.task(id(1))!.completions).toBeUndefined();
 });
 
 test("the last time is not offered to undo when made and done in one change", () => {

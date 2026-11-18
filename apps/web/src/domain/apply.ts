@@ -644,6 +644,14 @@ class Applier {
   /** Restores what a mutation changed, newest change first, as the server does: removed entities
    * come back unchanged; changes whose target is already gone or back are skipped; bringing
    * something back into a folder or onto a task that is gone fails. */
+  /** How often task `task` was done, as each change after mutation `id` changed it, in order, up to
+   * this one so far. */
+  private completionsSince(id: MutationId, task: TaskId) {
+    return [...this.cx.effectsAfter(id), this.effects]
+      .flat()
+      .flatMap((e) => (e.kind === "task" && e.before && e.after?.id === task && !same(e.before.completions, e.after.completions) ? [[e.before.completions, e.after.completions] as [Task["completions"], Task["completions"]]] : []));
+  }
+
   private undo(id: MutationId) {
     const effects = this.cx.effectsOf(id);
     if (!effects) throw new Rejected("not_found", "要撤销的改动不存在或已过期");
@@ -678,7 +686,12 @@ class Applier {
           const fields = ["folder_id", "title", "description", "done_at", "start", "start_time", "completions", "sort_key"] as const;
           // Done again or taken back since, maybe to the same count on the same day: setting the count
           // back would undo that too.
-          if (cur && !same(e.before.completions, e.after.completions) && completedSince(this.cx, id, cur.id)) {
+          const { before, after } = e;
+          if (
+            cur &&
+            !same(before.completions, after.completions) &&
+            (!same(cur.completions, after.completions) || !stillLast(before.completions, after.completions, this.completionsSince(id, cur.id)))
+          ) {
             throw new Rejected("conflict", `“${cur.title}”在这之后又完成或撤销过，请先撤销后来的那次`);
           }
           if (cur) {
@@ -765,9 +778,20 @@ export function lastKeys(keys: string[], n: number): string[] {
 /** A key after everything in `keys`, for something new at the end. */
 export const lastKey = (keys: string[]): string => lastKeys(keys, 1)[0];
 
-/** Whether a change after mutation `id` changed how often task `task` was done. */
-const completedSince = (cx: Context, id: MutationId, task: TaskId) =>
-  cx.effectsAfter(id).some((effects) => effects.some((e) => e.kind === "task" && e.before && e.after?.id === task && !same(e.before.completions, e.after.completions)));
+/** Whether a change that took how often a task was done from `before` to `after` is still the last
+ * that counts, as `later`, how changes since took it, have it: each since took back the one before it
+ * that still counted, or counted itself (docs/design.md#改动记录和撤销). As `still_last` in
+ * crates/server/src/mutate.rs; both are checked against fixtures/undo-done.json. */
+export function stillLast<T>(before: T, after: T, later: [T, T][]): boolean {
+  const changes: [T, T][] = [[before, after], ...later];
+  const counting: number[] = [];
+  changes.forEach(([b, a], i) => {
+    const top = counting.at(-1);
+    if (top !== undefined && same(changes[top], [a, b])) counting.pop();
+    else counting.push(i);
+  });
+  return counting.length === 1 && counting[0] === 0;
+}
 
 /** `cur` with the fields that changed from `before` to `after` set back to `before`, so that undoing
  * a change leaves later changes to other fields alone. */

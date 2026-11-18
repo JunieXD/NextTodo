@@ -494,8 +494,9 @@ impl Server {
                 Err(e) => return Err(lost(self.unreachable(e))),
             }
         };
-        // A gateway's own answer, without the server's error in it.
-        let gateway = matches!(status.as_u16(), 502..=504) && serde_json::from_str::<Value>(&text).ok().is_none_or(|v| v["code"].is_null());
+        // A gateway's own answer: none of the server's errors at these statuses.
+        let ours = |v: Value| matches!(v["code"].as_str(), Some("upstream" | "unavailable" | "outcome_unknown"));
+        let gateway = matches!(status.as_u16(), 502..=504) && !serde_json::from_str(&text).is_ok_and(ours);
         match reply(status, &text).map_err(|e| if gateway { lost(e) } else { e })? {
             Value::Object(mut reply) => match (reply.remove("text"), reply.remove("data")) {
                 (Some(Value::String(text)), Some(data)) => Ok((text, data)),

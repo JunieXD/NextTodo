@@ -346,6 +346,24 @@ fn restore_people(cur: &[String], b: &[String], a: &[String]) -> Vec<String> {
     people.into_iter().collect()
 }
 
+/// How often a task was done before a change and after it.
+type Counted = (Option<Completions>, Option<Completions>);
+
+/// Whether a change that took how often a task was done from `before` to `after` is still the last
+/// that counts, as `later`, how changes since took it, have it: each since took back the one before
+/// it that still counted, or counted itself (docs/design.md#改动记录和撤销).
+fn still_last<T: PartialEq>(before: &T, after: &T, later: Vec<(T, T)>) -> bool {
+    let changes: Vec<(&T, &T)> = std::iter::once((before, after)).chain(later.iter().map(|(b, a)| (b, a))).collect();
+    let mut counting: Vec<usize> = Vec::new();
+    for (i, (b, a)) in changes.iter().enumerate() {
+        match counting.last() {
+            Some(&top) if changes[top] == (*a, *b) => _ = counting.pop(),
+            _ => counting.push(i),
+        }
+    }
+    counting == [0]
+}
+
 /// A repeating task is never done: done, it moves on (docs/design.md#重复). It does not start after it
 /// is due, a due date without a time lasting all day (docs/design.md#开始时间).
 fn check_task(t: &Task) -> Result<(), ApiError> {
@@ -1157,16 +1175,24 @@ impl<'a> Cx<'a> {
     /// Only a change the user saw all of can be undone, someone else's in a shared folder too, the
     /// AI jobs in it aside, with their attachments: those are each their owner's, who undoes their
     /// own. An attachment moved from a job to a task is, to everyone else, made there.
-    /// Whether a change after the one numbered `seq` changed how often task `id` was done.
-    fn completed_since(&self, seq: i64, id: TaskId) -> Result<bool, ApiError> {
-        let mut since = self.c.prepare("SELECT effects FROM mutations WHERE seq > ?1 AND effects LIKE ?2")?;
-        for effects in since.query_map(params![seq, format!("%{id}%")], |r| r.get::<_, String>(0))? {
-            let effects: Vec<Effect> = serde_json::from_str(&effects?)?;
-            if effects.iter().any(|e| matches!(e, Effect::Task(Change::Updated { before, after }) if after.id == id && before.completions != after.completions)) {
-                return Ok(true);
-            }
+    /// How often task `id` was done, as each change after the one numbered `seq` changed it, in order,
+    /// up to this one so far.
+    fn completions_since(&self, seq: i64, id: TaskId) -> Result<Vec<Counted>, ApiError> {
+        let mut since = self.c.prepare("SELECT effects FROM mutations WHERE seq > ?1 AND effects LIKE ?2 ORDER BY seq")?;
+        let mut effects = Vec::new();
+        for logged in since.query_map(params![seq, format!("%{id}%")], |r| r.get::<_, String>(0))? {
+            effects.extend(serde_json::from_str::<Vec<Effect>>(&logged?)?);
         }
-        Ok(false)
+        effects.extend(self.done.seen.iter().map(|s| s.effect.clone()));
+        Ok(effects
+            .into_iter()
+            .filter_map(|e| match e {
+                Effect::Task(Change::Updated { before, after }) if after.id == id && before.completions != after.completions => {
+                    Some((before.completions, after.completions))
+                }
+                _ => None,
+            })
+            .collect())
     }
 
     fn undo(&mut self, id: MutationId) -> Result<(), ApiError> {
@@ -1261,7 +1287,10 @@ impl<'a> Cx<'a> {
                     if let Some((cur, owner)) = self.visible_task(b.id)? {
                         // Done again or taken back since, maybe to the same count on the same day: setting
                         // the count back would undo that too.
-                        if b.completions != a.completions && self.completed_since(seq, b.id)? {
+                        if b.completions != a.completions
+                            && (cur.completions != a.completions
+                                || !still_last(&b.completions, &a.completions, self.completions_since(seq, b.id)?))
+                        {
                             return Err(ApiError::conflict(format!("“{}”在这之后又完成或撤销过，请先撤销后来的那次", cur.title.as_str())));
                         }
                         let mut restored =
@@ -1390,4 +1419,22 @@ impl<'a> Cx<'a> {
 /// Who sees a share: its owner and members.
 fn share_side(s: &Share) -> Side {
     Side::of(std::iter::once(&s.owner).chain(&s.members).cloned().collect())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_time_done_is_still_the_last_as_the_fixtures_say() {
+        #[derive(serde::Deserialize)]
+        struct Case {
+            name: String,
+            done: (i64, i64),
+            later: Vec<(i64, i64)>,
+            last: bool,
+        }
+        let cases: Vec<Case> = serde_json::from_str(include_str!("../../../fixtures/undo-done.json")).unwrap();
+        for c in cases {
+            assert_eq!(super::still_last(&c.done.0, &c.done.1, c.later), c.last, "{}", c.name);
+        }
+    }
 }

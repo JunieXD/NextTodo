@@ -388,6 +388,14 @@ test("nothing goes to the app's own server until it is known to be at its addres
   vi.stubGlobal("window", { CapacitorWebFetch: answer });
 });
 
+test("a request waiting for the app's own server to be checked still ends at its time", async () => {
+  await tab();
+  const http = await import("./api/http");
+  http.connectLocal("", "the app's session");
+  http.holdLocal(new Promise<void>(() => {}));
+  await expect(http.api("GET", "/me", undefined, 1)).rejects.toMatchObject({ code: http.OFFLINE });
+});
+
 test("finishing a sign-out deletes the user's data also when the sign-in is gone", async () => {
   const u = user(14);
   await signIn(u);

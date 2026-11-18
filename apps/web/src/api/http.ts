@@ -59,14 +59,22 @@ export function holdLocal(checked: Promise<void>) {
 }
 
 /** Settles once the server may be sent to: once the latest check has, not one that a later took the
- * place of while it was waited for. */
-export async function reachable() {
+ * place of while it was waited for. Rejects should `signal` abort first: the check can wait behind a
+ * backup in the app, which takes long when it downloads files. */
+export async function reachable(signal?: AbortSignal | null) {
   while (server.local) {
     const checked = atAddress;
-    await checked;
+    await (signal ? Promise.race([checked, aborted(signal)]) : checked);
     if (checked === atAddress) return;
   }
 }
+
+/** Rejects once `signal` aborts. */
+const aborted = (signal: AbortSignal) =>
+  new Promise<never>((_, reject) => {
+    if (signal.aborted) reject(signal.reason);
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+  });
 
 /** Remembers the server and the session after signing in in the app. */
 export async function keepSession(token: string) {
@@ -123,7 +131,7 @@ const TIMEOUT_MS = 20_000;
  * CORS. To the phone apps' own server, the WebView's: CapacitorHttp would go through the system's
  * proxy. */
 export async function fetchServer(path: string, init?: RequestInit): Promise<Response> {
-  await reachable();
+  await reachable(init?.signal);
   const send = app === "desktop" ? tauriFetch : server.local ? window.CapacitorWebFetch : fetch;
   return send(`${server.url}${path}`, init);
 }
@@ -149,7 +157,7 @@ export async function fileRequest(method: "GET" | "PUT", id: string, stop: Abort
   let answer: Blob;
   try {
     const init = { method, headers, body: body?.blob, signal: abort.signal, ...(app === "desktop" && server.local && DIRECT) };
-    await reachable();
+    await reachable(abort.signal);
     res = await send(`${server.url}/api/v1/files/${id}`, init);
     answer = await res.blob();
   } catch {

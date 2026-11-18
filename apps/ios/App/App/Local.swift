@@ -25,7 +25,7 @@ enum Local {
     /// What the page needs, once the server has started and the app signed in to it.
     private static var opened: [String: Any]?
 
-    /// Whether the page has opened local mode, the server running.
+    /// Whether the server has started and the app signed in to it, for the page or a reminder's action.
     static var running: Bool {
         dispatchPrecondition(condition: .onQueue(queue))
         return opened != nil
@@ -76,9 +76,10 @@ enum Local {
         }
     }
 
-    /// Back in the front: the system may have taken the server's port while the app was suspended. It
-    /// starts again at the same one, where the page goes on; false when it could not, and the page is
-    /// to load again for a new address. Then it looks at the drive now (docs/local.md#运行).
+    /// Back in the front, or woken in the background for a reminder's action: the system may have
+    /// taken the server's port while the app was suspended. It starts again at the same one, where the
+    /// page goes on; when it cannot, the page loads again, for a new address, and false. Then it looks
+    /// at the drive now (docs/local.md#运行).
     static func resume() -> Bool {
         dispatchPrecondition(condition: .onQueue(queue))
         let url = opened!["url"] as! String
@@ -87,7 +88,11 @@ enum Local {
             do {
                 _ = try LocalServer.start(dir: dir, port: UInt16(URLComponents(string: url)!.port!))
             } catch {
+                // At a port no longer this app's: changes made natively are kept until the page has a new one.
                 opened = nil
+                Prefs.remove("server")
+                Prefs.remove("token")
+                DispatchQueue.main.async { MainViewController.shown?.loadWebView() }
                 return false
             }
         }

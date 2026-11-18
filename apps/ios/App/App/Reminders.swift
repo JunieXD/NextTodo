@@ -182,8 +182,12 @@ final class NotificationActions: NSObject, UNUserNotificationCenterDelegate {
         switch response.actionIdentifier {
         case "done":
             Local.queue.async {
-                // In local mode the server answers; should it not start, the change is kept for later.
-                if Local.on { _ = try? Local.open() }
+                // In local mode the server answers: started, or started again where it was should the
+                // system have taken its port while the app was suspended. Should it not, the change is
+                // kept for later.
+                if Local.on {
+                    if Local.running { _ = Local.resume() } else { _ = try? Local.open() }
+                }
                 Changes.queue.async {
                     if case let .refused(message) = Changes.complete(task: task, title: request.content.title, at: Reminders.at(of: request.content)) {
                         Reminders.queue.sync { Reminders.refused(id: Server.uuid7(), what: "完成“\(request.content.title)”", message: message) }

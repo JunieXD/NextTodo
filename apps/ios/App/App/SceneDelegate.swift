@@ -24,12 +24,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     /// The local server goes on where it was, and changes made on reminders meanwhile go out.
     func sceneWillEnterForeground(_ scene: UIScene) {
-        let page = window?.rootViewController as? CAPBridgeViewController
         Local.queue.async {
             if Local.on {
-                // Not before the page has opened it: the address kept until then is the last run's.
-                guard Local.running else { return }
-                guard Local.resume() else { return DispatchQueue.main.async { page?.loadWebView() } }
+                // Not before it has started: the address kept until then is the last run's.
+                guard Local.running, Local.resume() else { return }
             }
             Changes.queue.async { Changes.send() }
         }

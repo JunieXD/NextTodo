@@ -3,7 +3,11 @@ import UIKit
 
 /// The page, with the app's own plugin.
 class MainViewController: CAPBridgeViewController {
+    /// The one shown, to load again for local mode's new address. On the main thread.
+    static weak var shown: MainViewController?
+
     override func capacitorDidLoad() {
+        Self.shown = self
         bridge?.registerPluginInstance(NextTodoPlugin())
         Opening.loaded()
     }

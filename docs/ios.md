@@ -59,10 +59,11 @@ iOS App（iPhone 和 iPad）：和 [Android](android.md) 一样，Capacitor 外�
 - C 接口：`nexttodo_start`、`nexttodo_stop`、`nexttodo_session`、`nexttodo_pull`、`nexttodo_backup`、`nexttodo_prepare`、`nexttodo_commit`、`nexttodo_file_name`，对应 Android 的 `LocalServer`，Swift 一侧是 `LocalServer.swift`。会失败的返回一段 JSON（`{"value": …}`，或带着给用户看的原因的 `{"error": …}`），由 Swift 交还 `nexttodo_free` 释放；`nexttodo_stop` 和 `nexttodo_pull` 不返回。和 `crates/android` 一样，这个 crate 默认禁止 `unsafe`，只在每个入口和读 C 字符串的地方单独放行。
 - 服务端的日志写进系统日志（`os_log`，子系统 `cn.juniexd.nexttodo`），Xcode 和“控制台”里看得到。
 - 数据目录是 `Library/Application Support/local/`，结构同[启动](local.md#启动)。它随整机备份进 iCloud，恢复到新手机后数据还在。
-- **什么时候启动**：页面向原生要地址时（插件的 `openLocal`），或在后台处理通知上的“完成”时，谁先要谁启动；同一进程里只启动一次。签发会话、按[数据代号](local.md#数据代号)清掉旧数据的改动和提醒，同 Android 的 `Local.open`。
+- **什么时候启动**：页面向原生要地址时（插件的 `openLocal`），或在后台处理通知上的“完成”时，谁先要谁启动，另一个接着用。签发会话、按[数据代号](local.md#数据代号)清掉旧数据的改动和提醒，同 Android 的 `Local.open`。
 - **重启**：iOS 的 App 不能自己重新打开。进入、离开本机模式，恢复备份，借网盘同步换成网盘里的数据时，Android 和桌面重启整个 App；iOS 改为在进程里停下服务端（`nexttodo_stop`），再重新加载页面：页面加载时照常向原生要地址，服务端随之重新启动，启动时完成恢复或换上网盘的数据。
   - 停下就是结束服务端的运行时：正在处理的请求和后台任务（借网盘同步、AI 整理）当场中断，和 Android、桌面重启时结束进程一样，它们本来就经得起中断。已经交给阻塞线程的工作（数据库事务、从网盘下载附件等）停不下来，在后台做完后才放开数据库和[数据目录锁](local.md#启动)；再启动时照常等锁，最多 10 秒，等不到就显示启动失败和“重试”，同新进程等旧进程。
-- **回到前台**：App 在后台会被系统挂起，服务端随之停住，回来接着运行，和 Android 被冻结一样。挂起期间系统可能收回 App 正在监听的端口（Apple 的 TN2277），回来时就连不上了。所以回到前台时先连一下自己的端口，连不上就停下服务端，在同一个端口上重新启动：页面的地址和令牌不变，同步连接断开后照常重连；同一个端口用不了的，重新加载页面，拿新的地址。
+- **回到前台**：App 在后台会被系统挂起，服务端随之停住，回来接着运行，和 Android 被冻结一样。挂起久了，系统会收回 App 正在监听的端口（Apple 的 TN2277；真机上 App 挂起、锁屏约 6 分钟后就收回了），回来时就连不上了。所以回到前台时先连一下自己的端口，连不上就停下服务端，在同一个端口上重新启动：页面的地址和令牌不变，同步连接断开后照常重连；同一个端口用不了的，重新加载页面，拿新的地址。
+  - 在后台处理通知上的“完成”时也一样：App 被叫醒时端口可能早已收回，先这样查一遍再发改动，不然改动只能存着，等下次打开 App 才发出。同一个端口用不了的，改动先存下，不发往旧地址。
   - 回到前台时也马上看一次网盘（[借网盘同步](local.md#运行)），同 Android 的 `onResume`。
 - **明文 HTTP**：App Transport Security 只放行本机地址（`NSAllowsLocalNetworking`），其他地址照旧只能用 HTTPS。页面（`capacitor://localhost`）连 `http://127.0.0.1` 和 `ws://127.0.0.1` 不算混合内容。本机的服务端允许来源 `capacitor://localhost` 跨域，同 Android 的 `https://localhost`。
 - 和 Android 一样：网页只用安装包自带的；设置里不显示令牌一组，agent 接不进来；后台挂起期间 AI 整理暂停，进程被结束的下次启动时记为失败。
@@ -121,8 +122,10 @@ iOS App（iPhone 和 iPad）：和 [Android](android.md) 一样，Capacitor 外�
 
 已验证的（2026-11-18，iOS 27.2 模拟器）：服务端编译到两个目标并在 App 里启动；页面连本机的 `fetch`（带 `Authorization`，有预检）和 WebSocket；停下后在同一进程里、同一端口上再启动（`crates/ios` 的测试）；进入、离开本机模式和恢复备份时的重新加载；截止提醒到点弹出，通知上的“完成”（本机模式和连服务器）、推迟和点开事项；退出登录清空提醒；附件跨域上传下载、快速查看、存进“文件”；备份和恢复；键盘。
 
+真机上已验证的（2026-11-18，iPhone SE 第 2 代，iOS 26.3.1）：不签名的 IPA 用 SideStore 和免费 Apple ID 装上；本机模式的服务端启动，页面连上它；App 挂起、锁屏约 6 分钟后端口被收回。用数据线连着 Mac 时，可以经 usbmuxd 连手机上 `127.0.0.1` 的端口（同 `iproxy`）直接访问本机的服务端。
+
 还要在真机上验证：
 
-- 挂起较久（锁屏十几分钟）后回到前台，端口还在不在，收回了能不能在同一端口重新启动。
-- 不签名的 IPA 能不能用 SideStore 和免费 Apple ID 装上、续签，软件源能不能加入。
+- 端口收回后回到前台，能不能在同一端口重新启动；在后台点通知上的“完成”能不能直接生效。
+- SideStore 续签，软件源能不能加入（要等 Release 里有 `sidestore.json`）。
 - “允许”在拒绝过通知后能不能直接打开本 App 的通知设置（模拟器上打开的是设置的首页）。

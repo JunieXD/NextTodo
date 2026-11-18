@@ -187,7 +187,7 @@ export class Files {
           if (this.stopped) return;
           if (e.status === 401) return this.hooks.signedOut();
           // Not reached, or a failure that may pass.
-          if (![400, 403, 409, 413].includes(e.status)) return this.later();
+          if (![400, 403, 404, 409, 413].includes(e.status)) return this.later();
           await this.refused(m, add, refusal(e));
           continue;
         }
@@ -322,5 +322,6 @@ export class Files {
 }
 
 /** What to say of a file turned down: what a proxy in front of the server says of a large one is
- * not the server's words. */
-const refusal = (e: ApiError) => (e.status === 413 ? "文件超过服务器允许的大小" : e.message);
+ * not the server's words, and a server that has nowhere to upload to is from before attachments. */
+const refusal = (e: ApiError) =>
+  e.status === 413 ? "文件超过服务器允许的大小" : e.status === 404 ? "服务器的版本太旧，还不支持附件，请先升级服务器" : e.message;

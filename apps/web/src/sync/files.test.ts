@@ -42,6 +42,7 @@ async function device(u: string, outbox: Mutation[], files: { id: string; upload
 function tab(u: string, queued: Mutation[]) {
   const sent: Mutation[] = [];
   const told: (FileMessage | { rejected: string })[] = [];
+  const said: string[] = [];
   const store: Store = new Store(
     u,
     { ...Store.empty(), outbox: queued.map((mutation) => ({ mutation, at: 0 })) },
@@ -58,8 +59,8 @@ function tab(u: string, queued: Mutation[]) {
       confirmed: (ms) => files.confirmed(ms),
     },
   );
-  const files: Files = new Files(u, store, { broadcast: (m) => told.push(m), told() {}, signedOut() {} });
-  return { store, files, sent, told };
+  const files: Files = new Files(u, store, { broadcast: (m) => told.push(m), told: (s) => said.push(s), signedOut() {} });
+  return { store, files, sent, told, said };
 }
 
 test("a file uploaded by a tab that closed before telling: the tab waiting for it sends the change", async () => {
@@ -100,6 +101,18 @@ test("a change whose file is no longer on the device goes, as one turned down, a
   await vi.waitFor(() => expect(open.sent).toEqual([after]));
   expect(open.told).toEqual([{ rejected: m.id }]);
   open.files.stop();
+});
+
+test("a file a server from before attachments has nowhere to take is turned down, and the changes after it go", async () => {
+  const u = user(4);
+  const [m, after] = [adding(1), { id: id(2), ops: [] }];
+  await device(u, [m, after], [{ id: id(6), uploaded: false }]);
+  vi.stubGlobal("fetch", () => Promise.resolve(new Response(null, { status: 404 })));
+  const open = tab(u, [m, after]);
+  await vi.waitFor(() => expect(open.sent).toEqual([after]));
+  expect(open.said).toEqual(["“图片 1.png”上传失败：服务器的版本太旧，还不支持附件，请先升级服务器"]);
+  open.files.stop();
+  vi.stubGlobal("fetch", () => Promise.reject(new Error("no server in these tests")));
 });
 
 test("files kept over the limit for changes still to be confirmed make room once they are", async () => {

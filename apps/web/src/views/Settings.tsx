@@ -19,6 +19,7 @@ import * as local from "../local";
 import { newer, useServerVersions } from "../server-update";
 import { useSession } from "../session";
 import { type Theme, setTheme, useTheme } from "../theme";
+import { type Zoom, type Zoomed, setZoom, useZoom } from "../zoom";
 import { Seg, Stepper, Switch } from "../ui/controls";
 import { Modal, Tip, forUser, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
@@ -378,7 +379,40 @@ function Appearance() {
           </div>
         </div>
       </div>
+      {app === "desktop" && <Zooms />}
       {app === "android" && <WidgetText />}
+    </>
+  );
+}
+
+const ZOOMS: [Zoom, string][] = [
+  ["small", "小"],
+  ["standard", "标准"],
+  ["large", "大"],
+];
+
+/** How large each window of the desktop app draws (docs/desktop.md#界面大小). */
+function Zooms() {
+  const { snack } = useFeedback();
+  const zooms: [Zoomed, string, Zoom][] = [
+    ["main", "主窗口", useZoom("main")],
+    ["panel", desktopOs === "macOS" ? "菜单栏小窗" : "托盘小窗", useZoom("panel")],
+  ];
+  return (
+    <>
+      <h2 className="group-title">界面大小</h2>
+      <div className="group settings">
+        {zooms.map(([w, name, value]) => (
+          <div key={w} className="row">
+            <div className="row-inner controls">
+              {name}
+              <span className="row-value">
+                <Seg<Zoom> small label={`${name}的界面大小`} items={ZOOMS} value={value} onChange={(z) => void setZoom(w, z).catch((e: unknown) => snack(forUser("设置界面大小", e)))} />
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
     </>
   );
 }

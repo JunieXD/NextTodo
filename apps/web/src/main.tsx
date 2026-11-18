@@ -14,11 +14,13 @@ import { limitBrowserMenu } from "./ui/menu";
 import { restorePage } from "./views/Panel";
 import "./index.css";
 import { applyTheme } from "./theme";
+import { applyZoom } from "./zoom";
 
 applyTheme();
 limitBrowserMenu();
 // The macOS app draws under the title bar, around the window's buttons.
 if (app === "desktop" && desktopOs === "macOS") document.documentElement.classList.add("macos");
+if (app === "desktop") void applyZoom();
 if (desktop.inPanel) {
   document.documentElement.classList.add("in-panel");
   restorePage();

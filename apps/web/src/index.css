@@ -570,10 +570,14 @@ a.text-btn { display: inline-flex; align-items: center; }
 /* The window's buttons sit at the top left, over the page, their middle 28 from the top
    (tauri.conf.json): the phone layout's bar is 56 high, and the middle column's buttons come up to
    it. The bars around them move the window (data-tauri-drag-region). */
+.macos { --zoom: 1; }
 .macos .brand { visibility: hidden; }
 .macos .desk .main-tools { padding-top: 8px; transition: padding-left .32s var(--ease); }
-.macos .side-closed .main-tools { padding-left: 84px; }
-.macos .phone .nav { padding-left: 84px; }
+/* The window's buttons don't zoom with the page (docs/desktop.md#界面大小): what lines up with them is
+   placed in the window's points, a pixel being `--zoom` of one. */
+.macos .desk .main-tools > *, .macos .phone .nav > * { translate: 0 calc(28px / var(--zoom) - 28px); }
+.macos .side-closed .main-tools { padding-left: calc(84px / var(--zoom)); }
+.macos .phone .nav { padding-left: calc(84px / var(--zoom)); }
 
 /* ---------- the desktop app's menu bar or tray panel ---------- */
 /* On macOS the window is clear outside the panel's rounded corners (src-tauri/src/panel.rs). */

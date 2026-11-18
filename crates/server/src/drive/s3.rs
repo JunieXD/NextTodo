@@ -173,7 +173,9 @@ fn listed(xml: &[u8], prefix: &str) -> Result<Listed, Failed> {
                     found.push(name.to_owned());
                 }
             }
-            Event::Text(t) if matches!(path.as_slice(), [.., a] if a == "NextContinuationToken") => next = Some(t.xml10_content().into_owned()),
+            Event::Text(t) if matches!(path.as_slice(), [.., a] if a == "NextContinuationToken") => {
+                next = Some(t.xml10_content().into_owned())
+            }
             Event::Eof => return Ok(Listed { names: found, next }),
             _ => {}
         }

@@ -30,22 +30,81 @@ pub(crate) fn take(db: &Db, dir: &Path) -> anyhow::Result<Vec<u8>> {
     taken
 }
 
-/// Clears what is a device's own (docs/local.md#共享的和本机的) from a copy of the database, and
-/// compacts it, so that nothing of that is left in the file. The tables of one row stay: whoever reads
-/// the snapshot gives it an epoch of its own, and the settings are what they were.
+/// What a snapshot keeps of each table (docs/local.md#共享的和本机的). Every table is named, and every
+/// column of those partly this device's own: a test fails on one that is not, so that whoever adds it
+/// says which it is. The columns of an entity's table are all shared: they go in the drive's commits.
+const TABLES: &[(&str, Kept)] = &[
+    ("ai_jobs", Kept::Shared),
+    ("ai_notes", Kept::Shared),
+    ("ai_settings", Kept::Own),
+    ("assignees", Kept::Shared),
+    ("attachments", Kept::Shared),
+    ("deliveries", Kept::Own),
+    ("dependencies", Kept::Shared),
+    // A new one is given by whoever reads the snapshot.
+    ("epoch", Kept::Partly(&[("id", None), ("value", Some("''"))])),
+    // Without those uploaded here and not attached in a commit yet (`clear`).
+    ("files", Kept::Shared),
+    ("folders", Kept::Shared),
+    ("invites", Kept::Own),
+    ("members", Kept::Shared),
+    (
+        "mutations",
+        Kept::Partly(&[
+            ("seq", None),
+            ("id", None),
+            ("owner_id", None),
+            ("token_id", Some("''")),
+            ("actor", None),
+            ("ops", None),
+            ("effects", None),
+            ("reply", Some("NULL")),
+            ("created_at", None),
+        ]),
+    ),
+    ("server_settings", Kept::Partly(&[("id", None), ("compress_images", Some("1"))])),
+    ("sync_runs", Kept::Own),
+    ("sync_state", Kept::Own),
+    ("tasks", Kept::Shared),
+    ("tokens", Kept::Own),
+    (
+        "users",
+        Kept::Partly(&[
+            ("id", None),
+            ("username", None),
+            ("display_name", None),
+            ("password_hash", Some("''")),
+            ("is_admin", None),
+            ("next_task_number", None),
+            ("pruned_seq", Some("0")),
+            ("created_at", None),
+        ]),
+    ),
+];
+
+enum Kept {
+    /// Shared: as it is.
+    Shared,
+    /// Shared but for the columns given a value, which are this device's own and are set to it.
+    Partly(&'static [(&'static str, Option<&'static str>)]),
+    /// This device's own: left empty.
+    Own,
+}
+
+/// Clears what is a device's own from a copy of the database, and compacts it, so that nothing of
+/// that is left in the file.
 fn clear(c: &Connection) -> rusqlite::Result<()> {
-    c.execute_batch(
-        "DELETE FROM tokens;
-         DELETE FROM invites;
-         DELETE FROM ai_settings;
-         DELETE FROM deliveries;
-         DELETE FROM sync_state;
-         DELETE FROM sync_runs;
-         DELETE FROM files WHERE staged;
-         UPDATE mutations SET token_id = '', reply = NULL;
-         UPDATE users SET pruned_seq = 0;
-         VACUUM;",
-    )
+    for (table, kept) in TABLES {
+        match kept {
+            Kept::Shared => {}
+            Kept::Own => _ = c.execute(&format!("DELETE FROM {table}"), [])?,
+            Kept::Partly(columns) => {
+                let set: Vec<String> = columns.iter().filter_map(|(column, value)| Some(format!("{column} = {}", (*value)?))).collect();
+                c.execute(&format!("UPDATE {table} SET {}", set.join(", ")), [])?;
+            }
+        }
+    }
+    c.execute_batch("DELETE FROM files WHERE staged; VACUUM;")
 }
 
 /// The tables of the shared entities, each after those it refers to (docs/local.md#共享的和本机的).
@@ -97,4 +156,75 @@ pub(crate) fn unpack(snapshot: &[u8], path: &Path) -> anyhow::Result<()> {
     file.write_all(&bytes)?;
     file.sync_all()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::io::Read;
+
+    use flate2::read::GzDecoder;
+    use rusqlite::Connection;
+
+    use super::{Kept, TABLES};
+    use crate::Db;
+
+    #[test]
+    fn every_table_and_every_column_of_those_partly_this_devices_own_is_said_to_be_shared_or_not() {
+        let db = Db::open_in_memory().unwrap();
+        let schema: BTreeMap<String, Vec<String>> = db.hold(|c| {
+            let tables: Vec<String> = c
+                .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+                .unwrap()
+                .query_map([], |r| r.get(0))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap();
+            tables.into_iter().map(|t| (t.clone(), columns(c, &t))).collect()
+        });
+        let said: BTreeMap<String, Vec<String>> = TABLES
+            .iter()
+            .map(|(table, kept)| {
+                let named = match kept {
+                    Kept::Partly(columns) => columns.iter().map(|(c, _)| (*c).to_owned()).collect(),
+                    Kept::Shared | Kept::Own => schema.get(*table).cloned().unwrap_or_default(),
+                };
+                ((*table).to_owned(), named)
+            })
+            .collect();
+        assert_eq!(said, schema);
+    }
+
+    fn columns(c: &Connection, table: &str) -> Vec<String> {
+        c.prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn a_snapshot_has_nothing_of_what_is_this_devices_own() {
+        let (db, dir) = (Db::open_in_memory().unwrap(), std::env::temp_dir().join(format!("nexttodo-snapshot-{}", uuid::Uuid::now_v7())));
+        db.hold(|c| {
+            let user = crate::local::local_user(c, 1).unwrap();
+            c.execute_batch(&format!(
+                "UPDATE users SET password_hash = 'PASSWORD-SECRET';
+                 INSERT INTO tokens (id, user_id, kind, name, scope, secret_hash, created_at) VALUES ('t', '{user}', 'api', 'agent', 'write', CAST('TOKEN-SECRET' AS BLOB), 1);
+                 INSERT INTO ai_settings (user_id, provider, base_url, model, thinking, api_key, updated_at) VALUES ('{user}', 'deepseek', 'https://api.deepseek.com', 'm', 'off', CAST('sk-SECRET' AS BLOB), 1);
+                 INSERT INTO tasks (id, owner_id, number, title, sort_key, created_at, updated_at) VALUES ('019a4b2c-0000-7000-8000-000000000001', '{user}', 1, 'SHARED-TITLE', 'a', 1, 1);
+                 INSERT INTO mutations (id, owner_id, token_id, actor, ops, effects, reply, created_at) VALUES ('m', '{user}', 't', 'agent', '[]', '[]', 'REPLY-SECRET', 1);"
+            ))
+            .unwrap();
+        });
+        let mut bytes = Vec::new();
+        GzDecoder::new(super::take(&db, &dir).unwrap().as_slice()).read_to_end(&mut bytes).unwrap();
+        let has = |s: &str| bytes.windows(s.len()).any(|w| w == s.as_bytes());
+        assert!(has("SHARED-TITLE"));
+        for secret in ["PASSWORD-SECRET", "TOKEN-SECRET", "sk-SECRET", "REPLY-SECRET"] {
+            assert!(!has(secret), "{secret}");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

@@ -167,7 +167,8 @@ function useBatchActions(place: Place, chosen: Task[], end: () => void): { actio
       .filter((t) => !readyBefore.has(t.id))
       .map((t) => t.id);
     // As one completed alone: each stays a moment before folding away, and what they unlocked flashes.
-    going.filter((t) => !t.due?.repeat).forEach((t, i) => marking.completed(t.id, i ? [] : unlocked));
+    going.filter((t) => !t.due?.repeat).forEach((t) => marking.completed(t.id, []));
+    marking.flash(unlocked);
     done(r, unlocked.length ? `已完成 ${going.length} 项，解锁了 ${unlocked.length} 项` : `已完成 ${going.length} 项`);
   };
 

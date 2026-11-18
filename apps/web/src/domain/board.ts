@@ -38,6 +38,16 @@ export const nowOf = (d: Date): Now => ({ today: isoDate(d), time: isoTime(d) })
 export const before = (now: Now, date: string, time?: string) =>
   date > now.today || (date === now.today && time !== undefined && now.time !== undefined && time > now.time);
 
+/** A day, and a time on it if any. */
+type Moment = { date: string; time?: string };
+
+/** When a repeating task done before holds up the tasks after it again: as its current occurrence
+ * begins, at its start or else on its due date (docs/design.md#重复). */
+function again(t: Task): Moment | null {
+  if (!t.due?.repeat || t.done_at !== null || !t.completions) return null;
+  return t.start !== null ? { date: t.start, time: t.start_time } : { date: t.due.date };
+}
+
 /** A snapshot indexed for lookups, as of a moment, the user's `now`, for the user `me`. `null` as a
  * folder means the root, the user's own. */
 export class Board {
@@ -195,28 +205,43 @@ export class Board {
     return t.start !== null && before(this.now, t.start, t.start_time);
   }
 
-  /** When the first of the user's open tasks still to start does: the date, and the time if it has
-   * one. Shown with what is ready, so that what shows it can be fetched again then. */
-  nextStart(): { date: string; time?: string } | null {
-    let next: { date: string; time?: string } | null = null;
+  /** When the first of the user's open tasks still to start does, or a repeating task they wait for
+   * holds them up again: the date, and the time if it has one. Shown with what is ready, so that
+   * what shows it can be fetched again then. */
+  nextStart(): Moment | null {
+    const moments: Moment[] = [];
     for (const t of this.snapshot.tasks) {
-      if (t.done_at !== null || t.start === null || !this.mine(t) || !before(this.now, t.start, t.start_time)) continue;
-      // A date alone starts the day: before any time on it.
-      if (!next || cmp(t.start, next.date) < 0 || (t.start === next.date && cmp(t.start_time ?? "", next.time ?? "") < 0)) {
-        next = { date: t.start, time: t.start_time };
+      if (t.done_at !== null || !this.mine(t)) continue;
+      if (t.start !== null) moments.push({ date: t.start, time: t.start_time });
+      for (const id of this.prerequisites.get(t.id) ?? []) {
+        const a = again(this.tasks.get(id)!);
+        if (a) moments.push(a);
       }
+    }
+    let next: Moment | null = null;
+    for (const m of moments) {
+      if (!before(this.now, m.date, m.time)) continue;
+      // A date alone starts the day: before any time on it.
+      if (!next || cmp(m.date, next.date) < 0 || (m.date === next.date && cmp(m.time ?? "", next.time ?? "") < 0)) next = m;
     }
     return next;
   }
 
-  /** How many prerequisites are not done yet. */
-  waitingOn(t: Task): number {
-    return (this.prerequisites.get(t.id) ?? []).filter((id) => this.tasks.get(id)!.done_at === null).length;
+  /** How many prerequisites the task still waits for, now or at another moment `at`. */
+  waitingOn(t: Task, at = this.now): number {
+    return (this.prerequisites.get(t.id) ?? []).filter((id) => this.holdsUp(this.tasks.get(id)!, at)).length;
+  }
+
+  /** Whether the tasks after this one wait for it: it is not done, and if it repeats, it has not
+   * been done yet or its current occurrence has begun (docs/design.md#重复). */
+  holdsUp(t: Task, at = this.now): boolean {
+    const a = again(t);
+    return t.done_at === null && (!a || !before(at, a.date, a.time));
   }
 
   /** Tasks that become ready once this one is done. */
   unlocks(t: Task): Task[] {
-    if (t.done_at !== null) return [];
+    if (!this.holdsUp(t)) return [];
     return this.after(t).filter((a) => a.done_at === null && this.waitingOn(a) === 1 && !this.notStarted(a));
   }
 

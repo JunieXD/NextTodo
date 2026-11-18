@@ -183,7 +183,10 @@ function concerning(entry: LogEntry, board: Board): { text: string; open: TaskId
   const open = (tasks: Task[]) => (tasks.length > 1 ? null : tasks[0].id);
   const assigned = changed.filter(({ before, after }) => after.assignees.includes(board.me) && !before?.assignees.includes(board.me)).map((c) => c.after);
   if (assigned.length) return { text: `${who} 将${which(assigned)}指派给我`, open: open(assigned) };
-  const done = changed.filter(({ before, after }) => before?.done_at === null && after.done_at !== null).map((c) => c.after);
+  // Done, or a repeating task done this time, and so no longer holding up what follows.
+  const done = changed
+    .filter(({ before, after }) => before && board.holdsUp(before) && !board.holdsUp(after) && (after.done_at !== null || after.completions?.count !== before.completions?.count))
+    .map((c) => c.after);
   const ready = new Map(
     done
       .flatMap((t) => board.after(t))

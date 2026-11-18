@@ -261,5 +261,52 @@
       "paths": { "work": "/工作", "proj": "/项目", "reno": "@alice/装修", "plumb": "@alice/装修/水电", "garden": "@abby/花园" },
       "within": { "/": ["anyone", "forbob", "own"], "proj": ["anyone", "forbob"], "reno": ["bobs", "free", "mine"], "plumb": ["mine"] }
     }
+  },
+  {
+    "name": "重复的前置完成过、这一次还没开始时不挡后续",
+    "today": "2026-11-12",
+    "time": "09:00",
+    "folders": [],
+    "tasks": [
+      { "id": "words", "key": "a0", "due": { "date": "2026-11-13", "repeat": { "every": 1, "unit": "day", "from": "due" } }, "completions": { "count": 3, "last": "2026-11-12" } },
+      { "id": "read", "key": "a1" },
+      { "id": "meeting", "key": "a2", "due": { "date": "2026-11-12", "repeat": { "every": 1, "unit": "week", "from": "due" } }, "completions": { "count": 3, "last": "2026-11-05" } },
+      { "id": "notes", "key": "a3" },
+      { "id": "fresh", "key": "a4", "due": { "date": "2026-11-19", "repeat": { "every": 1, "unit": "week", "from": "due" } } },
+      { "id": "draft", "key": "a5" },
+      { "id": "renew", "key": "a6", "start": "2026-11-10", "due": { "date": "2026-11-20", "repeat": { "every": 1, "unit": "month", "from": "due" } }, "completions": { "count": 3, "last": "2026-11-05" } },
+      { "id": "file", "key": "a7" },
+      { "id": "evening", "key": "a8", "start": "2026-11-12", "start_time": "20:00", "due": { "date": "2026-11-12", "time": "21:00", "repeat": { "every": 1, "unit": "day", "from": "due" } }, "completions": { "count": 3, "last": "2026-11-05" } },
+      { "id": "late", "key": "a9" },
+      { "id": "ended", "key": "aA", "due": { "date": "2026-11-12" }, "completions": { "count": 3, "last": "2026-11-05" } },
+      { "id": "after_ended", "key": "aB" }
+    ],
+    "deps": [["words", "read"], ["meeting", "notes"], ["fresh", "draft"], ["renew", "file"], ["evening", "late"], ["ended", "after_ended"]],
+    "expect": {
+      "status": {
+        "words": "ready", "read": "ready", "meeting": "ready", "notes": "waiting 1", "fresh": "ready", "draft": "waiting 1",
+        "renew": "ready", "file": "waiting 1", "evening": "not started", "late": "ready", "ended": "ready", "after_ended": "waiting 1"
+      },
+      "unlocks": { "words": [], "meeting": ["notes"], "fresh": ["draft"], "renew": ["file"], "evening": [], "ended": ["after_ended"] },
+      "next": ["meeting", "ended", "words", "fresh", "renew", "read", "late"],
+      "next_start": "2026-11-12 20:00"
+    }
+  },
+  {
+    "name": "重复的前置这一次开始时，要再取一次接下来",
+    "today": "2026-11-12",
+    "time": "09:00",
+    "folders": [],
+    "tasks": [
+      { "id": "words", "key": "a0", "due": { "date": "2026-11-14", "repeat": { "every": 1, "unit": "day", "from": "done" } }, "completions": { "count": 1, "last": "2026-11-12" } },
+      { "id": "read", "key": "a1" },
+      { "id": "later", "key": "a2", "start": "2026-11-15" }
+    ],
+    "deps": [["words", "read"]],
+    "expect": {
+      "status": { "words": "ready", "read": "ready", "later": "not started" },
+      "next": ["words", "read"],
+      "next_start": "2026-11-14"
+    }
   }
 ]

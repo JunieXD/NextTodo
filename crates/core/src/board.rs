@@ -67,6 +67,16 @@ impl Now {
     }
 }
 
+/// When a repeating task done before holds up the tasks after it again: as its current occurrence
+/// begins, at its start or else on its due date (docs/design.md#重复).
+fn again(t: &Task) -> Option<(&Date, Option<&Time>)> {
+    let due = t.due.as_ref().filter(|d| d.repeat.is_some() && t.done_at.is_none() && t.completions.is_some())?;
+    Some(match &t.start {
+        Some(start) => (start, t.start_time.as_ref()),
+        None => (&due.date, None),
+    })
+}
+
 /// A snapshot indexed for lookups, as of `now`, for the user `me`. `None` as a folder means the root,
 /// the user's own.
 pub struct Board<'a> {
@@ -247,14 +257,20 @@ impl<'a> Board<'a> {
         if t.done_at.is_some() {
             return Status::Done;
         }
-        let on = self.before.get(&t.id).into_iter().flatten().filter(|id| self.tasks[*id].done_at.is_none()).count();
+        let on = self.before.get(&t.id).into_iter().flatten().filter(|id| self.holds_up(self.tasks[*id])).count();
         let not_started = t.start.as_ref().is_some_and(|s| self.now.before(s, t.start_time.as_ref()));
         if on == 0 && !not_started { Status::Ready } else { Status::Waiting { on, not_started } }
     }
 
+    /// Whether the tasks after this one wait for it: it is not done, and if it repeats, it has not
+    /// been done yet or its current occurrence has begun (docs/design.md#重复).
+    pub fn holds_up(&self, t: &Task) -> bool {
+        t.done_at.is_none() && again(t).is_none_or(|(date, time)| !self.now.before(date, time))
+    }
+
     /// Tasks that become ready once this one is done.
     pub fn unlocks(&self, t: &Task) -> Vec<&'a Task> {
-        if t.done_at.is_some() {
+        if !self.holds_up(t) {
             return Vec::new();
         }
         self.after(t).into_iter().filter(|a| self.status(a) == Status::Waiting { on: 1, not_started: false }).collect()
@@ -369,17 +385,14 @@ impl<'a> Board<'a> {
         list
     }
 
-    /// When the first of the user's open tasks still to start does: the date, and the time if it has
-    /// one. Shown with what is ready, so that what shows it can be fetched again then.
+    /// When the first of the user's open tasks still to start does, or a repeating task they wait for
+    /// holds them up again: the date, and the time if it has one. Shown with what is ready, so that
+    /// what shows it can be fetched again then.
     pub fn next_start(&self) -> Option<(&'a Date, Option<&'a Time>)> {
-        self.tasks
-            .values()
-            .filter(|t| t.done_at.is_none() && self.mine(t))
-            .filter_map(|t| {
-                let start = t.start.as_ref()?;
-                self.now.before(start, t.start_time.as_ref()).then_some((start, t.start_time.as_ref()))
-            })
-            .min()
+        let open = || self.tasks.values().copied().filter(|t| t.done_at.is_none() && self.mine(t));
+        let starts = open().filter_map(|t| Some((t.start.as_ref()?, t.start_time.as_ref())));
+        let again = open().flat_map(|t| self.before.get(&t.id).into_iter().flatten()).filter_map(|id| again(self.tasks[id]));
+        starts.chain(again).filter(|(date, time)| self.now.before(date, *time)).min()
     }
 
     /// Sorts tasks in folder order and manual order, ignoring dependencies.

@@ -9,7 +9,7 @@ import { app } from "./api/http";
 import type { Attachment } from "./api/types/Attachment";
 import type { FolderId } from "./api/types/FolderId";
 import type { Mutation } from "./api/types/Mutation";
-import type { Board } from "./domain/board";
+import { type Board, nowOf } from "./domain/board";
 import { reminders } from "./domain/reminders";
 import type { Started } from "./local";
 import type { Store } from "./sync/store";
@@ -179,14 +179,16 @@ export const widgetTasks = (board: Board) =>
   }));
 
 /** What the device reminds of (docs/android.md#截止提醒): every reminder, past ones too, with whether
- * the task waits for prerequisites, and for its start, which the device reads by its own clock. */
-export const deviceReminders = (board: Board) =>
+ * the task waits for prerequisites as the reminder comes (a repeating one may hold it up again by then),
+ * and for its start, which the device reads by its own clock. */
+export const deviceReminders = (board: Board, now = Date.now()) =>
   reminders(board).map((r) => ({
     task: r.task.id,
     at: r.at.getTime(),
     title: r.title,
     body: r.body,
-    waiting: board.waitingOn(r.task),
+    // By the clock, not the board's moment, which may lag behind it.
+    waiting: board.waitingOn(r.task, nowOf(new Date(Math.max(r.at.getTime(), now)))),
     start: r.task.start,
     start_time: r.task.start_time,
   }));

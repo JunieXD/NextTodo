@@ -9,7 +9,7 @@ interface Case {
   today?: string;
   time?: string;
   folders: { id: string; parent?: string; name: string; key: string }[];
-  tasks: { id: string; folder?: string; key: string; done_at?: number; start?: string; start_time?: string; due?: Task["due"]; assignees?: string[] }[];
+  tasks: { id: string; folder?: string; key: string; done_at?: number; start?: string; start_time?: string; due?: Task["due"]; completions?: Task["completions"]; assignees?: string[] }[];
   deps: [string, string][];
   /** People by username; the user is `me`. */
   shares?: { folder: string; owner: string; members: string[] }[];
@@ -58,6 +58,7 @@ function snapshot(c: Case, id: (name: string) => string): Snapshot {
     start: t.start ?? null,
     start_time: t.start_time,
     due: t.due ?? null,
+    completions: t.completions,
     sort_key: t.key,
     assignees: people(t.assignees),
     created_at: 0,
@@ -112,4 +113,23 @@ describe.each(cases as unknown as Case[])("$name", (c) => {
   test("within", () => {
     for (const [f, want] of Object.entries(c.expect.within ?? {})) expect(titles(board.within(folder(f))).sort(), f).toEqual(want);
   });
+});
+
+test("a repeating prerequisite done today holds what follows up again as its next time begins", () => {
+  const repeat = { every: 1, unit: "day" as const, from: "due" as const };
+  const c: Case = {
+    name: "",
+    folders: [],
+    tasks: [
+      { id: "words", key: "a0", due: { date: "2026-11-13", repeat }, completions: { count: 1, last: "2026-11-12" } },
+      { id: "read", key: "a1" },
+    ],
+    deps: [["words", "read"]],
+    expect: {},
+  };
+  const id = ids();
+  const board = new Board(snapshot(c, id), { today: "2026-11-12", time: "21:00" }, id("me"));
+  const read = board.task(id("read"))!;
+  // As a reminder of it tomorrow morning comes.
+  expect([board.waitingOn(read), board.waitingOn(read, { today: "2026-11-13", time: "09:00" })]).toEqual([0, 1]);
 });

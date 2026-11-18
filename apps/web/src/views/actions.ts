@@ -63,11 +63,6 @@ export function useTaskActions(): RowActions & {
       },
     ]);
     if (!r) return;
-    if (repeating) {
-      marking.pop(t.id);
-      snack({ text: `下一次：${formatDue(board().task(t.id)!.due!, new Date())}`, action: "撤销", onAction: () => undo(r.id) });
-      return;
-    }
     if (!completing) {
       marking.pop(t.id);
       snack({ text: `已恢复“${t.title}”`, action: "撤销", onAction: () => undo(r.id) });
@@ -76,6 +71,14 @@ export function useTaskActions(): RowActions & {
     const unlocked = board()
       .next()
       .filter((x) => !readyBefore.has(x.id));
+    if (repeating) {
+      marking.pop(t.id);
+      marking.flash(unlocked.map((x) => x.id));
+      const next = `下一次：${formatDue(board().task(t.id)!.due!, new Date())}`;
+      const text = unlocked.length === 1 ? `${next}，解锁了“${unlocked[0].title}”` : unlocked.length ? `${next}，解锁了 ${unlocked.length} 项` : next;
+      snack({ text, action: "撤销", onAction: () => undo(r.id) });
+      return;
+    }
     marking.completed(
       t.id,
       unlocked.map((x) => x.id),

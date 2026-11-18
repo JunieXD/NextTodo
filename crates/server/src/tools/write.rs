@@ -160,9 +160,9 @@ fn report(b: &Board, mut names: Names, batch: Option<i64>, effects: &[Effect]) -
     let mut unlocked: Vec<&Task> = Vec::new();
     for e in effects {
         if let Effect::Task(Change::Updated { before, after }) = e
-            && before.done_at.is_none()
-            && after.done_at.is_some()
+            && b.holds_up(before)
             && let Some(t) = b.task(after.id)
+            && !b.holds_up(t)
         {
             for a in b.after(t) {
                 if b.status(a) == Status::Ready && !unlocked.iter().any(|u| u.id == a.id) {

@@ -242,8 +242,9 @@ async fn a_repeating_task_counts_its_completions_and_can_end_done() {
     assert_eq!(shown["data"]["completions"], json!({ "count": 1, "last": "2026-11-10" }));
     assert_eq!(shown["data"]["due"]["date"], "2026-11-11");
 
-    // Ending the repeat, it is done at once, which isn't one more time, and what waits on it starts.
-    let done = t.ok(&s, "done", json!({ "tasks": [1], "end_repeat": true })).await;
+    // Ending the repeat, it is done at once, which isn't one more time, and what waits on it starts:
+    // due today, it held that up again.
+    let done = t.ok(&s, "done", json!({ "tasks": [1], "end_repeat": true, "today": "2026-11-11" })).await;
     assert!(text(&done).contains("完成 #1 读《三体》") && text(&done).contains("解锁 #2 写读后感"), "{}", text(&done));
     let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
     assert_eq!(shown["data"]["status"], "done");
@@ -375,12 +376,15 @@ async fn a_repeating_task_moves_on_when_done() {
 
     let done = t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-11" })).await;
     assert!(text(&done).starts_with("顺延 #1 开例会 → 2026-11-16\n"), "{}", text(&done));
+    assert!(text(&done).contains("\n解锁 #2 写周报\n"), "done this time, it no longer holds up what follows: {}", text(&done));
     let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
     assert_eq!(shown["data"]["status"], "ready", "it stays open");
     let repeat = json!({ "every": 1, "unit": "week", "from": "due" });
     assert_eq!(shown["data"]["due"], json!({ "date": "2026-11-16", "time": "10:00", "remind_before": 15, "repeat": repeat }));
     assert!(text(&shown).contains("截止：2026-11-16 10:00，每周，提前 15 分钟提醒"), "{}", text(&shown));
-    assert_eq!(t.ok(&s, "show", json!({ "task": 2 })).await["data"]["status"], "waiting", "what comes after it keeps waiting");
+    let status = async |today: &str| t.ok(&s, "show", json!({ "task": 2, "today": today })).await["data"]["status"].clone();
+    assert_eq!(status("2026-11-15").await, "ready");
+    assert_eq!(status("2026-11-16").await, "waiting", "the next time come, what follows waits for it again");
     assert!(text(&t.ok(&s, "log", json!({ "limit": 1 })).await).contains("顺延 #1 开例会 → 2026-11-16"));
     // Undone after the reminder changed, it moves back and the reminder stays as changed.
     t.ok(&s, "edit", json!({ "task": 1, "remind": 30 })).await;

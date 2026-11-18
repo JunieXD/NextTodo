@@ -15,6 +15,8 @@ interface Marks {
 interface Marking {
   pop(id: TaskId): void;
   completed(id: TaskId, unlocked: TaskId[]): void;
+  /** Tasks just unlocked, by a repeating task moving on or by several completed at once. */
+  flash(ids: TaskId[]): void;
 }
 
 const MarksContext = createContext<Marks>({ pop: null, linger: new Set(), leaving: new Set(), flash: new Set() });
@@ -47,8 +49,14 @@ export function MarksProvider({ children }: { children: ReactNode }) {
       setMarks((m) => ({ ...m, pop: id }));
       setTimeout(() => setMarks((m) => (m.pop === id ? { ...m, pop: null } : m)), POP_MS);
     };
+    const flash = (ids: TaskId[]) => {
+      if (!ids.length) return;
+      change("flash", ids, true);
+      setTimeout(() => change("flash", ids, false), FLASH_MS);
+    };
     return {
       pop,
+      flash,
       completed(id, unlocked) {
         pop(id);
         // Completed again after an undo, it starts over.
@@ -59,9 +67,7 @@ export function MarksProvider({ children }: { children: ReactNode }) {
           setTimeout(() => change("leaving", [id], true), LINGER_MS),
           setTimeout(() => (timers.delete(id), change("linger", [id], false), change("leaving", [id], false)), LINGER_MS + LEAVE_MS),
         ]);
-        if (!unlocked.length) return;
-        change("flash", unlocked, true);
-        setTimeout(() => change("flash", unlocked, false), FLASH_MS);
+        flash(unlocked);
       },
     };
   }, []);

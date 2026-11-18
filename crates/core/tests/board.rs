@@ -85,7 +85,7 @@ fn snapshot(case: &Case, names: &mut Names) -> Snapshot {
             json!({
                 "id": names.id(t["id"].as_str().unwrap()), "number": i + 1,
                 "folder_id": s(&t["folder"]).map(|f| names.id(&f)),
-                "title": t["id"], "description": "", "done_at": t["done_at"], "start": t["start"], "start_time": t["start_time"], "due": t["due"], "sort_key": t["key"],
+                "title": t["id"], "description": "", "done_at": t["done_at"], "start": t["start"], "start_time": t["start_time"], "due": t["due"], "completions": t["completions"], "sort_key": t["key"],
                 "assignees": people(names, &t["assignees"]),
                 "created_at": 0, "updated_at": 0, "created_by": names.id("me"), "updated_by": names.id("me"), "created_via": null, "updated_via": null,
             })

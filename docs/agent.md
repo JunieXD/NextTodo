@@ -156,7 +156,7 @@ $ nexttodo graph 工作
 | 事项 | `{id, number, title, status, folder}`；`status` 是 `ready`、`waiting`、`done`，`folder` 是路径；别人共享给我的文件夹里的事项另有 `owner`（共享人的用户名，引用写成 `@owner#number`），有负责人时另有 `assignees`（用户名）；`waiting_on`（还在等的前置数）、`unlocks`（解锁数）不为 0 时才有，`start`、`due`、`done_at`、`completions`（`{count, last}`，重复的事项完成过时）有值时才有 |
 | `tree` | `[{path, name, depth, pending, ready}]`，先序排列，第一项是根目录，别人共享给我的文件夹在最后；共享的文件夹另有 `owner` 和 `members`（用户名） |
 | `list` | `{folder, folders: [{path, name, pending, ready}], tasks: [事项], total}`，`total` 是没截断时的事项数；有 AI 整理请求时另有 `jobs: {waiting, running, failed, ready}`，只含不为 0 的；在共享的文件夹里时另有 `owner` 和 `members` |
-| `next` | `{tasks: [事项], total}`；有前置或后续的事项另有 `step: [2, 5]`（第几步、共几步）；我的事项里有还没到开始时间的，另有 `next_start`，最早的那个开始时间（`2026-11-14` 或 `2026-11-14 09:30`） |
+| `next` | `{tasks: [事项], total}`；有前置或后续的事项另有 `step: [2, 5]`（第几步、共几步）；我的事项里有还没到开始时间的，或者等的[重复事项](design.md#重复)这一次还没开始的，另有 `next_start`：其中最早的那个时刻（`2026-11-14` 或 `2026-11-14 09:30`），到时列表可能变，可以再取一次 |
 | `show` | 事项加上 `created_at, updated_at`；`description`、`created_by`、`updated_by`（用户名，自己时没有）、`created_via`、`updated_via`（令牌名，没用令牌时没有）、`before: [事项]`、`after: [事项]` 有内容时才有 |
 | `search` | `{tasks: [事项], total}` |
 | `graph` | `{tasks: [事项], edges: [{before, after}]}`，边用编号，别人共享给我的文件夹里的事项写成 `"@alice#42"` |

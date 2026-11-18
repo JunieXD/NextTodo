@@ -140,7 +140,8 @@ export async function bytesOf(p: Planned): Promise<Blob> {
 }
 
 /** The pictures an AI job goes with when the model sees them, in the order added: of the kinds models
- * take, up to a size and a number. As in crates/server/src/ai/organize.rs. */
+ * take, up to a size and a number. As `seen` in crates/server/src/ai/organize.rs; both are checked
+ * against fixtures/ai-pictures.json. */
 const SENT_PICTURES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 const MAX_SENT_SIZE = 5 * 1024 * 1024;
 const MAX_SENT = 10;

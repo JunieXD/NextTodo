@@ -1,0 +1,6 @@
+[
+  {"name": "不识别图片时一张也不发", "vision": false, "attachments": [{"type": "image/png", "size": 1000}, {"type": "image/jpeg", "size": 1000}], "seen": [false, false]},
+  {"name": "只发模型收的四种图片，别的文件只给名称", "vision": true, "attachments": [{"type": "image/png", "size": 1000}, {"type": "image/jpeg", "size": 1000}, {"type": "image/webp", "size": 1000}, {"type": "image/gif", "size": 1000}, {"type": "image/avif", "size": 1000}, {"type": "image/svg+xml", "size": 1000}, {"type": "application/pdf", "size": 1000}], "seen": [true, true, true, true, false, false, false]},
+  {"name": "恰好 5 MB 的发，多一个字节的不发", "vision": true, "attachments": [{"type": "image/png", "size": 5242880}, {"type": "image/png", "size": 5242881}], "seen": [true, false]},
+  {"name": "按添加的顺序最多 10 张，不发的不占名额", "vision": true, "attachments": [{"type": "image/png", "size": 5242881}, {"type": "image/avif", "size": 1000}, {"type": "image/png", "size": 1000}, {"type": "image/png", "size": 1000}, {"type": "image/png", "size": 1000}, {"type": "image/png", "size": 1000}, {"type": "image/png", "size": 1000}, {"type": "image/png", "size": 1000}, {"type": "image/png", "size": 1000}, {"type": "image/png", "size": 1000}, {"type": "image/png", "size": 1000}, {"type": "image/png", "size": 1000}, {"type": "image/png", "size": 1000}], "seen": [false, false, true, true, true, true, true, true, true, true, true, true, false]}
+]

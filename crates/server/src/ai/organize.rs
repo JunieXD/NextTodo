@@ -10,6 +10,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::llm::{Picture, Prompt};
+use crate::attachments::showable_image;
 use crate::error::from_value;
 use crate::files::Files;
 use crate::tools::args::{PlanRef, PlanTask, task_ref};
@@ -17,12 +18,23 @@ use crate::tools::args::{PlanRef, PlanTask, task_ref};
 /// How many of the folder's open tasks the model is shown.
 const SHOWN: usize = 50;
 
-/// The pictures among a job's attachments that go with it when the model sees pictures, in the order
-/// they were added: of the kinds models take, up to a size and a number (docs/ai.md#附件). As
-/// `unseen` in apps/web/src/attach.ts.
-const PICTURE_TYPES: [&str; 4] = ["image/png", "image/jpeg", "image/webp", "image/gif"];
-const PICTURE_SIZE: u32 = 5 * 1024 * 1024;
+/// The most pictures that go with a job.
 const PICTURES: usize = 10;
+
+/// Whether each of a job's `attachments`, in the order they were added, goes with it as a picture: when
+/// the model sees pictures, those an agent is shown too, up to `PICTURES` (docs/ai.md#附件). As `unseen`
+/// in apps/web/src/attach.ts; both are checked against fixtures/ai-pictures.json.
+fn seen(attachments: &[&Attachment], vision: bool) -> Vec<bool> {
+    let mut sent = 0;
+    attachments
+        .iter()
+        .map(|a| {
+            let seen = vision && showable_image(a) && sent < PICTURES;
+            sent += usize::from(seen);
+            seen
+        })
+        .collect()
+}
 
 /// The instructions. `examples/ai_eval.rs` tries others in their place (docs/ai.md#评测).
 pub const SYSTEM: &str = r#"你负责把用户随手写下的一段话整理成待办事项。输入是一个 JSON 对象：
@@ -151,10 +163,9 @@ pub fn prompt(
     }
     let mut pictures = Vec::new();
     let mut listed = Vec::new();
-    for (i, a) in attachments.iter().enumerate() {
+    for ((i, a), image) in attachments.iter().enumerate().zip(seen(attachments, vision)) {
         let r = (i + 1).to_string();
         let media_type = a.media_type.as_str();
-        let image = vision && PICTURE_TYPES.contains(&media_type) && a.size.get() <= PICTURE_SIZE && pictures.len() < PICTURES;
         if image {
             pictures.push(PictureFile {
                 caption: format!("附件 {r}：{}", a.name.as_str()),
@@ -306,6 +317,28 @@ pub fn place(shown: usize, listed: &[Vec<String>]) -> Vec<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pictures_go_with_a_job_as_the_fixtures_say() {
+        #[derive(serde::Deserialize)]
+        struct Case {
+            name: String,
+            vision: bool,
+            attachments: Vec<Value>,
+            seen: Vec<bool>,
+        }
+        let cases: Vec<Case> = serde_json::from_str(include_str!("../../../../fixtures/ai-pictures.json")).unwrap();
+        for c in cases {
+            let job = uuid::Uuid::now_v7();
+            let attachment = |a: &Value| -> Attachment {
+                let (id, kind, size) = (uuid::Uuid::now_v7(), &a["type"], &a["size"]);
+                serde_json::from_value(json!({ "id": id, "job_id": job, "name": "图", "type": kind, "size": size, "created_at": 0 }))
+                    .unwrap()
+            };
+            let attachments: Vec<Attachment> = c.attachments.iter().map(attachment).collect();
+            assert_eq!(seen(&attachments.iter().collect::<Vec<_>>(), c.vision), c.seen, "{}", c.name);
+        }
+    }
 
     #[test]
     fn takes_json_out_of_thinking_and_fences() {

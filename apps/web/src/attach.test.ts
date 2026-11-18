@@ -1,5 +1,13 @@
 import { expect, test } from "vitest";
-import { nameFor, reference } from "./attach";
+import cases from "../../../fixtures/ai-pictures.json";
+import { isPicture, nameFor, reference, unseen } from "./attach";
+
+test.each(cases)("pictures go with an AI job as the fixtures say: $name", ({ vision, attachments, seen }) => {
+  // Ids in the order added, which is how the server takes them; given here the other way round.
+  const files = attachments.map((a, i) => ({ id: `019a4b2c-0000-7000-8000-${String(i).padStart(12, "0")}`, name: "图", ...a })).reverse();
+  const why = unseen(files, vision);
+  expect(files.reverse().map((f) => isPicture(f.type) && !why.has(f.id))).toEqual(seen);
+});
 
 test("pictures with names a system made up are numbered, others keep theirs", () => {
   const named = (name: string, type = "image/jpeg", taken: string[] = []) => nameFor(name, type, taken);

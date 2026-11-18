@@ -106,8 +106,9 @@ impl Remote for S3 {
         let res = self.send("PUT", Some(path), "", &[("if-none-match", "*")], body)?;
         match res.status().as_u16() {
             200 => Ok(Created::Written),
-            // 409: another write of it is under way. Either is in, or neither: read it to find out.
-            409 | 412 => Ok(Created::Exists),
+            412 => Ok(Created::Exists),
+            // Another write of it is under way: this one may go in yet, or not.
+            409 => Err(Failed::Unknown("网盘正在写入同一个文件".into())),
             501 => Err(Failed::Unsent("这个网盘不支持只在不存在时写入".into())),
             status => Err(refused(status)),
         }
@@ -123,11 +124,21 @@ impl Remote for S3 {
 
     fn list(&self, dir: &str) -> Result<Vec<String>, Failed> {
         let prefix = format!("{}{}", self.prefix, http::folder(dir));
-        let query = format!("delimiter=%2F&list-type=2&prefix={}", encode(&prefix));
-        let res = self.send("GET", None, &query, &[], &[])?;
-        match res.status().as_u16() {
-            200 => listed(&http::body(res)?, &prefix),
-            status => Err(refused(status)),
+        let (mut names, mut next) = (Vec::new(), None);
+        loop {
+            // In order, as the signature has it.
+            let from = next.map(|token: String| format!("continuation-token={}&", encode(&token))).unwrap_or_default();
+            let query = format!("{from}delimiter=%2F&list-type=2&prefix={}", encode(&prefix));
+            let res = self.send("GET", None, &query, &[], &[])?;
+            let page = match res.status().as_u16() {
+                200 => listed(&http::body(res)?, &prefix)?,
+                status => return Err(refused(status)),
+            };
+            names.extend(page.names);
+            next = page.next;
+            if next.is_none() {
+                return Ok(names);
+            }
         }
     }
 
@@ -137,12 +148,20 @@ impl Remote for S3 {
     }
 }
 
+/// A page of a listing.
+#[derive(Debug, PartialEq)]
+struct Listed {
+    names: Vec<String>,
+    /// Where the next page starts, when there is one.
+    next: Option<String>,
+}
+
 /// The names of what is under `prefix`, from a ListObjectsV2 answer: its objects' keys, and the
-/// common prefixes, as folders. At most the first 1000, which is far more than is ever listed.
-fn listed(xml: &[u8], prefix: &str) -> Result<Vec<String>, Failed> {
+/// common prefixes, as folders.
+fn listed(xml: &[u8], prefix: &str) -> Result<Listed, Failed> {
     let unreadable = |e: quick_xml::Error| Failed::Unknown(format!("网盘的回复无法读取：{e}"));
     let mut reader = Reader::from_reader(xml);
-    let (mut buf, mut path, mut found) = (Vec::new(), Vec::<String>::new(), Vec::new());
+    let (mut buf, mut path, mut found, mut next) = (Vec::new(), Vec::<String>::new(), Vec::new(), None);
     loop {
         match reader.read_event_into(&mut buf).map_err(unreadable)? {
             Event::Start(e) => path.push(e.local_name().into_inner().to_owned()),
@@ -154,7 +173,8 @@ fn listed(xml: &[u8], prefix: &str) -> Result<Vec<String>, Failed> {
                     found.push(name.to_owned());
                 }
             }
-            Event::Eof => return Ok(found),
+            Event::Text(t) if matches!(path.as_slice(), [.., a] if a == "NextContinuationToken") => next = Some(t.xml10_content().into_owned()),
+            Event::Eof => return Ok(Listed { names: found, next }),
             _ => {}
         }
         buf.clear();
@@ -226,6 +246,11 @@ mod tests {
               <Contents><Key>NextTodo/nexttodo.json</Key><Size>40</Size></Contents>
               <CommonPrefixes><Prefix>NextTodo/0193a1b2-0000-7000-8000-000000000000/</Prefix></CommonPrefixes>
             </ListBucketResult>"#;
-        assert_eq!(listed(xml, "NextTodo/").unwrap(), ["nexttodo.json", "0193a1b2-0000-7000-8000-000000000000"]);
+        let names = ["nexttodo.json", "0193a1b2-0000-7000-8000-000000000000"].map(str::to_owned).to_vec();
+        assert_eq!(listed(xml, "NextTodo/").unwrap(), Listed { names, next: None });
+        let more = br#"<ListBucketResult><IsTruncated>true</IsTruncated><NextContinuationToken>1ueGcxLPRx1Tr/XYExHnhbYLgveDs2J/wm36Hy4vbOwM=</NextContinuationToken>
+            <Contents><Key>NextTodo/tmp/a</Key></Contents></ListBucketResult>"#;
+        let next = Some("1ueGcxLPRx1Tr/XYExHnhbYLgveDs2J/wm36Hy4vbOwM=".to_owned());
+        assert_eq!(listed(more, "NextTodo/tmp/").unwrap(), Listed { names: vec!["a".into()], next });
     }
 }

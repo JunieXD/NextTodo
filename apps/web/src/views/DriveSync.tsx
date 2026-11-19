@@ -10,6 +10,7 @@ import * as local from "../local";
 import { useSession } from "../session";
 import { Seg } from "../ui/controls";
 import { Modal, forUser, useFeedback } from "../ui/feedback";
+import { Help } from "../ui/help";
 
 /** How often the settings look at how syncing goes while they show it. */
 const LOOK_MS = 5000;
@@ -128,7 +129,9 @@ function TurnOn({ stopped, onDone }: { stopped: string | null; onDone(): void })
   );
   return (
     <form onSubmit={submit}>
-      <p className="empty">几台设备的本机模式通过网盘同步，不用服务器。改动几十秒内到别的设备。</p>
+      <p className="empty">
+        几台设备的本机模式通过网盘同步，不用服务器。改动几十秒内到别的设备。<Help to="local#drive">如何设置</Help>
+      </p>
       <div style={{ margin: "0 16px 14px" }}>
         <Seg<Kind>
           label="网盘"

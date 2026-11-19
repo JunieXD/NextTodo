@@ -380,7 +380,7 @@ local/
 
 ### 开启
 
-- 设置的本机模式卡片里点“借网盘同步”，选 WebDAV 或 S3：
+- 设置的本机模式卡片里点“借网盘同步”，开头一句说明，后面是“如何设置”，链到官网教程的[借网盘同步](https://juniexd.github.io/NextTodo/guide/local#drive)（坚果云的应用密码怎么取也在那里）。选 WebDAV 或 S3：
   - WebDAV：地址（坚果云是 `https://dav.jianguoyun.com/dav/`）、用户名、密码（坚果云要用应用密码）。
   - S3：接口地址、区域、存储桶、Access Key ID、Secret Access Key、地址风格（默认虚拟主机 `<存储桶>.<接口地址>`，MinIO 这类自建的选路径）。
   - 文件夹：默认 `NextTodo`，不存在就建。

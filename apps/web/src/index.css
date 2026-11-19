@@ -665,12 +665,13 @@ a.text-btn { display: inline-flex; align-items: center; }
 .filled-btn, .tonal-btn { height: 40px; border-radius: 20px; padding: 0 20px; font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .filled-btn { background: var(--primary); color: var(--on-primary); }
 .tonal-btn { background: var(--secondary-container); color: var(--on-secondary-container); }
-.filled-btn:disabled, .tonal-btn:disabled, .actions .text-btn:disabled { opacity: .5; cursor: default; }
+.filled-btn:disabled, .tonal-btn:disabled, .actions .text-btn:disabled, .login-local .text-btn:disabled { opacity: .5; cursor: default; }
 /* The buttons that end a panel, all one height: the main one filled, others tonal or plain, and one
    that removes something apart on the left. */
 .actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 22px 16px 0; }
 .actions .danger-text { margin-right: auto; }
-.login { min-height: calc(100 * var(--dvh)); display: grid; place-items: center; padding: calc(24px + var(--safe-top)) 0 calc(24px + var(--safe-bottom)); overflow-y: auto; }
+/* Its own height, not more, to scroll within `.app`: with the keyboard up, the form's end too. */
+.login { height: calc(100 * var(--dvh)); display: grid; place-items: center; padding: calc(24px + var(--safe-top)) 0 calc(24px + var(--safe-bottom)); overflow-y: auto; }
 .login-card { width: min(420px, 100%); }
 .login-brand { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 24px; text-align: center; }
 .login-brand .brand-mark { width: 56px; height: 56px; }

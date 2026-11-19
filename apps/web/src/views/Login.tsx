@@ -90,9 +90,10 @@ export function Login({
       </label>
     );
   };
+  // Keyed apart, the form opens at its top, not where the choice was scrolled to.
   if (choosing)
     return (
-      <div className="login" data-tauri-drag-region="deep">
+      <div key="choosing" className="login" data-tauri-drag-region="deep">
         <div className="login-card">
           <Brand />
           <Way icon={MonitorSmartphone} title="在本机使用" sub="数据只存在这台设备上，无须服务器和账号" disabled={busy} onClick={enterLocal} />
@@ -105,7 +106,7 @@ export function Login({
       </div>
     );
   return (
-    <div className="login" data-tauri-drag-region="deep">
+    <div key="form" className="login" data-tauri-drag-region="deep">
       <form className="login-card" onSubmit={submit}>
         <Brand />
         <Seg

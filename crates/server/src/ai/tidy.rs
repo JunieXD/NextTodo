@@ -51,8 +51,8 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
    - description：新描述，是改好后的完整内容，不是修改说明；Markdown，步骤可以写成清单“- [ ] ”。
    - due：截止时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"。原来有几点几分、这次只改日期的，带上原来的几点几分；原来和 request 都没说几点的，不要加；原来的提醒和重复保留，新的截止时间不带具体时间的，提醒去掉。
    - remind：提前多少分钟提醒，0 表示到截止时间时提醒；要有带具体时间的截止时间。“不用提醒了”是去掉提醒，写 clear: ["remind"]，不是写 0。
-   - repeat、repeat_from、repeat_until：重复，写法同输入；要有截止时间。按天数说的照天数写（每 90 天是 90d，不是 3m）；在一周里某几天的写周几，“每个工作日”是 1w:1,2,3,4,5，不是 1d（1d 周末也会出现）。request 说了重复到哪天为止的写 repeat_until，截止时间不能晚于它。repeat_from、repeat_until 只能和 repeat 一起写：改 repeat 时，原来的 repeat_from、repeat_until 要保留的照样写上，不写就是从截止日期算、一直重复；只改 repeat_from 或 repeat_until 的，也要写上 repeat。
-   - clear：要清除的设置，是一个列表，可以包含 "due"、"remind"、"repeat"，如 "clear": ["due"]；清除截止时间时，提醒和重复一起清除。去掉前置用 drop_requires，不用 clear。
+   - repeat、repeat_from、repeat_until：重复，写法同输入；要有截止时间。按天数说的照天数写（每 90 天是 90d，不是 3m）；在一周里某几天的写周几，“每个工作日”是 1w:1,2,3,4,5，不是 1d（1d 周末也会出现）。request 说了重复到哪天为止的写 repeat_until，截止时间不能晚于它。这三项也只写要改的，不写的照旧，如只改间隔时不写 repeat_from 和 repeat_until；新设的重复不写 repeat_from 就是从截止日期算，不写 repeat_until 就是一直重复。
+   - clear：要清除的设置，是一个列表，可以包含 "due"、"remind"、"repeat"、"repeat_until"（不再重复到哪天，一直重复下去），如 "clear": ["due"]；清除截止时间时，提醒和重复一起清除。去掉前置用 drop_requires，不用 clear。
    - done：true 标为完成（重复的事项会顺延到下一次，做的是 repeat_until 以前的最后一次的直接完成；request 说这件事整个做完了、不再重复的，如书读完了，同时在 clear 里写 "repeat"），false 重新打开 done_tasks 里的事项。done_tasks 里的事项可以删除；要改别的，先重新打开。
    - folder：移进 subfolders 里的哪个文件夹，写它的完整路径。subfolders 里没有的文件夹移不进去，这样的移动不要提。
    - requires：这一项要新加的前置，也就是要先做完、才能做这一项的事项：事项的编号，或新建事项的 ref；已有的不用写。
@@ -304,31 +304,34 @@ impl Suggested {
             Setting::Due => later.due.is_none(),
             Setting::Remind => later.remind.is_none(),
             Setting::Repeat => later.repeat.is_none(),
+            Setting::RepeatUntil => later.repeat_until.is_none(),
         });
-        for c in &later.clear {
-            match c {
-                Setting::Due => self.due = None,
-                Setting::Remind => self.remind = None,
-                Setting::Repeat => (self.repeat, self.repeat_from, self.repeat_until) = (None, None, None),
-            }
-        }
+        self.unset(&later.clear);
         self.title = later.title.or(self.title.take());
         self.description = later.description.or(self.description.take());
         self.due = later.due.or(self.due.take());
         self.remind = later.remind.or(self.remind);
-        // A repeat given is whole, as edits take it: what it leaves out is as by default.
-        if later.repeat.is_some() {
-            (self.repeat, self.repeat_from, self.repeat_until) = (later.repeat, later.repeat_from, later.repeat_until);
-        } else {
-            self.repeat_from = later.repeat_from.or(self.repeat_from);
-            self.repeat_until = later.repeat_until.or(self.repeat_until.take());
-        }
+        self.repeat = later.repeat.or(self.repeat);
+        self.repeat_from = later.repeat_from.or(self.repeat_from);
+        self.repeat_until = later.repeat_until.or(self.repeat_until.take());
         self.clear.extend(later.clear);
         self.done = later.done.or(self.done);
         self.folder = later.folder.or(self.folder.take());
         self.after.extend(later.after);
         self.before.extend(later.before);
         self.unlink.extend(later.unlink);
+    }
+
+    /// Drops what `clear` clears, as `edit` would: the due date's reminder and repeat with it.
+    fn unset(&mut self, clear: &[Setting]) {
+        for c in clear {
+            match c {
+                Setting::Due => (self.due, self.remind, self.repeat, self.repeat_from, self.repeat_until) = (None, None, None, None, None),
+                Setting::Remind => self.remind = None,
+                Setting::Repeat => (self.repeat, self.repeat_from, self.repeat_until) = (None, None, None),
+                Setting::RepeatUntil => self.repeat_until = None,
+            }
+        }
     }
 }
 
@@ -339,6 +342,7 @@ enum Setting {
     Due,
     Remind,
     Repeat,
+    RepeatUntil,
 }
 
 /// What the model suggests, for tasks it was shown, leaving out what would change nothing. Checked
@@ -354,7 +358,9 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
     let Answer { suggestions: all } = from_value(v).map_err(|e| format!("模型返回的结果不符合格式：{}", e.describe()))?;
     // Models split what they suggest for a task at times, however they are told.
     let mut suggestions: Vec<Suggested> = Vec::new();
-    for s in all {
+    for mut s in all {
+        // A setting one suggestion both sets and clears is cleared.
+        s.unset(&s.clear.clone());
         match suggestions.iter_mut().find(|x| x.order.is_none() && s.order.is_none() && x.number.is_some() && x.number == s.number) {
             Some(first) => first.merge(s),
             None => suggestions.push(s),
@@ -445,6 +451,9 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             .map(|d| with_references(&t.description, d))
             .transpose()
             .map_err(|e| format!("事项 #{n}：{e}"))?;
+        let current = t.due.as_ref().and_then(|d| d.repeat.as_ref());
+        // A last day cleared where there is none changes nothing.
+        let clears = s.clear.iter().any(|&c| c != Setting::RepeatUntil || current.is_some_and(|r| r.until.is_some()));
         let fields = title.is_some()
             || description.is_some()
             || s.due.is_some()
@@ -452,9 +461,25 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             || s.repeat.is_some()
             || s.repeat_from.is_some()
             || s.repeat_until.is_some()
-            || !s.clear.is_empty();
+            || clears;
         let Edit { title, description, due, .. } = if fields {
             let clear = |x| s.clear.contains(&x);
+            // The parts of a repeat given, the rest as they are, as models leave out what they keep;
+            // edits take a repeat whole.
+            let (repeat, repeat_from, repeat_until) = match current {
+                Some(r)
+                    if !clear(Setting::Due)
+                        && !clear(Setting::Repeat)
+                        && (s.repeat.is_some() || s.repeat_from.is_some() || s.repeat_until.is_some() || clear(Setting::RepeatUntil)) =>
+                {
+                    (
+                        Some(s.repeat.unwrap_or(RepeatText { every: r.every, period: r.period })),
+                        s.repeat_from.or(Some(r.from)),
+                        if clear(Setting::RepeatUntil) { None } else { s.repeat_until.or_else(|| r.until.clone()) },
+                    )
+                }
+                _ => (s.repeat, s.repeat_from, s.repeat_until),
+            };
             let args = EditArgs {
                 task: TaskRef { user: None, number: n },
                 title,
@@ -464,9 +489,9 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
                 start: None,
                 due: if clear(Setting::Due) { Some(None) } else { s.due.map(Some) },
                 remind: if clear(Setting::Remind) { Some(None) } else { s.remind.map(Some) },
-                repeat: if clear(Setting::Repeat) { Some(None) } else { s.repeat.map(Some) },
-                repeat_from: s.repeat_from,
-                repeat_until: s.repeat_until,
+                repeat: if clear(Setting::Repeat) { Some(None) } else { repeat.map(Some) },
+                repeat_from,
+                repeat_until,
                 assign: Vec::new(),
                 unassign: Vec::new(),
             };
@@ -635,7 +660,7 @@ mod tests {
             task(
                 4,
                 "也长",
-                json!({ "description": long, "due": { "date": "2026-11-09", "repeat": { "every": 1, "unit": "week", "from": "done" } } }),
+                json!({ "description": long, "due": { "date": "2026-11-09", "repeat": { "every": 1, "unit": "week", "from": "done", "until": "2026-12-31" } } }),
             ),
             task(5, "订机票", json!({ "done_at": 1 })),
             task(6, "别处的", json!({ "folder_id": null })),
@@ -671,7 +696,7 @@ mod tests {
         assert_eq!(input["open_tasks"][2]["description"].as_str().unwrap().len(), 18_000 * 3);
         assert_eq!(
             input["open_tasks"][3],
-            json!({ "number": 4, "title": "也长", "description_omitted": true, "due": "2026-11-09", "repeat": "1w", "repeat_from": "done" })
+            json!({ "number": 4, "title": "也长", "description_omitted": true, "due": "2026-11-09", "repeat": "1w", "repeat_from": "done", "repeat_until": "2026-12-31" })
         );
         assert_eq!(input["done_tasks"], json!([{ "number": 5, "title": "订机票" }]));
         assert_eq!(input["open_tasks"].as_array().unwrap().len(), 4);
@@ -739,14 +764,36 @@ mod tests {
         assert_eq!((e.title.as_ref().unwrap().as_str(), e.description.as_ref().unwrap().as_str()), ("b", "c"));
         assert_eq!(e.due.clone().flatten().unwrap().date.as_str(), "2026-12-01");
         assert_eq!((e.after.as_slice(), e.reason.as_str()), ([tid(3)].as_slice(), "一；二"));
-        // A later repeat is whole: the earlier one's last day doesn't carry over to it.
-        let repeats = r#"{"suggestions": [
-            {"number": 4, "repeat": "1d", "repeat_until": "2026-12-19", "reason": ""}, {"number": 4, "repeat": "2d", "reason": ""}
-        ]}"#;
-        let merged = parse(repeats, &shown).unwrap();
-        let [Suggestion::Edit(e)] = merged.as_slice() else { panic!("{merged:?}") };
-        let repeat = e.due.clone().flatten().unwrap().repeat.unwrap();
-        assert_eq!((repeat.every.get(), repeat.until), (2, None));
+        // The parts of a repeat given change, the rest stays, also given in two.
+        let repeat = |answer: &str, shown: &Shown| {
+            let s = parse(answer, shown).unwrap();
+            let [Suggestion::Edit(e)] = s.as_slice() else { panic!("{s:?}") };
+            let r = e.due.clone().flatten().unwrap().repeat.unwrap();
+            (r.every.get(), r.from, r.until.map(String::from))
+        };
+        let twice =
+            r#"{"suggestions": [{"number": 4, "repeat_until": "2026-12-19", "reason": ""}, {"number": 4, "repeat": "2w", "reason": ""}]}"#;
+        assert_eq!(repeat(twice, &shown), (2, RepeatFrom::Done, Some("2026-12-19".into())));
+        let cleared = r#"{"suggestions": [{"number": 4, "clear": ["repeat_until"], "reason": ""}]}"#;
+        assert_eq!(repeat(cleared, &shown), (1, RepeatFrom::Done, None));
+        // The due date cleared takes its repeat along, also what an earlier suggestion set of it.
+        for answer in [
+            r#"{"suggestions": [{"number": 4, "clear": ["due"], "reason": ""}]}"#,
+            r#"{"suggestions": [{"number": 4, "clear": ["due", "repeat_until"], "reason": ""}]}"#,
+            r#"{"suggestions": [{"number": 4, "repeat_until": "2026-12-19", "reason": ""}, {"number": 4, "clear": ["due"], "reason": ""}]}"#,
+        ] {
+            let s = parse(answer, &shown).unwrap();
+            let [Suggestion::Edit(e)] = s.as_slice() else { panic!("{s:?}") };
+            assert_eq!(e.due, Some(None), "{answer}");
+        }
+        // Set and cleared in one suggestion, it is cleared, whether the task repeated or not.
+        let both = r#"{"suggestions": [{"number": NUMBER, "repeat": "2d", "repeat_until": "2026-12-19", "clear": ["repeat_until"], "reason": ""}]}"#;
+        assert_eq!(repeat(&both.replace("NUMBER", "4"), &shown), (2, RepeatFrom::Done, None));
+        let (_, nothing) =
+            prompt(&job(), Snapshot { tasks: vec![task(1, "x", json!({ "due": { "date": "2026-11-09" } }))], ..snap() }, "me", vec![]);
+        assert_eq!(repeat(&both.replace("NUMBER", "1"), &nothing), (2, RepeatFrom::Due, None));
+        // A last day cleared where there is none changes nothing.
+        assert!(parse(r#"{"suggestions": [{"number": 1, "clear": ["repeat_until"], "reason": ""}]}"#, &nothing).unwrap().is_empty());
         // What changes nothing goes.
         let same = r#"{"suggestions": [{"number": 1, "title": "官网", "reason": ""}, {"number": 5, "done": true, "reason": ""}, {"order": [1, 2], "reason": ""}]}"#;
         assert!(parse(same, &shown).unwrap().is_empty());

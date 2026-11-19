@@ -143,7 +143,7 @@ AI 能做的：
 
 | 种类 | 字段 |
 |---|---|
-| 改已有事项 | `number`；只写要改的：`title`、`description`、`due`、`remind`、`repeat`、`repeat_from`、`repeat_until`（写法同 agent 的 `edit`）、`clear`（要清除的，`due`、`remind`、`repeat` 的列表：模型常给不改的字段写 `null`，所以不用 `null` 表示清除）、`done`（`true` 完成，`false` 重新打开）、`folder`（发过去的子文件夹路径之一）、`requires`（要加的前置，编号或新事项的 `ref`）、`drop_requires`（要去掉的前置的编号）；或者只写 `delete: true` |
+| 改已有事项 | `number`；只写要改的：`title`、`description`、`due`、`remind`、`repeat`、`repeat_from`、`repeat_until`（写法同 agent 的 `edit`，只是三项各改各的，没写的照旧：模型常只写要改的那一项，改间隔时丢掉重复到哪天）、`clear`（要清除的，`due`、`remind`、`repeat`、`repeat_until` 的列表：模型常给不改的字段写 `null`，所以不用 `null` 表示清除）、`done`（`true` 完成，`false` 重新打开）、`folder`（发过去的子文件夹路径之一）、`requires`（要加的前置，编号或新事项的 `ref`）、`drop_requires`（要去掉的前置的编号）；或者只写 `delete: true` |
 | 新建事项 | `ref`（`a`、`b`、`c`……）、`title`；选填 `description`、`due`、`remind`、`repeat`、`repeat_from`、`repeat_until`、`requires`、`required_by`，先后写编号或 `ref` |
 | 调整顺序 | `order`：这个文件夹里未完成事项的编号，按新的顺序 |
 

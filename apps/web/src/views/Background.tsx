@@ -149,7 +149,7 @@ function CalendarSettings({ allowed, onAllowed }: { allowed: boolean; onAllowed(
     <>
       <h2 className="group-title">系统日历</h2>
       <div className="group">{body}</div>
-      {target !== "off" && allowed && calendars && <p className="empty">{where}日程不带提醒，提醒仍由 NextTodo 发出。</p>}
+      {target !== "off" && allowed && calendars && <p className="group-note">{where}日程不带提醒，提醒仍由 NextTodo 发出。</p>}
     </>
   );
 }

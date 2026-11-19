@@ -1,6 +1,6 @@
 # 接入 agent
 
-agent 指 Claude Code、Codex 这类能在电脑上执行命令的 AI 助手。接入 NextTodo 后，可以让它拆分计划、添加事项、设置先后、勾选完成，就像在 App 里操作一样，改动会同步到所有设备。
+agent 指 Claude Code、Codex 这类能在电脑上执行命令的 AI 助手。接入 NextTodo 后，可以让它拆分计划、添加事项、设置先后、勾选完成、添加和读取附件，就像在 App 里操作一样，改动会同步到所有设备。
 
 agent 有两种接入方式，任选其一：
 
@@ -64,7 +64,7 @@ App 在本机运行时，每次启动的地址都不同，所以 agent 要经过
 1. 先[安装命令行](#cli)。
 2. 生成令牌后，按令牌页给出的写法配置 Claude Code 或 Codex，或者设置环境变量 `NEXTTODO_URL=local` 和 `NEXTTODO_TOKEN`。
 
-只在电脑上、NextTodo 运行时可用（关掉窗口也算在运行）。Android 的本机模式不能接入 agent。
+只在电脑上、NextTodo 运行时可用（关掉窗口也算在运行）。手机上的本机模式不能接入 agent；借网盘同步时，电脑上 agent 的改动会同步到手机上。
 
 ## 撤销 agent 的改动
 

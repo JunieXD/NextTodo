@@ -1,6 +1,6 @@
 # 部署
 
-NextTodo 的服务端和网页端在同一个 Docker 镜像里，部署一次，网页、Android、macOS 和 Windows 就都能连上。决策见[总体设计](design.md#部署)。
+NextTodo 的服务端和网页端在同一个 Docker 镜像里，部署一次，网页、Android、iOS、macOS 和 Windows 就都能连上。决策见[总体设计](design.md#部署)。
 
 ## 用 Docker 部署
 
@@ -67,7 +67,7 @@ server {
   docker compose pull && docker compose up -d
   ```
 
-数据库在新版本启动时自动迁移。App 不用手动升级：它们从登录的服务器取更新，服务端升级后，Android 的网页部分下次打开时生效，需要换安装包时会提示；桌面 App 在后台下载，重启后生效。见[总体设计](design.md#app-更新)。
+数据库在新版本启动时自动迁移。Android 和桌面 App 不用手动升级：它们从登录的服务器取更新，服务端升级后，Android 的网页部分下次打开时生效，需要换安装包时会提示；桌面 App 在后台下载，重启后生效。iOS App 从 GitHub 查新版本，在 SideStore 里更新，见 [iOS](ios.md#更新)。见[总体设计](design.md#app-更新)。
 
 ### 在设置里升级
 

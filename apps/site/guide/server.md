@@ -1,14 +1,14 @@
 # 部署服务器
 
-要在多台设备之间同步，或者在浏览器里使用网页版，需要一台自己的服务器。服务端和网页版打包在同一个 Docker 镜像里，部署一次，网页、Android、macOS 和 Windows 都能连上。
+要多台设备实时同步、在浏览器里使用网页版，或者和别人共享文件夹，需要一台自己的服务器。服务端和网页版打包在同一个 Docker 镜像里，部署一次，网页、Android、iOS、macOS 和 Windows 都能连上。
 
-只在一台设备上用的，不需要服务器，见[在本机使用](./local)。
+不想部署服务器的，App 可以只在本机使用，几台设备之间借网盘同步，见[在本机使用](./local)。
 
 ## 需要准备
 
 - **一台 Linux 服务器**：云服务器（VPS）、家里的 NAS 或小主机都可以，amd64 或 arm64。NextTodo 占用很少，配置要求不高。
 - **Docker**：按 [Docker 官方文档](https://docs.docker.com/engine/install/)安装 Docker Engine，它自带 Docker Compose。NAS 的系统里一般叫 Container Manager 或“容器”。
-- **受信任的 HTTPS 证书**：Android App 和网页版只能通过 HTTPS 连接服务器，证书要是手机和浏览器默认信任的，比如 Let's Encrypt 签发的；自己签发的证书手机不认，所以没有受信任证书的地址都连不上。证书一般给域名申请：
+- **受信任的 HTTPS 证书**：手机 App 和网页版只能通过 HTTPS 连接服务器，证书要是手机和浏览器默认信任的，比如 Let's Encrypt 签发的；自己签发的证书手机不认，所以没有受信任证书的地址都连不上。证书一般给域名申请：
   - 服务器在公网上：在域名服务商那里添加一条 A 记录，把域名（比如 `todo.example.com`）指向服务器的公网 IP。在中国大陆的服务器上用域名提供网站，需要先完成备案。
   - 没有域名，或者域名暂时用不了（比如还在备案）：可以直接用服务器的公网 IP，Let's Encrypt 也给公网 IP 签证书，见[只用 IP 地址](#ip)。
   - 只在家里的局域网里用：同样需要一个域名和受信任的证书，比如用 DNS 验证的方式申请证书，再在路由器或局域网 DNS 里把域名指向这台机器。
@@ -169,7 +169,7 @@ docker compose exec nexttodo /nexttodo-server reset-password admin
 
 出了新版本时，管理员打开 NextTodo 会看到提示条“服务器可升级到 0.1.N”，“设置 → 关于”里也写着。想第一时间知道，可以在 [GitHub 仓库](https://github.com/JunieXD/NextTodo)右上角点 **Watch** → **Custom**，勾选 **Releases** 后点 **Apply**，发布新版本时 GitHub 会发邮件通知。
 
-升级有两种方法，结果一样，可以混用。数据会自动升级，不用另外操作。App 不用手动升级：服务器升级后，各设备的 App 会自动获取新版本。
+升级有两种方法，结果一样，可以混用。数据会自动升级，不用另外操作。Android 和电脑上的 App 不用手动升级：服务器升级后，它们会自动获取新版本。iOS 的 App 在 SideStore 里更新，见[下载和安装](./install#更新)。
 
 ### 在设置里升级
 

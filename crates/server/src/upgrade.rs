@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use axum::extract::State;
+#[cfg(unix)]
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -20,9 +21,11 @@ use tar::EntryType;
 use tokio::sync::watch;
 use ts_rs::TS;
 
+use crate::AppState;
 use crate::auth::Auth;
+#[cfg(unix)]
+use crate::db;
 use crate::error::{ApiError, Json, for_user};
-use crate::{AppState, db};
 
 /// Where `deploy/release.sh` publishes the image.
 pub const REGISTRY: &str = "https://ghcr.io";
@@ -474,6 +477,7 @@ fn unpack(blob: &Path, dir: &Path) -> Result<(), Failure> {
 }
 
 /// The versions downloaded completely.
+#[cfg(unix)]
 fn downloaded(versions: &Path) -> io::Result<Vec<Version>> {
     let mut found = Vec::new();
     for entry in entries(versions)? {

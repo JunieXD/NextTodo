@@ -94,6 +94,7 @@ async fn main() -> anyhow::Result<()> {
                 _ => web,
             };
             let upgrade = own.map(|own| Upgrade::new(cli.data.clone(), own, upgrade::REGISTRY.into())).transpose()?.map(Arc::new);
+            #[cfg(unix)]
             let database = started.state.db.clone();
             let state = match &upgrade {
                 Some(u) => started.state.clone().with_upgrade(u.clone()),

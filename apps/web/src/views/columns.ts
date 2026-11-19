@@ -65,9 +65,10 @@ export function useColumns(open: Record<Column, boolean>) {
     onPointerMove(e: PointerEvent<HTMLElement>) {
       if (drag?.column !== c || drag.pointer !== e.pointerId) return;
       // The sidebar's edge is on its right, the pane's on its left. Dragged so far, the middle has
-      // what it keeps at least.
+      // what it keeps at least. The other folded away holds no more than its least: opened again, what
+      // does not fit gives way as when the window narrows, the pane first.
       const moved = c === "sidebar" ? e.clientX - drag.x : drag.x - e.clientX;
-      const most = Math.min(WIDTHS[c].most, room - drag.other);
+      const most = Math.min(WIDTHS[c].most, room - (open[other(c)] ? drag.other : WIDTHS[other(c)].least));
       setDrag({ ...drag, to: within(drag.from + moved, WIDTHS[c].least, most) });
     },
     onLostPointerCapture(e: PointerEvent<HTMLElement>) {

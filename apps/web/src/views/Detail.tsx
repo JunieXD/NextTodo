@@ -10,7 +10,7 @@ import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
 import { day, formatDay, formatDue, formatMoment, isoDate, remindLabel, startLabel } from "../domain/dates";
-import { repeatLabel } from "../domain/repeat";
+import { repeatText } from "../domain/repeat";
 import { filesIn, reference } from "../attach";
 import { checkDescription, checkTitle } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
@@ -130,7 +130,11 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
   if (!t) return <div className="detail-empty">该事项已删除</div>;
   const status = board.status(t);
   const shared = board.sharedRoot(t.folder_id);
-  const lastDone = t.completions && store.completedAt(t.id, t.completions.count);
+  const found = t.completions && store.completedAt(t.id, t.completions.count);
+  // While it repeats, or done for good by that last time itself; not once the repeat ended otherwise,
+  // or it was reopened and done again, which taking back an earlier time would undo too.
+  const takesBack = t.done_at === null ? t.due?.repeat !== undefined : found !== undefined && found === store.doneBy(t.id);
+  const lastDone = takesBack ? found : undefined;
   const undoLastDone = (m: MutationId) => {
     const r = commit([{ op: "undo", mutation: m }]);
     if (r) snack({ text: "已撤销上一次完成", action: "撤销", onAction: () => undo(r.id) });
@@ -192,7 +196,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
         <Prop
           icon={Calendar}
           label="截止"
-          value={t.due ? formatDue(t.due, now) + (t.due.repeat ? ` · ${repeatLabel(t.due.repeat)}` : "") : "未设置"}
+          value={t.due ? formatDue(t.due, now) + (t.due.repeat ? ` · ${repeatText(t.due.repeat, now)}` : "") : "未设置"}
           cls={t.due ? dueClass(t, now) : "muted"}
           onClick={() => setPanel("due")}
         />

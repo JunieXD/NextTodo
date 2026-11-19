@@ -6,8 +6,8 @@ use std::collections::{HashMap, HashSet};
 use nexttodo_core::board::{Board, Now, Snapshot};
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
-    AiJob, Description, FolderId, NewTask, Period, Reorder, Repeat, RepeatFrom, Suggestion, Task, TaskDeletion, TaskEdit, TaskId, Title,
-    Was,
+    AiJob, Date, Description, FolderId, NewTask, Period, Reorder, Repeat, RepeatFrom, Suggestion, Task, TaskDeletion, TaskEdit, TaskId,
+    Title, Was,
 };
 use nexttodo_core::ops::MAX_OPS;
 use serde::Deserialize;
@@ -34,7 +34,7 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
 - folder：这个文件夹；
 - request：用户这次的要求；
 - subfolders：这个文件夹下的子文件夹，可以把事项移进去；
-- open_tasks：文件夹里未完成的事项，按现在的顺序。number 是编号；requires 是它已有的前置事项的编号，那些事项要先做完才能做它；due 是截止时间，remind 是提前多少分钟提醒，repeat 是重复，写成间隔数加单位 d（天）、w（周）、m（月）或 y（年，就是 12 个月），如 1d 每天、2w 每两周、1m 每月、3m 每三个月、1y 每年；按周重复在某几天的，冒号后写周几（1 是周一，7 是周日），如 1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五、2w:2,4 每两周的周二和周四；按月重复在某几号的，冒号后写几号（1–31，没有这天的月份取最后一天），如 1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；repeat_from 为 done 表示下一次从完成那天算；description_omitted 为 true 的事项描述太长，没有发来；
+- open_tasks：文件夹里未完成的事项，按现在的顺序。number 是编号；requires 是它已有的前置事项的编号，那些事项要先做完才能做它；due 是截止时间，remind 是提前多少分钟提醒，repeat 是重复，写成间隔数加单位 d（天）、w（周）、m（月）或 y（年，就是 12 个月），如 1d 每天、2w 每两周、1m 每月、3m 每三个月、1y 每年；按周重复在某几天的，冒号后写周几（1 是周一，7 是周日），如 1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五、2w:2,4 每两周的周二和周四；按月重复在某几号的，冒号后写几号（1–31，没有这天的月份取最后一天），如 1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；repeat_from 为 done 表示下一次从完成那天算；repeat_until 是重复到哪天（含这天），做完这天以前的最后一次，事项就完成了；description_omitted 为 true 的事项描述太长，没有发来；
 - done_tasks：最近完成的事项，只有编号和标题。
 
 只输出一个 json 对象，不要有任何别的文字，格式如下：
@@ -51,14 +51,14 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
    - description：新描述，是改好后的完整内容，不是修改说明；Markdown，步骤可以写成清单“- [ ] ”。
    - due：截止时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"。原来有几点几分、这次只改日期的，带上原来的几点几分；原来和 request 都没说几点的，不要加；原来的提醒和重复保留，新的截止时间不带具体时间的，提醒去掉。
    - remind：提前多少分钟提醒，0 表示到截止时间时提醒；要有带具体时间的截止时间。“不用提醒了”是去掉提醒，写 clear: ["remind"]，不是写 0。
-   - repeat、repeat_from：重复，写法同输入；要有截止时间。按天数说的照天数写（每 90 天是 90d，不是 3m）；在一周里某几天的写周几，“每个工作日”是 1w:1,2,3,4,5，不是 1d（1d 周末也会出现）。
+   - repeat、repeat_from、repeat_until：重复，写法同输入；要有截止时间。按天数说的照天数写（每 90 天是 90d，不是 3m）；在一周里某几天的写周几，“每个工作日”是 1w:1,2,3,4,5，不是 1d（1d 周末也会出现）。request 说了重复到哪天为止的写 repeat_until，截止时间不能晚于它。repeat_from、repeat_until 只能和 repeat 一起写：改 repeat 时，原来的 repeat_from、repeat_until 要保留的照样写上，不写就是从截止日期算、一直重复；只改 repeat_from 或 repeat_until 的，也要写上 repeat。
    - clear：要清除的设置，是一个列表，可以包含 "due"、"remind"、"repeat"，如 "clear": ["due"]；清除截止时间时，提醒和重复一起清除。去掉前置用 drop_requires，不用 clear。
-   - done：true 标为完成（重复的事项会顺延到下一次；request 说这件事整个做完了、不再重复的，如书读完了，同时在 clear 里写 "repeat"），false 重新打开 done_tasks 里的事项。done_tasks 里的事项可以删除；要改别的，先重新打开。
+   - done：true 标为完成（重复的事项会顺延到下一次，做的是 repeat_until 以前的最后一次的直接完成；request 说这件事整个做完了、不再重复的，如书读完了，同时在 clear 里写 "repeat"），false 重新打开 done_tasks 里的事项。done_tasks 里的事项可以删除；要改别的，先重新打开。
    - folder：移进 subfolders 里的哪个文件夹，写它的完整路径。subfolders 里没有的文件夹移不进去，这样的移动不要提。
    - requires：这一项要新加的前置，也就是要先做完、才能做这一项的事项：事项的编号，或新建事项的 ref；已有的不用写。
    - drop_requires：要去掉的这一项已有的前置，写编号。
 2. 删除已有的事项：写 number 和 "delete": true。
-3. 新建事项，放进这个文件夹：写 ref，依次是 "a"、"b"、"c"……，和 title；选填 description、due、remind、repeat、repeat_from，以及 requires（要先做完、才能做它的事项）和 required_by（要等它做完才能做的事项），写事项的编号或新建事项的 ref。
+3. 新建事项，放进这个文件夹：写 ref，依次是 "a"、"b"、"c"……，和 title；选填 description、due、remind、repeat、repeat_from、repeat_until，以及 requires（要先做完、才能做它的事项）和 required_by（要等它做完才能做的事项），写事项的编号或新建事项的 ref。
 4. 调整顺序：order 是 open_tasks 里事项的编号，按新的顺序排；只写要调整的那些，它们在原来占着的位置之间重新排列。order 只改列表里的位置，前置总排在后续前面。request 要的顺序和已有的先后冲突时（如要把“上线”排到最前，而它要等“测试”），保留先后，只排没有冲突的那些；除非 request 明说要改先后，不要为了排序去掉或反转前置。
 
 整理时：
@@ -136,10 +136,13 @@ pub fn prompt(job: &AiJob, snap: Snapshot, user: &str, notes: Vec<Value>) -> (Pr
                 if let Some(m) = d.at.as_ref().and_then(|at| at.remind_before) {
                     v["remind"] = m.into();
                 }
-                if let Some(r) = d.repeat {
+                if let Some(r) = &d.repeat {
                     v["repeat"] = repeat_text(r).into();
                     if r.from == RepeatFrom::Done {
                         v["repeat_from"] = "done".into();
+                    }
+                    if let Some(until) = &r.until {
+                        v["repeat_until"] = until.as_str().into();
                     }
                 }
             }
@@ -216,7 +219,7 @@ fn with_references(was: &Description, new: Description) -> Result<Description, S
 }
 
 /// `1d`, `2w`, `3m`, `1w:1,3,5`, `1m:1,15`, as the tools take a repeat.
-pub fn repeat_text(r: Repeat) -> String {
+pub fn repeat_text(r: &Repeat) -> String {
     let (unit, days) = match r.period {
         Period::Day => ('d', None),
         Period::Week(days) => ('w', days.map(Vec::from)),
@@ -249,6 +252,7 @@ struct Suggested {
     remind: Option<u32>,
     repeat: Option<RepeatText>,
     repeat_from: Option<RepeatFrom>,
+    repeat_until: Option<Date>,
     #[serde(default)]
     clear: Vec<Setting>,
     done: Option<bool>,
@@ -274,6 +278,7 @@ impl Suggested {
             || self.remind.is_some()
             || self.repeat.is_some()
             || self.repeat_from.is_some()
+            || self.repeat_until.is_some()
             || !self.clear.is_empty()
             || self.done.is_some()
             || self.folder.is_some()
@@ -304,15 +309,20 @@ impl Suggested {
             match c {
                 Setting::Due => self.due = None,
                 Setting::Remind => self.remind = None,
-                Setting::Repeat => self.repeat = None,
+                Setting::Repeat => (self.repeat, self.repeat_from, self.repeat_until) = (None, None, None),
             }
         }
         self.title = later.title.or(self.title.take());
         self.description = later.description.or(self.description.take());
         self.due = later.due.or(self.due.take());
         self.remind = later.remind.or(self.remind);
-        self.repeat = later.repeat.or(self.repeat);
-        self.repeat_from = later.repeat_from.or(self.repeat_from);
+        // A repeat given is whole, as edits take it: what it leaves out is as by default.
+        if later.repeat.is_some() {
+            (self.repeat, self.repeat_from, self.repeat_until) = (later.repeat, later.repeat_from, later.repeat_until);
+        } else {
+            self.repeat_from = later.repeat_from.or(self.repeat_from);
+            self.repeat_until = later.repeat_until.or(self.repeat_until.take());
+        }
         self.clear.extend(later.clear);
         self.done = later.done.or(self.done);
         self.folder = later.folder.or(self.folder.take());
@@ -401,12 +411,12 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             let title = s.title.ok_or("新事项缺少标题")?;
             if s.delete || s.done.is_some() || s.folder.is_some() || !s.clear.is_empty() || !s.unlink.is_empty() {
                 return Err(format!(
-                    "新事项“{}”只能写 title、description、due、remind、repeat、repeat_from、requires 和 required_by",
+                    "新事项“{}”只能写 title、description、due、remind、repeat、repeat_from、repeat_until、requires 和 required_by",
                     title.as_str()
                 ));
             }
-            let due =
-                new_due(s.due, s.remind, s.repeat, s.repeat_from).map_err(|e| format!("新事项“{}”：{}", title.as_str(), e.describe()))?;
+            let due = new_due(s.due, s.remind, s.repeat, s.repeat_from, s.repeat_until)
+                .map_err(|e| format!("新事项“{}”：{}", title.as_str(), e.describe()))?;
             let after = distinct(s.after.iter().map(&resolve))?;
             let before = distinct(s.before.iter().map(&resolve))?;
             new.insert(id, title.clone());
@@ -441,6 +451,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             || s.remind.is_some()
             || s.repeat.is_some()
             || s.repeat_from.is_some()
+            || s.repeat_until.is_some()
             || !s.clear.is_empty();
         let Edit { title, description, due, .. } = if fields {
             let clear = |x| s.clear.contains(&x);
@@ -455,6 +466,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
                 remind: if clear(Setting::Remind) { Some(None) } else { s.remind.map(Some) },
                 repeat: if clear(Setting::Repeat) { Some(None) } else { s.repeat.map(Some) },
                 repeat_from: s.repeat_from,
+                repeat_until: s.repeat_until,
                 assign: Vec::new(),
                 unassign: Vec::new(),
             };
@@ -727,6 +739,14 @@ mod tests {
         assert_eq!((e.title.as_ref().unwrap().as_str(), e.description.as_ref().unwrap().as_str()), ("b", "c"));
         assert_eq!(e.due.clone().flatten().unwrap().date.as_str(), "2026-12-01");
         assert_eq!((e.after.as_slice(), e.reason.as_str()), ([tid(3)].as_slice(), "一；二"));
+        // A later repeat is whole: the earlier one's last day doesn't carry over to it.
+        let repeats = r#"{"suggestions": [
+            {"number": 4, "repeat": "1d", "repeat_until": "2026-12-19", "reason": ""}, {"number": 4, "repeat": "2d", "reason": ""}
+        ]}"#;
+        let merged = parse(repeats, &shown).unwrap();
+        let [Suggestion::Edit(e)] = merged.as_slice() else { panic!("{merged:?}") };
+        let repeat = e.due.clone().flatten().unwrap().repeat.unwrap();
+        assert_eq!((repeat.every.get(), repeat.until), (2, None));
         // What changes nothing goes.
         let same = r#"{"suggestions": [{"number": 1, "title": "官网", "reason": ""}, {"number": 5, "done": true, "reason": ""}, {"order": [1, 2], "reason": ""}]}"#;
         assert!(parse(same, &shown).unwrap().is_empty());
@@ -775,6 +795,15 @@ mod tests {
         );
         assert!(matches!(deleting.unwrap().as_slice(), [Suggestion::Delete(d)] if d.delete == tid(2)));
         assert_eq!(err(r#"{"number": 3, "remind": 10, "reason": ""}"#), "事项 #3：该事项没有具体的截止时间，无法设置提醒（remind）");
+        // Due after the last day it would repeat on, a suggestion can't be taken.
+        assert_eq!(
+            err(r#"{"number": 4, "repeat": "1w", "repeat_until": "2026-11-01", "reason": ""}"#),
+            "事项 #4：重复到不能早于截止日期（repeat_until）"
+        );
+        assert_eq!(
+            err(r#"{"title": "新的", "due": "2026-12-20", "repeat": "1d", "repeat_until": "2026-12-19", "reason": ""}"#),
+            "新事项“新的”：重复到不能早于截止日期（due）"
+        );
         assert_eq!(err(r#"{"title": "新的", "requires": ["b"], "reason": ""}"#), "结果里没有 ref 为“b”的新事项");
         assert_eq!(
             err(r#"{"number": 1, "required_by": [2], "reason": ""}"#),

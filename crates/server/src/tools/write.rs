@@ -239,15 +239,17 @@ pub(crate) fn new_due(
     remind: Option<u32>,
     repeat_text: Option<RepeatText>,
     from: Option<RepeatFrom>,
+    until: Option<Date>,
 ) -> Result<Option<Due>, ApiError> {
-    due(due_text, remind, repeat(repeat_text, from)?)
+    due(due_text, remind, repeat(repeat_text, from, until)?)
 }
 
-/// The repeat given, from the due date unless said.
-fn repeat(repeat: Option<RepeatText>, from: Option<RepeatFrom>) -> Result<Option<Repeat>, ApiError> {
-    match (repeat, from) {
-        (None, Some(_)) => Err(ApiError::invalid("repeat_from 只能和 repeat 一起给", Some("repeat_from".into()))),
-        (r, from) => Ok(r.map(|r| Repeat { every: r.every, period: r.period, from: from.unwrap_or(RepeatFrom::Due) })),
+/// The repeat given, from the due date and on and on unless said.
+fn repeat(repeat: Option<RepeatText>, from: Option<RepeatFrom>, until: Option<Date>) -> Result<Option<Repeat>, ApiError> {
+    match (repeat, from, until) {
+        (None, Some(_), _) => Err(ApiError::invalid("repeat_from 只能和 repeat 一起给", Some("repeat_from".into()))),
+        (None, _, Some(_)) => Err(ApiError::invalid("repeat_until 只能和 repeat 一起给", Some("repeat_until".into()))),
+        (r, from, until) => Ok(r.map(|r| Repeat { every: r.every, period: r.period, from: from.unwrap_or(RepeatFrom::Due), until })),
     }
 }
 
@@ -306,6 +308,7 @@ fn plan_ops(b: &Board, plan: Plan, number: &dyn Fn(i64) -> Option<TaskId>) -> Re
             remind,
             repeat: repeat_text,
             repeat_from,
+            repeat_until,
             assign,
             after,
             before,
@@ -323,7 +326,7 @@ fn plan_ops(b: &Board, plan: Plan, number: &dyn Fn(i64) -> Option<TaskId>) -> Re
             description: description.unwrap_or_default(),
             start,
             start_time,
-            due: new_due(due_text, remind, repeat_text, repeat_from)?,
+            due: new_due(due_text, remind, repeat_text, repeat_from, repeat_until)?,
             sort_key: None,
             done: false,
             assignees: people(b, &assign)?,
@@ -352,6 +355,7 @@ pub fn add(w: &WriteCx, a: AddArgs) -> Result<Write, ApiError> {
         remind: a.remind,
         repeat: a.repeat,
         repeat_from: a.repeat_from,
+        repeat_until: a.repeat_until,
         assign: a.assign,
         after: plan_refs(a.after),
         before: plan_refs(a.before),
@@ -413,7 +417,7 @@ pub(crate) struct Edit {
 /// What `edit` changes in task `t`: also what AI tidying suggests changing in a task.
 pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiError> {
     let revising = !a.replace.is_empty() || a.append.is_some();
-    let changes_repeat = a.repeat.is_some() || a.repeat_from.is_some();
+    let changes_repeat = a.repeat.is_some() || a.repeat_from.is_some() || a.repeat_until.is_some();
     if a.title.is_none()
         && a.description.is_none()
         && !revising
@@ -433,7 +437,7 @@ pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiE
     let current = t.due.as_ref();
     let current_remind = current.and_then(|d| d.at.as_ref()).and_then(|at| at.remind_before);
     // `Some(None)` stops it repeating.
-    let new_repeat = if changes_repeat { Some(repeat(a.repeat.flatten(), a.repeat_from)?) } else { None };
+    let new_repeat = if changes_repeat { Some(repeat(a.repeat.flatten(), a.repeat_from, a.repeat_until)?) } else { None };
     let no_time = || ApiError::invalid("该事项没有具体的截止时间，无法设置提醒", Some("remind".into()));
     let new_due = match (a.due, a.remind) {
         (None, None) if new_repeat.is_none() => None,
@@ -450,7 +454,7 @@ pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiE
             // Moving the deadline keeps the reminder as long as there is still a time to remind before,
             // and the repeat.
             let remind = remind.unwrap_or(if d.time.is_some() { current_remind } else { None });
-            Some(due(Some(d), remind, new_repeat.unwrap_or(current.and_then(|c| c.repeat)))?)
+            Some(due(Some(d), remind, new_repeat.unwrap_or(current.and_then(|c| c.repeat.clone())))?)
         }
         (None, remind) => match current {
             Some(c) => {
@@ -458,8 +462,12 @@ pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiE
                     return Err(no_time());
                 }
                 let time = c.at.as_ref().map(|at| at.time.clone());
-                let new = Due::new(c.date.clone(), time, remind.unwrap_or(current_remind), new_repeat.unwrap_or(c.repeat))
-                    .map_err(|m| ApiError::invalid(m, Some("remind".into())))?;
+                // The date as it is, only a new reminder or repeat can be wrong: the one before it
+                // repeats no more, or the reminder.
+                let late = new_repeat.as_ref().and_then(|r| r.as_ref()?.until.as_ref()).is_some_and(|until| *until < c.date);
+                let field = if late { "repeat_until" } else { "remind" };
+                let new = Due::new(c.date.clone(), time, remind.unwrap_or(current_remind), new_repeat.unwrap_or(c.repeat.clone()))
+                    .map_err(|m| ApiError::invalid(m, Some(field.into())))?;
                 // Clearing a reminder there isn't changes nothing.
                 (Some(&new) != current).then_some(Some(new))
             }

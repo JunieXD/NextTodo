@@ -334,7 +334,7 @@ fn restore_due(cur: &Option<Due>, b: &Option<Due>, a: &Option<Due>) -> Option<Du
     Some(Due {
         date: date?.clone(),
         at: if b.at != a.at { b.at.clone() } else { cur.and_then(|c| c.at.clone()) },
-        repeat: if b.repeat != a.repeat { b.repeat } else { cur.and_then(|c| c.repeat) },
+        repeat: if b.repeat != a.repeat { b.repeat.clone() } else { cur.and_then(|c| c.repeat.clone()) },
     })
 }
 
@@ -364,11 +364,17 @@ fn still_last<T: PartialEq>(before: &T, after: &T, later: Vec<(T, T)>) -> bool {
     counting == [0]
 }
 
-/// A repeating task is never done: done, it moves on (docs/design.md#重复). It does not start after it
+/// A repeating task is never done: done, it moves on (docs/design.md#重复); nor due after the last day it
+/// repeats on, which `Due` takes care of as given, and an undo may come to. It does not start after it
 /// is due, a due date without a time lasting all day (docs/design.md#开始时间).
 fn check_task(t: &Task) -> Result<(), ApiError> {
     if t.done_at.is_some() && t.due.as_ref().is_some_and(|d| d.repeat.is_some()) {
         return Err(ApiError::invalid(format!("“{}”已完成，不能设置重复，请先重新打开", t.title.as_str()), Some("due".into())));
+    }
+    if let Some(d) = &t.due
+        && d.repeat.as_ref().and_then(|r| r.until.as_ref()).is_some_and(|until| *until < d.date)
+    {
+        return Err(ApiError::invalid(format!("“{}”的重复到不能早于截止日期", t.title.as_str()), Some("due".into())));
     }
     let Some(start) = &t.start else {
         return match t.start_time {
@@ -565,16 +571,24 @@ impl<'a> Cx<'a> {
                 if let Some(done) = done
                     && *done != t.done_at.is_some()
                 {
-                    match t.due.as_mut().map(|d| (d.repeat, d)) {
-                        // Done, a repeating task stays open, due next time (docs/design.md#重复).
+                    match t.due.as_mut().map(|d| (d.repeat.clone(), d)) {
+                        // Done, a repeating task stays open, due next time; done the last time, it is
+                        // done (docs/design.md#重复).
                         Some((Some(r), d)) if *done => {
                             let today = today
                                 .as_ref()
                                 .ok_or_else(|| ApiError::invalid("完成重复的事项需要给出今天的日期", Some("today".into())))?;
-                            let next = r.next(&d.date, today).map_err(|m| ApiError::invalid(m, Some("due".into())))?;
-                            // The start date keeps as far before it, at the same time (docs/design.md#开始时间).
-                            t.start = t.start.as_ref().map(|s| s.shifted(&d.date, &next));
-                            d.date = next;
+                            match r.next(&d.date, today) {
+                                Some(next) => {
+                                    // The start date keeps as far before it, at the same time (docs/design.md#开始时间).
+                                    t.start = t.start.as_ref().map(|s| s.shifted(&d.date, &next));
+                                    d.date = next;
+                                }
+                                None => {
+                                    d.repeat = None;
+                                    t.done_at = Some(self.now);
+                                }
+                            }
                             let count = t.completions.as_ref().map_or(NonZeroU32::MIN, |c| c.count.saturating_add(1));
                             t.completions = Some(Completions { count, last: today.clone() });
                         }

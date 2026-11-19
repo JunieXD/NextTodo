@@ -8,7 +8,7 @@ import type { Due } from "../api/types/Due";
 import type { Repeat } from "../api/types/Repeat";
 import type { RepeatFrom } from "../api/types/RepeatFrom";
 import type { RepeatUnit } from "../api/types/RepeatUnit";
-import { MAX_REMIND, REMINDERS, REMIND_UNITS, type RemindUnit, day, isoDate, parseTime, remindIn, remindLabel } from "../domain/dates";
+import { MAX_REMIND, REMINDERS, REMIND_UNITS, type RemindUnit, day, formatDue, isoDate, parseTime, remindIn, remindLabel } from "../domain/dates";
 import { WORKDAYS, repeatLabel } from "../domain/repeat";
 import { useBack } from "../ui/back";
 import { Seg, Select, Stepper } from "../ui/controls";
@@ -62,6 +62,8 @@ export function DueEditor({
   // A weekly repeat's days of the week, or a monthly one's of the month; null for a plain one, on the
   // due date's day whichever it is moved to.
   const [days, setDays] = useState(was?.days ?? null);
+  // The last day it falls on, or none: on and on.
+  const [until, setUntil] = useState(was?.until ?? null);
   const on = kind === "custom" ? unit : kind;
   const shownDays = days ?? [on === "week" ? ((day(date).getDay() + 6) % 7) + 1 : day(date).getDate()];
   const picked = (on === "week" || on === "month") && days ? days : undefined;
@@ -72,6 +74,7 @@ export function DueEditor({
           ...(kind === "custom" ? { every, unit } : kind === "year" ? { every: 12, unit: "month" } : { every: 1, unit: kind }),
           from,
           ...(picked && { days: picked }),
+          ...(until && { until }),
         };
   // Days picked are a menu item of their own, named by them as 每个工作日 is: picking any other item is
   // then a change, all the menu reports, and starts over without them.
@@ -82,8 +85,10 @@ export function DueEditor({
   // Said once saving is tried, until it is put right.
   const [tried, setTried] = useState(false);
   const early = Boolean(startTime && time && date === start && time < startTime);
+  // Moved past the last day it repeats on.
+  const ended = Boolean(repeat?.until && repeat.until < date);
   const save = () => {
-    if (early) return setTried(true);
+    if (early || ended) return setTried(true);
     onSave({ date, ...(time && { time }), ...(time && remind !== "off" && { remind_before: remindBefore }), ...(repeat && { repeat }) });
     onClose();
   };
@@ -177,10 +182,11 @@ export function DueEditor({
             />
           </Controls>
         )}
+        {repeat && <UntilRow value={until} min={date} onChange={setUntil} />}
       </div>
-      {tried && early && (
+      {tried && (early || ended) && (
         <p className="form-error" role="alert">
-          截止不能早于开始
+          {early ? "截止不能早于开始" : "重复到不能早于截止"}
         </p>
       )}
       <div className="actions">
@@ -259,17 +265,31 @@ export function StartEditor({
 }
 
 /** A month of days, Monday first, to pick `value` from, if any, between `min` and `max`; the days
- * around it in the six weeks shown are there to pick too. */
-function Calendar({ value, min, max, onChange }: { value: string; min?: string; max?: string; onChange(date: string): void }) {
+ * around it in the six weeks shown are there to pick too. With no day picked, the month of `min`, or
+ * this month, is shown. `onPicked` is told of a day clicked, not of one moved to with the arrow keys. */
+function Calendar({
+  value,
+  min,
+  max,
+  onChange,
+  onPicked,
+}: {
+  value: string;
+  min?: string;
+  max?: string;
+  onChange(date: string): void;
+  onPicked?(): void;
+}) {
   const today = isoDate(useNow());
-  const [shown, setShown] = useState(() => monthOf(day(value || today)));
+  const [shown, setShown] = useState(() => monthOf(day(value || (min && min > today ? min : today))));
   const out = (iso: string) => (min !== undefined && iso < min) || (max !== undefined && iso > max);
   const days = useRef<HTMLDivElement>(null);
   const first = new Date(shown.year, shown.month, 1);
   const start = 1 - ((first.getDay() + 6) % 7);
   const weeks = Array.from({ length: 42 }, (_, i) => new Date(shown.year, shown.month, start + i));
-  // Tab comes to the day picked, or to the 1st with that day in another month.
-  const tabStop = weeks.some((d) => isoDate(d) === value) ? value : isoDate(first);
+  // Tab comes to the day picked, or with none there to the first of the month that can be.
+  const tabStop =
+    weeks.some((d) => isoDate(d) === value) && !out(value) ? value : isoDate(weeks.find((d) => d.getMonth() === shown.month && !out(isoDate(d))) ?? first);
   const pick = (d: Date) => {
     onChange(isoDate(d));
     setShown(monthOf(d));
@@ -320,7 +340,7 @@ function Calendar({ value, min, max, onChange }: { value: string; min?: string; 
               aria-current={iso === today ? "date" : undefined}
               disabled={out(iso)}
               aria-label={`${d.getMonth() + 1}月${d.getDate()}日`}
-              onClick={() => pick(d)}
+              onClick={() => (pick(d), onPicked?.())}
               onKeyDown={(e) => move(e, d)}
             >
               <span>{d.getDate()}</span>
@@ -405,6 +425,40 @@ function TimeRow({ value, extra, onChange }: { value: string; extra?: string; on
           </div>
           <button className="menu-item" onClick={() => (onChange(""), setOpen(false))}>
             不设时间
+          </button>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+/** The last day a repeat falls on, not before `min`, the due date; or none, on and on. */
+function UntilRow({ value, min, onChange }: { value: string | null; min: string; onChange(until: string | null): void }) {
+  const root = useContext(RootContext);
+  const now = useNow();
+  const [open, setOpen] = useState(false);
+  useBack("dialog", open ? () => setOpen(false) : null);
+  const content = useRef<HTMLDivElement>(null);
+  // Opened, the day picked, or the first of the month shown that can be, takes the focus for the
+  // arrow keys.
+  const show = (e: Event) => {
+    e.preventDefault();
+    content.current!.querySelector<HTMLElement>('.cal-days [tabindex="0"]')!.focus({ preventScroll: true });
+  };
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen} modal>
+      <Popover.Trigger className="row pick">
+        <div className="row-inner">
+          重复到
+          <span className="row-value">{value ? formatDue({ date: value }, now) : "一直重复"}</span>
+          <Icon of={ChevronsUpDown} size={16} />
+        </div>
+      </Popover.Trigger>
+      <Popover.Portal container={root}>
+        <Popover.Content ref={content} className="menu until-menu" align="end" sideOffset={4} collisionPadding={8} onOpenAutoFocus={show}>
+          <Calendar value={value ?? ""} min={min} onChange={onChange} onPicked={() => setOpen(false)} />
+          <button className="menu-item" onClick={() => (onChange(null), setOpen(false))}>
+            一直重复
           </button>
         </Popover.Content>
       </Popover.Portal>

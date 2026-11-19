@@ -136,11 +136,16 @@ pub struct AddArgs {
     pub remind: Option<u32>,
     #[schemars(
         with = "Option<String>",
-        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；要有截止时间。完成时顺延截止时间，开始时间跟着顺延，不会真的完成"
+        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；要有截止时间。完成时顺延截止时间，开始时间跟着顺延，不会真的完成（repeat_until 前的最后一次除外）"
     )]
     pub repeat: Option<RepeatText>,
     #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
     pub repeat_from: Option<RepeatFrom>,
+    #[schemars(
+        with = "Option<String>",
+        description = "重复到哪天（YYYY-MM-DD，含这天），不给就一直重复；做完最后一次，事项就完成了。只能和 repeat 一起给"
+    )]
+    pub repeat_until: Option<Date>,
     #[serde(default)]
     #[schemars(description = "负责人的用户名：共享的文件夹里才能设，须是共享人或成员；不设就是谁都可以做")]
     pub assign: Vec<String>,
@@ -191,6 +196,11 @@ pub struct EditArgs {
     pub repeat: Option<Option<RepeatText>>,
     #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
     pub repeat_from: Option<RepeatFrom>,
+    #[schemars(
+        with = "Option<String>",
+        description = "重复到哪天（YYYY-MM-DD，含这天），不给就一直重复；做完最后一次，事项就完成了。只能和 repeat 一起给"
+    )]
+    pub repeat_until: Option<Date>,
     #[serde(default)]
     #[schemars(description = "加为负责人的用户名，在服务端当时的负责人上加；须是共享人或成员")]
     pub assign: Vec<String>,
@@ -364,11 +374,16 @@ pub struct PlanTask {
     pub remind: Option<u32>,
     #[schemars(
         with = "Option<String>",
-        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；要有截止时间。完成时顺延截止时间，不会真的完成"
+        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；要有截止时间。完成时顺延截止时间，不会真的完成（repeat_until 前的最后一次除外）"
     )]
     pub repeat: Option<RepeatText>,
     #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
     pub repeat_from: Option<RepeatFrom>,
+    #[schemars(
+        with = "Option<String>",
+        description = "重复到哪天（YYYY-MM-DD，含这天），不给就一直重复；做完最后一次，事项就完成了。只能和 repeat 一起给"
+    )]
+    pub repeat_until: Option<Date>,
     #[serde(default)]
     #[schemars(description = "负责人的用户名：共享的文件夹里才能设")]
     pub assign: Vec<String>,

@@ -11,6 +11,7 @@ import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import { lastKeys } from "../domain/apply";
 import { isoDate } from "../domain/dates";
+import { lastTime } from "../domain/repeat";
 import { useCommit, useSession, useUndo, useView } from "../session";
 import { useBack } from "../ui/back";
 import { Tip, useFeedback } from "../ui/feedback";
@@ -151,8 +152,9 @@ function useBatchActions(place: Place, chosen: Task[], end: () => void): { actio
     const todo = chosen.filter((t) => t.done_at === null);
     if (!fits(todo.length)) return;
     const waiting = todo.filter((t) => board().status(t) === "waiting").length;
-    const repeating = todo.filter((t) => t.due?.repeat).length;
-    const notes = [waiting && `其中 ${waiting} 项还在等待`, repeating && `重复的 ${repeating} 项将顺延到下一次`].filter(Boolean);
+    // Done the last time, a repeating task is done for good instead.
+    const moving = todo.filter((t) => t.due?.repeat && !lastTime(t.due, isoDate(new Date()))).length;
+    const notes = [waiting && `其中 ${waiting} 项还在等待`, moving && `重复的 ${moving} 项将顺延到下一次`].filter(Boolean);
     const body = notes.length ? `${notes.join("，")}。` : "可撤销。";
     if (!(await confirm({ title: `将 ${todo.length} 项标为完成？`, body, ok: "标为完成" }))) return;
     const going = still(todo).filter((t) => t.done_at === null);
@@ -167,7 +169,7 @@ function useBatchActions(place: Place, chosen: Task[], end: () => void): { actio
       .filter((t) => !readyBefore.has(t.id))
       .map((t) => t.id);
     // As one completed alone: each stays a moment before folding away, and what they unlocked flashes.
-    going.filter((t) => !t.due?.repeat).forEach((t) => marking.completed(t.id, []));
+    going.filter((t) => board().task(t.id)?.done_at !== null).forEach((t) => marking.completed(t.id, []));
     marking.flash(unlocked);
     done(r, unlocked.length ? `已完成 ${going.length} 项，解锁了 ${unlocked.length} 项` : `已完成 ${going.length} 项`);
   };

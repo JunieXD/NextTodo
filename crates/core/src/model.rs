@@ -323,14 +323,16 @@ pub struct DueAt {
 
 pub const MAX_REMIND_BEFORE: u32 = 30 * 24 * 60;
 
-/// A repeating task stays open: done, its due date moves on (docs/design.md#重复).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+/// A repeating task stays open: done, its due date moves on, until the last time (docs/design.md#重复).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(try_from = "RepeatFields", into = "RepeatFields")]
 #[ts(export, as = "RepeatFields")]
 pub struct Repeat {
     pub every: Every,
     pub period: Period,
     pub from: RepeatFrom,
+    /// The last day it may fall on, if it ends; not before the due date.
+    pub until: Option<Date>,
 }
 
 /// What `every` counts: days; weeks, on some days of the week or the due date's; months, on some days
@@ -365,6 +367,9 @@ pub struct RepeatFields {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     days: Option<Vec<u8>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    until: Option<Date>,
 }
 
 impl TryFrom<RepeatFields> for Repeat {
@@ -377,7 +382,7 @@ impl TryFrom<RepeatFields> for Repeat {
             (RepeatUnit::Week, days) => Period::Week(days.map(Weekdays::try_from).transpose()?),
             (RepeatUnit::Month, days) => Period::Month(days.map(Monthdays::try_from).transpose()?),
         };
-        Ok(Repeat { every: f.every, period, from: f.from })
+        Ok(Repeat { every: f.every, period, from: f.from, until: f.until })
     }
 }
 
@@ -388,7 +393,7 @@ impl From<Repeat> for RepeatFields {
             Period::Week(days) => days.map(Vec::from),
             Period::Month(days) => days.map(Vec::from),
         };
-        RepeatFields { every: r.every, unit: r.period.unit(), from: r.from, days }
+        RepeatFields { every: r.every, unit: r.period.unit(), from: r.from, days, until: r.until }
     }
 }
 
@@ -579,6 +584,10 @@ pub struct DueFields {
 
 impl Due {
     pub fn new(date: Date, time: Option<Time>, remind_before: Option<u32>, repeat: Option<Repeat>) -> Result<Due, String> {
+        // Before the reminder, as editing says which is wrong (tools::write::edit_fields).
+        if repeat.as_ref().and_then(|r| r.until.as_ref()).is_some_and(|until| *until < date) {
+            return Err("重复到不能早于截止日期".into());
+        }
         if remind_before.is_some_and(|m| m > MAX_REMIND_BEFORE) {
             return Err("提醒最多提前 30 天".into());
         }

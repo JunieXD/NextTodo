@@ -274,6 +274,52 @@ async fn a_repeating_task_counts_its_completions_and_can_end_done() {
 }
 
 #[tokio::test]
+async fn a_repeat_until_a_day_ends_done_the_last_time() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "练一套卷子", "due": "2026-12-18", "repeat": "1d", "repeat_until": "2026-12-19" })).await;
+    t.ok(&s, "add", json!({ "title": "参加考试", "due": "2026-12-20", "after": [1] })).await;
+    let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
+    assert!(text(&shown).contains("截止：2026-12-18，每天，到 2026-12-19"), "{}", text(&shown));
+    // Never due after it, nor without a repeat.
+    let r = t.tool(&s, "edit", json!({ "task": 1, "due": "2026-12-20" })).await;
+    assert_eq!((r.status, r.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("due")), "{}", r.body);
+    let r = t.tool(&s, "add", json!({ "title": "x", "due": "2026-12-20", "repeat": "1d", "repeat_until": "2026-12-19" })).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.body);
+    let r = t.tool(&s, "edit", json!({ "task": 1, "repeat_until": "2026-12-25" })).await;
+    assert_eq!((r.status, r.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("repeat_until")), "{}", r.body);
+    t.ok(&s, "add", json!({ "title": "上晚自习", "due": "2026-12-18 19:00", "repeat": "1d" })).await;
+    for remind in [15, 43_201] {
+        let r = t.tool(&s, "edit", json!({ "task": 3, "remind": remind, "repeat": "1d", "repeat_until": "2026-12-17" })).await;
+        let said = (r.status, r.body["details"]["field"].as_str(), r.body["message"].as_str());
+        assert_eq!(said, (StatusCode::BAD_REQUEST, Some("repeat_until"), Some("重复到不能早于截止日期")), "{}", r.body);
+    }
+
+    let done = t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-12-18" })).await;
+    assert!(text(&done).starts_with("顺延 #1 练一套卷子 → 2026-12-19"), "{}", text(&done));
+    // The last time it is done for good, counted as one more; what waits on it starts and stays so.
+    let last = t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-12-19" })).await;
+    assert!(text(&last).starts_with("完成 #1 练一套卷子\n"), "{}", text(&last));
+    assert!(text(&last).contains("解锁 #2 参加考试") && !text(&last).contains("修改"), "{}", text(&last));
+    let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
+    assert_eq!(shown["data"]["status"], "done");
+    assert_eq!(shown["data"]["due"], json!({ "date": "2026-12-19" }));
+    assert_eq!(shown["data"]["completions"], json!({ "count": 2, "last": "2026-12-19" }));
+    assert_eq!(t.ok(&s, "show", json!({ "task": 2, "today": "2026-12-25" })).await["data"]["status"], "ready");
+    // Undone, it is due the last time again.
+    t.ok(&s, "undo", json!({ "batch": last["data"]["batch"] })).await;
+    let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
+    assert_eq!(shown["data"]["status"], "ready");
+    let repeat = json!({ "every": 1, "unit": "day", "from": "due", "until": "2026-12-19" });
+    assert_eq!(shown["data"]["due"], json!({ "date": "2026-12-19", "repeat": repeat }));
+    assert_eq!(shown["data"]["completions"], json!({ "count": 1, "last": "2026-12-18" }));
+    // A repeat given anew is whole: without the day, it goes on and on.
+    t.ok(&s, "edit", json!({ "task": 1, "repeat": "1d" })).await;
+    let due = t.ok(&s, "show", json!({ "task": 1 })).await["data"]["due"].clone();
+    assert_eq!(due, json!({ "date": "2026-12-19", "repeat": { "every": 1, "unit": "day", "from": "due" } }));
+}
+
+#[tokio::test]
 async fn a_task_waits_for_its_start_date_and_keeps_it_as_far_before_its_due_date() {
     let t = TestApp::new();
     let s = t.admin().await;

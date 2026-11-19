@@ -119,6 +119,13 @@ enum Command {
         repeat: Option<String>,
         #[arg(long, requires = "repeat", value_parser = ["due", "done"], help = "下一次从哪天算：due 按截止日期（默认），done 从完成那天")]
         repeat_from: Option<String>,
+        #[arg(
+            long,
+            requires = "repeat",
+            value_name = "日期",
+            help = "重复到哪天（YYYY-MM-DD，含这天），不给就一直重复；做完最后一次，事项就完成了"
+        )]
+        repeat_until: Option<String>,
         #[arg(long, num_args = 1.., value_name = "用户名", help = "负责人：共享的文件夹里的共享人或成员")]
         assign: Vec<String>,
         #[arg(long, num_args = 1.., value_parser = task, help = "前置事项的编号")]
@@ -166,6 +173,13 @@ enum Command {
         repeat: Option<String>,
         #[arg(long, requires = "repeat", value_parser = ["due", "done"], help = "下一次从哪天算：due 按截止日期（默认），done 从完成那天")]
         repeat_from: Option<String>,
+        #[arg(
+            long,
+            requires = "repeat",
+            value_name = "日期",
+            help = "重复到哪天（YYYY-MM-DD，含这天），不给就一直重复；做完最后一次，事项就完成了"
+        )]
+        repeat_until: Option<String>,
         #[arg(long, help = "不再重复")]
         no_repeat: bool,
         #[arg(long, num_args = 1.., value_name = "用户名", help = "加上负责人")]
@@ -853,11 +867,11 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Graph { folder, all, mermaid } => read("graph", json!({ "folder": folder, "all": all, "mermaid": mermaid }), j),
         Command::Log { limit } => read("log", json!({ "limit": limit }), j),
         Command::Jobs => read("jobs", json!({}), j),
-        Command::Add { title, folder, description, start, due, remind, repeat, repeat_from, assign, after, before } => write(
+        Command::Add { title, folder, description, start, due, remind, repeat, repeat_from, repeat_until, assign, after, before } => write(
             "add",
             json!({
                 "title": title, "folder": folder, "description": description, "start": start, "due": due, "remind": remind,
-                "repeat": repeat, "repeat_from": repeat_from, "assign": assign, "after": after, "before": before
+                "repeat": repeat, "repeat_from": repeat_from, "repeat_until": repeat_until, "assign": assign, "after": after, "before": before
             }),
             j,
         ),
@@ -875,6 +889,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             no_remind,
             repeat,
             repeat_from,
+            repeat_until,
             no_repeat,
             assign,
             unassign,
@@ -907,6 +922,9 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             }
             if let Some(from) = repeat_from {
                 args.insert("repeat_from".into(), from.into());
+            }
+            if let Some(until) = repeat_until {
+                args.insert("repeat_until".into(), until.into());
             }
             if !assign.is_empty() {
                 args.insert("assign".into(), assign.into());

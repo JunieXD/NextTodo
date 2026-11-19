@@ -409,6 +409,12 @@ async fn done_moves_a_repeating_task_on_by_the_day_on_the_device() {
     assert_eq!(r.status, StatusCode::OK, "{}", r.body);
     let after = &r.body["effects"][0]["after"];
     assert_eq!((after["done_at"].clone(), after["due"]["date"].clone()), (Value::Null, json!("2026-02-28")), "the end of the month");
+
+    // Due after the last day it repeats on is refused as given, even done at once, which would take
+    // the repeat away with it.
+    let past = json!({ "date": "2026-03-31", "repeat": { "every": 1, "unit": "month", "from": "due", "until": "2026-03-30" } });
+    let r = t.mutate(&s, json!([{ "op": "task.update", "id": task, "due": past, "done": true, "today": "2026-02-28" }])).await;
+    assert_eq!((r.status, r.body["message"].as_str()), (StatusCode::BAD_REQUEST, Some("重复到不能早于截止日期")), "{}", r.body);
 }
 
 #[tokio::test]

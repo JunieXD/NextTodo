@@ -175,6 +175,24 @@ test("a repeating task moves on rather than being done, and is never done while 
   expect(() => apply(d, [doneRepeating], cx)).toThrow("“交房租”已完成，不能设置重复，请先重新打开");
 });
 
+test("a repeat until a day is done for good the last time, which counts, and undone repeats again", () => {
+  const d = empty();
+  const until = { every: 1, unit: "day", from: "due", until: "2026-12-19" } as const;
+  run(d, 140, [{ op: "task.create", id: id(1), title: "练一套卷子", start: "2026-12-18", due: { date: "2026-12-18", repeat: until } }]);
+  expect(() => apply(d, [{ op: "task.update", id: id(1), due: { date: "2026-12-20", repeat: until } }], cx)).toThrow("“练一套卷子”的重复到不能早于截止日期");
+  // Nor done at once, which would take the repeat away with it.
+  const late: Op = { op: "task.update", id: id(1), due: { date: "2026-12-20", repeat: until }, done: true, today: "2026-12-18" };
+  expect(() => apply(d, [late], cx)).toThrow("“练一套卷子”的重复到不能早于截止日期");
+  run(d, 141, [{ op: "task.update", id: id(1), done: true, today: "2026-12-18" }]);
+  expect(d.tasks.get(id(1))).toMatchObject({ done_at: null, start: "2026-12-19", due: { date: "2026-12-19", repeat: until } });
+  run(d, 142, [{ op: "task.update", id: id(1), done: true, today: "2026-12-19" }]);
+  expect(d.tasks.get(id(1))).toMatchObject({ start: "2026-12-19", due: { date: "2026-12-19" }, completions: { count: 2, last: "2026-12-19" } });
+  expect(d.tasks.get(id(1))!.done_at).not.toBeNull();
+  expect(d.tasks.get(id(1))!.due!.repeat).toBeUndefined();
+  run(d, 143, [{ op: "undo", mutation: id(142) }]);
+  expect(d.tasks.get(id(1))).toMatchObject({ done_at: null, due: { date: "2026-12-19", repeat: until }, completions: { count: 1, last: "2026-12-18" } });
+});
+
 test("a start keeps its time with a new date, loses it with the date, and is not after the due time that day", () => {
   const d = empty();
   const daily = { every: 1, unit: "day", from: "due" } as const;

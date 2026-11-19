@@ -22,7 +22,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 - YAML 计划里以 `@` 开头的值要加引号（`"@alice#42"`）。
 - **开始时间**写法同截止时间：`2026-11-14` 或 `2026-11-14 09:30`，没到时事项等着，不能晚于截止，见[总体设计](design.md#开始时间)。
 - **截止时间**写成 `2026-11-20` 或 `2026-11-20 18:00`。**提醒**写提前的分钟数，`0` 表示截止时提醒，只有带具体时间的截止才能设提醒。
-- **重复**写成间隔数加单位：`1d`、`2w`、`3m`、`1y`（每天、每两周、每三个月、每年；`1y` 就是 `12m`）；按周的可以在冒号后写周几（`1` 是周一，`7` 是周日），如 `1w:1,2,3,4,5`（每个工作日）、`1w:1,3,5`（每周一三五）、`2w:2,4`（每两周的周二和周四）；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），如 `1m:1,15`（每月 1 号和 15 号）、`1m:31`（每月最后一天）。只有带截止时间的事项能设；`repeat_from` 是 `due`（按截止日期，默认）或 `done`（从完成那天），规则见[总体设计](design.md#重复)。
+- **重复**写成间隔数加单位：`1d`、`2w`、`3m`、`1y`（每天、每两周、每三个月、每年；`1y` 就是 `12m`）；按周的可以在冒号后写周几（`1` 是周一，`7` 是周日），如 `1w:1,2,3,4,5`（每个工作日）、`1w:1,3,5`（每周一三五）、`2w:2,4`（每两周的周二和周四）；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），如 `1m:1,15`（每月 1 号和 15 号）、`1m:31`（每月最后一天）。只有带截止时间的事项能设；`repeat_from` 是 `due`（按截止日期，默认）或 `done`（从完成那天）；`repeat_until` 是重复到哪天（`2026-12-19`，含这天），不给就一直重复，做完最后一次事项就完成了。规则见[总体设计](design.md#重复)。
 - **今天和现在**：所有工具都可以带 `today` 和 `time`，用户当地的日期（`YYYY-MM-DD`）和几点几分（`HH:MM`），用来判断开始时间到了没有；重复的事项完成时按 `today` 顺延。命令行自动带上本机的日期和时间。只带 `today` 的，那天开始的都算已经到了；都不带的按 UTC 的现在算，完成重复的事项时必须带 `today`。`time` 要和 `today` 一起给。
 - **批次**是改动记录里的序号，写操作的输出和 `log` 里都会给出，撤销时用它。
 
@@ -39,9 +39,9 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `log` | `log [-n 条数]` | `limit?` | 最近的改动批次，默认 10，最多 100；包括别的成员在共享的文件夹里做的，写明是谁 |
 | `jobs` | `jobs` | | [AI 整理](ai.md)的请求：等待、整理中和失败的，失败的带原因，以及建议待用户确认的整理文件夹；整理完的请求已经变成事项，不在这里 |
 | `attachment` | `download <附件 ID> [-o 路径]` | `id` | 读一个[附件](design.md#附件)：PNG、JPEG、WebP、GIF 图片（5 MB 以内）在 MCP 里作为图片返回，agent 能直接看；UTF-8 的文本文件（`text/` 开头的和 JSON，1 MB 以内）返回内容；其他文件只给名称、类型和大小。命令行的 `download` 不经过这个工具，直接下载文件，存到 `-o` 给的文件或目录，不给时存到当前目录；存到目录时用附件的名称（按[桌面 App](desktop.md#附件)的规则改成能用的文件名）。已有同名文件时报错，不覆盖 |
-| `add` | `add <标题> [--folder] [-d 描述] [--start] [--due] [--remind] [--repeat [--repeat-from]] [--assign 用户名…] [--after 编号…] [--before 编号…]` | `title`、`folder?`、`description?`、`start?`、`due?`、`remind?`、`repeat?`、`repeat_from?`、`assign?`、`after?`、`before?` | 添加一个事项；文件夹不存在时一起新建 |
-| `edit` | `edit <事项> [--title] [-d 描述 \| --replace 原文 新文… \| --append 文本] [--start \| --no-start] [--due \| --no-due] [--remind \| --no-remind] [--repeat [--repeat-from] \| --no-repeat] [--assign 用户名…] [--unassign 用户名…]` | `task`、`title?`、`description?`、`replace?`、`append?`、`start?`、`due?`、`remind?`、`repeat?`、`repeat_from?`、`assign?`、`unassign?` | 修改事项；`due`、`remind`、`repeat` 给 `null` 表示清除；描述的改法见[同时修改](#同时修改)；负责人在现有的上面加、减 |
-| `done` | `done <事项…> [--end-repeat]` | `tasks`、`today?`、`end_repeat?` | 标为完成，输出因此变成可做的事项；重复的事项改为顺延，输出下一次的截止时间。有重复的事项时必须给 `today`（用户当地的当天日期），命令行自动带上本机日期。`end_repeat` 让重复的事项结束重复、直接完成，用于打卡的长期事项全部做完时，见[总体设计](design.md#重复) |
+| `add` | `add <标题> [--folder] [-d 描述] [--start] [--due] [--remind] [--repeat [--repeat-from] [--repeat-until]] [--assign 用户名…] [--after 编号…] [--before 编号…]` | `title`、`folder?`、`description?`、`start?`、`due?`、`remind?`、`repeat?`、`repeat_from?`、`repeat_until?`、`assign?`、`after?`、`before?` | 添加一个事项；文件夹不存在时一起新建 |
+| `edit` | `edit <事项> [--title] [-d 描述 \| --replace 原文 新文… \| --append 文本] [--start \| --no-start] [--due \| --no-due] [--remind \| --no-remind] [--repeat [--repeat-from] [--repeat-until] \| --no-repeat] [--assign 用户名…] [--unassign 用户名…]` | `task`、`title?`、`description?`、`replace?`、`append?`、`start?`、`due?`、`remind?`、`repeat?`、`repeat_from?`、`repeat_until?`、`assign?`、`unassign?` | 修改事项；`due`、`remind`、`repeat` 给 `null` 表示清除；描述的改法见[同时修改](#同时修改)；负责人在现有的上面加、减 |
+| `done` | `done <事项…> [--end-repeat]` | `tasks`、`today?`、`end_repeat?` | 标为完成，输出因此变成可做的事项；重复的事项改为顺延，输出下一次的截止时间；做的是 `repeat_until` 前的最后一次的，直接完成。有重复的事项时必须给 `today`（用户当地的当天日期），命令行自动带上本机日期。`end_repeat` 让重复的事项结束重复、直接完成，用于打卡的长期事项全部做完时，见[总体设计](design.md#重复) |
 | `reopen` | `reopen <事项…>` | `tasks` | 重新打开 |
 | `mkdir` | `mkdir <路径>` | `path` | 新建文件夹，路径上缺的层级一起建；已存在时报错 |
 | `rename` | `rename <文件夹> <新名字>`、`rename --attachment <附件 ID> <新名字>` | `folder?`、`attachment?`、`name` | 文件夹或附件改名，`folder` 和 `attachment` 正好给一个 |
@@ -59,7 +59,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 - 命令行里 `mv`、`rm` 的参数像编号的是事项，其余是文件夹。
 - `list`、`next`、`search` 最多列出 `limit` 项，默认 50，最多 500；没列完时最后一行说明还有多少项。`list` 先列未完成的，再列已完成的。
 - `edit` 的 `start` 给 `null`（命令行 `--no-start`）清除开始时间，`due` 同样；只写日期的 `start` 去掉原来的几点。改了截止或开始，开始晚于截止时报错。
-- `edit` 只改 `due` 不给 `remind` 时：新截止带具体时间就保留原来的提醒，否则去掉；重复总是保留，清除截止时间时一起清除。`repeat_from` 只能和 `repeat` 一起给。
+- `edit` 只改 `due` 不给 `remind` 时：新截止带具体时间就保留原来的提醒，否则去掉；重复总是保留，清除截止时间时一起清除；新截止晚于 `repeat_until` 时报错。`repeat_from`、`repeat_until` 只能和 `repeat` 一起给：给了 `repeat` 就整个换掉，没给的按默认。
 - 负责人只能是共享人和成员，只有共享的文件夹里的事项能设。`assign`、`unassign` 在服务端当时的负责人上加、减，两个人同时设也不会互相覆盖。
 - 依赖只能连在同一处：私人的事项之间，或同一个共享的文件夹里的事项之间，见[依赖](design.md#依赖)。
 - 每个写操作是一个批次，全部生效或全部不生效；重发不会重复生效，见[重试](#重试)。
@@ -76,7 +76,7 @@ tasks:
     title: 出设计稿           # 必填
     due: 2026-11-20 18:00
     remind: 60
-    repeat: 1w                # 可选，写法同 add；repeat_from 也可以写
+    repeat: 1w                # 可选，写法同 add；repeat_from、repeat_until 也可以写
   - ref: api
     title: 写接口
     folder: 后端              # 可选，相对上面的 folder；以 / 开头是完整路径；不存在就新建

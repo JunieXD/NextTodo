@@ -1,6 +1,8 @@
 // A twin of `crates/core/src/repeat.rs`; both are checked against `fixtures/repeat.json`.
 
+import type { Due } from "../api/types/Due";
 import type { Repeat } from "../api/types/Repeat";
+import { formatDue } from "./dates";
 
 /** Midnight UTC of a day, years before 100 included (`Date.UTC` takes them for 19xx). */
 function utc(y: number, m: number, d: number): Date {
@@ -17,8 +19,8 @@ export const WORKDAYS = [1, 2, 3, 4, 5];
 
 /** The due date after `due`, the task done `today` (both `YYYY-MM-DD`): a step on from the start,
  * or as many as it takes to get past today. On some days of the week or month, a step is to the next
- * of them: later that week or month, or in the first one `every` on. Null past the year 9999, which
- * dates don't go beyond. */
+ * of them: later that week or month, or in the first one `every` on. Null when that was the last
+ * time: the next is after `until`, or past the year 9999, which dates don't go beyond. */
 export function nextDue(r: Repeat, due: string, today: string): string | null {
   const [y, m, d] = (r.from === "due" ? due : today).split("-").map(Number);
   // The day `day` of the month `k` months on, or its last day if it has none.
@@ -57,8 +59,12 @@ export function nextDue(r: Repeat, due: string, today: string): string | null {
   };
   const next = !r.days ? stepped() : r.unit === "week" ? onWeekdays(r.days) : onMonthdays(r.days);
   const year = next.getUTCFullYear();
-  return year > 9999 ? null : `${pad(year, 4)}-${pad(next.getUTCMonth() + 1)}-${pad(next.getUTCDate())}`;
+  const date = `${pad(year, 4)}-${pad(next.getUTCMonth() + 1)}-${pad(next.getUTCDate())}`;
+  return year > 9999 || (r.until && date > r.until) ? null : date;
 }
+
+/** Whether a task due `due`, done `today`, is done for good: it repeats, and this was the last time. */
+export const lastTime = (due: Due, today: string) => due.repeat !== undefined && nextDue(due.repeat, due.date, today) === null;
 
 /** `date` moved as many days as `from` moved to `to`: a start date kept as far before its due date. */
 export function shifted(date: string, from: string, to: string): string {
@@ -84,3 +90,6 @@ export function repeatLabel(r: Repeat): string {
   if (r.every > 1) return `每 ${r.every} ${unit}`;
   return r.unit === "month" ? "每月" : `每${unit}`;
 }
+
+/** `每天，到12月19日`: how it repeats, and until when if it ends. */
+export const repeatText = (r: Repeat, now: Date) => (r.until ? `${repeatLabel(r)}，到${formatDue({ date: r.until }, now)}` : repeatLabel(r));

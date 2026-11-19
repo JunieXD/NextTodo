@@ -7,9 +7,9 @@ use crate::model::{Date, Period, Repeat, RepeatFrom, days_in_month};
 impl Repeat {
     /// The due date after `due`, the task done `today`: a step on from the start, or as many as it
     /// takes to get past today. On some days of the week or month, a step is to the next of them: later
-    /// that week or month, or in the first one `every` on. An error past the year 9999, which dates
-    /// don't go beyond.
-    pub fn next(self, due: &Date, today: &Date) -> Result<Date, String> {
+    /// that week or month, or in the first one `every` on. None when that was the last time: the next
+    /// is after `until`, or past the year 9999, which dates don't go beyond.
+    pub fn next(&self, due: &Date, today: &Date) -> Option<Date> {
         let (y, m, d) = parts(match self.from {
             RepeatFrom::Due => due,
             RepeatFrom::Done => today,
@@ -44,7 +44,7 @@ impl Repeat {
                 .find(|&n| n > today),
         };
         let (y, m, d) = civil(next.expect("dates go on"));
-        Date::try_from(format!("{y:04}-{m:02}-{d:02}")).map_err(|_| "下一次的截止日期超出范围".into())
+        Date::try_from(format!("{y:04}-{m:02}-{d:02}")).ok().filter(|next| self.until.as_ref().is_none_or(|until| next <= until))
     }
 }
 

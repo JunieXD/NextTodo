@@ -787,8 +787,11 @@ a.text-btn { display: inline-flex; align-items: center; }
 .time-cols button.on { background: var(--primary); color: var(--on-primary); font-weight: 600; }
 .time-cols button:focus-visible { box-shadow: inset 0 0 0 2px var(--primary); }
 @media (hover: hover) { .time-cols button:not(.on, :disabled):hover { background: var(--press); } }
-.time-menu > .menu-item { width: 100%; justify-content: center; color: var(--primary); font-weight: 500; }
-.time-menu > .menu-item:hover, .time-menu > .menu-item:focus-visible { background: var(--press); }
+.time-menu > .menu-item, .until-menu > .menu-item { width: 100%; justify-content: center; color: var(--primary); font-weight: 500; }
+.time-menu > .menu-item:hover, .time-menu > .menu-item:focus-visible, .until-menu > .menu-item:hover, .until-menu > .menu-item:focus-visible { background: var(--press); }
+/* The month to pick the last day of a repeat in, in a menu of its own. */
+.until-menu { width: 300px; max-width: calc(100vw - 16px); padding: 6px; }
+.until-menu .cal { margin: 0; padding: 4px 0 2px; background: none; }
 
 /* A number, stepped by − and + or typed. */
 /* The days of the week or month a repeat falls on, seven a line. */

@@ -211,6 +211,12 @@ export class Store {
     return id && this.effectsOf(id)!.every((e) => e.kind === "task" && e.before && e.after?.id === task) ? id : undefined;
   }
 
+  /** The latest change this copy knows of that marked a task done. */
+  doneBy(task: TaskId): MutationId | undefined {
+    const changes = [...this.log.keys(), ...this.outbox.map((p) => p.mutation.id)].reverse();
+    return changes.find((id) => this.effectsOf(id)?.some((e) => e.kind === "task" && e.after?.id === task && e.before?.done_at === null && e.after.done_at !== null));
+  }
+
   /** What a change did, as far as this copy knows. */
   effectsOf = (id: MutationId): Effect[] | undefined => this.log.get(id) ?? this.local.get(id);
 

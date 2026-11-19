@@ -11,7 +11,7 @@ import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "./board";
 import { formatDue, isoDate, remindLabel } from "./dates";
 import { rekey } from "./reorder";
-import { repeatLabel } from "./repeat";
+import { lastTime, repeatText } from "./repeat";
 
 type Fields = { title?: string; description?: string; due?: Due | null; done?: boolean; folder_id?: FolderId };
 
@@ -38,11 +38,12 @@ const sameDue = (a: Due | null, b: Due | null) =>
   a?.repeat?.every === b?.repeat?.every &&
   a?.repeat?.unit === b?.repeat?.unit &&
   a?.repeat?.from === b?.repeat?.from &&
-  a?.repeat?.days?.join() === b?.repeat?.days?.join();
+  a?.repeat?.days?.join() === b?.repeat?.days?.join() &&
+  a?.repeat?.until === b?.repeat?.until;
 
 /** `11月20日 18:00 · 提前 30 分钟 · 每周`, or `无`. */
 const dueText = (d: Due | null, now: Date) =>
-  d ? [formatDue(d, now), d.remind_before !== undefined && remindLabel(d.remind_before), d.repeat && repeatLabel(d.repeat)].filter(Boolean).join(" · ") : "无";
+  d ? [formatDue(d, now), d.remind_before !== undefined && remindLabel(d.remind_before), d.repeat && repeatText(d.repeat, now)].filter(Boolean).join(" · ") : "无";
 
 /** What `s` would still do: to tasks there and in the state it found them, and links not made yet. */
 function group(s: Suggestion, j: AiJob, board: Board, created: Map<TaskId, string>): Group | null {
@@ -101,7 +102,10 @@ function group(s: Suggestion, j: AiJob, board: Board, created: Map<TaskId, strin
     parts.push({ key: "due", label: "截止", text: `${dueText(s.was.due, now)} → ${dueText(s.due, now)}`, act: { update: id, fields: { due: s.due } }, ...was });
   }
   if (s.done !== undefined && s.done !== (t.done_at !== null)) {
-    const text = !s.done ? "重新打开" : t.due?.repeat ? "标为完成，截止时间顺延到下一次" : "标为完成";
+    // As the suggestion's own due date, taken with it by default, has it.
+    const due = s.due === undefined ? t.due : s.due;
+    const moves = due?.repeat && !lastTime(due, isoDate(now));
+    const text = !s.done ? "重新打开" : moves ? "标为完成，截止时间顺延到下一次" : "标为完成";
     parts.push({ key: "done", label: "状态", text, act: { update: id, fields: { done: s.done } } });
   }
   if (s.folder !== undefined && board.folder(s.folder) && t.folder_id !== s.folder) {

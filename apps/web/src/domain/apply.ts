@@ -252,7 +252,11 @@ class Applier {
           t.start = op.start;
         }
         if (op.start_time !== undefined) t.start_time = op.start_time ?? undefined;
-        if (op.due !== undefined) t.due = op.due;
+        if (op.due !== undefined) {
+          // As given, before doing it the last time could take the repeat away.
+          checkUntil(t.title, op.due);
+          t.due = op.due;
+        }
         if (op.sort_key !== undefined) t.sort_key = op.sort_key;
         if (op.assign?.length || op.unassign?.length) {
           if (t.folder_id !== before.folder_id && t.folder_id) this.folder(t.folder_id);
@@ -261,14 +265,20 @@ class Applier {
         }
         if (op.done !== undefined && op.done !== (t.done_at !== null)) {
           const repeat = t.due?.repeat;
-          // Done, a repeating task stays open, due next time (docs/design.md#重复).
+          // Done, a repeating task stays open, due next time; done the last time, it is done
+          // (docs/design.md#重复).
           if (op.done && t.due && repeat) {
             if (!op.today) throw new Rejected("invalid", "完成重复的事项需要给出今天的日期");
             const date = nextDue(repeat, t.due.date, op.today);
-            if (!date) throw new Rejected("invalid", "下一次的截止日期超出范围");
-            // The start date keeps as far before it, at the same time (docs/design.md#开始时间).
-            if (t.start) t.start = shifted(t.start, t.due.date, date);
-            t.due = { ...t.due, date };
+            if (date) {
+              // The start date keeps as far before it, at the same time (docs/design.md#开始时间).
+              if (t.start) t.start = shifted(t.start, t.due.date, date);
+              t.due = { ...t.due, date };
+            } else {
+              const { repeat: ended, ...rest } = t.due;
+              t.due = rest;
+              t.done_at = now;
+            }
             t.completions = { count: (t.completions?.count ?? 0) + 1, last: op.today };
           } else t.done_at = op.done ? now : null;
         }
@@ -819,9 +829,15 @@ function restoreDue(cur: Due | null, before: Due | null, after: Due | null): Due
   };
 }
 
+/** A due date is not after the last day it repeats on. */
+function checkUntil(title: string, due: Due | null) {
+  if (due?.repeat?.until && due.repeat.until < due.date) throw new Rejected("invalid", `“${title}”的重复到不能早于截止日期`);
+}
+
 /** What the server rejects too, so that a change it would refuse isn't applied here meanwhile. */
 function checkTask(t: Task) {
   if (t.done_at !== null && t.due?.repeat) throw new Rejected("invalid", `“${t.title}”已完成，不能设置重复，请先重新打开`);
+  checkUntil(t.title, t.due);
   if (!t.start) {
     if (t.start_time) throw new Rejected("invalid", "设置开始的几点需要先有开始日期");
     return;

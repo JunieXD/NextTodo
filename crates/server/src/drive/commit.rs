@@ -7,8 +7,8 @@ use uuid::Uuid;
 
 /// How this version of the app writes commits, and the newest it reads: one more each time what an
 /// older version would not read changes, the operations and what they did included
-/// (docs/local.md#格式版本). Every format before it is still read.
-pub(crate) const FORMAT: i64 = 1;
+/// (docs/local.md#格式版本). Every format before it is still read. 2: a repeat may end.
+pub(crate) const FORMAT: i64 = 2;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct Commit {

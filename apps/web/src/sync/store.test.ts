@@ -332,3 +332,14 @@ test("a change adding attachments goes once its files are uploaded, and those af
   expect(sent).toHaveLength(4);
   expect(sent.at(-1)!.ops[0].op).toBe("attachment.update");
 });
+
+test("the last time of a repeat is what made the task done until it is reopened and done again", () => {
+  const due = { date: "2026-11-10", repeat: { every: 1, unit: "day" as const, from: "due" as const, until: "2026-11-10" } };
+  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  const { id: last } = store.commit([{ op: "task.update", id: id(1), done: true, today: "2026-11-10" }]);
+  expect([store.completedAt(id(1), 1), store.doneBy(id(1))]).toEqual([last, last]);
+  store.commit([{ op: "task.update", id: id(1), done: false }]);
+  const { id: again } = store.commit([{ op: "task.update", id: id(1), done: true }]);
+  // Done again as it is now, the last time is no longer why.
+  expect([store.completedAt(id(1), 1), store.doneBy(id(1))]).toEqual([last, again]);
+});

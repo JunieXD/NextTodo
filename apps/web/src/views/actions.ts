@@ -71,7 +71,9 @@ export function useTaskActions(): RowActions & {
     const unlocked = board()
       .next()
       .filter((x) => !readyBefore.has(x.id));
-    if (repeating) {
+    // Done the last time, a repeating task is done for good (docs/design.md#重复).
+    const last = repeating && board().task(t.id)?.done_at !== null;
+    if (repeating && !last) {
       marking.pop(t.id);
       marking.flash(unlocked.map((x) => x.id));
       const next = `下一次：${formatDue(board().task(t.id)!.due!, new Date())}`;
@@ -83,7 +85,8 @@ export function useTaskActions(): RowActions & {
       t.id,
       unlocked.map((x) => x.id),
     );
-    const text = unlocked.length === 1 ? `解锁了“${unlocked[0].title}”` : unlocked.length ? `解锁了 ${unlocked.length} 项` : `已完成“${t.title}”`;
+    const unlocks = unlocked.length === 1 ? `解锁了“${unlocked[0].title}”` : unlocked.length ? `解锁了 ${unlocked.length} 项` : "";
+    const text = last ? (unlocks ? `已完成最后一次，${unlocks}` : `“${t.title}”已完成最后一次`) : unlocks || `已完成“${t.title}”`;
     snack({ text, action: "撤销", onAction: () => undo(r.id) });
   };
 

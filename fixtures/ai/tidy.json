@@ -126,6 +126,18 @@
     "expect": { "allowed": ["due"], "due": [[1, "2026-11-15 20:00 ~2w"]], "untouched": [2] }
   },
   {
+    "id": "repeat-until",
+    "note": "给重复加上重复到哪天，间隔和时间不变",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/备考", "request": "练卷子练到12月19号就停", "subfolders": [], "open_tasks": [{ "number": 1, "title": "练一套数学卷子", "due": "2026-11-09 21:00", "repeat": "1d" }, { "number": 2, "title": "报名六级" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2026-11-09 21:00 ~1d..2026-12-19"]], "untouched": [2] }
+  },
+  {
+    "id": "keep-repeat-until",
+    "note": "改间隔：原来的重复到保留",
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/备考", "request": "背单词改成每两天一次", "subfolders": [], "open_tasks": [{ "number": 1, "title": "背单词", "due": "2026-11-09", "repeat": "1d", "repeat_until": "2026-12-19" }, { "number": 2, "title": "报名六级" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2026-11-09 ~2d..2026-12-19"]], "untouched": [2] }
+  },
+  {
     "id": "repeat-from-done",
     "note": "按天重复，从完成那天算",
     "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/家务", "request": "换净水器滤芯每 90 天一次，从换的那天算，先定在月底", "subfolders": [], "open_tasks": [{ "number": 1, "title": "换净水器滤芯" }, { "number": 2, "title": "买洗碗块" }], "done_tasks": [] },

@@ -23,7 +23,7 @@ pub fn status_tag(b: &Board, t: &Task) -> String {
     }
 }
 
-/// `2026-11-20 18:00`, with how it repeats: `2026-11-20，每周`.
+/// `2026-11-20 18:00`, with how it repeats: `2026-11-20，每周`, `2026-11-20，每天，到 2026-12-19`.
 /// When it starts, `2026-11-14` or `2026-11-14 09:30`, if it has a start.
 pub fn start(t: &Task) -> Option<String> {
     Some(moment(t.start.as_ref()?, t.start_time.as_ref()))
@@ -39,15 +39,15 @@ pub fn due(d: &Due) -> String {
     if let Some(at) = &d.at {
         s += &format!(" {}", at.time.as_str());
     }
-    if let Some(r) = d.repeat {
+    if let Some(r) = &d.repeat {
         s += &format!("，{}", repeat(r));
     }
     s
 }
 
-/// `每天`, `每 2 周`, `每个工作日`, `每 2 周的周二、四`, `每月 1、15 号`, `每年`, `每 3 个月，从完成那天算`;
-/// the web app's `repeatLabel` has them so too.
-pub fn repeat(r: Repeat) -> String {
+/// `每天`, `每 2 周`, `每个工作日`, `每 2 周的周二、四`, `每月 1、15 号`, `每年`, `每 3 个月，从完成那天算`,
+/// `每天，到 2026-12-19`; the web app's `repeatLabel` has them so too, but for the last day.
+pub fn repeat(r: &Repeat) -> String {
     let every = match (r.every.get(), r.period) {
         (1, Period::Week(Some(Weekdays::WORKDAYS))) => "每个工作日".to_owned(),
         (n, Period::Week(Some(days))) => {
@@ -70,9 +70,13 @@ pub fn repeat(r: Repeat) -> String {
         (n, Period::Week(None)) => format!("每 {n} 周"),
         (n, Period::Month(None)) => format!("每 {n} 个月"),
     };
-    match r.from {
+    let every = match r.from {
         RepeatFrom::Due => every,
         RepeatFrom::Done => format!("{every}，从完成那天算"),
+    };
+    match &r.until {
+        Some(until) => format!("{every}，到 {}", until.as_str()),
+        None => every,
     }
 }
 
@@ -456,14 +460,22 @@ fn moved_on<'a>(before: &Task, after: &'a Task) -> Option<&'a Date> {
     }
 }
 
+/// Whether a repeating task was done for good, the repeat ending with it: the last time, or ended.
+fn ended(before: &Task, after: &Task) -> bool {
+    match (&before.due, &after.due) {
+        (Some(b), Some(a)) => after.done_at.is_some() && b.repeat.is_some() && *a == Due { repeat: None, ..b.clone() },
+        _ => false,
+    }
+}
+
 /// What changed in a task besides whether it is done, which folder it is in, and a repeating one's
-/// due date moving on; its place in a folder only within the same folder, as a move puts it
-/// somewhere in the new one anyway.
+/// due date moving on or its repeat ending as it is done; its place in a folder only within the same
+/// folder, as a move puts it somewhere in the new one anyway.
 fn edited(before: &Task, after: &Task) -> Vec<&'static str> {
     [
         ("title", before.title != after.title),
         ("description", before.description != after.description),
-        ("due", before.due != after.due && moved_on(before, after).is_none()),
+        ("due", before.due != after.due && moved_on(before, after).is_none() && !ended(before, after)),
         ("assignees", before.assignees != after.assignees),
         ("order", before.sort_key != after.sort_key && before.folder_id == after.folder_id),
     ]

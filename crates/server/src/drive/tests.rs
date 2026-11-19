@@ -1067,7 +1067,7 @@ fn syncing_is_turned_on_in_an_empty_folder_or_one_of_nexttodos_own_only() {
 fn a_folder_or_commit_of_a_newer_format_asks_for_an_update_whatever_else_changed() {
     let newer = json!({ "format": 2, "generation": { "name": "g" }, "entries": [{ "kind": "unknown" }] }).to_string();
     assert!(matches!(setup::Pointer::read(newer.as_bytes()), Err(Trouble::NewerVersion)));
-    let newer = json!({ "format": 2, "id": id(), "entries": [] }).to_string();
+    let newer = json!({ "format": super::commit::FORMAT + 1, "id": id(), "entries": [] }).to_string();
     assert!(matches!(super::parse(newer.as_bytes()), Err(Trouble::NewerVersion)));
 }
 

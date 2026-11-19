@@ -517,7 +517,7 @@ fn check(e: &Expect, input: &Value, v: &Value, snap: &Snapshot, ops: &[Op]) -> (
 
 /// A due date in full, for comparing: `2026-12-01 09:00 !1440 ~1m`, the reminder after `!` and the
 /// repeat after `~` as the model writes it (`1w:1,3,5` on some days), `/done` when counted from the day
-/// it is done; empty for none.
+/// it is done, `..2026-12-19` when it ends; empty for none.
 fn due_text(d: Option<&Due>) -> String {
     let Some(d) = d else { return String::new() };
     let mut s = d.date.as_str().to_owned();
@@ -527,8 +527,11 @@ fn due_text(d: Option<&Due>) -> String {
             s += &format!(" !{m}");
         }
     }
-    if let Some(r) = d.repeat {
+    if let Some(r) = &d.repeat {
         s += &format!(" ~{}{}", tidy::repeat_text(r), if r.from == RepeatFrom::Done { "/done" } else { "" });
+        if let Some(until) = &r.until {
+            s += &format!("..{}", until.as_str());
+        }
     }
     s
 }
@@ -630,7 +633,7 @@ fn tidy_data(input: &Value) -> (Snapshot, AiJob) {
                     "w" => "week",
                     _ => "month",
                 };
-                json!({ "every": every.parse::<u32>().expect("a number"), "unit": unit, "from": t["repeat_from"].as_str().unwrap_or("due"), "days": days })
+                json!({ "every": every.parse::<u32>().expect("a number"), "unit": unit, "from": t["repeat_from"].as_str().unwrap_or("due"), "days": days, "until": t["repeat_until"] })
             });
             json!({ "date": date, "time": time, "remind_before": t["remind"], "repeat": repeat })
         });

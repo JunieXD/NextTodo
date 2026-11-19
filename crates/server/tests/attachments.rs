@@ -291,3 +291,42 @@ async fn the_android_page_may_upload_and_download() {
     assert_eq!(h[header::ACCESS_CONTROL_ALLOW_ORIGIN], "https://localhost");
     assert!(h[header::ACCESS_CONTROL_ALLOW_METHODS].to_str().unwrap().contains("PUT"));
 }
+
+#[tokio::test]
+async fn a_file_copies_from_an_attachment_one_sees() {
+    let t = TestApp::new();
+    let alice = t.admin().await;
+    let bob = t.user(&alice, "bob").await;
+    let plan = task(&t, &alice, "合同", None).await;
+    let original = t.attach(&alice, &plan, "合同.txt", b"terms").await;
+    let copy = |s: &str, from: &str| {
+        let req = Request::builder()
+            .method("PUT")
+            .uri(format!("/api/v1/files/{}?from={from}", id()))
+            .header(header::AUTHORIZATION, format!("Bearer {s}"));
+        let t = &t;
+        async move { t.raw(req, Body::empty()).await }
+    };
+
+    let new = id();
+    let copy_to = |s: &str, to: &str| {
+        let req = Request::builder()
+            .method("PUT")
+            .uri(format!("/api/v1/files/{to}?from={original}"))
+            .header(header::AUTHORIZATION, format!("Bearer {s}"));
+        let t = &t;
+        async move { t.raw(req, Body::empty()).await }
+    };
+    let (status, _, body) = copy_to(&alice, &new).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(serde_json::from_slice::<Value>(&body).unwrap()["size"], 5);
+    let op = json!([{ "op": "attachment.add", "id": new, "name": "合同.txt", "type": "text/plain", "size": 5, "task_id": plan }]);
+    assert_eq!(t.mutate(&alice, op).await.status, StatusCode::OK, "attached as an upload is");
+    assert_eq!(t.download(&alice, &new).await.2, b"terms");
+
+    assert_eq!(copy(&bob, &original).await.0, StatusCode::NOT_FOUND, "not his to see");
+    assert_eq!(copy(&alice, &id()).await.0, StatusCode::NOT_FOUND);
+    // Sent again after the reply was lost, it gets the first answer, the original gone since or not.
+    assert_eq!(t.mutate(&alice, json!([{ "op": "attachment.delete", "id": original }])).await.status, StatusCode::OK);
+    assert_eq!(copy_to(&alice, &new).await.0, StatusCode::OK);
+}

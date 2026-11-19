@@ -154,6 +154,20 @@ test("changes the server has not seen yet can be undone here", async () => {
   expect(store.unconfirmed).toHaveLength(2);
 });
 
+test("an attachment the server has not yet is made by the last change adding it or bringing it back", () => {
+  const { store } = setup({
+    ...Store.empty(),
+    base: { ...Store.empty().base, tasks: [task(1, "审价")], attachments: [{ id: id(5), task_id: id(1), job_id: null, name: "报价.txt", type: "text/plain", size: 5, created_at: 0 }] },
+  });
+  const add = { op: "attachment.add", id: id(6), name: "合同.pdf", type: "application/pdf", size: 3, task_id: id(1) } as const;
+  expect(store.madeBy(id(5))).toBeUndefined();
+  const { id: added } = store.commit([add]);
+  expect(store.madeBy(id(6))).toBe(added);
+  const { id: deleted } = store.commit([{ op: "attachment.delete", id: id(5) }]);
+  const { id: back } = store.commit([{ op: "undo", mutation: deleted }]);
+  expect(store.madeBy(id(5))).toBe(back);
+});
+
 test("the last time a repeating task was done is found among the changes, also after undoing it, one time after another", () => {
   const due = { date: "2026-11-10", repeat: { every: 1, unit: "day" as const, from: "due" as const } };
   const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], attachments: [], ai_jobs: [], shares: [], people: [] } });

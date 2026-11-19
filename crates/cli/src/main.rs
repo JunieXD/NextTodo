@@ -214,6 +214,14 @@ enum Command {
         #[arg(required = true, num_args = 2.., help = "要移动的事项和文件夹，最后一个是目标文件夹")]
         items: Vec<String>,
     },
+    #[command(about = "复制文件夹，连同里面的事项、附件和依赖，事项都变回待办")]
+    Cp {
+        folder: String,
+        #[arg(value_name = "目标文件夹", help = "副本放进的文件夹，默认是原文件夹的同一层")]
+        to: Option<String>,
+        #[arg(long, help = "副本的名字，默认用原名，同一层已有时叫“原名 副本”")]
+        name: Option<String>,
+    },
     #[command(about = "删除事项（编号）或文件夹（路径，连同里面的一切）")]
     Rm {
         #[arg(required = true)]
@@ -947,6 +955,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             let (tasks, folders) = items(&list);
             write("move", json!({ "tasks": tasks, "folders": folders, "to": to }), j)
         }
+        Command::Cp { folder, to, name } => write("copy", json!({ "folder": folder, "to": to, "name": name }), j),
         Command::Rm { items: list } => {
             let (tasks, folders) = items(&list);
             write("delete", json!({ "tasks": tasks, "folders": folders }), j)

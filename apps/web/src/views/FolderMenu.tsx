@@ -1,20 +1,24 @@
 // What can be done to a folder: make one inside it, tidy it with AI, share, rename, move, delete. From
 // its "…" button, or by right-clicking it on a computer.
 
-import { FolderInput, FolderPlus, ListChecks, NotebookPen, Pencil, Sparkles, Trash2, Users } from "lucide-react";
+import { Copy, FolderInput, FolderPlus, ListChecks, NotebookPen, Pencil, Sparkles, Trash2, Users } from "lucide-react";
 import { type ReactElement, type ReactNode, useEffect, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation } from "wouter";
+import type { Folder } from "../api/types/Folder";
 import type { FolderId } from "../api/types/FolderId";
+import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
 import { aiReady } from "../ai";
-import { lastKey } from "../domain/apply";
+import { MAX_OPS, lastKey } from "../domain/apply";
+import { copyFolder, copyName, copyPlace } from "../domain/copy";
 import { inLocalMode } from "../local";
 import { localTime } from "../domain/dates";
 import { rekey } from "../domain/reorder";
 import { checkFolderName, checkJobText } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
-import { Modal, useFeedback } from "../ui/feedback";
+import { dropFiles } from "../sync/files";
+import { Modal, forUser, useFeedback } from "../ui/feedback";
 import { composing } from "../ui/keys";
 import { ContextMenu, type MenuItem, MenuButton } from "../ui/menu";
 import { useAiNote } from "./AiNotes";
@@ -33,6 +37,49 @@ export function useNewFolder() {
     if (name === null) return;
     const sort_key = lastKey(store.getView().board.subfolders(parent).map((f) => f.sort_key));
     if (commit([{ op: "folder.create", id: uuidv7(), name, sort_key, ...(parent && { parent_id: parent }) }])) snack(`已新建“${name}”`);
+  };
+}
+
+/** Asks for a name and copies `f` with all in it, beside it (docs/design.md#文件夹). */
+function useCopyFolder() {
+  const { prompt, snack } = useFeedback();
+  const commit = useCommit();
+  const undo = useUndo();
+  const { user, store, files } = useSession();
+  return async (f: Folder) => {
+    const parent = copyPlace(store.getView().board, f.id);
+    const taken = (n: string) => store.getView().board.subfolders(parent).some((s) => s.name === n);
+    const name = await prompt({
+      title: `复制“${f.name}”`,
+      label: "名称",
+      value: copyName(f.name, taken),
+      hint: "连同子文件夹、事项、附件和先后关系一起复制，事项都变回待办",
+      ok: "复制",
+      check: checkFolderName,
+    });
+    // As it is now: it may have changed, or moved, while the name was asked for.
+    const board = store.getView().board;
+    if (name === null || !board.folder(f.id)) return;
+    const place = copyPlace(board, f.id);
+    // Right after it; or, shared with the user, last at their root.
+    const id = uuidv7();
+    const wanted: { id: string; sort_key: string }[] = [...board.subfolders(place)];
+    const at = wanted.findIndex((s) => s.id === f.id);
+    wanted.splice(at < 0 ? wanted.length : at + 1, 0, { id, sort_key: "" });
+    const keys = rekey(wanted, id);
+    const copied = copyFolder(board, f.id, place, { id, name, sort_key: keys.find((k) => k.id === id)!.sort_key });
+    const ops: Op[] = [...keys.filter((k) => k.id !== id).map((k): Op => ({ op: "folder.update", ...k })), ...copied.ops];
+    if (ops.length > MAX_OPS) return snack(`文件夹里的东西太多，一次最多复制 ${MAX_OPS} 项（文件夹、事项、依赖和附件合计）`);
+    const copies = copied.files.map(([copy, a]): [string, string, MutationId | undefined] => [copy, a.id, store.madeBy(a.id)]);
+    try {
+      // Noted first: the change waits for them as soon as it is made.
+      await files.keepCopies(copies);
+    } catch (e) {
+      return snack(forUser("复制文件夹", e));
+    }
+    const r = commit(ops);
+    if (!r) return void dropFiles(user.id, copies.map(([copy]) => copy));
+    snack({ text: `已复制为“${name}”`, action: "撤销", onAction: () => undo(r.id) });
   };
 }
 
@@ -150,6 +197,7 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
   const undo = useUndo();
   const { prompt, confirm, snack } = useFeedback();
   const newFolder = useNewFolder();
+  const copy = useCopyFolder();
   const place = usePlaceFolder();
   const tidy = useTidy(folder);
   const note = useAiNote(folder);
@@ -193,6 +241,7 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
   };
 
   const theirs = sharer(board, f.id);
+  const copying = { icon: Copy, label: "复制…", onSelect: () => void copy(f) };
   return {
     items: [
       { icon: FolderPlus, label: "新建子文件夹", onSelect: () => newFolder(f.id) },
@@ -200,9 +249,10 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
       { icon: NotebookPen, label: "AI 说明", onSelect: note.start },
       ...(shareable(board, f.id) && !inLocalMode() ? [{ icon: Users, label: "共享…", onSelect: () => setSharing(true) }] : []),
       ...(theirs
-        ? []
+        ? [copying]
         : [
             { icon: Pencil, label: "重命名", onSelect: rename },
+            copying,
             { icon: FolderInput, label: "移动到…", onSelect: () => setMoving(true) },
             { icon: Trash2, label: "删除文件夹", danger: true, onSelect: remove },
           ]),

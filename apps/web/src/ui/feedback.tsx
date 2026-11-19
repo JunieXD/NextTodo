@@ -49,6 +49,8 @@ interface Prompt {
   placeholder?: string;
   /** How much of `value`, from its start, is selected as it opens: a file's name before its extension. */
   select?: number;
+  /** A line under the input, saying more of what happens. */
+  hint?: string;
   ok: string;
   /** Cleans the input or says what is wrong with it. */
   check: (s: string) => Checked;
@@ -268,7 +270,7 @@ function ConfirmDialog({ title, body, detail, ok, cancel = "取消", danger, clo
   );
 }
 
-function PromptDialog({ title, label, value = "", placeholder, select, ok, check, close }: Prompt & { close(value: string | null): void }) {
+function PromptDialog({ title, label, value = "", placeholder, select, hint, ok, check, close }: Prompt & { close(value: string | null): void }) {
   const [text, setText] = useState(value);
   const input = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
@@ -290,7 +292,7 @@ function PromptDialog({ title, label, value = "", placeholder, select, ok, check
             // it, the part is selected; after the dialog's own selecting it all, which comes next.
             onFocus={() => select !== undefined && text === value && queueMicrotask(() => input.current?.setSelectionRange(0, select))}
             value={text} placeholder={placeholder} onChange={(e) => (setText(e.target.value), setError(""))} />
-          {error && <span className="hint error-text">{error}</span>}
+          {error ? <span className="hint error-text">{error}</span> : hint && <span className="hint">{hint}</span>}
         </label>
         <div className="dialog-actions">
           <button type="button" className="text-btn" onClick={() => close(null)}>

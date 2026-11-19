@@ -296,6 +296,17 @@ pub struct MoveArgs {
 
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct CopyArgs {
+    #[schemars(description = "要复制的文件夹路径")]
+    pub folder: String,
+    #[schemars(description = "副本放进哪个已有的文件夹，/ 是根目录；不给就在原文件夹的同一层（别人共享给我的文件夹在根目录）")]
+    pub to: Option<String>,
+    #[schemars(description = "副本的名字；不给时用原名，那里已有同名的就叫“原名 副本”“原名 副本 2”……")]
+    pub name: Option<String>,
+}
+
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct DeleteArgs {
     #[serde(default)]
     #[schemars(description = "要删除的事项编号")]

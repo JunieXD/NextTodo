@@ -800,3 +800,56 @@ async fn a_change_that_does_several_things_reports_each() {
         json!([{ "kind": "folder_renamed", "folder": "/X", "name": "A" }, { "kind": "folder_sorted", "folder": "/X" }])
     );
 }
+
+#[tokio::test]
+async fn a_folder_copies_with_all_in_it_open_again() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "外部审批", "folder": "/其他" })).await;
+    t.ok(&s, "add", json!({ "title": "审价", "folder": "/合同", "after": [1] })).await;
+    t.ok(
+        &s,
+        "add",
+        json!({ "title": "盖章", "folder": "/合同/盖章", "due": "2026-11-20 18:00", "remind": 60, "repeat": "1w", "after": [2] }),
+    )
+    .await;
+    t.ok(&s, "attach", json!({ "task": 2, "name": "报价.txt", "data": "5oql5Lu3" })).await;
+    let old = t.ok(&s, "show", json!({ "task": 2 })).await["data"]["attachments"][0]["id"].as_str().unwrap().to_owned();
+    t.ok(&s, "edit", json!({ "task": 2, "description": format!("见[报价](attachment:{old})") })).await;
+    t.ok(&s, "done", json!({ "tasks": [1, 2] })).await;
+    t.ok(&s, "done", json!({ "tasks": [3], "today": "2026-11-20" })).await;
+
+    let copied = t.ok(&s, "copy", json!({ "folder": "/合同" })).await;
+    assert!(text(&copied).contains("合同 副本"), "{}", text(&copied));
+    let list = t.ok(&s, "list", json!({ "folder": "/合同 副本", "all": true })).await["data"].clone();
+    assert_eq!(list["folders"].as_array().unwrap().len(), 1, "{list}");
+    let review = list["tasks"][0].clone();
+    assert_eq!(
+        (review["title"].as_str(), review["status"].as_str()),
+        (Some("审价"), Some("ready")),
+        "open again, the outside link left behind"
+    );
+    let review = t.ok(&s, "show", json!({ "task": review["number"] })).await["data"].clone();
+    let new = review["attachments"][0]["id"].as_str().unwrap();
+    assert_ne!(new, old);
+    assert_eq!(review["description"], format!("见[报价](attachment:{new})"));
+    assert_eq!(t.download(&s, new).await.2, "报价".as_bytes());
+    let stamp = t.ok(&s, "list", json!({ "folder": "/合同 副本/盖章" })).await["data"]["tasks"][0].clone();
+    let stamp = t.ok(&s, "show", json!({ "task": stamp["number"] })).await["data"].clone();
+    assert_eq!(
+        stamp["due"],
+        json!({ "date": "2026-11-27", "time": "18:00", "remind_before": 60, "repeat": { "every": 1, "unit": "week", "from": "due" } })
+    );
+    assert_eq!(stamp["completions"], Value::Null, "counted from nothing again");
+    assert_eq!(stamp["waiting_on"], 1, "it waits for the copy of 审价");
+
+    let again = t.ok(&s, "copy", json!({ "folder": "/合同", "to": "/其他" })).await;
+    t.ok(&s, "copy", json!({ "folder": "/合同" })).await;
+    let tree = text(&t.ok(&s, "tree", json!({})).await).to_owned();
+    for path in ["其他", "合同", "合同 副本", "合同 副本 2"] {
+        assert!(tree.lines().any(|l| l.trim_start().starts_with(path)), "{path} in {tree}");
+    }
+    assert_eq!(t.tool(&s, "copy", json!({ "folder": "/" })).await.status, StatusCode::BAD_REQUEST);
+    t.ok(&s, "undo", json!({ "batch": again["data"]["batch"] })).await;
+    assert!(t.ok(&s, "list", json!({ "folder": "/其他" })).await["data"]["folders"].as_array().unwrap().is_empty());
+}

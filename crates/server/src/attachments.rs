@@ -2,10 +2,11 @@
 //! (docs/api.md#附件, docs/data-model.md).
 
 use std::collections::HashSet;
+use std::io::ErrorKind;
 use std::time::Duration;
 
 use axum::body::Body;
-use axum::extract::{Path, Request, State};
+use axum::extract::{Path, Query, Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::Response;
 use nexttodo_core::model::{Attachment, AttachmentId, FileSize, Holder, MediaType};
@@ -18,7 +19,7 @@ use uuid::Uuid;
 use crate::auth::Auth;
 use crate::drive::Route;
 use crate::error::{ApiError, Json};
-use crate::files::{Files, ReceiveError};
+use crate::files::{Files, Part, ReceiveError};
 use crate::store::{self, StoredFile};
 use crate::{AppState, MUTATION_RETENTION_MS};
 
@@ -62,28 +63,58 @@ fn uploaded_before(c: &Connection, user: &str, id: AttachmentId) -> Result<Optio
     }
 }
 
+/// A copy of attachment `a`'s file, to be published as another id's: copying a folder copies its
+/// attachments (docs/design.md#文件夹).
+pub fn copy_file(files: &Files, a: &Attachment) -> Result<Part, ApiError> {
+    files.copy(a.id, a.size).map_err(|e| match e.kind() {
+        ErrorKind::NotFound => ApiError::not_found(format!("附件“{}”的文件不存在", a.name.as_str())),
+        _ => e.into(),
+    })
+}
+
+#[derive(Deserialize)]
+pub struct Source {
+    /// The attachment whose file this one is a copy of, rather than the body.
+    pub from: Option<String>,
+}
+
 pub async fn put_file(
     State(st): State<AppState>,
     auth: Auth,
     Path(id): Path<String>,
+    Query(source): Query<Source>,
     headers: HeaderMap,
     body: Body,
 ) -> Result<Json<Uploaded>, ApiError> {
     auth.require_write()?;
     let id = file_id(&id).ok_or_else(|| ApiError::invalid("附件 ID 必须是 UUIDv7", Some("id".into())))?;
-    let given = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("application/octet-stream");
-    let media_type = MediaType::try_from(given.split(';').next().unwrap_or_default().to_owned())
-        .map_err(|m| ApiError::invalid(m, Some("Content-Type".into())))?;
     let user = auth.user_id.clone();
     // Sent again after the reply was lost: no need to take it all in once more.
     if let Some(uploaded) = st.db.call(move |c| uploaded_before(c, &user, id)).await? {
         return Ok(Json(uploaded));
     }
-    let part = st.files.receive(body).await.map_err(|e| match e {
-        ReceiveError::TooLarge => ApiError::too_large(),
-        ReceiveError::Body(_) => ApiError::invalid("上传中断", None),
-        ReceiveError::Io(e) => e.into(),
-    })?;
+    let (part, media_type) = match source.from {
+        Some(from) => {
+            let missing = || ApiError::not_found("附件不存在");
+            let from = file_id(&from).ok_or_else(missing)?;
+            let user = auth.user_id.clone();
+            let a = st.db.call(move |c| Ok(visible(c, &user, from)?)).await?.ok_or_else(missing)?;
+            let files = st.files.clone();
+            let media_type = a.media_type.clone();
+            (tokio::task::spawn_blocking(move || copy_file(&files, &a)).await.expect("copying panicked")?, media_type)
+        }
+        None => {
+            let given = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("application/octet-stream");
+            let media_type = MediaType::try_from(given.split(';').next().unwrap_or_default().to_owned())
+                .map_err(|m| ApiError::invalid(m, Some("Content-Type".into())))?;
+            let part = st.files.receive(body).await.map_err(|e| match e {
+                ReceiveError::TooLarge => ApiError::too_large(),
+                ReceiveError::Body(_) => ApiError::invalid("上传中断", None),
+                ReceiveError::Io(e) => e.into(),
+            })?;
+            (part, media_type)
+        }
+    };
     let size = FileSize::try_from(part.size).map_err(|m| ApiError::invalid(m, None))?;
     let route = st.drive.route().await;
     let (files, now, staged, user) = (st.files.clone(), st.clock.now(), matches!(route, Route::Drive(_)), auth.user_id);

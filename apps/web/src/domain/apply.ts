@@ -35,6 +35,9 @@ export interface Data {
   people: Map<string, Person>;
 }
 
+/** What one change may hold, as `MAX_OPS` in crates/core/src/ops.rs has it. */
+export const MAX_OPS = 1000;
+
 export const depKey = (before: TaskId, after: TaskId) => `${before}>${after}`;
 
 export function fromSnapshot(s: Snapshot): Data {

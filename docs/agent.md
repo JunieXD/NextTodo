@@ -46,6 +46,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `mkdir` | `mkdir <路径>` | `path` | 新建文件夹，路径上缺的层级一起建；已存在时报错 |
 | `rename` | `rename <文件夹> <新名字>`、`rename --attachment <附件 ID> <新名字>` | `folder?`、`attachment?`、`name` | 文件夹或附件改名，`folder` 和 `attachment` 正好给一个 |
 | `move` | `mv <事项或文件夹…> <目标文件夹>` | `tasks?`、`folders?`、`to` | 移动到已有的文件夹，`/` 是根目录；移进、移出共享的文件夹时去掉连到外面的依赖和看不到的负责人，并换成新主人的编号，输出里写明 |
+| `copy` | `cp <文件夹> [目标文件夹] [--name 名字]` | `folder`、`to?`、`name?` | [复制文件夹](design.md#文件夹)，连同子文件夹、事项、附件和它们之间的依赖，事项都是待办；放在目标文件夹的最后，不给 `to` 就在原文件夹的同一层（别人共享给我的文件夹在根目录）；不给 `name` 时用原名，那里已有同名的就叫“原名 副本”“原名 副本 2”…… |
 | `delete` | `rm <事项或文件夹…>` | `tasks?`、`folders?` | 删除；文件夹连同里面的一切 |
 | `dep_add` | `dep add <前置> <后续>` | `before`、`after` | 加依赖，成环时拒绝并列出环上的事项 |
 | `dep_remove` | `dep rm <前置> <后续>` | `before`、`after` | 删依赖 |

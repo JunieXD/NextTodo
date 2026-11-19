@@ -143,9 +143,9 @@ const FILE_TIMEOUT_MS = 10 * 60_000;
  * the server's answer. The phone apps' goes by the WebView's own fetch, which the server allows across
  * origins: CapacitorHttp would pass the whole file over the bridge. Throws `ApiError`: the server's
  * refusal, or `OFFLINE` when it cannot be reached, the transfer breaks off or takes too long, or `stop`
- * aborts it. */
-export async function fileRequest(method: "GET" | "PUT", id: string, stop: AbortSignal, body?: { blob: Blob; type: string }): Promise<Blob> {
-  const headers: Record<string, string> = body ? { "Content-Type": body.type } : {};
+ * aborts it. What is put is `blob`, or a copy of attachment `from`'s file, which the server makes. */
+export async function fileRequest(method: "GET" | "PUT", id: string, stop: AbortSignal, body?: { blob: Blob; type: string } | { from: string }): Promise<Blob> {
+  const headers: Record<string, string> = body && "blob" in body ? { "Content-Type": body.type } : {};
   if (server.token) headers.Authorization = `Bearer ${server.token}`;
   const send = app === "desktop" ? tauriFetch : phoneApp ? window.CapacitorWebFetch : fetch;
   const abort = new AbortController();
@@ -156,9 +156,9 @@ export async function fileRequest(method: "GET" | "PUT", id: string, stop: Abort
   let res: Response;
   let answer: Blob;
   try {
-    const init = { method, headers, body: body?.blob, signal: abort.signal, ...(app === "desktop" && server.local && DIRECT) };
+    const init = { method, headers, body: body && "blob" in body ? body.blob : undefined, signal: abort.signal, ...(app === "desktop" && server.local && DIRECT) };
     await reachable(abort.signal);
-    res = await send(`${server.url}/api/v1/files/${id}`, init);
+    res = await send(`${server.url}/api/v1/files/${id}${body && "from" in body ? `?from=${body.from}` : ""}`, init);
     answer = await res.blob();
   } catch {
     throw new ApiError(0, OFFLINE, server.local ? "无法连接 App 内置的服务端，请重试" : "无法连接服务器，请检查网络后重试");

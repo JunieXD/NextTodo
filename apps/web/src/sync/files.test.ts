@@ -134,3 +134,81 @@ test("files kept over the limit for changes still to be confirmed make room once
   expect(await kept("files")).toEqual([]);
   open.files.stop();
 });
+
+test("a copy of a file waits for the change adding the file it copies, and leaves nothing kept once confirmed", async () => {
+  const u = user(5);
+  const [original, copy] = [adding(1), adding(2)];
+  const db = await device(u, [original, copy], [{ id: id(6), uploaded: false }]);
+  await db.put("fileInfo", { size: 0, uploaded: false, shown: 0, from: id(6), after: original.id }, [u, id(7)]);
+  const asked: string[] = [];
+  vi.stubGlobal("fetch", (url: string) => (asked.push(url.replace(/.*\/files\//, "")), Promise.resolve(new Response('{"size":3}'))));
+  const open = tab(u, [original, copy]);
+  await vi.waitFor(() => expect(open.sent).toEqual([original]));
+  // Done uploading for now: copied before the server has the file it copies, the copy would be
+  // turned down.
+  await vi.waitFor(async () => expect((await navigator.locks.query()).held).toEqual([]));
+  expect(asked).toEqual([id(6)]);
+  open.store.acked(original.id, 0);
+  await vi.waitFor(() => expect(open.sent).toEqual([original, copy]));
+  expect(asked).toEqual([id(6), `${id(7)}?from=${id(6)}`]);
+  open.store.acked(copy.id, 0);
+  await vi.waitFor(async () => expect(await db.get("fileInfo", [u, id(7)])).toBeUndefined());
+  // A file added after goes as any other.
+  const more = adding(3);
+  await db.put("outbox", { mutation: more, at: 0 }, [u, more.id]);
+  await db.put("files", new Blob(["png"]), [u, id(8)]);
+  await db.put("fileInfo", { size: 3, uploaded: false, shown: 0 }, [u, id(8)]);
+  open.store.adopt([more]);
+  await vi.waitFor(() => expect(open.sent).toEqual([original, copy, more]));
+  open.files.stop();
+  vi.stubGlobal("fetch", () => Promise.reject(new Error("no server in these tests")));
+});
+
+test("a copy of a file the server has goes at once, ahead of a change a tab left that closed before sending it", async () => {
+  const u = user(6);
+  // Made in the tab that closed, after the one still open had read the outbox: none sends it.
+  const left: Mutation = { id: id(1), ops: [{ op: "folder.create", id: id(8), name: "收件箱" }] };
+  const copy = adding(2);
+  const db = await device(u, [left, copy], []);
+  await db.put("fileInfo", { size: 0, uploaded: false, shown: 0, from: id(4) }, [u, id(7)]);
+  const asked: string[] = [];
+  vi.stubGlobal("fetch", (url: string) => (asked.push(url.replace(/.*\/files\//, "")), Promise.resolve(new Response('{"size":3}'))));
+  const open = tab(u, [copy]);
+  await vi.waitFor(() => expect(open.sent).toEqual([copy]));
+  expect(asked).toEqual([`${id(7)}?from=${id(4)}`]);
+  open.files.stop();
+  vi.stubGlobal("fetch", () => Promise.reject(new Error("no server in these tests")));
+});
+
+test("a copy waiting for a change a tab left that closed before sending it holds up no file after it", async () => {
+  const u = user(7);
+  // The tab that closed added a file, and copied it.
+  const [original, copy, mine] = [adding(1), adding(2), adding(3)];
+  const db = await device(u, [original, copy, mine], [{ id: id(6), uploaded: false }, { id: id(8), uploaded: false }]);
+  await db.put("fileInfo", { size: 0, uploaded: false, shown: 0, from: id(6), after: original.id }, [u, id(7)]);
+  const asked: string[] = [];
+  vi.stubGlobal("fetch", (url: string) => (asked.push(url.replace(/.*\/files\//, "")), Promise.resolve(new Response('{"size":3}'))));
+  const locks = vi.spyOn(navigator.locks, "request");
+  const open = tab(u, [mine]);
+  await vi.waitFor(() => expect(open.sent).toEqual([mine]));
+  expect(asked).toEqual([id(6), id(8)]);
+  // Nor one added once the copy is all that waits, the server having confirmed the rest.
+  const asks = locks.mock.calls.length;
+  open.store.acked(mine.id, 0);
+  await vi.waitFor(async () => {
+    expect(locks.mock.calls.length).toBeGreaterThan(asks);
+    const { held, pending } = await navigator.locks.query();
+    expect([held, pending]).toEqual([[], []]);
+  });
+  const more = adding(4);
+  await db.put("outbox", { mutation: more, at: 0 }, [u, more.id]);
+  await db.put("files", new Blob(["png"]), [u, id(9)]);
+  await db.put("fileInfo", { size: 3, uploaded: false, shown: 0 }, [u, id(9)]);
+  open.store.adopt([more]);
+  // Long before the copy is looked at again.
+  await vi.waitFor(() => expect(open.sent).toEqual([mine, more]), { timeout: 500 });
+  expect(asked).toEqual([id(6), id(8), id(9)]);
+  locks.mockRestore();
+  open.files.stop();
+  vi.stubGlobal("fetch", () => Promise.reject(new Error("no server in these tests")));
+});

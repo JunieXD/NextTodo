@@ -9,7 +9,7 @@ import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
-import { lastKeys } from "../domain/apply";
+import { MAX_OPS, lastKeys } from "../domain/apply";
 import { isoDate } from "../domain/dates";
 import { lastTime } from "../domain/repeat";
 import { useCommit, useSession, useUndo, useView } from "../session";
@@ -23,8 +23,6 @@ import { AssigneePicker, lost, sharers } from "./share";
 
 const them = (n: number) => (n === 1 ? "它" : "它们");
 
-/** What one change may hold, as `MAX_OPS` in crates/core/src/ops.rs has it. */
-const MAX_OPS = 1000;
 
 /** A page batch operations are on: a folder's (`null` for the root), or what is done. */
 type Place = FolderId | null | "done";

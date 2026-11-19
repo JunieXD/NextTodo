@@ -123,6 +123,7 @@ tools! {
     Write "mkdir"(MkdirArgs) => write::mkdir, "新建文件夹，路径上缺的层级一起建。";
     Write "rename"(RenameArgs) => write::rename, "给文件夹或附件改名。";
     Write "move"(MoveArgs) => write::move_to, "把事项或文件夹移到一个已有的文件夹，/ 是根目录。移进、移出共享的文件夹时去掉连到外面的依赖和看不到的负责人，并换成新主人的编号。";
+    Write "copy"(CopyArgs) => write::copy, "复制文件夹，连同其中的子文件夹、事项、附件和它们之间的依赖，副本里的事项都是待办，开始、截止、提醒和重复不变。用来把一套流程当模板反复用。";
     Destructive "delete"(DeleteArgs) => write::delete, "删除事项或文件夹；文件夹连同其中的子文件夹和事项一并删除。可用 undo 撤销。";
     Write "dep_add"(DepArgs) => write::dep_add, "加一条依赖：before 完成后才能做 after。只能连私人的事项之间，或同一个共享的文件夹里的事项之间；会成环时拒绝，并列出环上的事项。";
     Write "dep_remove"(DepArgs) => write::dep_remove, "删除一条依赖。";

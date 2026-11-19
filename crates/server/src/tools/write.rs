@@ -8,20 +8,21 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use nexttodo_core::board::{Board, Now, Status};
 use nexttodo_core::model::{
-    AttachmentId, Change, Date, Description, Due, Effect, FileName, FileSize, FolderId, MediaType, MutationId, Name, Repeat, RepeatFrom,
-    Task, TaskId, Title,
+    Attachment, AttachmentId, Change, Date, Description, Due, Effect, FileName, FileSize, FolderId, MediaType, MutationId, Name, Repeat,
+    RepeatFrom, Task, TaskId, Title,
 };
-use nexttodo_core::ops::Op;
+use nexttodo_core::ops::{MAX_OPS, Op};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::json;
 use uuid::Uuid;
 
 use super::args::{
-    AddArgs, ApplyArgs, AttachArgs, DeleteArgs, DepArgs, DetachArgs, DoneArgs, EditArgs, MkdirArgs, MoveArgs, Plan, PlanRef, PlanTask,
-    RenameArgs, RepeatText, Replace, ShareArgs, TaskRef, TasksArgs, UndoArgs, UnshareArgs, WhenText, task_ref,
+    AddArgs, ApplyArgs, AttachArgs, CopyArgs, DeleteArgs, DepArgs, DetachArgs, DoneArgs, EditArgs, MkdirArgs, MoveArgs, Plan, PlanRef,
+    PlanTask, RenameArgs, RepeatText, Replace, ShareArgs, TaskRef, TasksArgs, UndoArgs, UnshareArgs, WhenText, task_ref,
 };
 use super::text::{self, Names, task_view};
 use super::{Output, WriteFn, find_folder, find_task, person};
+use crate::attachments::copy_file;
 use crate::auth::Auth;
 use crate::error::ApiError;
 use crate::files::Files;
@@ -644,6 +645,98 @@ pub fn move_to(w: &WriteCx, a: MoveArgs) -> Result<Write, ApiError> {
     }
     for path in &a.folders {
         ops.push(Op::FolderUpdate { id: folder_id(b, path, "移动")?, name: None, parent_id: Some(to), sort_key: None });
+    }
+    Ok(ops.into())
+}
+
+/// What a copy of a folder named `name` is called where `taken` says which names are in use: its
+/// own name, else "名字 副本", "名字 副本 2" and on (docs/design.md#文件夹). As `copyName` in
+/// apps/web/src/domain/copy.ts.
+fn copy_name(name: &str, taken: impl Fn(&str) -> bool) -> String {
+    let copy = format!("{name} 副本");
+    [name.to_owned(), copy.clone()].into_iter().chain((2..).map(|n| format!("{copy} {n}"))).find(|n| !taken(n)).expect("endless")
+}
+
+/// Copies a folder with all in it: subfolders, tasks open again, the dependencies between them, and
+/// their attachments, whose files it copies (docs/design.md#文件夹).
+pub fn copy(w: &WriteCx, a: CopyArgs) -> Result<Write, ApiError> {
+    let b = w.board;
+    let from = folder_id(b, &a.folder, "复制")?;
+    let source = b.folder(from).expect("found by path");
+    let to = match &a.to {
+        Some(path) => find_folder(b, path)?,
+        // Beside it, or, shared with the user, at their root.
+        None if b.shared_with_me().iter().any(|f| f.id == from) => None,
+        None => source.parent_id,
+    };
+    let name = match a.name {
+        Some(name) => name,
+        None => copy_name(source.name.as_str(), |n| b.subfolders(to).iter().any(|f| f.name.as_str() == n)),
+    };
+    let name = Name::try_from(name).map_err(|m| ApiError::invalid(m, Some("name".into())))?;
+    let shared_root = |f: Option<FolderId>| b.share(f).map(|s| s.folder_id);
+
+    let root = FolderId(Uuid::now_v7());
+    let mut ops = vec![Op::FolderCreate { id: root, name, parent_id: to, sort_key: None }];
+    // Each task with its copy's id and folder, folder by folder.
+    let mut tasks: Vec<(&Task, TaskId, FolderId)> = Vec::new();
+    let mut stack = vec![(from, root)];
+    while let Some((old, new)) = stack.pop() {
+        tasks.extend(b.contents(Some(old)).iter().map(|t| (*t, TaskId(Uuid::now_v7()), new)));
+        for f in b.subfolders(Some(old)) {
+            let id = FolderId(Uuid::now_v7());
+            ops.push(Op::FolderCreate { id, name: f.name.clone(), parent_id: Some(new), sort_key: Some(f.sort_key.clone()) });
+            stack.push((f.id, id));
+        }
+    }
+    let copied: HashMap<TaskId, TaskId> = tasks.iter().map(|(t, new, _)| (t.id, *new)).collect();
+    let attachments: Vec<(&Attachment, AttachmentId, TaskId)> =
+        tasks.iter().flat_map(|(t, new, _)| b.attachments(t).iter().map(|a| (*a, AttachmentId(Uuid::now_v7()), *new))).collect();
+    let mut deps = Vec::new();
+    for (t, new, folder) in &tasks {
+        let mut description = t.description.as_str().to_owned();
+        for (a, id, _) in attachments.iter().filter(|(_, _, holder)| holder == new) {
+            description = description.replace(&format!("attachment:{}", a.id), &format!("attachment:{id}"));
+        }
+        ops.push(Op::TaskCreate {
+            id: *new,
+            title: t.title.clone(),
+            folder_id: Some(*folder),
+            description: Description::try_from(description).expect("ids as long as before"),
+            start: t.start.clone(),
+            start_time: t.start_time.clone(),
+            due: t.due.clone(),
+            sort_key: Some(t.sort_key.clone()),
+            done: false,
+            // Still in the shared folder it was in, a task keeps who it is assigned to.
+            assignees: if shared_root(t.folder_id) == shared_root(to) { t.assignees.clone() } else { Vec::new() },
+        });
+        deps.extend(b.after(t).iter().filter_map(|after| Some(Op::DepAdd { before: *new, after: *copied.get(&after.id)? })));
+    }
+    ops.extend(deps);
+    // Counted before copying any file: too many, there would be nothing to copy them for.
+    if ops.len() + attachments.len() > MAX_OPS {
+        return Err(ApiError::invalid(format!("文件夹里的东西太多，一次最多复制 {MAX_OPS} 项（文件夹、事项、依赖和附件合计）"), None));
+    }
+    for (a, id, task) in attachments {
+        // As `attach` does: rolled back with the rest when syncing through a drive, and left for the
+        // daily sweep when the change fails after this.
+        store::insert_file(
+            w.c,
+            id,
+            &StoredFile { owner: w.user.to_owned(), media_type: a.media_type.clone(), size: a.size },
+            w.now,
+            false,
+        )?;
+        w.files.publish(copy_file(w.files, a)?, id)?;
+        ops.push(Op::AttachmentAdd {
+            id,
+            name: a.name.clone(),
+            media_type: a.media_type.clone(),
+            size: a.size,
+            task_id: Some(task),
+            job_id: None,
+        });
     }
     Ok(ops.into())
 }

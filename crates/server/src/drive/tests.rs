@@ -254,7 +254,23 @@ impl Device {
     async fn upload(&self, id: &str, text: &str) -> Result<(), ApiError> {
         let mut headers = HeaderMap::new();
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain"));
-        crate::attachments::put_file(State(self.st.clone()), self.session(), Path(id.to_owned()), headers, Body::from(text.to_owned()))
+        let source = Query(crate::attachments::Source { from: None });
+        crate::attachments::put_file(
+            State(self.st.clone()),
+            self.session(),
+            Path(id.to_owned()),
+            source,
+            headers,
+            Body::from(text.to_owned()),
+        )
+        .await
+        .map(|_| ())
+    }
+
+    /// Has the server copy attachment `from`'s file as file `id`, as the page does copying a folder.
+    async fn copy_file(&self, id: &str, from: &str) -> Result<(), ApiError> {
+        let source = Query(crate::attachments::Source { from: Some(from.to_owned()) });
+        crate::attachments::put_file(State(self.st.clone()), self.session(), Path(id.to_owned()), source, HeaderMap::new(), Body::empty())
             .await
             .map(|_| ())
     }
@@ -698,6 +714,44 @@ async fn an_attachment_added_on_one_device_is_read_on_another_from_the_drive() {
     assert_eq!(b.st.files.here(file(&f)).unwrap(), None);
     assert_eq!(b.st.files.read(file(&f), size("你好")).unwrap(), "你好".as_bytes());
     assert!(b.st.files.here(file(&f)).unwrap().is_some(), "kept here once fetched");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_folder_copied_where_its_files_are_not_yet_copies_them_from_the_drive() {
+    let (store, devices) = devices(2).await;
+    let (a, b) = (&devices[0], &devices[1]);
+    let (folder, task, f) = (id(), id(), id());
+    a.upload(&f, "你好").await.unwrap();
+    a.made(json!([
+        { "op": "folder.create", "id": folder, "name": "合同" },
+        { "op": "task.create", "id": task, "title": "看附件", "folder_id": folder },
+        { "op": "attachment.add", "id": f, "name": "说明.txt", "type": "text/plain", "size": "你好".len(), "task_id": task },
+    ]))
+    .await
+    .unwrap();
+    let g = id();
+    attach(a, &g).await;
+    caught_up(&store, &devices).await;
+    assert_eq!((b.st.files.here(file(&f)).unwrap(), b.st.files.here(file(&g)).unwrap()), (None, None));
+
+    // By an agent, and by the page, each fetching a file not here.
+    b.tool("copy", json!({ "folder": "/合同" }), MutationId(Uuid::now_v7())).await.unwrap();
+    let (copy, other) = (id(), id());
+    b.copy_file(&copy, &g).await.unwrap();
+    b.made(json!([
+        { "op": "task.create", "id": other, "title": "再看" },
+        { "op": "attachment.add", "id": copy, "name": "说明.txt", "type": "text/plain", "size": "你好".len(), "task_id": other },
+    ]))
+    .await
+    .unwrap();
+    caught_up(&store, &devices).await;
+    assert_same(&devices);
+    let ids = dump(a.db(), "SELECT id FROM attachments ORDER BY id");
+    assert_eq!(ids.len(), 4);
+    for row in ids {
+        let Value::Text(id) = &row[0] else { unreachable!() };
+        assert_eq!(a.st.files.read(file(id), size("你好")).unwrap(), "你好".as_bytes(), "{id} in the drive");
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

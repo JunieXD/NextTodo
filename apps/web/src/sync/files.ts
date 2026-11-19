@@ -23,6 +23,11 @@ interface FileInfo {
   uploaded: boolean;
   /** When it was last shown, for clearing the longest unseen first. */
   shown: number;
+  /** The attachment it is a copy of, which the server copies: nothing is kept here for it. */
+  from?: string;
+  /** The change that made the attachment it is a copy of, when the server had not confirmed it yet:
+   * the copy waits for it. */
+  after?: MutationId;
 }
 
 /** How much downloaded files may take on the device, and what clearing brings it down to. */
@@ -67,6 +72,9 @@ export class Files {
   private requested = false;
   private retry = FIRST_RETRY;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  /** Whether the timer, while set, is only for copies waiting for changes, which a new file need not
+   * wait for. */
+  private held = false;
   /** Aborted as the session stops: what is in flight ends, and nothing more is written, the user's data
    * being about to be deleted. */
   private readonly stopping = new AbortController();
@@ -109,6 +117,17 @@ export class Files {
    * the user's data being about to be deleted. */
   keep = (id: string, blob: Blob) => this.write(id, blob, false);
 
+  /** Notes of each `[id, from, after]` that attachment `id`'s file, to upload once added, is a copy
+   * of attachment `from`'s, which the server makes once it has change `after`, if any, that made
+   * `from` (docs/web.md#附件). */
+  async keepCopies(copies: [string, string, MutationId | undefined][]) {
+    const d = await db();
+    if (this.stopped) return;
+    const tx = d.transaction("fileInfo", "readwrite");
+    const info = (from: string, after?: MutationId): FileInfo => ({ size: 0, uploaded: false, shown: Date.now(), from, ...(after && { after }) });
+    await Promise.all([...copies.map(([id, from, after]) => tx.store.put(info(from, after), [this.user, id])), tx.done]);
+  }
+
   private async write(id: string, blob: Blob, uploaded: boolean) {
     const d = await db();
     // As in `update`: ending meanwhile, the file is deleted with the rest.
@@ -136,7 +155,7 @@ export class Files {
   /** `m` waits for its files: uploads them; again when the server is `missing` them, which until then
    * holds `m` back, from now on. */
   awaiting = (m: Mutation, missing: boolean) => {
-    if (!missing) return this.upload();
+    if (!missing) return this.held && this.timer ? this.retryNow() : this.upload();
     for (const a of adds(m)) {
       this.uploaded.delete(a.id);
       this.lost.add(a.id);
@@ -159,11 +178,16 @@ export class Files {
   }
 
   private wake = () => {
-    if (document.visibilityState !== "visible" || !this.timer) return;
+    if (document.visibilityState === "visible") this.retryNow();
+  };
+
+  /** Tries again now rather than when the timer says. */
+  private retryNow() {
+    if (!this.timer) return;
     clearTimeout(this.timer);
     this.timer = undefined;
     this.upload();
-  };
+  }
 
   /** Asks for the lock, unless asked already; holding it, uploads what the outbox waits for. */
   private upload() {
@@ -175,20 +199,23 @@ export class Files {
       while (!this.stopped) {
         const next = await this.next();
         if (!next || this.stopped) return;
-        const [m, add, blob] = next;
-        if (!blob) {
-          await this.refused(m, add, "文件已不在这台设备上");
+        if (next === "later") return this.later(true);
+        const [m, add, file] = next;
+        if (!file) {
+          await this.refused(m, add, "文件已不在这台设备上", "上传");
           continue;
         }
         try {
-          await fileRequest("PUT", add.id, this.stopping.signal, { blob, type: add.type });
+          await fileRequest("PUT", add.id, this.stopping.signal, typeof file === "string" ? { from: file } : { blob: file, type: add.type });
         } catch (e) {
           if (!(e instanceof ApiError)) throw e;
           if (this.stopped) return;
           if (e.status === 401) return this.hooks.signedOut();
           // Not reached, or a failure that may pass.
           if (![400, 403, 404, 409, 413].includes(e.status)) return this.later();
-          await this.refused(m, add, refusal(e));
+          // A copy the server would not make says why itself: the attachment copied is gone, say.
+          const copy = typeof file === "string";
+          await this.refused(m, add, copy ? e.message : refusal(e), copy ? "复制" : "上传");
           continue;
         }
         await this.update(add.id, { uploaded: true });
@@ -202,7 +229,8 @@ export class Files {
   }
 
   /** Tries again a while later, sooner when the page comes back or the device goes online. */
-  private later() {
+  private later(held = false) {
+    this.held = held;
     this.timer = setTimeout(() => {
       this.timer = undefined;
       this.upload();
@@ -210,13 +238,19 @@ export class Files {
     this.retry = Math.min(this.retry * 2, LAST_RETRY);
   }
 
-  /** The first file the outbox waits for, with the change it is for. A tab that closed halfway may
-   * have left changes withdrawn into a draft in the outbox or in the other tabs: they go first, from
-   * everywhere. It may also have uploaded a file without telling: this tab learns it here. No file
-   * means it is gone from the device, as when the add box it was in dropped it meanwhile. */
-  private async next(): Promise<[Mutation, Add, Blob | undefined] | undefined> {
+  /** The first file the outbox waits for, with the change it is for: the file, or the attachment it
+   * is a copy of. A copy of one the server has not yet, its change still to be confirmed, is passed
+   * over, and `later` said when nothing else is waiting: the change may be a tab's that closed before
+   * sending it, to go when the app opens again, and files after it go meanwhile. A tab that closed
+   * halfway may have left changes withdrawn into a draft in the outbox or in the other tabs: they go
+   * first, from everywhere. It may also have uploaded a file without telling: this tab learns it
+   * here. No file means it is gone from the device, as when the add box it was in dropped it
+   * meanwhile. */
+  private async next(): Promise<[Mutation, Add, Blob | string | undefined] | "later" | undefined> {
     for (const id of withdrawn(this.user)) await this.unqueue(id);
-    for (const { mutation: m } of await outbox(this.user)) {
+    const queued = await outbox(this.user);
+    let held = false;
+    for (const { mutation: m } of queued) {
       for (const add of adds(m)) {
         // Read together, with whether the change is still waiting: meanwhile an add box in another tab
         // may drop the file, or another tab hear the change confirmed and clear its file.
@@ -228,21 +262,25 @@ export class Files {
           tx.objectStore("files").get(key),
         ]);
         if (!waiting) break;
-        if (!info?.uploaded) return [m, add, blob];
+        if (info?.after && !info.uploaded && queued.some((p) => p.mutation.id === info.after)) {
+          held = true;
+          continue;
+        }
+        if (!info?.uploaded) return [m, add, blob ?? info?.from];
         if (!this.uploaded.has(add.id) && !this.lost.has(add.id)) {
           this.uploaded.add(add.id);
           this.store.flush();
         }
       }
     }
-    return undefined;
+    return held ? "later" : undefined;
   }
 
   /** The file cannot go, for `reason`: the change goes, as one the server turned down; an AI job's
    * text and files back to the add box it came from, else its files from the device
    * (docs/web.md#附件). Noted as withdrawn first, so that a tab closing halfway leaves the rest to the
    * next one uploading. */
-  private async refused(m: Mutation, add: Add, reason: string) {
+  private async refused(m: Mutation, add: Add, reason: string, failed: "上传" | "复制") {
     const job = m.ops.find((op) => op.op === "ai_job.create");
     // First: a tab closing right after leaves no file behind, and the change, its file gone, goes the
     // next time.
@@ -257,7 +295,7 @@ export class Files {
       },
     );
     await this.unqueue(m.id);
-    this.hooks.told(`“${add.name}”上传失败：${reason}${job ? "，AI 整理的内容已放回输入框" : ""}`);
+    this.hooks.told(`“${add.name}”${failed}失败：${reason}${job ? "，AI 整理的内容已放回输入框" : ""}`);
   }
 
   /** Takes change `id`, noted as withdrawn, out of the outbox, here and in the other tabs, as one the
@@ -280,7 +318,8 @@ export class Files {
   }
 
   private async fetch(a: Shown): Promise<Blob> {
-    const kept: Blob | undefined = await (await db()).get("files", [this.user, a.id]);
+    const d = await db();
+    const kept: Blob | undefined = await d.get("files", [this.user, a.id]);
     if (kept) {
       if (!this.seen.has(a.id)) {
         this.seen.add(a.id);
@@ -288,6 +327,9 @@ export class Files {
       }
       return kept;
     }
+    // A copy the server has yet to make shows the file it copies.
+    const info: FileInfo | undefined = await d.get("fileInfo", [this.user, a.id]);
+    if (info?.from && !info.uploaded) return this.blob({ id: info.from, type: a.type });
     const blob = new Blob([await fileRequest("GET", a.id, this.stopping.signal)], { type: a.type });
     this.seen.add(a.id);
     await this.write(a.id, blob, true);
@@ -296,9 +338,20 @@ export class Files {
   }
 
   /** Changes the server confirmed left the outbox: the files of those adding attachments may go now
-   * to make room. */
+   * to make room, and what was noted of copies, which keep nothing here, goes. */
   confirmed(ms: Mutation[]) {
-    if (ms.some((m) => adds(m).length)) void this.clear();
+    const added = ms.flatMap((m) => adds(m).map((a) => a.id));
+    if (added.length) void this.forgetCopies(added).then(() => this.clear());
+    // A copy waiting for them goes now.
+    this.retryNow();
+  }
+
+  private async forgetCopies(ids: string[]) {
+    const d = await db();
+    if (this.stopped) return;
+    const tx = d.transaction("fileInfo", "readwrite");
+    for (const id of ids) if (((await tx.store.get([this.user, id])) as FileInfo | undefined)?.from) await tx.store.delete([this.user, id]);
+    await tx.done;
   }
 
   /** Brings the files kept down to `KEEP_BYTES` once they pass `MAX_BYTES`, the longest unseen

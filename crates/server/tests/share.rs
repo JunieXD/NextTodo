@@ -529,3 +529,46 @@ async fn whoever_made_a_task_back_in_view_is_met_with_it() {
     assert!(effects.iter().any(|e| e["kind"] == "person" && e["after"]["username"] == "bob"), "{effects:?}");
     assert!(usernames(&t.snapshot(&s.carol).await).contains(&"bob".to_owned()));
 }
+
+#[tokio::test]
+async fn copies_keep_assignees_only_inside_the_same_shared_folder() {
+    let Shared { t, alice, bob, ids, home, .. } = shared().await;
+    t.ok(&alice, "edit", json!({ "task": 1, "assign": ["bob"] })).await;
+    t.ok(&alice, "add", json!({ "title": "布线", "folder": "/装修/水电", "assign": ["bob"] })).await;
+
+    // Shared with Bob, the folder copies to his root, his own: no one is assigned there.
+    t.ok(&bob, "copy", json!({ "folder": "@alice/装修" })).await;
+    let snap = t.snapshot(&bob).await;
+    let mine: Vec<&Value> = snap["tasks"].as_array().unwrap().iter().filter(|x| x["title"] == "量尺寸" && x["folder_id"] != home).collect();
+    assert_eq!(mine.len(), 1);
+    assert_eq!(mine[0]["assignees"], json!([]));
+    assert!(
+        t.snapshot(&bob).await["folders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["name"] == "装修" && f["parent_id"].is_null() && f["id"] != home)
+    );
+
+    // Copied within the shared folder, it stays Alice's, and Bob's to do.
+    t.ok(&bob, "copy", json!({ "folder": "@alice/装修/水电" })).await;
+    let snap = t.snapshot(&alice).await;
+    let wiring: Vec<&Value> = snap["tasks"].as_array().unwrap().iter().filter(|x| x["title"] == "布线").collect();
+    assert_eq!(wiring.len(), 2);
+    assert!(wiring.iter().all(|x| x["assignees"] == json!([ids.bob])), "{wiring:?}");
+
+    // Nor in a private folder holding a shared one.
+    t.ok(&alice, "mkdir", json!({ "path": "/项目" })).await;
+    t.ok(&alice, "move", json!({ "folders": ["/装修"], "to": "/项目" })).await;
+    t.ok(&alice, "copy", json!({ "folder": "/项目" })).await;
+    let snap = t.snapshot(&alice).await;
+    let copy = snap["folders"].as_array().unwrap().iter().find(|f| f["name"] == "项目 副本").unwrap();
+    let inside = snap["folders"].as_array().unwrap().iter().find(|f| f["parent_id"] == copy["id"]).unwrap();
+    let measure = snap["tasks"].as_array().unwrap().iter().find(|x| x["folder_id"] == inside["id"]).unwrap();
+    assert_eq!(measure["assignees"], json!([]));
+    t.ok(&alice, "move", json!({ "folders": ["/项目/装修"], "to": "/" })).await;
+
+    // Alice's copy of the shared folder itself is hers alone.
+    t.ok(&alice, "copy", json!({ "folder": "/装修" })).await;
+    assert!(t.snapshot(&bob).await["folders"].as_array().unwrap().iter().all(|f| f["name"] != "装修 副本"));
+}

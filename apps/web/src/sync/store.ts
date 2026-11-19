@@ -3,6 +3,7 @@
 // the outbox applied, which is what the app shows.
 
 import { v7 as uuidv7 } from "uuid";
+import type { AttachmentId } from "../api/types/AttachmentId";
 import type { Effect } from "../api/types/Effect";
 import type { ErrorBody } from "../api/types/ErrorBody";
 import type { LogEntry } from "../api/types/LogEntry";
@@ -215,6 +216,14 @@ export class Store {
   doneBy(task: TaskId): MutationId | undefined {
     const changes = [...this.log.keys(), ...this.outbox.map((p) => p.mutation.id)].reverse();
     return changes.find((id) => this.effectsOf(id)?.some((e) => e.kind === "task" && e.after?.id === task && e.before?.done_at === null && e.after.done_at !== null));
+  }
+
+  /** The change still to be confirmed that made attachment `id`, adding it or bringing it back, if
+   * any: the server has the attachment once it has that change. */
+  madeBy(id: AttachmentId): MutationId | undefined {
+    return this.outbox
+      .map((p) => p.mutation.id)
+      .findLast((m) => this.local.get(m)?.some((e) => e.kind === "attachment" && e.before === null && e.after?.id === id));
   }
 
   /** What a change did, as far as this copy knows. */

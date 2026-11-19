@@ -123,6 +123,16 @@ impl Files {
         self.publish(part, id)
     }
 
+    /// A copy of `from`'s file, of `size` bytes, fetched first when it is not here: to be published as
+    /// another id's.
+    pub fn copy(&self, from: AttachmentId, size: FileSize) -> io::Result<Part> {
+        self.fetch(from, size)?;
+        let part = Part { path: self.part()?, size: size.get() };
+        std::fs::copy(self.path(from), &part.path)?;
+        std::fs::File::open(&part.path)?.sync_all()?;
+        Ok(part)
+    }
+
     /// The whole of `id`'s file, of `size` bytes.
     pub fn read(&self, id: AttachmentId, size: FileSize) -> io::Result<Vec<u8>> {
         self.fetch(id, size)?;

@@ -338,6 +338,7 @@ enum Kind {
     FolderRenamed,
     FolderMoved,
     FolderSorted,
+    FolderStyled,
     FolderDeleted,
     TaskCreated,
     TaskDone,
@@ -371,6 +372,7 @@ impl Kind {
             Kind::FolderRenamed => ("文件夹改名", "改名", "个文件夹"),
             Kind::FolderMoved => ("移动文件夹", "移动", "个文件夹"),
             Kind::FolderSorted => ("调整文件夹顺序", "调整顺序", "个文件夹"),
+            Kind::FolderStyled => ("改文件夹的颜色和图标", "改颜色和图标", "个文件夹"),
             Kind::FolderDeleted => ("删除文件夹", "删除", "个文件夹"),
             Kind::TaskCreated => ("添加", "添加", "项"),
             Kind::TaskDone => ("完成", "完成", "项"),
@@ -404,6 +406,7 @@ impl Kind {
             Kind::FolderRenamed => "folder_renamed",
             Kind::FolderMoved => "folder_moved",
             Kind::FolderSorted => "folder_sorted",
+            Kind::FolderStyled => "folder_styled",
             Kind::FolderDeleted => "folder_deleted",
             Kind::TaskCreated => "task_created",
             Kind::TaskDone => "task_done",
@@ -506,6 +509,16 @@ fn describe(e: &Effect, n: &Names) -> Vec<(Kind, String, Value)> {
             // Its place among the same folders; a move puts it somewhere in the new one anyway.
             if before.parent_id == after.parent_id && before.sort_key != after.sort_key {
                 found.push((Kind::FolderSorted, old.clone(), json!({ "folder": old })));
+            }
+            if before.color != after.color || before.icon != after.icon {
+                let mut data = json!({ "folder": old });
+                if before.color != after.color {
+                    data["color"] = json!(after.color);
+                }
+                if before.icon != after.icon {
+                    data["icon"] = json!(after.icon);
+                }
+                found.push((Kind::FolderStyled, old, data));
             }
             found
         }

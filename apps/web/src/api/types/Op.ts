@@ -6,6 +6,8 @@ import type { Description } from "./Description";
 import type { Due } from "./Due";
 import type { FileName } from "./FileName";
 import type { FileSize } from "./FileSize";
+import type { FolderColor } from "./FolderColor";
+import type { FolderIcon } from "./FolderIcon";
 import type { FolderId } from "./FolderId";
 import type { JobKind } from "./JobKind";
 import type { JobText } from "./JobText";
@@ -18,11 +20,19 @@ import type { TaskId } from "./TaskId";
 import type { Time } from "./Time";
 import type { Title } from "./Title";
 
-export type Op = { "op": "folder.create", id: FolderId, name: Name, parent_id?: FolderId, sort_key?: SortKey, } | { "op": "folder.update", id: FolderId, name?: Name, 
+export type Op = { "op": "folder.create", id: FolderId, name: Name, parent_id?: FolderId, sort_key?: SortKey, color?: FolderColor, icon?: FolderIcon, } | { "op": "folder.update", id: FolderId, name?: Name, 
 /**
  * `null` moves the folder to the root.
  */
-parent_id?: FolderId | null, sort_key?: SortKey, } | { "op": "folder.delete", id: FolderId, } | { "op": "task.create", id: TaskId, title: Title, folder_id?: FolderId, description?: Description, start?: Date, start_time?: Time, due?: Due, sort_key?: SortKey, done?: boolean, 
+parent_id?: FolderId | null, sort_key?: SortKey, 
+/**
+ * `null` goes back to the default.
+ */
+color?: FolderColor | null, 
+/**
+ * `null` goes back to the default.
+ */
+icon?: FolderIcon | null, } | { "op": "folder.delete", id: FolderId, } | { "op": "task.create", id: TaskId, title: Title, folder_id?: FolderId, description?: Description, start?: Date, start_time?: Time, due?: Due, sort_key?: SortKey, done?: boolean, 
 /**
  * User ids, in a shared folder only.
  */

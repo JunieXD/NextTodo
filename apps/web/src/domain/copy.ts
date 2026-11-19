@@ -2,6 +2,7 @@
 
 import { v7 as uuidv7 } from "uuid";
 import type { Attachment } from "../api/types/Attachment";
+import type { Folder } from "../api/types/Folder";
 import type { FolderId } from "../api/types/FolderId";
 import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
@@ -32,7 +33,8 @@ export function copyFolder(
   parent: FolderId | null,
   root: { id: FolderId; name: string; sort_key: string },
 ): { ops: Op[]; files: [string, Attachment][] } {
-  const ops: Op[] = [{ op: "folder.create", ...root, ...(parent && { parent_id: parent }) }];
+  const look = ({ color, icon }: Folder) => ({ ...(color && { color }), ...(icon && { icon }) });
+  const ops: Op[] = [{ op: "folder.create", ...root, ...look(board.folder(f)!), ...(parent && { parent_id: parent }) }];
   const tasks: [Task, TaskId, FolderId][] = [];
   const stack: [FolderId, FolderId][] = [[f, root.id]];
   while (stack.length) {
@@ -40,7 +42,7 @@ export function copyFolder(
     tasks.push(...board.contents(old).map((t): [Task, TaskId, FolderId] => [t, uuidv7(), folder]));
     for (const sub of board.subfolders(old)) {
       const id = uuidv7();
-      ops.push({ op: "folder.create", id, name: sub.name, parent_id: folder, sort_key: sub.sort_key });
+      ops.push({ op: "folder.create", id, name: sub.name, parent_id: folder, sort_key: sub.sort_key, ...look(sub) });
       stack.push([sub.id, id]);
     }
   }

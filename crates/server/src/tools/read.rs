@@ -60,10 +60,17 @@ pub fn tree(c: &Connection, cx: &Cx, _: NoArgs) -> Result<Output, ApiError> {
     let b = Board::new(&snap, cx.local.clone(), cx.user);
     let (mut lines, mut data) = (Vec::new(), Vec::new());
     for f in b.folder_tree() {
-        let name = f.and_then(|id| b.folder(id)).map_or("/", |f| f.name.as_str());
+        let folder = f.and_then(|id| b.folder(id));
+        let name = folder.map_or("/", |f| f.name.as_str());
         let depth = std::iter::successors(f, |id| b.folder(*id).and_then(|f| f.parent_id)).count();
         let (text, pending, ready) = counts(&b, f);
         let mut v = json!({ "path": b.path(f), "name": name, "depth": depth, "pending": pending, "ready": ready });
+        if let Some(color) = folder.and_then(|f| f.color) {
+            v["color"] = json!(color);
+        }
+        if let Some(icon) = folder.and_then(|f| f.icon) {
+            v["icon"] = json!(icon);
+        }
         // Those shared with the user go by their path, which says whose they are.
         let foreign = b.shared_with_me().iter().any(|s| Some(s.id) == f);
         let mut line = format!("{}{}{text}", "  ".repeat(depth), if foreign { b.path(f) } else { name.to_owned() });

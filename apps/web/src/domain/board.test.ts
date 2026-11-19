@@ -45,6 +45,8 @@ function snapshot(c: Case, id: (name: string) => string): Snapshot {
     parent_id: f.parent ? id(f.parent) : null,
     name: f.name,
     sort_key: f.key,
+    color: null,
+    icon: null,
     created_at: 0,
     updated_at: 0,
   }));

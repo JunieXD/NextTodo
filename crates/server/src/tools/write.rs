@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use super::args::{
     AddArgs, ApplyArgs, AttachArgs, CopyArgs, DeleteArgs, DepArgs, DetachArgs, DoneArgs, EditArgs, MkdirArgs, MoveArgs, Plan, PlanRef,
-    PlanTask, RenameArgs, RepeatText, Replace, ShareArgs, TaskRef, TasksArgs, UndoArgs, UnshareArgs, WhenText, task_ref,
+    PlanTask, RenameArgs, RepeatText, Replace, ShareArgs, StyleArgs, TaskRef, TasksArgs, UndoArgs, UnshareArgs, WhenText, task_ref,
 };
 use super::text::{self, Names, task_view};
 use super::{Output, WriteFn, find_folder, find_task, person};
@@ -213,7 +213,7 @@ impl Folders<'_, '_> {
                 None => {
                     let id = FolderId(Uuid::now_v7());
                     let name = Name::try_from(name.to_owned()).map_err(|m| ApiError::invalid(m, None))?;
-                    ops.push(Op::FolderCreate { id, name, parent_id: cur, sort_key: None });
+                    ops.push(Op::FolderCreate { id, name, parent_id: cur, sort_key: None, color: None, icon: None });
                     self.made.insert(full.clone(), id);
                     id
                 }
@@ -585,7 +585,14 @@ pub fn rename(w: &WriteCx, a: RenameArgs) -> Result<Write, ApiError> {
     let op = match (a.folder, a.attachment) {
         (Some(folder), None) => {
             let id = folder_id(w.board, &folder, "改名")?;
-            Op::FolderUpdate { id, name: Some(Name::try_from(a.name).map_err(invalid)?), parent_id: None, sort_key: None }
+            Op::FolderUpdate {
+                id,
+                name: Some(Name::try_from(a.name).map_err(invalid)?),
+                parent_id: None,
+                sort_key: None,
+                color: None,
+                icon: None,
+            }
         }
         (None, Some(id)) => Op::AttachmentUpdate { id, name: Some(FileName::try_from(a.name).map_err(invalid)?), task_id: None },
         _ => return Err(ApiError::invalid("folder 和 attachment 给且只给一个", None)),
@@ -644,9 +651,24 @@ pub fn move_to(w: &WriteCx, a: MoveArgs) -> Result<Write, ApiError> {
         });
     }
     for path in &a.folders {
-        ops.push(Op::FolderUpdate { id: folder_id(b, path, "移动")?, name: None, parent_id: Some(to), sort_key: None });
+        ops.push(Op::FolderUpdate {
+            id: folder_id(b, path, "移动")?,
+            name: None,
+            parent_id: Some(to),
+            sort_key: None,
+            color: None,
+            icon: None,
+        });
     }
     Ok(ops.into())
+}
+
+pub fn style(w: &WriteCx, a: StyleArgs) -> Result<Write, ApiError> {
+    if a.color.is_none() && a.icon.is_none() {
+        return Err(ApiError::invalid("color 和 icon 至少给一个", None));
+    }
+    let id = folder_id(w.board, &a.folder, "设颜色和图标")?;
+    Ok(vec![Op::FolderUpdate { id, name: None, parent_id: None, sort_key: None, color: a.color, icon: a.icon }].into())
 }
 
 /// What a copy of a folder named `name` is called where `taken` says which names are in use: its
@@ -677,7 +699,7 @@ pub fn copy(w: &WriteCx, a: CopyArgs) -> Result<Write, ApiError> {
     let shared_root = |f: Option<FolderId>| b.share(f).map(|s| s.folder_id);
 
     let root = FolderId(Uuid::now_v7());
-    let mut ops = vec![Op::FolderCreate { id: root, name, parent_id: to, sort_key: None }];
+    let mut ops = vec![Op::FolderCreate { id: root, name, parent_id: to, sort_key: None, color: source.color, icon: source.icon }];
     // Each task with its copy's id and folder, folder by folder.
     let mut tasks: Vec<(&Task, TaskId, FolderId)> = Vec::new();
     let mut stack = vec![(from, root)];
@@ -685,7 +707,14 @@ pub fn copy(w: &WriteCx, a: CopyArgs) -> Result<Write, ApiError> {
         tasks.extend(b.contents(Some(old)).iter().map(|t| (*t, TaskId(Uuid::now_v7()), new)));
         for f in b.subfolders(Some(old)) {
             let id = FolderId(Uuid::now_v7());
-            ops.push(Op::FolderCreate { id, name: f.name.clone(), parent_id: Some(new), sort_key: Some(f.sort_key.clone()) });
+            ops.push(Op::FolderCreate {
+                id,
+                name: f.name.clone(),
+                parent_id: Some(new),
+                sort_key: Some(f.sort_key.clone()),
+                color: f.color,
+                icon: f.icon,
+            });
             stack.push((f.id, id));
         }
     }

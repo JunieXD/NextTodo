@@ -16,7 +16,7 @@ const id = (i: number) => `00000000-0000-7000-8000-${String(i).padStart(12, "0")
 /** Tasks `t0`, `t1`… in FOLDER (or OTHER), with the given keys, done or not, and dependencies. */
 function board(tasks: { key: string; done?: boolean; other?: boolean }[], deps: [number, number][]): Board {
   const snapshot: Snapshot = {
-    folders: [FOLDER, OTHER].map((f, i) => ({ id: f, parent_id: null, name: `f${i}`, sort_key: `a${i}`, created_at: 0, updated_at: 0 })),
+    folders: [FOLDER, OTHER].map((f, i) => ({ id: f, parent_id: null, name: `f${i}`, sort_key: `a${i}`, color: null, icon: null, created_at: 0, updated_at: 0 })),
     tasks: tasks.map((t, i) => ({
       id: id(i),
       number: i + 1,

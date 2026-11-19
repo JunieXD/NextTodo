@@ -2,7 +2,6 @@
 // task. Adding and taking off people go to the server straight away rather than through the local
 // copy: who a username is, is only known there.
 
-import { Folder as FolderIcon, FolderUsers, type LucideIcon } from "lucide-react";
 import { type CSSProperties, type FormEvent, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation } from "wouter";
@@ -79,9 +78,6 @@ export function FolderName({ board, id }: { board: Board; id: FolderId | null })
     </>
   );
 }
-
-/** A folder's icon: with two people when it is shared, by the user or with them. */
-export const folderIcon = (board: Board, f: FolderId | null): LucideIcon => (f && board.sharedRoot(f) === f ? FolderUsers : FolderIcon);
 
 /** Whether a folder can be shared, or is: not the root, not in a shared folder, none inside it. */
 export function shareable(board: Board, f: FolderId | null): f is FolderId {

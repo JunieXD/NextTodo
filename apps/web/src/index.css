@@ -186,7 +186,53 @@ svg { display: block; flex: none; }
 .rail-note .row-inner { min-height: 44px; justify-content: space-between; font-size: 13px; color: var(--on-surface-variant); }
 
 .folder-row .row-inner { gap: 12px; }
-.folder-ic { width: 30px; height: 30px; border-radius: 8px; background: var(--primary-container); color: var(--on-primary-container); display: grid; place-items: center; flex: none; }
+.folder-ic { width: 30px; height: 30px; border-radius: 8px; background: var(--fc-container, var(--primary-container)); color: var(--fc-on, var(--on-primary-container)); display: grid; place-items: center; flex: none; }
+/* A folder's colour (docs/ui.md#文件夹的颜色和图标): Material 3 tones 90, 10 and 40, dark 30, 90 and 80. */
+.fc-red { --fc-container: #FFDAD6; --fc-on: #410002; --fc-accent: #9C4239; }
+.fc-orange { --fc-container: #FFDBC8; --fc-on: #321300; --fc-accent: #96490C; }
+.fc-amber { --fc-container: #FFDDB6; --fc-on: #2A1800; --fc-accent: #845400; }
+.fc-yellow { --fc-container: #FFE17A; --fc-on: #231B00; --fc-accent: #715C00; }
+.fc-lime { --fc-container: #D9EC7B; --fc-on: #181E00; --fc-accent: #566500; }
+.fc-green { --fc-container: #ACF4A2; --fc-on: #002203; --fc-accent: #296B2A; }
+.fc-teal { --fc-container: #78F8DD; --fc-on: #00201A; --fc-accent: #006B5B; }
+.fc-cyan { --fc-container: #99F0FF; --fc-on: #001F24; --fc-accent: #006874; }
+.fc-blue { --fc-container: #D5E3FF; --fc-on: #001C3B; --fc-accent: #215FA6; }
+.fc-indigo { --fc-container: #E1DFFF; --fc-on: #0B0664; --fc-accent: #5455A9; }
+.fc-purple { --fc-container: #F0DBFF; --fc-on: #2C0051; --fc-accent: #744C9D; }
+.fc-pink { --fc-container: #FFD8E8; --fc-on: #3C0028; --fc-accent: #944170; }
+:root[data-theme="dark"] .fc-red { --fc-container: #7D2B24; --fc-on: #FFDAD6; --fc-accent: #FFB4AB; }
+:root[data-theme="dark"] .fc-orange { --fc-container: #753400; --fc-on: #FFDBC8; --fc-accent: #FFB68B; }
+:root[data-theme="dark"] .fc-amber { --fc-container: #643F00; --fc-on: #FFDDB6; --fc-accent: #FFB95A; }
+:root[data-theme="dark"] .fc-yellow { --fc-container: #554500; --fc-on: #FFE17A; --fc-accent: #E5C449; }
+:root[data-theme="dark"] .fc-lime { --fc-container: #404C00; --fc-on: #D9EC7B; --fc-accent: #BDD062; }
+:root[data-theme="dark"] .fc-green { --fc-container: #0B5314; --fc-on: #ACF4A2; --fc-accent: #91D888; }
+:root[data-theme="dark"] .fc-teal { --fc-container: #005144; --fc-on: #78F8DD; --fc-accent: #59DBC1; }
+:root[data-theme="dark"] .fc-cyan { --fc-container: #004F58; --fc-on: #99F0FF; --fc-accent: #4FD8EC; }
+:root[data-theme="dark"] .fc-blue { --fc-container: #004787; --fc-on: #D5E3FF; --fc-accent: #A6C8FF; }
+:root[data-theme="dark"] .fc-indigo { --fc-container: #3B3D8F; --fc-on: #E1DFFF; --fc-accent: #C1C1FF; }
+:root[data-theme="dark"] .fc-purple { --fc-container: #5B3383; --fc-on: #F0DBFF; --fc-accent: #DCB8FF; }
+:root[data-theme="dark"] .fc-pink { --fc-container: #772957; --fc-on: #FFD8E8; --fc-accent: #FFAFD6; }
+.folder-glyph { display: inline-flex; flex: none; color: var(--fc-accent, currentColor); }
+.title-ic { display: inline-grid; vertical-align: -5px; width: 32px; height: 32px; border-radius: 9px; margin-right: 10px; }
+.main-title .title-ic { width: 28px; height: 28px; vertical-align: -4px; }
+.m-folder { min-width: 0; flex-shrink: 1; overflow: hidden; }
+.prop .value .folder-glyph { margin-right: 4px; vertical-align: -2px; }
+.prop .folder-glyph svg { color: inherit; }
+.look-preview { display: flex; align-items: center; gap: 12px; margin: 4px 16px 0; font-size: 16px; font-weight: 500; min-width: 0; }
+.look-title { margin: 18px 16px 8px; font-size: 13px; font-weight: 600; color: var(--on-surface-variant); }
+.look-preview .folder-ic { width: 40px; height: 40px; border-radius: 11px; }
+.look-colors, .look-icons { display: grid; gap: 6px; margin: 0 12px; }
+.look-colors { grid-template-columns: repeat(7, 1fr); }
+.look-icons { grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); }
+.look-color { height: 36px; display: grid; place-items: center; border-radius: 50%; }
+.look-color .swatch { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--fc-accent, var(--primary)); color: var(--surface); }
+.look-color[aria-pressed="true"] .swatch { box-shadow: 0 0 0 2px var(--surface-low), 0 0 0 4px var(--fc-accent, var(--primary)); }
+/* The default: no colour of its own, the folder taking the theme's. */
+.look-color .swatch.none { background: none; color: var(--on-surface-variant); box-shadow: inset 0 0 0 2px var(--outline); }
+.look-color[aria-pressed="true"] .swatch.none { box-shadow: inset 0 0 0 2px var(--outline), 0 0 0 2px var(--surface-low), 0 0 0 4px var(--outline); }
+.look-icon { height: 40px; display: grid; place-items: center; border-radius: 10px; color: var(--on-surface-variant); }
+.look-icon:hover { background: var(--press); }
+.look-icon[aria-pressed="true"] { background: var(--secondary-container); color: var(--on-secondary-container); }
 .folder-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 /* One line each, as in task rows: dragging takes the rows of a list to be as tall as each other. */
 .folder-main > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

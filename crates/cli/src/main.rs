@@ -214,6 +214,18 @@ enum Command {
         #[arg(required = true, num_args = 2.., help = "要移动的事项和文件夹，最后一个是目标文件夹")]
         items: Vec<String>,
     },
+    #[command(about = "设文件夹的颜色和图标")]
+    Style {
+        folder: String,
+        #[arg(long, conflicts_with = "no_color", help = "red、orange、amber、yellow、lime、green、teal、cyan、blue、indigo、purple、pink")]
+        color: Option<String>,
+        #[arg(long, help = "改回默认的颜色")]
+        no_color: bool,
+        #[arg(long, conflicts_with = "no_icon", help = "图标的名字，见 docs/data-model.md 的 folders，如 briefcase、book、house")]
+        icon: Option<String>,
+        #[arg(long, help = "改回默认的图标")]
+        no_icon: bool,
+    },
     #[command(about = "复制文件夹，连同里面的事项、附件和依赖，事项都变回待办")]
     Cp {
         folder: String,
@@ -954,6 +966,17 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             let to = list.pop().expect("at least two arguments");
             let (tasks, folders) = items(&list);
             write("move", json!({ "tasks": tasks, "folders": folders, "to": to }), j)
+        }
+        Command::Style { folder, color, no_color, icon, no_icon } => {
+            let mut args = json!({ "folder": folder });
+            for (key, value, clear) in [("color", color, no_color), ("icon", icon, no_icon)] {
+                if clear {
+                    args[key] = Value::Null;
+                } else if let Some(v) = value {
+                    args[key] = v.into();
+                }
+            }
+            write("style", args, j)
         }
         Command::Cp { folder, to, name } => write("copy", json!({ "folder": folder, "to": to, "name": name }), j),
         Command::Rm { items: list } => {

@@ -46,6 +46,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `mkdir` | `mkdir <路径>` | `path` | 新建文件夹，路径上缺的层级一起建；已存在时报错 |
 | `rename` | `rename <文件夹> <新名字>`、`rename --attachment <附件 ID> <新名字>` | `folder?`、`attachment?`、`name` | 文件夹或附件改名，`folder` 和 `attachment` 正好给一个 |
 | `move` | `mv <事项或文件夹…> <目标文件夹>` | `tasks?`、`folders?`、`to` | 移动到已有的文件夹，`/` 是根目录；移进、移出共享的文件夹时去掉连到外面的依赖和看不到的负责人，并换成新主人的编号，输出里写明 |
+| `style` | `style <文件夹> [--color 颜色 \| --no-color] [--icon 图标 \| --no-icon]` | `folder`、`color?`、`icon?` | 设文件夹的[颜色和图标](ui.md#文件夹的颜色和图标)，`null`（`--no-color`、`--no-icon`）改回默认；颜色和图标的取值见[数据模型](data-model.md#folders) |
 | `copy` | `cp <文件夹> [目标文件夹] [--name 名字]` | `folder`、`to?`、`name?` | [复制文件夹](design.md#文件夹)，连同子文件夹、事项、附件和它们之间的依赖，事项都是待办；放在目标文件夹的最后，不给 `to` 就在原文件夹的同一层（别人共享给我的文件夹在根目录）；不给 `name` 时用原名，那里已有同名的就叫“原名 副本”“原名 副本 2”…… |
 | `delete` | `rm <事项或文件夹…>` | `tasks?`、`folders?` | 删除；文件夹连同里面的一切 |
 | `dep_add` | `dep add <前置> <后续>` | `before`、`after` | 加依赖，成环时拒绝并列出环上的事项 |
@@ -155,7 +156,7 @@ $ nexttodo graph 工作
 | 工具 | 数据 |
 |---|---|
 | 事项 | `{id, number, title, status, folder}`；`status` 是 `ready`、`waiting`、`done`，`folder` 是路径；别人共享给我的文件夹里的事项另有 `owner`（共享人的用户名，引用写成 `@owner#number`），有负责人时另有 `assignees`（用户名）；`waiting_on`（还在等的前置数）、`unlocks`（解锁数）不为 0 时才有，`start`、`due`、`done_at`、`completions`（`{count, last}`，重复的事项完成过时）有值时才有 |
-| `tree` | `[{path, name, depth, pending, ready}]`，先序排列，第一项是根目录，别人共享给我的文件夹在最后；共享的文件夹另有 `owner` 和 `members`（用户名） |
+| `tree` | `[{path, name, depth, pending, ready}]`，先序排列，第一项是根目录，别人共享给我的文件夹在最后；共享的文件夹另有 `owner` 和 `members`（用户名），设了颜色或图标的另有 `color`、`icon` |
 | `list` | `{folder, folders: [{path, name, pending, ready}], tasks: [事项], total}`，`total` 是没截断时的事项数；有 AI 整理请求时另有 `jobs: {waiting, running, failed, ready}`，只含不为 0 的；在共享的文件夹里时另有 `owner` 和 `members` |
 | `next` | `{tasks: [事项], total}`；有前置或后续的事项另有 `step: [2, 5]`（第几步、共几步）；我的事项里有还没到开始时间的，或者等的[重复事项](design.md#重复)这一次还没开始的，另有 `next_start`：其中最早的那个时刻（`2026-11-14` 或 `2026-11-14 09:30`），到时列表可能变，可以再取一次；它不受 `folders` 和 `limit` 限制 |
 | `show` | 事项加上 `created_at, updated_at`；`description`、`created_by`、`updated_by`（用户名，自己时没有）、`created_via`、`updated_via`（令牌名，没用令牌时没有）、`before: [事项]`、`after: [事项]` 有内容时才有 |
@@ -173,6 +174,7 @@ $ nexttodo graph 工作
 |---|---|
 | `folder_created`、`folder_sorted`、`folder_deleted` | `folder`：路径 |
 | `folder_renamed` | `folder`：原路径；`name`：新名字 |
+| `folder_styled` | `folder`：路径；`color`、`icon`：改成的值，改回默认的是 `null`，没改的没有 |
 | `folder_moved` | `folder`：原路径；`to`：新路径 |
 | `task_created`、`task_done`、`task_reopened`、`task_deleted` | `task`：编号 |
 | `task_moved` | `task`；`to`：文件夹路径；换了编号时另有 `number`：新编号 |

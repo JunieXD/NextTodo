@@ -1,7 +1,7 @@
 // The desktop app's menu bar or tray panel: what is next or a folder, ticked off and added to without
 // the main window (docs/desktop.md#菜单栏小窗).
 
-import { AppWindow, Check, ChevronDown, CircleCheck, FolderRoot, type LucideIcon } from "lucide-react";
+import { AppWindow, Check, ChevronDown, CircleCheck, FolderRoot } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { type ReactNode, useContext, useEffect } from "react";
 import { Redirect, useLocation } from "wouter";
@@ -14,7 +14,8 @@ import { Icon } from "../ui/icons";
 import { BatchBar, BatchHead, useBatch } from "./batch";
 import { FolderBody, NextBody, NextFilter, QuickAdd } from "./lists";
 import { folderUrl } from "./nav";
-import { FolderName, folderIcon } from "./share";
+import { FolderGlyph } from "./folder-look";
+import { FolderName } from "./share";
 import { ConnectionNote } from "./status";
 
 /** The page it shows, remembered on this device. */
@@ -86,9 +87,9 @@ function Pages({ folder }: { folder?: FolderId | null }) {
   const { board } = useView();
   const [, navigate] = useLocation();
   const root = useContext(RootContext);
-  const item = (key: string, to: string, icon: LucideIcon, name: ReactNode, on: boolean, depth = 0) => (
+  const item = (key: string, to: string, icon: ReactNode, name: ReactNode, on: boolean, depth = 0) => (
     <DropdownMenu.Item key={key} className="menu-item" style={{ paddingLeft: 12 + depth * 16 }} onSelect={() => navigate(to)}>
-      <Icon of={icon} />
+      {icon}
       <span className="truncate">{name}</span>
       {on && (
         <span className="tick">
@@ -98,7 +99,7 @@ function Pages({ folder }: { folder?: FolderId | null }) {
     </DropdownMenu.Item>
   );
   const tree = (id: FolderId | null, depth: number): ReactNode[] => [
-    item(id ?? "root", folderUrl(id), id ? folderIcon(board, id) : FolderRoot, <FolderName board={board} id={id} />, folder === id, depth),
+    item(id ?? "root", folderUrl(id), id ? <FolderGlyph board={board} id={id} /> : <Icon of={FolderRoot} />, <FolderName board={board} id={id} />, folder === id, depth),
     ...board.subfolders(id).flatMap((f) => tree(f.id, depth + 1)),
   ];
   const theirs = board.sharedWithMe();
@@ -110,7 +111,7 @@ function Pages({ folder }: { folder?: FolderId | null }) {
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal container={root}>
         <DropdownMenu.Content className="menu panel-menu" align="start" sideOffset={4}>
-          {item("next", "/", CircleCheck, "接下来", folder === undefined)}
+          {item("next", "/", <Icon of={CircleCheck} />, "接下来", folder === undefined)}
           <DropdownMenu.Separator className="menu-sep" />
           {tree(null, 0)}
           {theirs.length > 0 && (

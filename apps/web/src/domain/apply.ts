@@ -199,7 +199,16 @@ class Applier {
         if (parent) this.folder(parent);
         const keys = [...this.d.folders.values()].filter((f) => f.parent_id === parent).map((f) => f.sort_key);
         const sort_key = op.sort_key ?? lastKey(keys);
-        this.createFolder({ id: op.id, parent_id: parent, name: op.name, sort_key, created_at: now, updated_at: now });
+        this.createFolder({
+          id: op.id,
+          parent_id: parent,
+          name: op.name,
+          sort_key,
+          color: op.color ?? null,
+          icon: op.icon ?? null,
+          created_at: now,
+          updated_at: now,
+        });
         return;
       }
       case "folder.update": {
@@ -208,6 +217,8 @@ class Applier {
         if (op.name !== undefined) f.name = op.name;
         if (op.parent_id !== undefined) f.parent_id = op.parent_id;
         if (op.sort_key !== undefined) f.sort_key = op.sort_key;
+        if (op.color !== undefined) f.color = op.color;
+        if (op.icon !== undefined) f.icon = op.icon;
         this.updateFolder(before, f);
         return;
       }
@@ -682,7 +693,7 @@ class Applier {
           this.createFolder({ ...f, updated_at: now });
         } else {
           const cur = this.d.folders.get(e.before.id);
-          if (cur) this.updateFolder(cur, restore(cur, e.before, e.after, ["parent_id", "name", "sort_key"]));
+          if (cur) this.updateFolder(cur, restore(cur, e.before, e.after, ["parent_id", "name", "sort_key", "color", "icon"]));
         }
       } else if (e.kind === "task") {
         if (!e.before) {

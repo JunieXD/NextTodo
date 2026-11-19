@@ -36,8 +36,8 @@ test("reminders come before the deadline by the time set, for the user's pending
   const board = new Board(
     {
       folders: [
-        { id: FOLDER, parent_id: null, name: "学习", sort_key: "a0", created_at: 0, updated_at: 0 },
-        { id: SHARED, parent_id: null, name: "装修", sort_key: "a0", created_at: 0, updated_at: 0 },
+        { id: FOLDER, parent_id: null, name: "学习", sort_key: "a0", color: null, icon: null, created_at: 0, updated_at: 0 },
+        { id: SHARED, parent_id: null, name: "装修", sort_key: "a0", color: null, icon: null, created_at: 0, updated_at: 0 },
       ],
       tasks: [
         task(1, { due: { date: "2026-11-03", time: "18:00", remind_before: 30 }, folder_id: FOLDER }),

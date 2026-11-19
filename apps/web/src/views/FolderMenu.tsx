@@ -1,7 +1,7 @@
 // What can be done to a folder: make one inside it, tidy it with AI, share, rename, move, delete. From
 // its "…" button, or by right-clicking it on a computer.
 
-import { Copy, FolderInput, FolderPlus, ListChecks, NotebookPen, Pencil, Sparkles, Trash2, Users } from "lucide-react";
+import { Copy, FolderInput, FolderPlus, ListChecks, NotebookPen, Palette, Pencil, Sparkles, Trash2, Users } from "lucide-react";
 import { type ReactElement, type ReactNode, useEffect, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation } from "wouter";
@@ -23,6 +23,7 @@ import { composing } from "../ui/keys";
 import { ContextMenu, type MenuItem, MenuButton } from "../ui/menu";
 import { useAiNote } from "./AiNotes";
 import { useBatch } from "./batch";
+import { FolderLookDialog } from "./folder-look";
 import { folderUrl, settingsUrl } from "./nav";
 import { FolderPicker } from "./pickers";
 import { SharePanel, lost, shareable, sharer } from "./share";
@@ -204,6 +205,7 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
   const [location, navigate] = useLocation();
   const [moving, setMoving] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [styling, setStyling] = useState(false);
   const { board } = useView();
   if (folder === null) {
     const items = [
@@ -252,6 +254,7 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
         ? [copying]
         : [
             { icon: Pencil, label: "重命名", onSelect: rename },
+            { icon: Palette, label: "颜色和图标…", onSelect: () => setStyling(true) },
             copying,
             { icon: FolderInput, label: "移动到…", onSelect: () => setMoving(true) },
             { icon: Trash2, label: "删除文件夹", danger: true, onSelect: remove },
@@ -263,6 +266,7 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
         {note.panel}
         {moving && <FolderPicker mode="move" current={f.parent_id} exclude={f.id} onPick={(parent) => place(f.id, parent, null)} onClose={() => setMoving(false)} />}
         {sharing && <SharePanel folder={f.id} onClose={() => setSharing(false)} />}
+        {styling && <FolderLookDialog board={board} folder={f} onClose={() => setStyling(false)} />}
       </>
     ),
   };

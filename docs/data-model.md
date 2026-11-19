@@ -57,6 +57,8 @@
 | parent_id | TEXT → folders，可空 | 空表示在根目录；删除父文件夹时级联删除 |
 | name | TEXT | 1–100 字，单行，不含 `/` 和控制字符 |
 | sort_key | TEXT | 同一层内的顺序 |
+| color | TEXT，可空 | [颜色](ui.md#文件夹的颜色和图标)：`red`、`orange`、`amber`、`yellow`、`lime`、`green`、`teal`、`cyan`、`blue`、`indigo`、`purple`、`pink`；空表示默认 |
+| icon | TEXT，可空 | [图标](ui.md#文件夹的颜色和图标)：`briefcase`、`graduation-cap`、`book`、`pen`、`file`、`laptop`、`code`、`flask`、`calculator`、`lightbulb`、`target`、`house`、`cart`、`utensils`、`coffee`、`shirt`、`baby`、`paw`、`heart`、`gift`、`dumbbell`、`bike`、`heart-pulse`、`pill`、`wallet`、`piggy-bank`、`plane`、`car`、`map-pin`、`music`、`camera`、`palette`、`gamepad`、`star`、`flag`、`rocket`、`trophy`、`wrench`、`leaf`、`users`，依次是界面上那 40 个图标；空表示默认 |
 | created_at / updated_at | INTEGER | |
 
 同一个用户同一层的文件夹不重名：唯一索引 `(owner_id, coalesce(parent_id, ''), name)`。
@@ -277,7 +279,7 @@ AI 整理的[说明](ai.md#说明)，每个用户每个文件夹（含根目录�
 
 服务端应用改动时在事务里检查，任何一条不满足就整个改动不生效：
 
-- 引用的文件夹、事项都必须存在，且当前用户看得到：自己的，或共享给自己的文件夹里的。共享的文件夹本身只有共享人能改名、移动、删除和管理成员。
+- 引用的文件夹、事项都必须存在，且当前用户看得到：自己的，或共享给自己的文件夹里的。共享的文件夹本身只有共享人能改名、改颜色和图标、移动、删除和管理成员。
 - 文件夹不能移到自己或自己的子孙下面；同一层不能重名。
 - 依赖不能指向自己、不能重复、不能成环；成环时返回环上的事项。两端在同一处：都是私人的，或在同一个共享的文件夹里。
 - 负责人只能设在共享的文件夹里的事项上，须是这个文件夹的共享人或成员。共享的文件夹不能放进另一个共享的文件夹，里面也不能再共享文件夹。

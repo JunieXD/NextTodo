@@ -180,7 +180,7 @@ mod tests {
         let (top, inner, t1, t2, t3) = (id(), id(), id(), id(), id());
         p.change(json!([
             { "op": "folder.create", "id": top, "name": "论文" },
-            { "op": "folder.create", "id": inner, "name": "实验", "parent_id": top },
+            { "op": "folder.create", "id": inner, "name": "实验", "parent_id": top, "color": "blue", "icon": "flask" },
             { "op": "task.create", "id": t1, "title": "设计问卷", "folder_id": top, "due": { "date": "2026-11-20", "time": "18:00", "remind_before": 60 } },
             { "op": "task.create", "id": t2, "title": "发问卷", "folder_id": inner },
             { "op": "task.create", "id": t3, "title": "每周组会", "due": { "date": "2026-11-18", "repeat": { "every": 1, "unit": "week", "from": "due" } } },
@@ -189,6 +189,7 @@ mod tests {
         p.change(json!([{ "op": "task.update", "id": t1, "title": "设计并预测问卷", "done": true }]));
         p.change(json!([{ "op": "task.update", "id": t3, "done": true, "today": "2026-11-18" }]));
         p.change(json!([{ "op": "task.update", "id": t2, "folder_id": null }]));
+        p.change(json!([{ "op": "folder.update", "id": top, "color": "green", "icon": "graduation-cap" }]));
 
         // An attachment, its file uploaded first.
         let file = id();

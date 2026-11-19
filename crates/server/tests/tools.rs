@@ -853,3 +853,32 @@ async fn a_folder_copies_with_all_in_it_open_again() {
     t.ok(&s, "undo", json!({ "batch": again["data"]["batch"] })).await;
     assert!(t.ok(&s, "list", json!({ "folder": "/其他" })).await["data"]["folders"].as_array().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn a_folder_takes_a_colour_and_an_icon_that_copies_keep() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "复习", "folder": "/学习" })).await;
+    let styled = t.ok(&s, "style", json!({ "folder": "/学习", "color": "blue", "icon": "book" })).await;
+    t.ok(&s, "copy", json!({ "folder": "/学习" })).await;
+    let looks = |tree: Value| {
+        tree.as_array().unwrap().iter().map(|f| (f["name"].clone(), f["color"].clone(), f["icon"].clone())).collect::<Vec<_>>()
+    };
+    assert_eq!(
+        looks(t.ok(&s, "tree", json!({})).await["data"].clone()),
+        [
+            (json!("/"), Value::Null, Value::Null),
+            (json!("学习"), json!("blue"), json!("book")),
+            (json!("学习 副本"), json!("blue"), json!("book"))
+        ]
+    );
+    // Back to the default, one at a time.
+    t.ok(&s, "style", json!({ "folder": "/学习", "color": null })).await;
+    assert_eq!(looks(t.ok(&s, "tree", json!({})).await["data"].clone())[1], (json!("学习"), Value::Null, json!("book")));
+    t.ok(&s, "undo", json!({ "batch": styled["data"]["batch"] })).await;
+    assert_eq!(looks(t.ok(&s, "tree", json!({})).await["data"].clone())[1], (json!("学习"), Value::Null, Value::Null));
+    for bad in [json!({ "folder": "/学习" }), json!({ "folder": "/学习", "color": "black" }), json!({ "folder": "/", "icon": "book" })]
+    {
+        assert_eq!(t.tool(&s, "style", bad.clone()).await.status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+}

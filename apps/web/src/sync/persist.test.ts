@@ -108,6 +108,20 @@ test("a copy saved before sharing has the user in it, and every task as theirs",
   expect(base.tasks[0]).toMatchObject({ assignees: [], created_by: u, updated_by: u });
 });
 
+test("folders saved before they had colours and icons have the defaults, deleted ones too", async () => {
+  const u = user(8);
+  await load(someone(u), "here");
+  const folder = { id: "f", parent_id: null, name: "旧", sort_key: "a0", created_at: 0, updated_at: 0 };
+  const deleted = { ...folder, id: "g", name: "删掉的" };
+  const deletion = pending(1).mutation.id;
+  const old = { ...copy(3), base: { ...Store.empty().base, folders: [folder] }, log: [[deletion, [{ kind: "folder", before: deleted, after: null }]]] };
+  await (await raw()).put("copies", old, [u, "here"]);
+  const { base, log } = (await load(someone(u), "here"))!;
+  expect(base.folders).toEqual([{ ...folder, color: null, icon: null }]);
+  // Undoing the deletion brings it back as folders are now.
+  expect(log).toEqual([[deletion, [{ kind: "folder", before: { ...deleted, color: null, icon: null }, after: null }]]]);
+});
+
 test("a change withdrawn into a draft leaves the outbox as the app opens, its text and files back in the box once", async () => {
   const u = user(7);
   await load(someone(u), "here");

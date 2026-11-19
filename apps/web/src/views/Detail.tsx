@@ -22,6 +22,7 @@ import { Description } from "../ui/lazy-markdown";
 import { useTaskActions } from "./actions";
 import { type Adding, useAddFiles, useAttachments } from "./attachments";
 import { DueEditor, StartEditor } from "./due";
+import { FolderGlyph, styled } from "./folder-look";
 import { useMarks } from "./marks";
 import { useSelection } from "./nav";
 import { FolderPicker, TaskPicker } from "./pickers";
@@ -165,7 +166,17 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
       </div>
 
       <div className="group">
-        <Prop icon={FolderIcon} label="文件夹" value={board.place(t.folder_id)} onClick={() => setPanel("folder")} />
+        <Prop
+          icon={FolderIcon}
+          label="文件夹"
+          value={
+            <>
+              {t.folder_id && styled(board, t.folder_id) && <FolderGlyph board={board} id={t.folder_id} size={14} />}
+              {board.place(t.folder_id)}
+            </>
+          }
+          onClick={() => setPanel("folder")}
+        />
         {shared && (
           <Prop
             icon={Users}

@@ -1,6 +1,6 @@
 // Panels for choosing: a folder or several, a task to link.
 
-import { Check, ChevronLeft, ChevronRight, Folder as FolderIcon, Plus, Search } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { FolderId } from "../api/types/FolderId";
 import type { Task } from "../api/types/Task";
@@ -10,7 +10,8 @@ import { useView } from "../session";
 import { Box } from "../ui/controls";
 import { Modal } from "../ui/feedback";
 import { Icon } from "../ui/icons";
-import { FolderName, folderIcon } from "./share";
+import { FolderTile } from "./folder-look";
+import { FolderName } from "./share";
 
 /** Picks a folder or the root, checking `current`: to add to, the one picked so far; to move to, where
  * what is moved is now, which cannot be picked, nor can where `exclude`, a folder moved, may not go; for
@@ -34,9 +35,7 @@ export function FolderPicker({
     return (
       <button key={f ?? "root"} className="row" disabled={disabled} onClick={() => (onPick(f), onClose())}>
         <div className="row-inner" style={{ paddingLeft: 16 + Math.max(0, board.depth(f) - 1) * 22 }}>
-          <span className="folder-ic">
-            <Icon of={folderIcon(board, f)} size={18} />
-          </span>
+          <FolderTile board={board} id={f} />
           <span className="folder-main">
             <span>
               <FolderName board={board} id={f} />
@@ -88,9 +87,7 @@ export function FolderChecks({
     return (
       <button key={f ?? "root"} className="row" role="checkbox" aria-checked={on || within} disabled={within} onClick={toggle}>
         <div className="row-inner" style={{ paddingLeft: 16 + Math.max(0, board.depth(f) - 1) * 22 }}>
-          <span className="folder-ic">
-            <Icon of={folderIcon(board, f)} size={18} />
-          </span>
+          <FolderTile board={board} id={f} />
           <span className="folder-main">
             <span>
               <FolderName board={board} id={f} />
@@ -225,9 +222,7 @@ export function TaskPicker({
           {subs.map(({ f, n }) => (
             <button key={f.id} className="row" onClick={() => go(f.id, "forth")}>
               <div className="row-inner">
-                <span className="folder-ic">
-                  <Icon of={FolderIcon} size={18} />
-                </span>
+                <FolderTile board={board} id={f.id} />
                 <span className="folder-main">
                   <span>{f.name}</span>
                   <span className="folder-sub">{n} 项可选</span>

@@ -20,8 +20,8 @@ test("a folder copies with all in it, open again, and its attachments referred t
   apply(
     d,
     [
-      { op: "folder.create", id: id(1), name: "合同" },
-      { op: "folder.create", id: id(2), name: "盖章", parent_id: id(1) },
+      { op: "folder.create", id: id(1), name: "合同", color: "blue", icon: "briefcase" },
+      { op: "folder.create", id: id(2), name: "盖章", parent_id: id(1), icon: "pen" },
       { op: "task.create", id: id(9), title: "外部审批" },
       { op: "task.create", id: id(3), title: "审价", folder_id: id(1), description: `见[报价](attachment:${id(5)})`, done: true },
       { op: "task.create", id: id(4), title: "盖章", folder_id: id(2), due: { date: "2026-11-20", time: "18:00", repeat: { every: 1, unit: "week", from: "due" } } },
@@ -35,7 +35,8 @@ test("a folder copies with all in it, open again, and its attachments referred t
   apply(d, ops, cx);
   const b = board(d);
   const copy = b.folder(id(20))!;
-  expect(b.subfolders(copy.id).map((f) => f.name)).toEqual(["盖章"]);
+  expect([copy.color, copy.icon]).toEqual(["blue", "briefcase"]);
+  expect(b.subfolders(copy.id).map((f) => [f.name, f.color, f.icon])).toEqual([["盖章", null, "pen"]]);
   const [review] = b.contents(copy.id);
   expect([review.title, review.done_at, b.status(review)]).toEqual(["审价", null, "ready"]);
   const [attachment] = b.attachments(review.id);
@@ -50,8 +51,8 @@ test("tasks keep who they are assigned to only in the shared folder they were in
   const BOB = "019a4b2c-0000-7000-8000-0000000000bb";
   const d = fromSnapshot({
     folders: [
-      { id: id(1), parent_id: null, name: "项目", sort_key: "a0", created_at: 0, updated_at: 0 },
-      { id: id(2), parent_id: id(1), name: "采购", sort_key: "a0", created_at: 0, updated_at: 0 },
+      { id: id(1), parent_id: null, name: "项目", sort_key: "a0", color: null, icon: null, created_at: 0, updated_at: 0 },
+      { id: id(2), parent_id: id(1), name: "采购", sort_key: "a0", color: null, icon: null, created_at: 0, updated_at: 0 },
     ],
     tasks: [],
     dependencies: [],

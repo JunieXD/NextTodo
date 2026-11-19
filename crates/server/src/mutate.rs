@@ -470,7 +470,7 @@ impl<'a> Cx<'a> {
 
     fn op(&mut self, op: &Op) -> Result<(), ApiError> {
         match op {
-            Op::FolderCreate { id, name, parent_id, sort_key } => {
+            Op::FolderCreate { id, name, parent_id, sort_key, color, icon } => {
                 if store::folder_id_taken(self.c, *id)? {
                     return Err(ApiError::conflict("文件夹 ID 已存在"));
                 }
@@ -479,14 +479,29 @@ impl<'a> Cx<'a> {
                     Some(k) => k.clone(),
                     None => SortKey::after(store::last_folder_key(self.c, &owner, *parent_id)?.as_ref()),
                 };
-                let f = Folder { id: *id, parent_id: *parent_id, name: name.clone(), sort_key, created_at: self.now, updated_at: self.now };
+                let f = Folder {
+                    id: *id,
+                    parent_id: *parent_id,
+                    name: name.clone(),
+                    sort_key,
+                    color: *color,
+                    icon: *icon,
+                    created_at: self.now,
+                    updated_at: self.now,
+                };
                 self.create_folder(f, &owner)
             }
-            Op::FolderUpdate { id, name, parent_id, sort_key } => {
+            Op::FolderUpdate { id, name, parent_id, sort_key, color, icon } => {
                 let (before, owner) = self.folder(*id)?;
                 let mut f = before.clone();
                 if let Some(name) = name {
                     f.name = name.clone();
+                }
+                if let Some(color) = color {
+                    f.color = *color;
+                }
+                if let Some(icon) = icon {
+                    f.icon = *icon;
                 }
                 if let Some(parent_id) = parent_id {
                     f.parent_id = *parent_id;
@@ -1277,7 +1292,7 @@ impl<'a> Cx<'a> {
                 }
                 Effect::Folder(Change::Updated { before: b, after: a }) => {
                     if let Some((cur, owner)) = self.visible_folder(b.id)? {
-                        let restored = restore!(cur, b, a, parent_id, name, sort_key);
+                        let restored = restore!(cur, b, a, parent_id, name, sort_key, color, icon);
                         self.update_folder(cur, &owner, restored)?;
                     }
                 }

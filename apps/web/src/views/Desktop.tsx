@@ -21,7 +21,8 @@ import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, NextFilter,
 import { readyIn, useNextFolders } from "../next-folders";
 import { folderUrl, settingsUrl, useFolderView, useSelection } from "./nav";
 import { SettingsHome, SettingsPage, settingsTitle, useSectionAt } from "./Settings";
-import { FolderName, SharedWith, folderIcon, sharer } from "./share";
+import { FolderGlyph, FolderTile, styled } from "./folder-look";
+import { FolderName, SharedWith, sharer } from "./share";
 
 export function Desktop({ onSignOut }: { onSignOut(): void }) {
   const [location] = useLocation();
@@ -130,13 +131,14 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
     );
     const by = f && sharer(board, f.id);
     const crumbs = by ? `${board.name(by)} 共享` : f ? board.place(f.parent_id) : "";
+    const icon = !batch.on && styled(board, id) && <FolderTile board={board} id={id} className="title-ic" />;
     main =
       view === "graph" ? (
-        <Page title={title} crumbs={crumbs} actions={actions} scroll={false}>
+        <Page title={title} icon={icon} crumbs={crumbs} actions={actions} scroll={false}>
           <FolderGraph folder={id} across now={now} />
         </Page>
       ) : (
-        <Page title={title} crumbs={crumbs} actions={actions} add={!batch.on && <QuickAdd key={at} folder={id} />}>
+        <Page title={title} icon={icon} crumbs={crumbs} actions={actions} add={!batch.on && <QuickAdd key={at} folder={id} />}>
           <FolderBody key={at} folder={id} now={now} />
         </Page>
       );
@@ -171,14 +173,27 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
 }
 
 /** A page in the middle column; `narrow`, its title above the one column of the settings. */
-function Page(p: { title: string; crumbs?: ReactNode; actions?: ReactNode; add?: ReactNode; scroll?: boolean; narrow?: boolean; children: ReactNode }) {
-  const { title, crumbs, actions, add, scroll = true, children } = p;
+function Page(p: {
+  title: string;
+  /** Before the title: a folder's, when it has a colour or icon chosen. */
+  icon?: ReactNode;
+  crumbs?: ReactNode;
+  actions?: ReactNode;
+  add?: ReactNode;
+  scroll?: boolean;
+  narrow?: boolean;
+  children: ReactNode;
+}) {
+  const { title, icon, crumbs, actions, add, scroll = true, children } = p;
   return (
     <>
       <header className={`main-head${p.narrow ? " narrow" : ""}`} data-tauri-drag-region="deep">
         <div>
           <div className="crumbs">{crumbs}</div>
-          <h1 className="main-title">{title}</h1>
+          <h1 className="main-title">
+            {icon}
+            {title}
+          </h1>
         </div>
         {actions}
       </header>
@@ -247,7 +262,7 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ro
             >
               {kids.length > 0 && <Icon of={ChevronRight} size={14} width={2.2} />}
             </span>
-            <Icon of={id ? folderIcon(board, id) : FolderRoot} size={18} />
+            {id ? <FolderGlyph board={board} id={id} /> : <Icon of={FolderRoot} size={18} />}
             <span className="truncate">
               <FolderName board={board} id={id} />
             </span>

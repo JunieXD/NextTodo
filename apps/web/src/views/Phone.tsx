@@ -16,6 +16,7 @@ import { BackgroundTip } from "./Background";
 import { BatchBar, BatchHead, useBatch } from "./batch";
 import { Detail } from "./Detail";
 import { FolderMenu } from "./FolderMenu";
+import { FolderTile, styled } from "./folder-look";
 import { SharedWith, sharer } from "./share";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, NextFilter, QuickAdd, SearchResults } from "./lists";
 import { readyIn, useNextFolders } from "../next-folders";
@@ -206,7 +207,10 @@ function FolderScreen({ folder, anim, now }: { folder: FolderId | null; anim: st
     <Screen title={title} nav={nav} anim={anim} fill={graph} choosing={batch.on} after={!graph && !batch.on && <QuickAdd folder={folder} />}>
       {by && <p className="over-title">{board.name(by)} 共享</p>}
       <div className="hero">
-        <h1 className="large-title">{title}</h1>
+        <h1 className="large-title">
+          {styled(board, folder) && <FolderTile board={board} id={folder} size={20} className="title-ic" />}
+          {title}
+        </h1>
         {!batch.on && (
           <span className="hero-actions">
             <SharedWith folder={folder} />

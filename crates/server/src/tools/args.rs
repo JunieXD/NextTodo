@@ -1,7 +1,8 @@
 //! Tool arguments. Descriptions are written for the agents that read the tool list.
 
 use nexttodo_core::model::{
-    AttachmentId, Date, Description, Every, FileName, MediaType, Monthdays, Period, RepeatFrom, Time, Title, Weekdays,
+    AttachmentId, Date, Description, Every, FileName, FolderColor, FolderIcon, MediaType, Monthdays, Period, RepeatFrom, Time, Title,
+    Weekdays,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer};
@@ -292,6 +293,25 @@ pub struct MoveArgs {
     pub folders: Vec<String>,
     #[schemars(description = "目标文件夹路径，必须已存在；/ 是根目录")]
     pub to: String,
+}
+
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct StyleArgs {
+    #[schemars(description = "文件夹路径")]
+    pub folder: String,
+    #[serde(default, deserialize_with = "nullable")]
+    #[schemars(
+        with = "Option<String>",
+        description = "颜色：red、orange、amber、yellow、lime、green、teal、cyan、blue、indigo、purple、pink；null 改回默认；不给就不改"
+    )]
+    pub color: Option<Option<FolderColor>>,
+    #[serde(default, deserialize_with = "nullable")]
+    #[schemars(
+        with = "Option<String>",
+        description = "图标：briefcase、graduation-cap、book、pen、file、laptop、code、flask、calculator、lightbulb、target、house、cart、utensils、coffee、shirt、baby、paw、heart、gift、dumbbell、bike、heart-pulse、pill、wallet、piggy-bank、plane、car、map-pin、music、camera、palette、gamepad、star、flag、rocket、trophy、wrench、leaf、users；null 改回默认；不给就不改"
+    )]
+    pub icon: Option<Option<FolderIcon>>,
 }
 
 #[derive(Clone, Deserialize, JsonSchema)]

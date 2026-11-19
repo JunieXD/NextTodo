@@ -10,7 +10,7 @@ use nexttodo_core::model::{
 };
 use rusqlite::{Connection, OptionalExtension, Params, Row, params};
 
-const FOLDER_COLUMNS: &str = "id, parent_id, name, sort_key, created_at, updated_at";
+const FOLDER_COLUMNS: &str = "id, parent_id, name, sort_key, created_at, updated_at, color, icon";
 const JOB_COLUMNS: &str = "id, folder_id, kind, text, local_time, state, error, suggestions, created_at, updated_at";
 /// Attachments, with what their files are.
 const ATTACHMENTS: &str =
@@ -36,7 +36,16 @@ const SHARED: &str = "WITH RECURSIVE shared(id) AS (
     SELECT folder_id FROM members WHERE user_id = ?1 UNION ALL SELECT f.id FROM folders f JOIN shared ON f.parent_id = shared.id)";
 
 fn folder_row(r: &Row) -> rusqlite::Result<Folder> {
-    Ok(Folder { id: r.get(0)?, parent_id: r.get(1)?, name: r.get(2)?, sort_key: r.get(3)?, created_at: r.get(4)?, updated_at: r.get(5)? })
+    Ok(Folder {
+        id: r.get(0)?,
+        parent_id: r.get(1)?,
+        name: r.get(2)?,
+        sort_key: r.get(3)?,
+        color: r.get(6)?,
+        icon: r.get(7)?,
+        created_at: r.get(4)?,
+        updated_at: r.get(5)?,
+    })
 }
 
 fn task_row(r: &Row) -> rusqlite::Result<Task> {
@@ -160,7 +169,7 @@ fn due_columns(due: &Option<Due>) -> DueColumns<'_> {
 
 /// A folder and its owner.
 pub fn load_folder(c: &Connection, id: FolderId) -> rusqlite::Result<Option<(Folder, String)>> {
-    c.query_row(&format!("SELECT {FOLDER_COLUMNS}, owner_id FROM folders WHERE id = ?1"), [id], |r| Ok((folder_row(r)?, r.get(6)?)))
+    c.query_row(&format!("SELECT {FOLDER_COLUMNS}, owner_id FROM folders WHERE id = ?1"), [id], |r| Ok((folder_row(r)?, r.get(8)?)))
         .optional()
 }
 
@@ -180,16 +189,16 @@ pub fn folder_id_taken(c: &Connection, id: FolderId) -> rusqlite::Result<bool> {
 pub fn insert_folder(c: &Connection, owner: &str, f: &Folder) -> rusqlite::Result<()> {
     // Its owner's, as is everything in it: one shared with others too.
     c.execute(
-        "INSERT INTO folders (owner_id, id, parent_id, name, sort_key, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![owner, f.id, f.parent_id, f.name, f.sort_key, f.created_at, f.updated_at],
+        "INSERT INTO folders (owner_id, id, parent_id, name, sort_key, created_at, updated_at, color, icon) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![owner, f.id, f.parent_id, f.name, f.sort_key, f.created_at, f.updated_at, f.color, f.icon],
     )?;
     Ok(())
 }
 
 pub fn update_folder(c: &Connection, f: &Folder) -> rusqlite::Result<()> {
     c.execute(
-        "UPDATE folders SET parent_id = ?2, name = ?3, sort_key = ?4, updated_at = ?5 WHERE id = ?1",
-        params![f.id, f.parent_id, f.name, f.sort_key, f.updated_at],
+        "UPDATE folders SET parent_id = ?2, name = ?3, sort_key = ?4, updated_at = ?5, color = ?6, icon = ?7 WHERE id = ?1",
+        params![f.id, f.parent_id, f.name, f.sort_key, f.updated_at, f.color, f.icon],
     )?;
     Ok(())
 }
@@ -205,7 +214,7 @@ pub fn subtree_folders(c: &Connection, id: FolderId) -> rusqlite::Result<Vec<Fol
     all(
         c,
         &format!(
-            "{SUBTREE} SELECT f.id, f.parent_id, f.name, f.sort_key, f.created_at, f.updated_at
+            "{SUBTREE} SELECT f.id, f.parent_id, f.name, f.sort_key, f.created_at, f.updated_at, f.color, f.icon
              FROM folders f JOIN sub ON f.id = sub.id ORDER BY sub.depth DESC"
         ),
         [id],
@@ -672,7 +681,7 @@ pub fn snapshot(c: &Connection, user: &str) -> rusqlite::Result<Snapshot> {
             c,
             &format!(
                 "{SHARED} SELECT id, CASE WHEN id IN (SELECT folder_id FROM members WHERE user_id = ?1) THEN NULL ELSE parent_id END,
-                     name, sort_key, created_at, updated_at
+                     name, sort_key, created_at, updated_at, color, icon
                  FROM folders WHERE owner_id = ?1 OR id IN shared ORDER BY id"
             ),
             [user],

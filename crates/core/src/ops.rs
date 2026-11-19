@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::model::{
-    AiJobId, AttachmentId, Date, Description, Due, FileName, FileSize, FolderId, JobKind, JobText, LocalTime, MediaType, MutationId, Name,
-    SortKey, TaskId, Time, Title, nullable,
+    AiJobId, AttachmentId, Date, Description, Due, FileName, FileSize, FolderColor, FolderIcon, FolderId, JobKind, JobText, LocalTime,
+    MediaType, MutationId, Name, SortKey, TaskId, Time, Title, nullable,
 };
 
 pub const MAX_OPS: usize = 1000;
@@ -52,6 +52,12 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         sort_key: Option<SortKey>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        color: Option<FolderColor>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        icon: Option<FolderIcon>,
     },
     #[serde(rename = "folder.update")]
     FolderUpdate {
@@ -66,6 +72,14 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         sort_key: Option<SortKey>,
+        /// `null` goes back to the default.
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        color: Option<Option<FolderColor>>,
+        /// `null` goes back to the default.
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        icon: Option<Option<FolderIcon>>,
     },
     #[serde(rename = "folder.delete")]
     FolderDelete { id: FolderId },

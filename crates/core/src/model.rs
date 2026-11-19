@@ -130,6 +130,42 @@ macro_rules! sql_text_enum {
     };
 }
 
+/// An enum stored and sent as text, each value as given.
+macro_rules! text_enum {
+    ($(#[$m:meta])* $name:ident { $($variant:ident = $text:literal),* $(,)? }) => {
+        $(#[$m])*
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+        #[ts(export)]
+        pub enum $name {
+            $(#[serde(rename = $text)] $variant),*
+        }
+
+        sql_text_enum!($name { $($variant = $text),* });
+    };
+}
+
+text_enum!(
+    /// A folder's colour, from the presets (docs/ui.md#文件夹的颜色和图标).
+    FolderColor {
+        Red = "red", Orange = "orange", Amber = "amber", Yellow = "yellow", Lime = "lime", Green = "green",
+        Teal = "teal", Cyan = "cyan", Blue = "blue", Indigo = "indigo", Purple = "purple", Pink = "pink",
+    }
+);
+
+text_enum!(
+    /// A folder's icon, from the presets (docs/ui.md#文件夹的颜色和图标).
+    FolderIcon {
+        Briefcase = "briefcase", GraduationCap = "graduation-cap", Book = "book", Pen = "pen", File = "file",
+        Laptop = "laptop", Code = "code", Flask = "flask", Calculator = "calculator", Lightbulb = "lightbulb",
+        Target = "target", House = "house", Cart = "cart", Utensils = "utensils", Coffee = "coffee", Shirt = "shirt",
+        Baby = "baby", Paw = "paw", Heart = "heart", Gift = "gift", Dumbbell = "dumbbell", Bike = "bike",
+        HeartPulse = "heart-pulse", Pill = "pill", Wallet = "wallet", PiggyBank = "piggy-bank", Plane = "plane",
+        Car = "car", MapPin = "map-pin", Music = "music", Camera = "camera", Palette = "palette", Gamepad = "gamepad",
+        Star = "star", Flag = "flag", Rocket = "rocket", Trophy = "trophy", Wrench = "wrench", Leaf = "leaf",
+        Users = "users",
+    }
+);
+
 /// Trims and checks a single-line value.
 pub fn line(s: String, what: &str, max: usize) -> Result<String, String> {
     let s = s.trim().to_owned();
@@ -728,6 +764,11 @@ pub struct Folder {
     pub parent_id: Option<FolderId>,
     pub name: Name,
     pub sort_key: SortKey,
+    /// None is the default; absent from what was written before folders had them.
+    #[serde(default)]
+    pub color: Option<FolderColor>,
+    #[serde(default)]
+    pub icon: Option<FolderIcon>,
     pub created_at: i64,
     pub updated_at: i64,
 }

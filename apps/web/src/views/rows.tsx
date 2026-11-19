@@ -23,7 +23,8 @@ import { FolderContextMenu } from "./FolderMenu";
 import { useFolderView } from "./nav";
 import { useMarks } from "./marks";
 import { FolderPicker } from "./pickers";
-import { Avatars, FolderName, folderIcon } from "./share";
+import { FolderGlyph, FolderTile, styled } from "./folder-look";
+import { Avatars, FolderName } from "./share";
 
 export interface RowActions {
   open(t: Task): void;
@@ -73,7 +74,21 @@ export function TaskRow({
   const status = board.status(t);
   const unlocks = status === "ready" ? board.unlocks(t).length : 0;
   const meta: ReactNode[] = [];
-  if (path && t.folder_id) meta.push(<span key="path" className="m-path">{board.place(t.folder_id)}</span>);
+  if (path && t.folder_id) {
+    const place = board.place(t.folder_id);
+    meta.push(
+      styled(board, t.folder_id) ? (
+        <span key="path" className="m-folder">
+          <FolderGlyph board={board} id={t.folder_id} size={14} />
+          <span className="m-path">{place}</span>
+        </span>
+      ) : (
+        <span key="path" className="m-path">
+          {place}
+        </span>
+      ),
+    );
+  }
   if (t.done_at === null && t.completions?.last === isoDate(now)) {
     meta.push(
       <span key="today" className="m-done-today">
@@ -253,9 +268,7 @@ export function FolderRow({ folder, board, onOpen }: { folder: Folder; board: Bo
     <FolderContextMenu folder={folder.id}>
       <button className="row folder-row" data-into={folder.id} onClick={onOpen}>
         <div className="row-inner">
-          <span className="folder-ic">
-            <Icon of={folderIcon(board, folder.id)} size={18} />
-          </span>
+          <FolderTile board={board} id={folder.id} />
           <span className="folder-main">
             <span>
               <FolderName board={board} id={folder.id} />

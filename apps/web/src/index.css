@@ -525,7 +525,8 @@ a.text-btn { display: inline-flex; align-items: center; }
 .desk-cols { --side-w: var(--sidebar); --pane-w: var(--pane); display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr) var(--pane-w); height: 100%; transition: grid-template-columns .32s var(--ease); }
 .desk-cols.side-closed { --side-w: 0px; }
 .desk-cols.pane-closed { --pane-w: 0px; }
-.desk-cols.resizing { transition: none; cursor: col-resize; user-select: none; }
+.desk-cols.resizing, .desk-cols.resizing :is(.sb-inner, .pane-inner) { transition: none; }
+.desk-cols.resizing { cursor: col-resize; user-select: none; }
 /* What a column is dragged by to be wider or narrower (columns.ts), over the line between it and the
    middle; that line lights up once the pointer rests on it, at once as it is dragged. */
 .col-edge { position: absolute; z-index: 3; top: 0; bottom: 0; width: 8px; cursor: col-resize; touch-action: none; }
@@ -535,7 +536,8 @@ a.text-btn { display: inline-flex; align-items: center; }
 .col-edge:hover::after { opacity: 1; transition-delay: .25s; }
 .col-edge:active::after { opacity: 1; transition-delay: 0s; }
 .sidebar { background: var(--surface-low); border-right: 1px solid var(--outline-variant); overflow: hidden; min-width: 0; transition: border-color .32s; }
-.sb-inner { width: var(--sidebar); height: 100%; display: flex; flex-direction: column; }
+/* Its width moves with its column's, which the other opening or folding can change. */
+.sb-inner { width: var(--sidebar); height: 100%; display: flex; flex-direction: column; transition: width .32s var(--ease); }
 .side-closed .sidebar { border-right-color: transparent; }
 .sb-foot { padding: 8px; border-top: 1px solid var(--outline-variant); }
 .sb-user { width: 100%; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 12px; transition: background-color .15s; }
@@ -579,7 +581,7 @@ a.text-btn { display: inline-flex; align-items: center; }
 .desk .connect-banner { top: 12px; }
 /* Relative: what covers the details while files are dragged over covers the pane, not what scrolls in it. */
 .detail-pane { position: relative; background: var(--surface-low); border-left: 1px solid var(--outline-variant); overflow: hidden; min-width: 0; transition: border-color .32s; }
-.pane-inner { width: var(--pane); height: 100%; overflow-y: auto; padding: 20px 0 32px; }
+.pane-inner { width: var(--pane); height: 100%; overflow-y: auto; padding: 20px 0 32px; transition: width .32s var(--ease); }
 .pane-closed .detail-pane { border-left-color: transparent; }
 .detail-empty { height: 100%; display: grid; place-items: center; color: var(--outline); font-size: 14px; text-align: center; padding: 32px; }
 .desk .modal { left: 0; right: 0; margin: 0 auto; bottom: auto; top: 12vh; width: 440px; border-radius: 28px; max-height: 76vh; padding-bottom: 12px; }

@@ -248,7 +248,8 @@ label.row { cursor: pointer; }
 .editor { position: absolute; z-index: 31; inset: 0; display: flex; flex-direction: column; background: var(--surface-low); padding: var(--safe-top) 0 calc(12px + var(--safe-bottom)); }
 .editor.enter { animation: sheet-in .38s var(--ease); }
 .editor.leave { animation: sheet-out .26s var(--ease-exit) forwards; }
-.editor textarea { flex: 1; min-height: 0; border: 0; background: none; outline: none; resize: none; font-size: 16px; line-height: 1.6; padding: 4px 24px 12px; }
+.editor textarea { flex: 1; min-height: 0; border: 0; background: none; outline: none; resize: none; font-size: 16px; line-height: 1.6; padding: 4px 16px 12px; }
+.editor .staged-list { padding-inline: 16px; }
 .editor-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 16px 0; }
 
 /* AI jobs in lists */
@@ -278,7 +279,7 @@ label.row { cursor: pointer; }
 .next-filter:active { opacity: .7; }
 .next-filter span { overflow: hidden; text-overflow: ellipsis; }
 /* Its words start where the text above does. */
-.empty .text-btn { margin: 4px 0 0 -14px; }
+.empty .text-btn { margin-top: 4px; padding-left: 0; }
 .fab { position: absolute; z-index: 4; right: 16px; bottom: calc(var(--tabbar-h) + 16px); height: 56px; border-radius: 16px; padding: 0 20px 0 16px; display: inline-flex; align-items: center; gap: 8px;
   background: var(--primary-container); color: var(--on-primary-container); font-size: 15px; font-weight: 600; box-shadow: var(--shadow-3); }
 .fab.on { background: var(--primary); color: var(--on-primary); }
@@ -620,9 +621,10 @@ a.text-btn { display: inline-flex; align-items: center; }
 .menu-label { padding: 10px 12px 4px; font-size: 12px; font-weight: 600; color: var(--on-surface-variant); }
 .panel .quick-add { position: static; flex: none; margin: 6px 12px; box-shadow: none; border: 1px solid var(--outline-variant); }
 .panel-scroll { flex: 1; overflow-y: auto; padding-bottom: 16px; }
-.panel .group-title { margin: 16px 28px 6px; }
-.panel .group { margin: 0 12px; }
-.panel .empty { margin: 8px 12px; }
+/* The lists only: dialogs opened from the panel keep their own. */
+.panel-scroll .group-title { margin: 16px 28px 6px; }
+.panel-scroll .group { margin: 0 12px; }
+.panel-scroll .empty { margin: 8px 12px; }
 .panel .status-note { margin-inline: 12px; }
 .panel .row:hover > .row-inner { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 4%); }
 .panel .batch-bar { position: static; flex: none; }
@@ -649,6 +651,8 @@ a.text-btn { display: inline-flex; align-items: center; }
 .field-switch { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 /* A part of a form page that is not of the form above it. */
 .field.part { margin-top: 36px; }
+.field.part h2 { margin: 0; font: inherit; }
+.field.part p { margin: 0; }
 .field .hint.full { line-height: 1.5; }
 /* Under a group, where its title is. */
 .group-note { margin: 8px 32px 0; font-size: 13px; line-height: 1.5; color: var(--on-surface-variant); }

@@ -134,10 +134,10 @@ export function AiNotes() {
   };
   return (
     <>
-      <h2 className="field part">
-        说明
-        <span className="hint full">AI 整理时照着做，比如“标题以模块名开头”。文件夹的说明对它的子文件夹也有效，全局的对所有文件夹都有效。</span>
-      </h2>
+      <div className="field part">
+        <h2>说明</h2>
+        <p className="hint full">AI 整理时照着做，比如“标题以模块名开头”。文件夹的说明对它的子文件夹也有效，全局的对所有文件夹都有效。</p>
+      </div>
       <div className="group settings">
         {row(null)}
         {board

@@ -9,7 +9,9 @@ import { app } from "./api/http";
 import type { Attachment } from "./api/types/Attachment";
 import type { FolderId } from "./api/types/FolderId";
 import type { Mutation } from "./api/types/Mutation";
+import type { Task } from "./api/types/Task";
 import { type Board, nowOf } from "./domain/board";
+import { agenda } from "./domain/calendar";
 import { reminders } from "./domain/reminders";
 import type { Started } from "./local";
 import type { Store } from "./sync/store";
@@ -67,6 +69,9 @@ interface NextTodoPlugin {
    * `seq`; without one, as when signing out, it replaces whatever the widget has. At `nextStart`, as
    * the `next` tool's `next_start` gives it, the widget fetches its list itself. */
   updateWidget(o: { tasks: string; seq?: number; nextStart?: string; folders?: string }): Promise<void>;
+  /** Hands the agenda widget its data, as JSON in the shape of the `agenda` tool's, as of the change
+   * `seq`; without one, as when signing out, it replaces whatever the widget has. */
+  updateAgenda(o: { agenda: string; seq?: number }): Promise<void>;
   /** How large the widget's text is, which it keeps. */
   widgetTextSize(): Promise<{ size: WidgetTextSize }>;
   setWidgetTextSize(o: { size: WidgetTextSize }): Promise<void>;
@@ -179,6 +184,22 @@ export const widgetTasks = (board: Board, folders: (FolderId | null)[]) =>
     step: board.step(t),
   }));
 
+/** How many days from today the agenda widget lists (docs/android.md#日程). */
+const AGENDA_DAYS = 7;
+
+/** What the agenda widget lists: what is due in the folders “接下来” lists, as the `agenda` tool gives it. */
+export function widgetAgenda(board: Board, folders: (FolderId | null)[]) {
+  const { overdue, days } = agenda(board, AGENDA_DAYS);
+  const listed = (t: Task) => folders.some((f) => board.inSubtree(t.folder_id, f));
+  const entry = (t: Task, later: boolean) => ({ id: t.id, title: t.title, folder: board.folderPath(t.folder_id), due: t.due, ...(later && { later }) });
+  return {
+    overdue: overdue.filter(listed).map((t) => entry(t, false)),
+    days: days
+      .map(([date, list]) => ({ date, tasks: list.filter((d) => listed(d.task)).map((d) => entry(d.task, d.later)) }))
+      .filter((d) => d.tasks.length > 0),
+  };
+}
+
 /** What the device reminds of (docs/android.md#截止提醒): every reminder, past ones too, with whether
  * the task waits for prerequisites as the reminder comes (a repeating one may hold it up again by then),
  * and for its start, which the device reads by its own clock. */
@@ -234,16 +255,18 @@ export function setCalendarFolders(userId: string, folders: (FolderId | null)[])
 export function watch(store: Store, user: string, failed: (e: unknown) => void): () => Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const update = async () => {
+    // With the change the copy is as of, read together before any wait: the widgets keep lists they
+    // fetched since, should the copy be behind the server.
     const { board } = store.getView();
-    // With the change the copy is as of: the widget keeps a list it fetched since, should the copy
-    // be behind the server.
+    const seq = store.since;
     const start = board.nextStart();
     const nextStart = start ? [start.date, start.time].filter(Boolean).join(" ") : undefined;
     if (app === "android") {
       const listed = nextFolders(board);
       // Their paths, for the widget to fetch its list by itself (docs/android.md#小组件).
       const folders = listed.includes(null) ? undefined : JSON.stringify(listed.map((f) => board.folderPath(f)));
-      await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board, listed)), seq: store.since, nextStart, folders });
+      await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board, listed)), seq, nextStart, folders });
+      await NextTodo.updateAgenda({ agenda: JSON.stringify(widgetAgenda(board, listed)), seq });
     }
     await NextTodo.setReminders({ reminders: JSON.stringify(deviceReminders(board)) });
   };
@@ -285,7 +308,7 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
   };
 }
 
-/** Takes away every reminder, those shown already too, and on Android empties the widget and deletes
+/** Takes away every reminder, those shown already too, and on Android empties the widgets and deletes
  * the events written in the calendar; after the updates under way. The calendar failing goes to
  * `failed` and holds back neither the rest nor the sign-out: what is left there stays noted, and the
  * next session's first update deletes it, reporting should it fail again. Before a session there is no one to tell, and
@@ -295,6 +318,7 @@ export const clear = async (failed: (e: unknown) => void = () => {}) => {
   const calendar = inTurn(() => NextTodo.clearCalendar()).catch(failed);
   await inTurn(async () => {
     await NextTodo.updateWidget({ tasks: "[]" });
+    await NextTodo.updateAgenda({ agenda: JSON.stringify({ overdue: [], days: [] }) });
     await NextTodo.clearReminders();
   });
   await calendar;
@@ -304,13 +328,14 @@ export const clear = async (failed: (e: unknown) => void = () => {}) => {
  * keeps them for the same user's next sign-in. */
 export const forget = () => NextTodo.forgetChanges();
 
-/** Opens what a notification or the widget points at: `nexttodo://task/<id>`, `nexttodo://home`, or
- * `nexttodo://add`, quick add. */
+/** Opens what a notification or a widget points at: `nexttodo://task/<id>`, `nexttodo://home`,
+ * `nexttodo://add`, quick add, or `nexttodo://calendar`. */
 function open(url: string) {
-  const [, kind, id] = /^nexttodo:\/\/(task|home|add)\/?(.*)$/.exec(url) ?? [];
+  const [, kind, id] = /^nexttodo:\/\/(task|home|add|calendar)\/?(.*)$/.exec(url) ?? [];
   if (kind === "task") navigate(`/?open=${id}`);
   else if (kind === "home") navigate("/");
   else if (kind === "add") navigate("/?add");
+  else if (kind === "calendar") navigate("/calendar");
 }
 
 /** Listens for taps on notifications and the widget, and for Android's back button. The plugin keeps

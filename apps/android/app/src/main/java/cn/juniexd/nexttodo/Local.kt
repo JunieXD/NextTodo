@@ -6,6 +6,7 @@ import android.system.ErrnoException
 import android.system.OsConstants
 import androidx.work.NetworkType
 import cn.juniexd.nexttodo.reminders.Reminders
+import cn.juniexd.nexttodo.widget.Agenda
 import cn.juniexd.nexttodo.widget.Widget
 import com.getcapacitor.JSObject
 import java.io.File
@@ -76,9 +77,10 @@ object Local {
         val started = start(context)
         val epoch = started.getString("epoch")
         if (prefs.getString(EPOCH, null) != epoch) {
-            // The widget's list, the reminders and the changes not sent are of data that is not there any more.
+            // The widgets' lists, the reminders and the changes not sent are of data that is not there any more.
             runBlocking {
                 Widget.forget(context)
+                Agenda.forget(context)
                 Changes.forget(context)
             }
             Reminders.clear(context)

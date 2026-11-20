@@ -60,7 +60,7 @@ import java.time.LocalDateTime
 import kotlinx.coroutines.delay
 
 /** The palette's colours, light and dark. */
-private object Colors {
+internal object Colors {
     private fun of(color: Palette.() -> Color) = ColorProvider(day = Palette.light.color(), night = Palette.dark.color())
 
     val background = of { surface }
@@ -78,7 +78,7 @@ private val TaskKey = ActionParameters.Key<String>("task")
 private val TitleKey = ActionParameters.Key<String>("title")
 
 /** Opens the app at `nexttodo://…`, which the web app reads (`apps/web/src/mobile.ts`). */
-private fun open(context: Context, url: String) =
+internal fun open(context: Context, url: String) =
     actionStartActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url), context, MainActivity::class.java))
 
 /** The home-screen widget: what can be done now. See docs/android.md#小组件. */
@@ -99,17 +99,17 @@ class NextWidget : GlanceAppWidget() {
 
 /** Lower than this, a task takes a line, its folder left out: on most home screens, under three rows,
  * which the 4×2 the widget starts as is. */
-private val COMPACT_BELOW = 260.dp
+internal val COMPACT_BELOW = 260.dp
 
 /** How far the content keeps from the widget's sides, and from its top. Inside what is tapped there:
  * the widget leaves no gap, which HyperOS's launcher would give to whichever action it picks
  * (docs/android.md#小组件). */
-private val EDGE = 14.dp
-private val TOP = 10.dp
+internal val EDGE = 14.dp
+internal val TOP = 10.dp
 
 /** Below the header, and how tall it is with that and `TOP`. */
-private val UNDER_HEADER = 4.dp
-private val HEADER = TOP + 32.dp + UNDER_HEADER
+internal val UNDER_HEADER = 4.dp
+internal val HEADER = TOP + 32.dp + UNDER_HEADER
 
 @Composable
 private fun Content(context: Context, shown: Shown, now: LocalDateTime) {
@@ -224,7 +224,7 @@ private val CIRCLE = 36.dp
 
 /** An icon of the header, 22dp across, tapped anywhere in the header's height and `end` beyond it. */
 @Composable
-private fun Icon(drawable: Int, label: String, onClick: Action, end: Dp) {
+internal fun Icon(drawable: Int, label: String, onClick: Action, end: Dp) {
     Image(
         ImageProvider(drawable),
         label,
@@ -235,7 +235,7 @@ private fun Icon(drawable: Int, label: String, onClick: Action, end: Dp) {
 
 /** In place of the list, all the rest of the widget: tapped, it opens the app. */
 @Composable
-private fun ColumnScope.Note(text: String, onClick: Action) {
+internal fun ColumnScope.Note(text: String, onClick: Action) {
     Text(text, GlanceModifier.defaultWeight().fillMaxWidth().padding(horizontal = EDGE, vertical = 12.dp).clickable(onClick), style = TextStyle(color = Colors.secondary, fontSize = 14.sp))
 }
 
@@ -256,7 +256,11 @@ class CompleteAction : ActionCallback {
         }
         when (outcome) {
             is Changes.Outcome.Refused -> Widget.toast(context, outcome.message)
-            is Changes.Outcome.Sent -> refresh(context)
+            // The agenda too, where the task moves on or goes.
+            is Changes.Outcome.Sent -> refreshing(context) {
+                Widget.refresh(context)
+                if (Agenda.placed(context)) Agenda.refresh(context)
+            }
             // Offline: it goes later, and the list with it.
             Changes.Outcome.Kept -> {}
         }
@@ -266,16 +270,17 @@ class CompleteAction : ActionCallback {
 /** How long a task ticked off stays in the list, as in the app (`apps/web/src/views/marks.tsx`). */
 private const val LINGER_MS = 900L
 
-private suspend fun refresh(context: Context) {
+/** Runs `fetch`, telling the user should it fail. */
+internal suspend fun refreshing(context: Context, fetch: suspend () -> Unit) {
     try {
-        Widget.refresh(context)
+        fetch()
     } catch (e: Exception) {
         Widget.toast(context, forUser("刷新", e))
     }
 }
 
 class RefreshAction : ActionCallback {
-    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) = refresh(context)
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) = refreshing(context) { Widget.refresh(context) }
 }
 
 class NextWidgetReceiver : GlanceAppWidgetReceiver() {

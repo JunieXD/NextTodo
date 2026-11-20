@@ -32,6 +32,15 @@ pub struct NextArgs {
     pub limit: Option<u32>,
 }
 
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AgendaArgs {
+    #[schemars(description = "列今天起几天，默认 7，最多 31", range(min = 1, max = 31))]
+    pub days: Option<u32>,
+    #[schemars(description = "只列这些文件夹（含子文件夹）里的，路径如 /工作、@alice/装修；有 / 时就是全部")]
+    pub folders: Option<Vec<String>>,
+}
+
 /// A task by number: `42` or `"#42"`, `"@alice#42"` in a folder someone else shares, which is
 /// alice's #42.
 #[derive(Clone, Deserialize, JsonSchema)]

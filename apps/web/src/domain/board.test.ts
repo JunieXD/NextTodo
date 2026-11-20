@@ -3,6 +3,7 @@ import cases from "../../../../fixtures/board.json";
 import type { Snapshot } from "../api/types/Snapshot";
 import type { Task } from "../api/types/Task";
 import { Board } from "./board";
+import { agenda } from "./calendar";
 
 interface Case {
   name: string;
@@ -24,6 +25,8 @@ interface Case {
     steps?: Record<string, [number, number] | null>;
     /** `2026-11-12` or `2026-11-12 20:00`. */
     next_start?: string;
+    /** By day, a time a repeating task is due later marked `+`. */
+    agenda?: { days: number; overdue: string[]; due: Record<string, string[]> };
   };
 }
 
@@ -114,6 +117,12 @@ describe.each(cases as unknown as Case[])("$name", (c) => {
   });
   test("within", () => {
     for (const [f, want] of Object.entries(c.expect.within ?? {})) expect(titles(board.within(folder(f))).sort(), f).toEqual(want);
+  });
+  test.runIf(c.expect.agenda)("agenda", () => {
+    const want = c.expect.agenda!;
+    const got = agenda(board, want.days);
+    expect(titles(got.overdue), "overdue").toEqual(want.overdue);
+    expect(got.days.map(([date, list]) => [date, list.map((d) => d.task.title + (d.later ? "+" : ""))])).toEqual(Object.entries(want.due));
   });
 });
 

@@ -17,6 +17,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import cn.juniexd.nexttodo.reminders.Card
 import cn.juniexd.nexttodo.reminders.Reminders
+import cn.juniexd.nexttodo.widget.Agenda
 import cn.juniexd.nexttodo.widget.Widget
 import com.getcapacitor.JSObject
 import com.getcapacitor.PermissionState
@@ -172,6 +173,17 @@ class NextTodoPlugin : Plugin() {
         val folders = call.getString("folders")
         work(call, "更新小组件") {
             Widget.show(context, tasks, seq, nextStart, folders)
+            JSObject()
+        }
+    }
+
+    /** Hands the agenda widget its data, as JSON in the shape of the `agenda` tool's, as of the change `seq`. */
+    @PluginMethod
+    fun updateAgenda(call: PluginCall) {
+        val agenda = call.getString("agenda")!!
+        val seq = call.data.takeIf { it.has("seq") }?.getLong("seq")
+        work(call, "更新日程小组件") {
+            Agenda.show(context, agenda, seq)
             JSObject()
         }
     }

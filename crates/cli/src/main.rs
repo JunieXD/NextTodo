@@ -70,6 +70,13 @@ enum Command {
         #[arg(long, help = "最多列出多少项，默认 50，最多 500")]
         limit: Option<u32>,
     },
+    #[command(about = "日程：今天起几天每天截止的事项，和已逾期的")]
+    Agenda {
+        #[arg(long, help = "列今天起几天，默认 7，最多 31")]
+        days: Option<u32>,
+        #[arg(long = "folder", num_args = 1.., value_name = "路径", help = "只看这些文件夹（含子文件夹）里的")]
+        folders: Option<Vec<String>>,
+    },
     #[command(about = "事项详情")]
     Show {
         #[arg(value_parser = task, help = TASK)]
@@ -882,6 +889,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             }
             read("next", args, j)
         }
+        Command::Agenda { days, folders } => read("agenda", json!({ "days": days, "folders": folders }), j),
         Command::Show { task } => read("show", json!({ "task": task }), j),
         Command::Search { query, limit } => read("search", json!({ "query": query.join(" "), "limit": limit }), j),
         Command::Graph { folder, all, mermaid } => read("graph", json!({ "folder": folder, "all": all, "mermaid": mermaid }), j),

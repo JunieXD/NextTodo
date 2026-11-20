@@ -1,8 +1,9 @@
 //! Checks `Board` against the fixtures shared with the web app.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use nexttodo_core::board::{Board, Now, Snapshot, Status};
+use nexttodo_core::calendar;
 use nexttodo_core::model::{Date, FolderId, Task, Time};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -44,6 +45,15 @@ struct Expect {
     steps: HashMap<String, Option<(usize, usize)>>,
     /// `2026-11-12` or `2026-11-12 20:00`.
     next_start: Option<String>,
+    agenda: Option<AgendaWant>,
+}
+
+#[derive(Deserialize)]
+struct AgendaWant {
+    days: u32,
+    overdue: Vec<String>,
+    /// By day, a time a repeating task is due later marked `+`.
+    due: BTreeMap<String, Vec<String>>,
 }
 
 /// Turns the short names in a fixture into entity ids, and back.
@@ -163,6 +173,18 @@ fn board_matches_fixtures() {
             let f = folder(&mut names, f);
             assert_eq!(&board.path(f), want, "{c}: path");
             assert_eq!(board.find_folder(want), Some(f), "{c}: find {want}");
+        }
+        if let Some(want) = &case.expect.agenda {
+            let got = calendar::agenda(&board, want.days);
+            assert_eq!(list(&names, got.overdue), want.overdue, "{c}: overdue");
+            let due: BTreeMap<String, Vec<String>> = got
+                .days
+                .into_iter()
+                .map(|(day, list)| {
+                    (day.as_str().to_owned(), list.iter().map(|d| names.name(d.task) + if d.later { "+" } else { "" }).collect())
+                })
+                .collect();
+            assert_eq!(due, want.due, "{c}: agenda");
         }
         for (f, want) in &case.expect.within {
             let f = folder(&mut names, f);

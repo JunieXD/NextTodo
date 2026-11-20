@@ -15,6 +15,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import cn.juniexd.nexttodo.reminders.Reminders
+import cn.juniexd.nexttodo.widget.Agenda
 import cn.juniexd.nexttodo.widget.Widget
 import java.io.IOException
 import java.time.LocalDate
@@ -186,8 +187,9 @@ object Changes {
 class SendWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         if (Changes.flush(applicationContext)) return Result.retry()
-        // A task done goes from the widget.
+        // A task done goes from the widget, and moves on or goes in the agenda.
         Widget.refresh(applicationContext)
+        if (Agenda.placed(applicationContext)) Agenda.refresh(applicationContext)
         return Result.success()
     }
 }

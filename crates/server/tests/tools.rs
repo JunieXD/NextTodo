@@ -503,6 +503,39 @@ async fn next_lists_only_the_folders_asked_for() {
 }
 
 #[tokio::test]
+async fn agenda_lists_what_is_due_each_day_and_what_is_overdue() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "交报告", "folder": "/工作", "due": "2026-11-18" })).await;
+    t.ok(&s, "add", json!({ "title": "开例会", "folder": "/工作", "due": "2026-11-20 10:00", "repeat": "1w" })).await;
+    t.ok(&s, "add", json!({ "title": "买菜", "due": "2026-11-21" })).await;
+    t.ok(&s, "add", json!({ "title": "背单词" })).await;
+    let agenda = t.ok(&s, "agenda", json!({ "today": "2026-11-20", "days": 8 })).await;
+    assert_eq!(
+        text(&agenda),
+        "已逾期：\n  #1 [可做] 交报告 · /工作 · 截止 2026-11-18\n2026-11-20（今天）：\n  #2 [可做] 开例会 · /工作 · 截止 2026-11-20 10:00，每周\n\
+         2026-11-21（明天）：\n  #3 [可做] 买菜 · 截止 2026-11-21\n2026-11-27：\n  #2 开例会 · /工作 · 截止 2026-11-20 10:00，每周 · 以后的一次"
+    );
+    let data = &agenda["data"];
+    assert_eq!(numbers(&data["overdue"]), [1]);
+    let dates: Vec<&str> = data["days"].as_array().unwrap().iter().map(|d| d["date"].as_str().unwrap()).collect();
+    assert_eq!(dates, ["2026-11-20", "2026-11-21", "2026-11-27"]);
+    let later = &data["days"][2]["tasks"][0];
+    assert_eq!((later["later"].as_bool(), later["due"]["date"].as_str()), (Some(true), Some("2026-11-20")), "due as it is now");
+    assert!(data["days"][0]["tasks"][0].get("later").is_none());
+
+    let work = t.ok(&s, "agenda", json!({ "today": "2026-11-20", "folders": ["/工作"] })).await;
+    assert_eq!((numbers(&work["data"]["overdue"]), numbers(&work["data"]["days"][0]["tasks"])), (vec![1], vec![2]), "a week, in /工作");
+    assert_eq!(work["data"]["days"].as_array().unwrap().len(), 1);
+    let none = t.ok(&s, "agenda", json!({ "today": "2026-11-01", "days": 1 })).await;
+    assert_eq!(text(&none), "今天起 1 天没有截止的事项，也没有逾期的。");
+    assert_eq!(none["data"], json!({ "overdue": [], "days": [] }));
+    for days in [0, 32] {
+        assert_eq!(t.tool(&s, "agenda", json!({ "days": days })).await.status, StatusCode::BAD_REQUEST);
+    }
+}
+
+#[tokio::test]
 async fn next_says_which_step_a_task_is() {
     let t = TestApp::new();
     let s = t.admin().await;

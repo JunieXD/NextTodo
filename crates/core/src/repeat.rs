@@ -64,6 +64,12 @@ impl Date {
         Date::try_from(format!("{y:04}-{m:02}-{d:02}")).expect("no later than `to`")
     }
 
+    /// The date `days` days on, but no later than 9999-12-31: dates go no further.
+    pub fn plus(&self, days: u32) -> Date {
+        let (y, m, d) = civil((day_number(parts(self)) + i64::from(days)).min(day_number((9999, 12, 31))));
+        Date::try_from(format!("{y:04}-{m:02}-{d:02}")).expect("a date up to 9999-12-31")
+    }
+
     /// How many days this is after `other`; before it, less than 0.
     pub fn days_after(&self, other: &Date) -> i64 {
         day_number(parts(self)) - day_number(parts(other))

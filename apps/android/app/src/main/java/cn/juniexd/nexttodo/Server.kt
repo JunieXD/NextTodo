@@ -35,12 +35,21 @@ object Server {
 
     /** The first `limit` of the ready tasks, in `folders` when given, and how many there are, as the
      * `next` tool's data gives them, `{tasks, total}`, and the change they are as of. */
-    suspend fun next(context: Context, token: String, limit: Int, folders: JSONArray?): Pair<JSONObject, Long> {
-        // Starts come by the day and time here (docs/design.md#开始时间).
+    suspend fun next(context: Context, token: String, limit: Int, folders: JSONArray?): Pair<JSONObject, Long> =
+        read(context, token, "next", JSONObject().put("limit", limit), folders)
+
+    /** What is due each of the `days` days from today, in `folders` when given, and what is overdue, as
+     * the `agenda` tool's data gives them, `{overdue, days}`, and the change they are as of. */
+    suspend fun agenda(context: Context, token: String, days: Int, folders: JSONArray?): Pair<JSONObject, Long> =
+        read(context, token, "agenda", JSONObject().put("days", days), folders)
+
+    /** The data of the read tool `tool` given `args`, of `folders` when given, and the change it is as of. */
+    private suspend fun read(context: Context, token: String, tool: String, args: JSONObject, folders: JSONArray?): Pair<JSONObject, Long> {
+        // Today and starts go by the day and time here (docs/design.md#开始时间).
         val now = LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES)
-        val args = JSONObject().put("limit", limit).put("today", now.toLocalDate().toString()).put("time", now.toLocalTime().toString())
+        args.put("today", now.toLocalDate().toString()).put("time", now.toLocalTime().toString())
         folders?.let { args.put("folders", it) }
-        val reply = JSONObject(post(context, token, "/tools/next", args))
+        val reply = JSONObject(post(context, token, "/tools/$tool", args))
         return reply.getJSONObject("data") to reply.getLong("seq")
     }
 

@@ -1,10 +1,12 @@
 // What the calendar shows (docs/design.md#日历): what the user is to do each day, the times repeating
-// tasks will be due later included, and what they did each day.
+// tasks will be due later included, and what they did each day. What is due is also in the core
+// library, `crates/core/src/calendar.rs`, for the agenda; both are checked against
+// `fixtures/board.json`.
 
 import type { Completion } from "../api/types/Completion";
 import type { Task } from "../api/types/Task";
-import type { Board } from "./board";
-import { isoDate } from "./dates";
+import { type Board, cmp } from "./board";
+import { day, isoDate } from "./dates";
 import { nextDue } from "./repeat";
 
 /** A task due on a day: when it is due now, or, `later`, a time a repeating one will be due after that. */
@@ -25,12 +27,13 @@ function add<T>(days: Map<string, T[]>, day: string, item: T) {
   else days.set(day, [item]);
 }
 
-/** The user's tasks due from `from` to `to` (`YYYY-MM-DD`, both in), by day, those with a time first
- * by the time. A repeating one is due again each time on from its due date, as if done on the day. */
+/** The user's tasks due from `from` to `to` (`YYYY-MM-DD`, both in), by day: those with a time first
+ * by the time, then in folder order and manual order. A repeating one is due again each time on from
+ * its due date, as if done on the day, up to the day it repeats until. */
 export function dueBetween(board: Board, from: string, to: string): Map<string, DueOn[]> {
   const days = new Map<string, DueOn[]>();
-  for (const task of board.snapshot.tasks) {
-    if (task.done_at !== null || !task.due || !board.mine(task)) continue;
+  for (const task of board.sort(board.snapshot.tasks.filter((t) => t.done_at === null && board.mine(t)))) {
+    if (!task.due) continue;
     const { date, repeat } = task.due;
     if (date >= from && date <= to) add(days, date, { task, later: false });
     for (let at = date; repeat; ) {
@@ -40,9 +43,20 @@ export function dueBetween(board: Board, from: string, to: string): Map<string, 
       at = next;
     }
   }
+  // Stable: in folder order and manual order at the same time.
   const time = (d: DueOn) => d.task.due!.time ?? "24:00";
-  for (const list of days.values()) list.sort((a, b) => time(a).localeCompare(time(b)) || a.task.title.localeCompare(b.task.title));
+  for (const list of days.values()) list.sort((a, b) => cmp(time(a), time(b)));
   return days;
+}
+
+/** What is due over `days` days from the board's today, by day in order, and before it, the user's
+ * open tasks due before today, in the order of `Board.byDue`. */
+export function agenda(board: Board, days: number) {
+  const { today } = board.now;
+  const overdue = board.byDue(board.snapshot.tasks.filter((t) => t.done_at === null && t.due !== null && t.due.date < today && board.mine(t)));
+  const d = day(today);
+  const due = dueBetween(board, today, isoDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() + days - 1)));
+  return { overdue, days: [...due].sort(([a], [b]) => cmp(a, b)) };
 }
 
 /** What the user did, by day: the tasks done, on the day they were here, and the times repeating tasks

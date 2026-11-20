@@ -175,8 +175,17 @@ impl<'a> Board<'a> {
         }
     }
 
+    pub fn now(&self) -> &Now {
+        &self.now
+    }
+
     pub fn task(&self, id: TaskId) -> Option<&'a Task> {
         self.tasks.get(&id).copied()
+    }
+
+    /// Every task the user sees, in no particular order.
+    pub fn tasks(&self) -> impl Iterator<Item = &'a Task> + '_ {
+        self.tasks.values().copied()
     }
 
     /// A task's attachments, in the order they were added.
@@ -377,15 +386,20 @@ impl<'a> Board<'a> {
         list
     }
 
-    /// The user's ready tasks: those with a due date first, earliest first (a date without a time
-    /// counts as the end of that day), then the rest in folder order and manual order.
+    /// The user's ready tasks, in the order of `by_due`.
     pub fn next(&self) -> Vec<&'a Task> {
-        let mut list: Vec<&Task> = self.tasks.values().copied().filter(|t| self.mine(t) && self.status(t) == Status::Ready).collect();
+        let mut list: Vec<&Task> = self.tasks().filter(|t| self.mine(t) && self.status(t) == Status::Ready).collect();
+        self.by_due(&mut list);
+        list
+    }
+
+    /// Sorts tasks with a due date first, earliest first (a date without a time counts as the end of
+    /// that day), then the rest in folder order and manual order.
+    pub fn by_due(&self, list: &mut [&'a Task]) {
         list.sort_by_key(|&t| {
             let due = t.due.as_ref().map(|d| (d.date.as_str(), d.at.as_ref().map_or("24:00", |at| at.time.as_str())));
             (due.is_none(), due, self.key(t))
         });
-        list
     }
 
     /// When the first of the user's open tasks still to start does, or a repeating task they wait for

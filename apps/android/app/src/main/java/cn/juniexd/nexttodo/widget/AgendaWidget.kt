@@ -1,0 +1,153 @@
+package cn.juniexd.nexttodo.widget
+
+import android.content.Context
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.glance.GlanceId
+import androidx.glance.GlanceModifier
+import androidx.glance.LocalSize
+import androidx.glance.action.ActionParameters
+import androidx.glance.action.clickable
+import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.SizeMode
+import androidx.glance.appwidget.action.ActionCallback
+import androidx.glance.appwidget.action.actionRunCallback
+import androidx.glance.appwidget.cornerRadius
+import androidx.glance.appwidget.lazy.LazyColumn
+import androidx.glance.appwidget.lazy.itemsIndexed
+import androidx.glance.appwidget.provideContent
+import androidx.glance.background
+import androidx.glance.layout.Alignment
+import androidx.glance.layout.Box
+import androidx.glance.layout.Column
+import androidx.glance.layout.Row
+import androidx.glance.layout.Spacer
+import androidx.glance.layout.fillMaxHeight
+import androidx.glance.layout.fillMaxSize
+import androidx.glance.layout.fillMaxWidth
+import androidx.glance.layout.height
+import androidx.glance.layout.padding
+import androidx.glance.text.FontWeight
+import androidx.glance.text.Text
+import androidx.glance.text.TextStyle
+import cn.juniexd.nexttodo.R
+import java.time.LocalDate
+import java.time.LocalDateTime
+
+/** The home-screen agenda: what is due each of the next days. See docs/android.md#日程. */
+class AgendaWidget : GlanceAppWidget() {
+    /** Laid out for the size it is, as the “接下来” widget is. */
+    override val sizeMode = SizeMode.Exact
+
+    override suspend fun provideGlance(context: Context, id: GlanceId) {
+        val changes = Agenda.changes(context)
+        provideContent {
+            val shown by changes.collectAsState(Agenda.shown(context))
+            AgendaContent(context, shown)
+        }
+    }
+}
+
+@Composable
+private fun AgendaContent(context: Context, shown: Agendas) {
+    val now = shown.now
+    val compact = LocalSize.current.height < COMPACT_BELOW
+    val calendar = open(context, "nexttodo://calendar")
+    Column(GlanceModifier.fillMaxSize().background(Colors.background).cornerRadius(20.dp)) {
+        Row(GlanceModifier.fillMaxWidth().height(HEADER), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                GlanceModifier.defaultWeight().fillMaxHeight().padding(start = EDGE, top = TOP, bottom = UNDER_HEADER).clickable(calendar),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                Text("日程", style = TextStyle(color = Colors.text, fontSize = 17.sp * shown.scale, fontWeight = FontWeight.Bold))
+            }
+            Icon(R.drawable.ic_widget_refresh, "刷新", actionRunCallback<AgendaRefreshAction>(), EDGE)
+        }
+        when {
+            !shown.signedIn -> Note("打开 NextTodo 登录", open(context, "nexttodo://home"))
+            shown.days.isEmpty() && shown.more == 0 -> Note("这 ${Agenda.DAYS} 天没有截止的事项", calendar)
+            // Under the list, all the rest of the widget, as in the “接下来” widget.
+            else -> Box(GlanceModifier.defaultWeight().fillMaxWidth()) {
+                Box(GlanceModifier.fillMaxSize().clickable(calendar)) {}
+                LazyColumn(GlanceModifier.fillMaxWidth()) {
+                    for (day in shown.days) {
+                        item { DayTitle(context, day.date, now.toLocalDate(), shown.scale) }
+                        itemsIndexed(day.entries) { i, entry -> EntryItem(context, entry, i == 0, day.date == null, now, compact, shown.scale) }
+                    }
+                    if (shown.more > 0) item { AgendaMore(context, shown.more, shown.scale) }
+                }
+            }
+        }
+    }
+}
+
+/** `已逾期` over what is overdue, `今天`, `明天`, then `周日 11月22日`; it opens the calendar. */
+@Composable
+private fun DayTitle(context: Context, date: LocalDate?, today: LocalDate, scale: Float) {
+    val title = when (date) {
+        null -> "已逾期"
+        today -> "今天"
+        today.plusDays(1) -> "明天"
+        else -> "周${"一二三四五六日"[date.dayOfWeek.value - 1]} ${date.monthValue}月${date.dayOfMonth}日"
+    }
+    val color = if (date == null) Colors.overdue else Colors.secondary
+    Text(
+        title,
+        GlanceModifier.fillMaxWidth().padding(start = EDGE, end = EDGE, top = 10.dp * scale, bottom = 2.dp).clickable(open(context, "nexttodo://calendar")),
+        style = TextStyle(color = color, fontSize = 12.sp * scale, fontWeight = FontWeight.Bold),
+    )
+}
+
+/** A task due on its day, and when; an `overdue` one says which day. It opens the task, the line above
+ * it too. */
+@Composable
+private fun EntryItem(context: Context, entry: Entry, first: Boolean, overdue: Boolean, now: LocalDateTime, compact: Boolean, scale: Float) {
+    Column(GlanceModifier.fillMaxWidth().padding(horizontal = EDGE).clickable(open(context, "nexttodo://task/${entry.id}"))) {
+        if (!first) Spacer(GlanceModifier.fillMaxWidth().height(1.dp).background(Colors.divider))
+        val title = TextStyle(color = Colors.text, fontSize = 15.sp * scale)
+        val faint = TextStyle(color = Colors.secondary, fontSize = 12.sp * scale)
+        // A later time is due when the one now is done: it is late only by that one, which is not its own.
+        val time = if (overdue) entry.due.label(now) else entry.due.time?.let { "%02d:%02d".format(it.hour, it.minute) }
+        val timeStyle = TextStyle(color = if (!entry.later && entry.due.overdue(now)) Colors.overdue else Colors.secondary, fontSize = 12.sp * scale)
+        Column(GlanceModifier.fillMaxWidth().padding(top = (if (compact) 6.dp else 8.dp) * scale, bottom = (if (compact) 6.dp else 8.dp) * scale)) {
+            Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(entry.title, GlanceModifier.defaultWeight(), style = title, maxLines = 1)
+                if (entry.later) Text("以后的一次", GlanceModifier.padding(start = 6.dp), style = faint, maxLines = 1)
+                if (time != null) Text(time, GlanceModifier.padding(start = 8.dp), style = timeStyle, maxLines = 1)
+            }
+            if (!compact && entry.folder.isNotEmpty()) Text(entry.folder, style = faint, maxLines = 1)
+        }
+    }
+}
+
+/** Past the tasks listed, how many more there are, which opens the calendar. */
+@Composable
+private fun AgendaMore(context: Context, more: Int, scale: Float) {
+    Text(
+        "还有 $more 项",
+        GlanceModifier.fillMaxWidth().padding(horizontal = EDGE, vertical = 8.dp * scale).clickable(open(context, "nexttodo://calendar")),
+        style = TextStyle(color = Colors.secondary, fontSize = 13.sp * scale),
+    )
+}
+
+class AgendaRefreshAction : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) = refreshing(context) { Agenda.refresh(context) }
+}
+
+class AgendaWidgetReceiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget = AgendaWidget()
+
+    override fun onEnabled(context: Context) {
+        super.onEnabled(context)
+        Widget.schedule(context)
+    }
+
+    override fun onDisabled(context: Context) {
+        super.onDisabled(context)
+        if (!Widget.placed(context)) Widget.unschedule(context)
+    }
+}

@@ -3,6 +3,7 @@
 //! Values are validated when they are deserialized, so code holding these types can trust them.
 
 pub mod board;
+pub mod calendar;
 pub mod dag;
 pub mod lunar;
 pub mod model;

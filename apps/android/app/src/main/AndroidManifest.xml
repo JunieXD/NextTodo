@@ -25,8 +25,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- The widget and reminders open a task, the home page or quick add as
-                 nexttodo://task/<id>, nexttodo://home, nexttodo://add. -->
+            <!-- The widgets and reminders open a task, the home page, quick add or the calendar as
+                 nexttodo://task/<id>, nexttodo://home, nexttodo://add, nexttodo://calendar. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -73,6 +73,18 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/next_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.AgendaWidgetReceiver"
+            android:label="@string/agenda_widget_name"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/agenda_widget_info" />
         </receiver>
 
         <provider

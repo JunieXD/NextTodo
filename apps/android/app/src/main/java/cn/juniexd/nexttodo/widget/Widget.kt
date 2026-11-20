@@ -51,7 +51,7 @@ data class Shown(val signedIn: Boolean, val items: List<Item>, val more: Int, va
 
 /** The widget's list, kept in its own preferences: written by the app, or fetched from the server. */
 object Widget {
-    private fun prefs(context: Context) = context.getSharedPreferences("widget", Context.MODE_PRIVATE)
+    fun prefs(context: Context) = context.getSharedPreferences("widget", Context.MODE_PRIVATE)
 
     /** A list is as of a change on the server, by its sequence number, kept with it: one as of an
      * earlier change than the list kept is not written. The app's copy can be behind the server's,
@@ -95,10 +95,19 @@ object Widget {
 
     fun textSize(context: Context): String = prefs(context).getString(TEXT_SIZE, "standard")!!
 
-    suspend fun setTextSize(context: Context, size: String) = update(context) {
-        it.edit().putString(TEXT_SIZE, size).apply()
-        true
+    /** How much larger or smaller than standard the text of both widgets is. */
+    fun scale(context: Context): Float = SCALES.getValue(textSize(context))
+
+    suspend fun setTextSize(context: Context, size: String) {
+        update(context) {
+            it.edit().putString(TEXT_SIZE, size).apply()
+            true
+        }
+        AgendaWidget().updateAll(context)
     }
+
+    /** The paths of the folders the widgets list, as a JSON array; none for all of them. */
+    fun folders(context: Context): String? = prefs(context).getString(FOLDERS, null)
 
     /** Changes go one at a time, each checking, the session too, on what the one before left. */
     private val writing = Mutex()
@@ -188,7 +197,7 @@ object Widget {
         val token = Server.token(context)
         val ticked = ticked.value.filterValues { it.token == token }
         val (items, more) = listed(prefs(context), ticked.values.map { it.row })
-        return Shown(token != null, items, more, ticked.keys, SCALES.getValue(textSize(context)))
+        return Shown(token != null, items, more, ticked.keys, scale(context))
     }
 
     /** Hides a task done in session `token` by the change `seq`, or by one not sent yet without it,
@@ -261,9 +270,11 @@ object Widget {
     }
 
     /** The server says the session `token` has ended: unless the app has signed in again since, sign
-     * out, and the widget asks to sign in again. */
+     * out, and the widgets ask to sign in again. */
     suspend fun ended(context: Context, token: String) {
-        update(context) { Server.ended(context, token) && keep(context, it, "[]", 0, null, null) }
+        var out = false
+        update(context) { prefs -> Server.ended(context, token).also { out = it } && keep(context, prefs, "[]", 0, null, null) }
+        if (out) Agenda.forget(context)
     }
 
     /** Empties the list: it is of data that is there no more (docs/local.md#数据代号). */
@@ -273,15 +284,18 @@ object Widget {
         Toast.makeText(context, text, Toast.LENGTH_LONG).show()
     }
 
-    /** Whether there is a widget on the home screen to keep up to date. */
-    fun placed(context: Context) =
-        AppWidgetManager.getInstance(context).getAppWidgetIds(ComponentName(context, NextWidgetReceiver::class.java)).isNotEmpty()
+    /** Whether there is a “接下来” widget on the home screen to keep up to date. */
+    fun placed(context: Context) = placed(context, NextWidgetReceiver::class.java)
+
+    /** Whether there is a widget of `receiver`'s on the home screen. */
+    fun placed(context: Context, receiver: Class<*>) =
+        AppWidgetManager.getInstance(context).getAppWidgetIds(ComponentName(context, receiver)).isNotEmpty()
 
     /** Refreshes come while online, but in local mode not syncing, whose server is in the app. */
     private fun online(context: Context) = Constraints.Builder().setRequiredNetworkType(Local.network(context)).build()
 
-    /** Every 15 minutes, the shortest WorkManager allows. Updates the refreshes there are to the mode
-     * now, keeping when they come. */
+    /** Every 15 minutes, the shortest WorkManager allows, for both widgets. Updates the refreshes there
+     * are to the mode now, keeping when they come. */
     fun schedule(context: Context) {
         val request = PeriodicWorkRequestBuilder<RefreshWorker>(15, TimeUnit.MINUTES).setConstraints(online(context)).build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(WORK, ExistingPeriodicWorkPolicy.UPDATE, request)
@@ -331,8 +345,9 @@ object Widget {
         WorkManager.getInstance(context).enqueueUniqueWork(START, ExistingWorkPolicy.REPLACE, request)
     }
 
+    /** The “接下来” widget is gone: its refreshes go, and those of both, unless the agenda is there. */
     fun unschedule(context: Context) {
-        WorkManager.getInstance(context).cancelUniqueWork(WORK)
+        if (!Agenda.placed(context)) WorkManager.getInstance(context).cancelUniqueWork(WORK)
         refreshAt(context, null)
     }
 
@@ -345,7 +360,8 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         try {
             // Syncing through a drive, with what other devices did meanwhile.
             if (Local.on(applicationContext)) withContext(Dispatchers.IO) { Local.pull(PULL_WAIT_MS) }
-            Widget.refresh(applicationContext)
+            if (Widget.placed(applicationContext)) Widget.refresh(applicationContext)
+            if (Agenda.placed(applicationContext)) Agenda.refresh(applicationContext)
             Result.success()
         } catch (e: Exception) {
             Result.retry()

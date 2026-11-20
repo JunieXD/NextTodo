@@ -6,6 +6,7 @@ import android.content.IntentFilter
 import android.os.Build
 import android.util.Log
 import cn.juniexd.nexttodo.reminders.ReminderReceiver
+import cn.juniexd.nexttodo.widget.Agenda
 import cn.juniexd.nexttodo.widget.Widget
 import java.io.File
 
@@ -27,7 +28,7 @@ class NextTodoApp : Application() {
             }
         }
         // To the mode now: in local mode its refreshes need no network (docs/local.md#android).
-        if (Widget.placed(this)) Widget.schedule(this)
+        if (Widget.placed(this) || Agenda.placed(this)) Widget.schedule(this)
     }
 
     private fun processName(): String =

@@ -5,12 +5,13 @@ use std::collections::{HashMap, HashSet};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use nexttodo_core::board::{Board, Status};
+use nexttodo_core::calendar;
 use nexttodo_core::model::{Attachment, Completion, Effect, FolderId, Holder, JobState, Share, Task, TaskId};
 use nexttodo_core::ops::Op;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 
-use super::args::{AttachmentArgs, GraphArgs, ListArgs, LogArgs, NextArgs, NoArgs, SearchArgs, ShowArgs};
+use super::args::{AgendaArgs, AttachmentArgs, GraphArgs, ListArgs, LogArgs, NextArgs, NoArgs, SearchArgs, ShowArgs};
 use super::text::{self, Names, ago, job_item, mention, status_tag, task_line, task_view, usernames};
 use super::{Cx, Output, find_folder, find_task};
 use crate::attachments::showable_image;
@@ -141,10 +142,7 @@ pub fn next(c: &Connection, cx: &Cx, a: NextArgs) -> Result<Output, ApiError> {
     let b = Board::new(&snap, cx.local.clone(), cx.user);
     let steps = b.steps();
     let mut tasks = b.next();
-    // The root is all of them, those others share too, whatever else is asked for.
-    if let Some(paths) = a.folders.as_ref().filter(|paths| !paths.iter().any(|p| b.find_folder(p) == Some(None))) {
-        let folders = paths.iter().map(|p| find_folder(&b, p)).collect::<Result<Vec<_>, _>>()?;
-        let picked: HashSet<TaskId> = folders.into_iter().flat_map(|f| b.within(f)).map(|t| t.id).collect();
+    if let Some(picked) = picked(&b, a.folders.as_deref())? {
         tasks.retain(|t| picked.contains(&t.id));
     }
     let total = tasks.len();
@@ -170,6 +168,72 @@ pub fn next(c: &Connection, cx: &Cx, a: NextArgs) -> Result<Output, ApiError> {
         data["next_start"] = text::moment(date, time).into();
     }
     Ok(Output { text, data })
+}
+
+/// The tasks in `folders` and the folders inside them; none, which is all of them, when the folders are
+/// not given or the root is one, which has those others share too.
+fn picked(b: &Board, folders: Option<&[String]>) -> Result<Option<HashSet<TaskId>>, ApiError> {
+    let Some(paths) = folders.filter(|paths| !paths.iter().any(|p| b.find_folder(p) == Some(None))) else { return Ok(None) };
+    let folders = paths.iter().map(|p| find_folder(b, p)).collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(folders.into_iter().flat_map(|f| b.within(f)).map(|t| t.id).collect()))
+}
+
+/// How many days `agenda` lists, unless told otherwise.
+const AGENDA_DAYS: u32 = 7;
+
+pub fn agenda(c: &Connection, cx: &Cx, a: AgendaArgs) -> Result<Output, ApiError> {
+    let days = match a.days.unwrap_or(AGENDA_DAYS) {
+        n @ 1..=31 => n,
+        _ => return Err(ApiError::invalid("days 要在 1 到 31 之间", Some("days".into()))),
+    };
+    let snap = store::snapshot(c, cx.user)?;
+    let b = Board::new(&snap, cx.local.clone(), cx.user);
+    let picked = picked(&b, a.folders.as_deref())?;
+    let listed = |t: &Task| picked.as_ref().is_none_or(|p| p.contains(&t.id));
+    let mut agenda = calendar::agenda(&b, days);
+    agenda.overdue.retain(|t| listed(t));
+    for list in agenda.days.values_mut() {
+        list.retain(|d| listed(d.task));
+    }
+    agenda.days.retain(|_, list| !list.is_empty());
+    // A later time is not one to do yet: what holds up the time now says nothing of it.
+    let line = |t: &Task, later: bool| {
+        let line = task_line(&b, t, t.folder_id.is_some(), !later, None);
+        if later { format!("  {line} · 以后的一次") } else { format!("  {line}") }
+    };
+    let mut lines = Vec::new();
+    if !agenda.overdue.is_empty() {
+        lines.push("已逾期：".to_owned());
+        lines.extend(agenda.overdue.iter().map(|t| line(t, false)));
+    }
+    for (date, list) in &agenda.days {
+        let when = match date.days_after(&b.now().today) {
+            0 => "（今天）",
+            1 => "（明天）",
+            _ => "",
+        };
+        lines.push(format!("{}{when}：", date.as_str()));
+        lines.extend(list.iter().map(|d| line(d.task, d.later)));
+    }
+    let text = if lines.is_empty() {
+        format!("{}今天起 {days} 天没有截止的事项，也没有逾期的。", if a.folders.is_some() { "这些文件夹里" } else { "" })
+    } else {
+        lines.join("\n")
+    };
+    let view = |t: &Task, later: bool| {
+        let mut v = task_view(&b, t);
+        if later {
+            v["later"] = true.into();
+        }
+        v
+    };
+    let overdue: Vec<Value> = agenda.overdue.iter().map(|t| view(t, false)).collect();
+    let days: Vec<Value> = agenda
+        .days
+        .iter()
+        .map(|(date, list)| json!({ "date": date, "tasks": list.iter().map(|d| view(d.task, d.later)).collect::<Vec<_>>() }))
+        .collect();
+    Ok(Output { text, data: json!({ "overdue": overdue, "days": days }) })
 }
 
 pub fn show(c: &Connection, cx: &Cx, a: ShowArgs) -> Result<Output, ApiError> {

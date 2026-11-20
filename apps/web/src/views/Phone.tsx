@@ -1,6 +1,6 @@
 // The phone layout: one page at a time with a tab bar, details in a bottom sheet.
 
-import { ChevronLeft, CircleCheck, Folder as FolderIcon, History, ListChecks, Search } from "lucide-react";
+import { CalendarDays, ChevronLeft, CircleCheck, Folder as FolderIcon, History, ListChecks, Search } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Redirect, useLocation } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
@@ -14,6 +14,7 @@ import { Sheet } from "../ui/Sheet";
 import { app } from "../api/http";
 import { BackgroundTip } from "./Background";
 import { BatchBar, BatchHead, useBatch } from "./batch";
+import { CalendarBody, CalendarViewSeg } from "./calendar";
 import { Detail } from "./Detail";
 import { FolderMenu } from "./FolderMenu";
 import { FolderTile, styled } from "./folder-look";
@@ -33,7 +34,13 @@ export function Phone({ onSignOut }: { onSignOut(): void }) {
   const now = useNow();
   const folder = location.match(/^\/folders\/([^/]+)$/)?.[1] ?? null;
   const section = useSectionAt(location);
-  const tab = location.startsWith("/folders") ? "folders" : location.startsWith("/settings") ? "settings" : "next";
+  const tab = location.startsWith("/folders")
+    ? "folders"
+    : location.startsWith("/settings")
+      ? "settings"
+      : location === "/calendar"
+        ? "calendar"
+        : "next";
 
   // Going deeper in a tab (into a folder, to what is done, to a section of the settings) slides the
   // new page in from the right; going back, the other way.
@@ -48,6 +55,7 @@ export function Phone({ onSignOut }: { onSignOut(): void }) {
 
   let screen: ReactNode;
   if (location === "/done") screen = <DoneScreen key="done" anim={anim} now={now} />;
+  else if (tab === "calendar") screen = <CalendarScreen key="calendar" anim={anim} now={now} />;
   else if (tab === "settings") {
     screen = section === undefined ? <Redirect to={settingsUrl()} replace /> : <SettingsScreen key={section ?? "home"} section={section} anim={anim} onSignOut={onSignOut} />;
   } else if (tab === "next") screen = <NextScreen key="next" anim={anim} now={now} />;
@@ -70,6 +78,7 @@ export function Phone({ onSignOut }: { onSignOut(): void }) {
       ) : (
         <nav className="tabbar">
           {tabButton("next", "接下来", CircleCheck, "/")}
+          {tabButton("calendar", "日历", CalendarDays, "/calendar")}
           {tabButton("folders", "文件夹", FolderIcon, "/folders")}
           <button className={`tab${tab === "settings" ? " on" : ""}`} onClick={() => navigate(settingsUrl())}>
             <span className="tab-ic">
@@ -152,6 +161,20 @@ function NextScreen({ anim, now }: { anim: string; now: Date }) {
       <ConnectionNote connection={connection} />
       {app === "android" && <BackgroundTip />}
       <NextBody now={now} />
+    </Screen>
+  );
+}
+
+function CalendarScreen({ anim, now }: { anim: string; now: Date }) {
+  return (
+    <Screen title="日历" anim={anim}>
+      <div className="hero">
+        <h1 className="large-title">日历</h1>
+        <span className="hero-actions">
+          <CalendarViewSeg />
+        </span>
+      </div>
+      <CalendarBody now={now} />
     </Screen>
   );
 }

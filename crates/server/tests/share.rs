@@ -211,6 +211,28 @@ async fn moving_out_drops_assignees_and_hides_the_task_from_members() {
 }
 
 #[tokio::test]
+async fn the_record_of_times_a_task_was_done_goes_where_it_goes() {
+    let s = shared().await;
+    let t = &s.t;
+    t.ok(&s.alice, "add", json!({ "title": "浇花", "folder": "/私人", "due": "2026-11-10", "repeat": "1d" })).await;
+    t.ok(&s.alice, "done", json!({ "tasks": [3], "today": "2026-11-11" })).await;
+    let records = t.snapshot(&s.alice).await["completions"].clone();
+    assert_eq!(records[0]["due"], "2026-11-10");
+    // What Bob gets of each move: the task coming or going, and its record with it.
+    let moved = async |to: &str| {
+        let since = seq(t, &s.bob).await;
+        t.ok(&s.alice, "move", json!({ "tasks": [3], "to": to })).await;
+        let changes = t.call("GET", &format!("/changes?since={since}"), Some(&s.bob), None).await.body;
+        let effects = changes["changes"][0]["effects"].as_array().unwrap().clone();
+        effects.iter().map(|e| (e["kind"].clone(), e["before"].is_null(), e["after"].is_null())).collect::<Vec<_>>()
+    };
+    assert_eq!(moved("/装修").await, [(json!("task"), true, false), (json!("completion"), true, false)]);
+    assert_eq!(t.snapshot(&s.bob).await["completions"], records);
+    assert_eq!(moved("/私人").await, [(json!("task"), false, true), (json!("completion"), false, true)]);
+    assert_eq!(t.snapshot(&s.bob).await["completions"], json!([]));
+}
+
+#[tokio::test]
 async fn a_shared_folder_moves_and_is_renamed_only_by_its_owner() {
     let s = shared().await;
     let t = &s.t;

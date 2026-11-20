@@ -286,7 +286,12 @@ impl Names {
                 self.folders.insert(f.id, (f.parent_id, f.name.as_str().to_owned()));
             }
             Effect::Task(Change::Created(t) | Change::Deleted(t)) | Effect::Task(Change::Updated { before: t, .. }) => self.seen(t),
-            Effect::Dependency(_) | Effect::Attachment(_) | Effect::AiJob(_) | Effect::Share(_) | Effect::Person(_) => {}
+            Effect::Dependency(_)
+            | Effect::Completion(_)
+            | Effect::Attachment(_)
+            | Effect::AiJob(_)
+            | Effect::Share(_)
+            | Effect::Person(_) => {}
         }
     }
 
@@ -625,7 +630,8 @@ fn describe(e: &Effect, n: &Names) -> Vec<(Kind, String, Value)> {
             json!({ "user": after.username, "name": after.display_name }),
         )],
         // Someone met in a folder shared since: what is new is the sharing.
-        Effect::Person(_) => Vec::new(),
+        // The task's change says it was done.
+        Effect::Person(_) | Effect::Completion(_) => Vec::new(),
         Effect::AiJob(Change::Created(j)) => vec![(Kind::JobCreated, job_item(j), json!({ "job": j.id }))],
         Effect::AiJob(Change::Updated { after: j, .. }) => vec![match j.state {
             JobState::Running => (Kind::JobStarted, job_item(j), json!({ "job": j.id })),
@@ -644,6 +650,7 @@ fn describe(e: &Effect, n: &Names) -> Vec<(Kind, String, Value)> {
 fn number(e: &Effect, n: &Names) -> Option<i64> {
     match e {
         Effect::Folder(_) | Effect::AiJob(_) | Effect::Share(_) | Effect::Person(_) => None,
+        Effect::Completion(Link::Added(r) | Link::Removed(r)) => n.tasks.get(&r.task_id).map(|(number, _)| *number),
         Effect::Task(Change::Created(t) | Change::Updated { after: t, .. } | Change::Deleted(t)) => Some(t.number),
         Effect::Dependency(Link::Added(d) | Link::Removed(d)) => n.tasks.get(&d.before).map(|(number, _)| *number),
         Effect::Attachment(Change::Created(a) | Change::Updated { after: a, .. } | Change::Deleted(a)) => match a.holder {

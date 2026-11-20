@@ -57,7 +57,7 @@ async function answer(url: string, init: RequestInit) {
   if (path === "/me") return json(sent.user);
   if (path === "/snapshot") {
     const snapshot = { user: sent.user.id, seq: 0, folders: [], tasks: [], dependencies: [], ai_jobs: [], shares: [], people: [] };
-    return json(server.old ? snapshot : { ...snapshot, attachments: [] });
+    return json(server.old ? snapshot : { ...snapshot, attachments: [], completions: [] });
   }
   throw new Error(`${init.method} ${path}`);
 }
@@ -125,11 +125,12 @@ beforeEach(() => {
   server.old = false;
 });
 
-test("a server from before attachments opens as one without any", async () => {
+test("a server from before attachments and completion records opens as one without any", async () => {
   server.old = true;
   const s = await (await tab()).open(as(user(9)));
   change(s);
-  expect(s.store.getView().board.snapshot.attachments).toEqual([]);
+  const { snapshot } = s.store.getView().board;
+  expect([snapshot.attachments, snapshot.completions]).toEqual([[], []]);
 });
 
 test("a tab the server stops accepting leaves at once, also while another tab takes long to sign out", async () => {

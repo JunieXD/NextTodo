@@ -70,6 +70,12 @@ export function startLabel(date: string, time: string | undefined, now: Date): s
   return time ? `${formatDue({ date, time }, now)} 开始` : `${formatDue({ date }, now)}开始`;
 }
 
+/** The 42 days a month's calendar shows: six weeks from the Monday on or before its first day. */
+export function monthGrid(year: number, month: number): Date[] {
+  const start = 1 - ((new Date(year, month, 1).getDay() + 6) % 7);
+  return Array.from({ length: 42 }, (_, i) => new Date(year, month, start + i));
+}
+
 /** `11月2日 星期一` */
 export const formatToday = (now: Date) => `${now.getMonth() + 1}月${now.getDate()}日 星期${WEEK[now.getDay()]}`;
 

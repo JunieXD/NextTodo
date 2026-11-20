@@ -95,6 +95,18 @@
 
 `(owner_id, number)` 唯一。重复的三列同时有值或同时为空，已完成的事项（`done_at` 有值）不能有。开始、截止、提醒和重复的约束同时用 `CHECK` 写在表上，`completion_count` 和 `last_completed` 也一样同时有值或同时为空。
 
+### completions
+
+重复事项的[完成记录](design.md#重复)，每次完成一条。
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| task_id | TEXT | 事项，删除事项时一起删除 |
+| due_date | TEXT | 完成的是截止在哪天的那一次 |
+| done_on | TEXT | 在哪天完成（完成那台设备上的当天） |
+
+`(task_id, due_date)` 是主键：同一次完成了两回只留后一回。
+
 ### dependencies
 
 | 列 | 类型 | 说明 |

@@ -64,6 +64,11 @@ impl Date {
         Date::try_from(format!("{y:04}-{m:02}-{d:02}")).expect("no later than `to`")
     }
 
+    /// How many days this is after `other`; before it, less than 0.
+    pub fn days_after(&self, other: &Date) -> i64 {
+        day_number(parts(self)) - day_number(parts(other))
+    }
+
     /// The day in UTC at `ms` milliseconds since 1970-01-01: today for those who don't say where they are.
     pub fn utc(ms: i64) -> Date {
         let (y, m, d) = civil(ms.div_euclid(86_400_000));

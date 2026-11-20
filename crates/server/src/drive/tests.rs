@@ -65,6 +65,7 @@ pub(crate) const SHARED: &[&str] = &[
     "SELECT * FROM folders ORDER BY id",
     "SELECT * FROM tasks ORDER BY id",
     "SELECT * FROM dependencies ORDER BY before_id, after_id",
+    "SELECT * FROM completions ORDER BY task_id, due_date",
     "SELECT * FROM attachments ORDER BY id",
     "SELECT id, owner_id, type, size, unused_at, purged FROM files WHERE NOT staged ORDER BY id",
     "SELECT * FROM ai_jobs ORDER BY id",

@@ -13,8 +13,8 @@ use std::num::NonZeroU32;
 
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
-    AiJob, AiJobId, Attachment, AttachmentId, Change, Completions, Dependency, Due, Effect, Folder, FolderId, Holder, JobKind, JobState,
-    Link, MutationId, Person, Share, SortKey, Task, TaskId,
+    AiJob, AiJobId, Attachment, AttachmentId, Change, Completion, Completions, Dependency, Due, Effect, Folder, FolderId, Holder, JobKind,
+    JobState, Link, MutationId, Person, Share, SortKey, Task, TaskId,
 };
 use nexttodo_core::ops::{MAX_OPS, Mutation, Op};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -269,17 +269,21 @@ impl Done {
                     Effect::AiJob(change) => sided(change, b, a, s.kept).map(Effect::AiJob),
                     Effect::Share(change) => sided(change, b, a, s.kept).map(Effect::Share),
                     Effect::Person(change) => sided(change, b, a, s.kept).map(Effect::Person),
-                    Effect::Dependency(link) => {
-                        let shown = match (link, s.kept, b, a) {
-                            (Link::Added(d), true, false, true) | (Link::Added(d), false, _, true) => Some(Link::Added(d.clone())),
-                            (Link::Added(d), true, true, false) | (Link::Removed(d), false, true, _) => Some(Link::Removed(d.clone())),
-                            _ => None,
-                        };
-                        shown.map(Effect::Dependency)
-                    }
+                    Effect::Dependency(link) => linked(link, b, a, s.kept).map(Effect::Dependency),
+                    Effect::Completion(link) => linked(link, b, a, s.kept).map(Effect::Completion),
                 }
             })
             .collect()
+    }
+}
+
+/// A link as someone sees it who saw it before (`before`) or sees it after (`after`): one `kept`,
+/// carried along with its task, comes to whoever sees it now and goes from whoever doesn't.
+fn linked<T: Clone>(l: &Link<T>, before: bool, after: bool, kept: bool) -> Option<Link<T>> {
+    match (l, kept, before, after) {
+        (Link::Added(x), true, false, true) | (Link::Added(x), false, _, true) => Some(Link::Added(x.clone())),
+        (Link::Added(x), true, true, false) | (Link::Removed(x), false, true, _) => Some(Link::Removed(x.clone())),
+        _ => None,
     }
 }
 
@@ -583,6 +587,7 @@ impl<'a> Cx<'a> {
                     people.retain(|u| !unassign.contains(u));
                     t.assignees = people.into_iter().collect();
                 }
+                let mut record = None;
                 if let Some(done) = done
                     && *done != t.done_at.is_some()
                 {
@@ -593,6 +598,7 @@ impl<'a> Cx<'a> {
                             let today = today
                                 .as_ref()
                                 .ok_or_else(|| ApiError::invalid("完成重复的事项需要给出今天的日期", Some("today".into())))?;
+                            record = Some(Completion { task_id: t.id, due: d.date.clone(), done: today.clone() });
                             match r.next(&d.date, today) {
                                 Some(next) => {
                                     // The start date keeps as far before it, at the same time (docs/design.md#开始时间).
@@ -610,7 +616,11 @@ impl<'a> Cx<'a> {
                         _ => t.done_at = done.then_some(self.now),
                     }
                 }
-                self.update_task(before, &owner, t, None)
+                self.update_task(before, &owner, t, None)?;
+                match record {
+                    Some(r) => self.record_completion(r),
+                    None => Ok(()),
+                }
             }
             Op::TaskDelete { id } => {
                 self.task(*id)?;
@@ -931,6 +941,9 @@ impl<'a> Cx<'a> {
         for d in store::subtree_dependencies(self.c, id)? {
             self.push(Effect::Dependency(Link::Added(d)), from.side(), to.side(), true);
         }
+        for r in store::subtree_completions(self.c, id)? {
+            self.push(Effect::Completion(Link::Added(r)), from.side(), to.side(), true);
+        }
         Ok(())
     }
 
@@ -943,8 +956,8 @@ impl<'a> Cx<'a> {
         }
     }
 
-    /// Records the removal of everything in the subtree (dependencies, attachments, tasks, AI jobs,
-    /// folders deepest first)
+    /// Records the removal of everything in the subtree (dependencies, attachments, completion records,
+    /// tasks, AI jobs, folders deepest first)
     /// so that undo can bring it all back in reverse order. Folders are deleted one by one, deepest
     /// first, because a single cascade through a deep tree would hit SQLite's trigger depth limit.
     /// Shared folders inside go first, as their members see them. A shared folder stops being
@@ -973,6 +986,9 @@ impl<'a> Cx<'a> {
         }
         for a in store::subtree_attachments(self.c, id)? {
             self.delete_attachment(a, space.side())?;
+        }
+        for r in store::subtree_completions(self.c, id)? {
+            self.push(Effect::Completion(Link::Removed(r)), space.side(), Side::default(), false);
         }
         for t in store::subtree_tasks(self.c, id)? {
             self.push(Effect::Task(Change::Deleted(Box::new(t))), space.side(), Side::default(), false);
@@ -1035,6 +1051,9 @@ impl<'a> Cx<'a> {
             for a in store::task_attachments(self.c, id)? {
                 self.push(Effect::Attachment(Change::Updated { before: a.clone(), after: a }), from.side(), to.side(), true);
             }
+            for r in store::task_completions(self.c, id)? {
+                self.push(Effect::Completion(Link::Added(r)), from.side(), to.side(), true);
+            }
         }
         Ok(())
     }
@@ -1056,6 +1075,9 @@ impl<'a> Cx<'a> {
         }
         for a in store::task_attachments(self.c, id)? {
             self.delete_attachment(a, space.side())?;
+        }
+        for r in store::task_completions(self.c, id)? {
+            self.push(Effect::Completion(Link::Removed(r)), space.side(), Side::default(), false);
         }
         store::delete_task(self.c, id)?;
         self.push(Effect::Task(Change::Deleted(Box::new(t))), space.side(), Side::default(), false);
@@ -1129,6 +1151,24 @@ impl<'a> Cx<'a> {
     fn delete_dependency(&mut self, d: Dependency, space: &Space) -> Result<(), ApiError> {
         store::delete_dependency(self.c, &d)?;
         self.push(Effect::Dependency(Link::Removed(d)), space.side(), Side::default(), false);
+        Ok(())
+    }
+
+    /// Records a time its task was done, in place of the record of the same time done before.
+    fn record_completion(&mut self, r: Completion) -> Result<(), ApiError> {
+        let (t, owner) = self.task(r.task_id)?;
+        let space = self.space(&owner, t.folder_id)?;
+        if let Some(old) = store::load_completion(self.c, r.task_id, &r.due)? {
+            self.delete_completion(old, &space)?;
+        }
+        store::insert_completion(self.c, &r)?;
+        self.push(Effect::Completion(Link::Added(r)), Side::default(), space.side(), false);
+        Ok(())
+    }
+
+    fn delete_completion(&mut self, r: Completion, space: &Space) -> Result<(), ApiError> {
+        store::delete_completion(self.c, &r)?;
+        self.push(Effect::Completion(Link::Removed(r)), space.side(), Side::default(), false);
         Ok(())
     }
 
@@ -1347,6 +1387,20 @@ impl<'a> Cx<'a> {
                     // Moved apart since, they can't be linked again.
                     if store::load_dependency(self.c, d.before, d.after)?.is_none() && space == self.space(&a_owner, a.folder_id)? {
                         self.create_dependency(d, &space)?;
+                    }
+                }
+                Effect::Completion(Link::Added(r)) => {
+                    if let Some(r) = store::load_completion(self.c, r.task_id, &r.due)?
+                        && let Some((t, owner)) = self.visible_task(r.task_id)?
+                    {
+                        let space = self.space(&owner, t.folder_id)?;
+                        self.delete_completion(r, &space)?;
+                    }
+                }
+                // A record goes with its task: with the task gone, there is nothing to put it back on.
+                Effect::Completion(Link::Removed(r)) => {
+                    if self.visible_task(r.task_id)?.is_some() && store::load_completion(self.c, r.task_id, &r.due)?.is_none() {
+                        self.record_completion(r)?;
                     }
                 }
                 Effect::Attachment(Change::Created(a)) => {

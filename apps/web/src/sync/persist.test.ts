@@ -104,7 +104,7 @@ test("a copy saved before sharing has the user in it, and every task as theirs",
   const old = { ...copy(7), base: { folders: [], tasks: [{ id: "t", title: "旧" }], dependencies: [], ai_jobs: [] } };
   await (await raw()).put("copies", old, [u, "here"]);
   const { seq, base } = (await load(someone(u), "here"))!;
-  expect([seq, base.shares, base.people]).toEqual([7, [], [{ id: u, username: "alice", display_name: "Alice" }]]);
+  expect([seq, base.shares, base.people, base.completions]).toEqual([7, [], [{ id: u, username: "alice", display_name: "Alice" }], []]);
   expect(base.tasks[0]).toMatchObject({ assignees: [], created_by: u, updated_by: u });
 });
 

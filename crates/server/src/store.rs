@@ -5,8 +5,8 @@ use std::collections::HashMap;
 
 use nexttodo_core::board::Snapshot;
 use nexttodo_core::model::{
-    AiJob, AiJobId, Attachment, AttachmentId, Completions, Date, Dependency, Due, DueAt, Every, FileSize, Folder, FolderId, Holder,
-    MediaType, Monthdays, NoteText, Period, Person, Repeat, RepeatFrom, RepeatUnit, Share, SortKey, Task, TaskId, Time, Weekdays,
+    AiJob, AiJobId, Attachment, AttachmentId, Completion, Completions, Date, Dependency, Due, DueAt, Every, FileSize, Folder, FolderId,
+    Holder, MediaType, Monthdays, NoteText, Period, Person, Repeat, RepeatFrom, RepeatUnit, Share, SortKey, Task, TaskId, Time, Weekdays,
 };
 use rusqlite::{Connection, OptionalExtension, Params, Row, params};
 
@@ -120,6 +120,10 @@ fn dep_row(r: &Row) -> rusqlite::Result<Dependency> {
     Ok(Dependency { before: r.get(0)?, after: r.get(1)?, created_at: r.get(2)? })
 }
 
+fn completion_row(r: &Row) -> rusqlite::Result<Completion> {
+    Ok(Completion { task_id: r.get(0)?, due: r.get(1)?, done: r.get(2)? })
+}
+
 fn attachment_row(r: &Row) -> rusqlite::Result<Attachment> {
     // One of the two, as the table checks.
     let holder = match r.get::<_, Option<TaskId>>(1)? {
@@ -207,7 +211,8 @@ pub fn update_folder(c: &Connection, f: &Folder) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Deletes the folder; its tasks and their dependencies go with it (foreign key cascade).
+/// Deletes the folder; its tasks, with their dependencies and completion records, go with it (foreign
+/// key cascade).
 pub fn delete_folder(c: &Connection, id: FolderId) -> rusqlite::Result<()> {
     c.execute("DELETE FROM folders WHERE id = ?1", [id])?;
     Ok(())
@@ -369,7 +374,7 @@ fn set_assignees(c: &Connection, t: &Task) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Deletes the task; its dependencies go with it (foreign key cascade).
+/// Deletes the task; its dependencies and completion records go with it (foreign key cascade).
 pub fn delete_task(c: &Connection, id: TaskId) -> rusqlite::Result<()> {
     c.execute("DELETE FROM tasks WHERE id = ?1", [id])?;
     Ok(())
@@ -414,6 +419,43 @@ pub fn insert_dependency(c: &Connection, owner: &str, d: &Dependency) -> rusqlit
 
 pub fn delete_dependency(c: &Connection, d: &Dependency) -> rusqlite::Result<()> {
     c.execute("DELETE FROM dependencies WHERE before_id = ?1 AND after_id = ?2", params![d.before, d.after])?;
+    Ok(())
+}
+
+/// The record of the time task `task` was due on `due`.
+pub fn load_completion(c: &Connection, task: TaskId, due: &Date) -> rusqlite::Result<Option<Completion>> {
+    c.query_row(
+        "SELECT task_id, due_date, done_on FROM completions WHERE task_id = ?1 AND due_date = ?2",
+        params![task, due],
+        completion_row,
+    )
+    .optional()
+}
+
+pub fn task_completions(c: &Connection, task: TaskId) -> rusqlite::Result<Vec<Completion>> {
+    all(c, "SELECT task_id, due_date, done_on FROM completions WHERE task_id = ?1 ORDER BY due_date", [task], completion_row)
+}
+
+/// The records of the tasks in the subtree rooted at `id`.
+pub fn subtree_completions(c: &Connection, id: FolderId) -> rusqlite::Result<Vec<Completion>> {
+    all(
+        c,
+        &format!(
+            "{SUBTREE} SELECT task_id, due_date, done_on FROM completions
+             WHERE task_id IN (SELECT id FROM tasks WHERE folder_id IN (SELECT id FROM sub)) ORDER BY task_id, due_date"
+        ),
+        [id],
+        completion_row,
+    )
+}
+
+pub fn insert_completion(c: &Connection, r: &Completion) -> rusqlite::Result<()> {
+    c.execute("INSERT INTO completions (task_id, due_date, done_on) VALUES (?1, ?2, ?3)", params![r.task_id, r.due, r.done])?;
+    Ok(())
+}
+
+pub fn delete_completion(c: &Connection, r: &Completion) -> rusqlite::Result<()> {
+    c.execute("DELETE FROM completions WHERE task_id = ?1 AND due_date = ?2", params![r.task_id, r.due])?;
     Ok(())
 }
 
@@ -702,6 +744,15 @@ pub fn snapshot(c: &Connection, user: &str) -> rusqlite::Result<Snapshot> {
             ),
             [user],
             dep_row,
+        )?,
+        completions: all(
+            c,
+            &format!(
+                "{SHARED} SELECT task_id, due_date, done_on FROM completions
+                 WHERE task_id IN (SELECT id FROM tasks WHERE {visible}) ORDER BY task_id, due_date"
+            ),
+            [user],
+            completion_row,
         )?,
         attachments: all(
             c,

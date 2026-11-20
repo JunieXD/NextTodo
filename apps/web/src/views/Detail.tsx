@@ -4,18 +4,20 @@
 import { Bell, Calendar, CalendarCheck, CalendarClock, Folder as FolderIcon, KeyRound, type LucideIcon, Plus, User, Users, X } from "lucide-react";
 import { type ReactNode, Suspense, useEffect, useRef, useState } from "react";
 import type { Attachment } from "../api/types/Attachment";
+import type { Completion } from "../api/types/Completion";
 import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
+import { lateness } from "../domain/calendar";
 import { day, formatDay, formatDue, formatMoment, isoDate, remindLabel, startLabel } from "../domain/dates";
 import { repeatText } from "../domain/repeat";
 import { filesIn, reference } from "../attach";
 import { checkDescription, checkTitle } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
 import { Check, Seg } from "../ui/controls";
-import { Tip, useFeedback } from "../ui/feedback";
+import { Modal, Tip, useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { composing } from "../ui/keys";
 import { Description } from "../ui/lazy-markdown";
@@ -31,7 +33,7 @@ import { AssigneePicker, Avatars, namesOf } from "./share";
 
 const STATUS = { ready: "可做", waiting: "等待中", done: "已完成" };
 
-type Panel = "folder" | "assignees" | "start" | "due" | "pred" | "succ" | null;
+type Panel = "folder" | "assignees" | "start" | "due" | "pred" | "succ" | "completions" | null;
 
 /** Who made a change: the user's own token, or someone else, by name or by their token, `Bob 的
  * Claude Code`; nobody named for the user themselves. */
@@ -214,7 +216,15 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
         {t.due?.time && (
           <Prop icon={Bell} label="提醒" value={remindLabel(t.due.remind_before)} cls={t.due.remind_before === undefined ? "muted" : ""} onClick={() => setPanel("due")} />
         )}
-        {(t.due?.repeat || t.completions) && <Prop icon={CalendarCheck} label="已完成" value={completionsLabel(t, now)} cls={t.completions ? "" : "muted"} />}
+        {(t.due?.repeat || t.completions) && (
+          <Prop
+            icon={CalendarCheck}
+            label="已完成"
+            value={completionsLabel(t, now)}
+            cls={t.completions ? "" : "muted"}
+            onClick={t.completions ? () => setPanel("completions") : undefined}
+          />
+        )}
       </div>
 
       <DescriptionSection
@@ -308,7 +318,33 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
           onClose={() => setPanel(null)}
         />
       )}
+      {panel === "completions" && t.completions && (
+        <Completions records={board.completions(t.id)} count={t.completions.count} now={now} onClose={() => setPanel(null)} />
+      )}
     </div>
+  );
+}
+
+/** The times a repeating task was done, the latest first, `count` in all: those done before there were
+ * records are only counted. */
+function Completions({ records, count, now, onClose }: { records: Completion[]; count: number; now: Date; onClose(): void }) {
+  const unrecorded = count - records.length;
+  return (
+    <Modal title="完成记录" onClose={onClose}>
+      <div className="group">
+        {records.map((c) => (
+          <div key={c.due} className="row prop">
+            <div className="row-inner">
+              <span>{formatDay(day(c.done).getTime(), now)}</span>
+              <span className="value">
+                截止{formatDue({ date: c.due }, now)} · {lateness(c)}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+      {unrecorded > 0 && <p className="group-note">更早的 {unrecorded} 次没有记录</p>}
+    </Modal>
   );
 }
 

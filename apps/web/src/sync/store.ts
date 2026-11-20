@@ -93,7 +93,7 @@ export class Store {
   }
 
   static empty(): Saved {
-    return { seq: 0, base: { folders: [], tasks: [], dependencies: [], attachments: [], ai_jobs: [], shares: [], people: [] }, outbox: [], log: [] };
+    return { seq: 0, base: { folders: [], tasks: [], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] }, outbox: [], log: [] };
   }
 
   subscribe = (listener: () => void) => {
@@ -208,8 +208,9 @@ export class Store {
     const id = changes.find((id) =>
       this.effectsOf(id)?.some((e) => e.kind === "task" && e.before && e.after?.id === task && e.after.completions?.count === count && (e.before.completions?.count ?? 0) === count - 1),
     );
-    // Nor one that made it too: undoing that deletes it.
-    return id && this.effectsOf(id)!.every((e) => e.kind === "task" && e.before && e.after?.id === task) ? id : undefined;
+    // Nor one that made it too, undoing which deletes it, or changed others than it and its records.
+    const its = (e: Effect) => (e.kind === "task" && e.before && e.after?.id === task) || (e.kind === "completion" && (e.before ?? e.after)!.task_id === task);
+    return id && this.effectsOf(id)!.every(its) ? id : undefined;
   }
 
   /** The latest change this copy knows of that marked a task done. */

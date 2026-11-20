@@ -16,7 +16,7 @@ test("a copy is named after the folder, or as a copy of it when that is taken", 
 });
 
 test("a folder copies with all in it, open again, and its attachments referred to anew", () => {
-  const d = fromSnapshot({ folders: [], tasks: [], dependencies: [], attachments: [], ai_jobs: [], shares: [], people: [] });
+  const d = fromSnapshot({ folders: [], tasks: [], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] });
   apply(
     d,
     [
@@ -56,6 +56,7 @@ test("tasks keep who they are assigned to only in the shared folder they were in
     ],
     tasks: [],
     dependencies: [],
+    completions: [],
     attachments: [],
     ai_jobs: [],
     shares: [{ folder_id: id(2), owner: ME, members: [BOB] }],

@@ -483,6 +483,16 @@ pub struct Completions {
     pub last: Date,
 }
 
+/// A time a repeating task was done (docs/design.md#重复): the time `due` on a day, `done` on a day, on
+/// the device that did it. One per time due: done twice, the later stays.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Completion {
+    pub task_id: TaskId,
+    pub due: Date,
+    pub done: Date,
+}
+
 /// How many units apart the due dates of a repeating task are: 1–365.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(try_from = "u32", into = "u32")]
@@ -1039,6 +1049,7 @@ pub enum Effect {
     Folder(Change<Folder>),
     Task(Change<Box<Task>>),
     Dependency(Link<Dependency>),
+    Completion(Link<Completion>),
     Attachment(Change<Attachment>),
     AiJob(Change<Box<AiJob>>),
     Share(Change<Share>),
@@ -1055,7 +1066,7 @@ pub enum Change<T: Clone> {
     Deleted(T),
 }
 
-/// Dependencies are only ever added or removed, never changed.
+/// Dependencies and completion records are only ever added or removed, never changed.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(try_from = "Sides<T>", into = "Sides<T>")]
 #[ts(as = "Sides<T>")]
@@ -1102,7 +1113,7 @@ impl<T: Clone> TryFrom<Sides<T>> for Link<T> {
         match (s.before, s.after) {
             (None, Some(after)) => Ok(Link::Added(after)),
             (Some(before), None) => Ok(Link::Removed(before)),
-            _ => Err("a dependency is either added or removed"),
+            _ => Err("a link is either added or removed"),
         }
     }
 }

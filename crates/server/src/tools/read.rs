@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use nexttodo_core::board::{Board, Status};
-use nexttodo_core::model::{Attachment, Effect, FolderId, Holder, JobState, Share, Task, TaskId};
+use nexttodo_core::model::{Attachment, Completion, Effect, FolderId, Holder, JobState, Share, Task, TaskId};
 use nexttodo_core::ops::Op;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
@@ -197,6 +197,13 @@ pub fn show(c: &Connection, cx: &Cx, a: ShowArgs) -> Result<Output, ApiError> {
     if let Some(c) = &t.completions {
         lines.push(format!("完成次数：{}，最近 {}", c.count, c.last.as_str()));
     }
+    let mut records: Vec<&Completion> = snap.completions.iter().filter(|r| r.task_id == t.id).collect();
+    records.sort_by(|a, b| (&b.done, &b.due).cmp(&(&a.done, &a.due)));
+    records.truncate(SHOWN_RECORDS);
+    if !records.is_empty() {
+        lines.push("最近的完成记录：".into());
+        lines.extend(records.iter().map(|r| format!("  {} 完成，截止 {}，{}", r.done.as_str(), r.due.as_str(), lateness(r))));
+    }
     let (before, after) = (b.before(t), b.after(t));
     for (label, list) in [("前置", &before), ("后续", &after)] {
         if !list.is_empty() {
@@ -237,12 +244,27 @@ pub fn show(c: &Connection, cx: &Cx, a: ShowArgs) -> Result<Output, ApiError> {
     if !attachments.is_empty() {
         data["attachments"] = attachments.iter().map(|a| attachment_view(a)).collect();
     }
+    if !records.is_empty() {
+        data["completion_records"] = records.iter().map(|r| json!({ "due": r.due, "done": r.done })).collect();
+    }
     for (key, list) in [("before", &before), ("after", &after)] {
         if !list.is_empty() {
             data[key] = list.iter().map(|t| task_view(&b, t)).collect();
         }
     }
     Ok(Output { text: lines.join("\n"), data })
+}
+
+/// How many completion records `show` lists.
+const SHOWN_RECORDS: usize = 5;
+
+/// `按时`, `晚 3 天`, `提前 2 天`: when a repeating task was done, against when it was due.
+fn lateness(r: &Completion) -> String {
+    match r.done.days_after(&r.due) {
+        0 => "按时".into(),
+        late if late > 0 => format!("晚 {late} 天"),
+        early => format!("提前 {} 天", -early),
+    }
 }
 
 /// `图片 1.png（image/png，182 KB）`

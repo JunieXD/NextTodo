@@ -1,7 +1,7 @@
 // The desktop layout: folders on the left, which can be folded away, the list in the middle, and the
 // open task's details on the right.
 
-import { ChevronLeft, ChevronRight, CircleCheck, FolderRoot, History, ListChecks, PanelLeft, Search } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, CircleCheck, FolderRoot, History, ListChecks, PanelLeft, Search } from "lucide-react";
 import { type CSSProperties, Fragment, type ReactNode, useRef, useState } from "react";
 import { Link, Redirect, useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
@@ -17,6 +17,7 @@ import { useColumns } from "./columns";
 import { Detail } from "./Detail";
 import { useTreeDrag } from "./drag";
 import { FolderContextMenu, FolderMenu, usePlaceFolder } from "./FolderMenu";
+import { CalendarBody, CalendarViewSeg } from "./calendar";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, NextFilter, QuickAdd, SearchResults } from "./lists";
 import { readyIn, useNextFolders } from "../next-folders";
 import { folderUrl, settingsUrl, useFolderView, useSelection } from "./nav";
@@ -50,7 +51,16 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
   const [view] = useFolderView();
   const folder = location.match(/^\/folders\/([^/]+)$/)?.[1] ?? null;
   const section = useSectionAt(location);
-  const at = location === "/done" ? "done" : location.startsWith("/folders") ? (folder ?? "root") : location.startsWith("/settings") ? "settings" : "next";
+  const at =
+    location === "/done"
+      ? "done"
+      : location === "/calendar"
+        ? "calendar"
+        : location.startsWith("/folders")
+          ? (folder ?? "root")
+          : location.startsWith("/settings")
+            ? "settings"
+            : "next";
 
   let main: ReactNode;
   if (query.trim()) {
@@ -112,6 +122,20 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
     main = (
       <Page title={batch.on ? batchTitle(batch.tasks.length) : "已完成"} actions={actions}>
         <DoneBody now={now} />
+      </Page>
+    );
+  } else if (at === "calendar") {
+    main = (
+      <Page
+        title="日历"
+        actions={
+          <div className="head-actions">
+            <CalendarViewSeg />
+          </div>
+        }
+        narrow
+      >
+        <CalendarBody now={now} />
       </Page>
     );
   } else if (at !== "root" && !board.folder(at)) {
@@ -203,7 +227,7 @@ function Page(p: {
   );
 }
 
-function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "root" | "settings" | null; query: string; setQuery(q: string): void }) {
+function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "calendar" | "root" | "settings" | null; query: string; setQuery(q: string): void }) {
   const { board, pending } = useView();
   const listed = useNextFolders(board);
   const { user } = useSession();
@@ -297,6 +321,11 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ro
             <span className="tw" />
             <Icon of={History} size={18} />
             <span>已完成</span>
+          </button>
+          <button className={`sb-item${at === "calendar" ? " on" : ""}`} onClick={() => go("/calendar")}>
+            <span className="tw" />
+            <Icon of={CalendarDays} size={18} />
+            <span>日历</span>
           </button>
           <div className="sb-label">文件夹</div>
           {tree(null, null, 0)}

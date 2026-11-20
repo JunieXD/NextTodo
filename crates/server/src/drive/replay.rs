@@ -55,6 +55,8 @@ fn write(c: &Connection, user: &str, id: MutationId, at: i64, effect: &Effect) -
         Effect::Task(Change::Deleted(t)) => store::delete_task(c, t.id)?,
         Effect::Dependency(Link::Added(d)) => store::insert_dependency(c, user, d)?,
         Effect::Dependency(Link::Removed(d)) => store::delete_dependency(c, d)?,
+        Effect::Completion(Link::Added(r)) => store::insert_completion(c, r)?,
+        Effect::Completion(Link::Removed(r)) => store::delete_completion(c, r)?,
         Effect::Attachment(Change::Created(a)) => {
             shared_file(c, user, a, at)?;
             store::insert_attachment(c, a)?;

@@ -96,9 +96,9 @@ export async function unqueue(userId: string, id: MutationId) {
 
 /** A copy saved by an earlier version, as one is now. Before folders could be shared, nothing was,
  * every task was the user's, and the user was the only one in it; its log of changes goes, being of
- * tasks as they were then. Before AI organizing there were no jobs, before attachments none, and
- * before folders had colours and icons, none of those: neither for folders kept nor for those its log
- * of changes brings back when one is undone. */
+ * tasks as they were then. Before AI organizing there were no jobs, before attachments none, before
+ * completion records none, and before folders had colours and icons, none of those: neither for
+ * folders kept nor for those its log of changes brings back when one is undone. */
 function current(saved: Copy, { id, username, display_name }: User): Copy {
   const looked = (f: Folder): Folder => ({ ...f, color: f.color ?? null, icon: f.icon ?? null });
   const folders = saved.base.folders.map(looked);
@@ -106,7 +106,7 @@ function current(saved: Copy, { id, username, display_name }: User): Copy {
     m,
     effects.map((e) => (e.kind === "folder" ? { ...e, before: e.before && looked(e.before), after: e.after && looked(e.after) } : e)),
   ]);
-  const c = { ...saved, base: { ...saved.base, folders, attachments: saved.base.attachments ?? [] }, log };
+  const c = { ...saved, base: { ...saved.base, folders, attachments: saved.base.attachments ?? [], completions: saved.base.completions ?? [] }, log };
   if (c.base.people) return c;
   const tasks = c.base.tasks.map((t) => ({ ...t, assignees: [], created_by: id, updated_by: id }));
   const people = [{ id, username, display_name }];

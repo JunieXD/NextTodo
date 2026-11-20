@@ -347,10 +347,10 @@ async function claim(user: User, copy: string): Promise<Session | Login> {
 /** A session in `login` with a fresh copy from the server, unless the device has signed out, or in
  * as someone else, while it downloaded. */
 async function fresh({ id, user }: Login, copy: string): Promise<Session> {
-  const { seq, folders, tasks, dependencies, attachments, ai_jobs, shares, people } = await download(user.id);
+  const { seq, folders, tasks, dependencies, completions, attachments, ai_jobs, shares, people } = await download(user.id);
   return turn(async () => {
     if (pendingSignOut() || cachedLogin()?.user.id !== user.id) throw new ApiError(401, "unauthenticated", "本机的登录状态已变更，请重新登录");
-    return new Session(user, id, copy, { ...Store.empty(), seq, base: { folders, tasks, dependencies, attachments, ai_jobs, shares, people } });
+    return new Session(user, id, copy, { ...Store.empty(), seq, base: { folders, tasks, dependencies, completions, attachments, ai_jobs, shares, people } });
   });
 }
 
@@ -383,11 +383,12 @@ async function finishSignOut(out: Login) {
 }
 
 /** The user's data from the server, unless this browser has signed in as someone else by now. A server
- * from before attachments has none to send. */
+ * from before attachments has none to send, and one from before completion records none of those. */
 async function download(user: string): Promise<SeqSnapshot> {
-  const snapshot = await api<Omit<SeqSnapshot, "attachments"> & Partial<Pick<SeqSnapshot, "attachments">>>("GET", "/snapshot");
+  type Sent = Omit<SeqSnapshot, "attachments" | "completions"> & Partial<Pick<SeqSnapshot, "attachments" | "completions">>;
+  const snapshot = await api<Sent>("GET", "/snapshot");
   if (snapshot.user !== user) throw new ApiError(401, "unauthenticated", "本机已切换账号，请重新登录");
-  return { ...snapshot, attachments: snapshot.attachments ?? [] };
+  return { ...snapshot, attachments: snapshot.attachments ?? [], completions: snapshot.completions ?? [] };
 }
 
 export const SessionContext = createContext<Session>(null!);

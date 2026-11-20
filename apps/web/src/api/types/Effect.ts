@@ -2,6 +2,7 @@
 import type { AiJob } from "./AiJob";
 import type { Attachment } from "./Attachment";
 import type { Change } from "./Change";
+import type { Completion } from "./Completion";
 import type { Dependency } from "./Dependency";
 import type { Folder } from "./Folder";
 import type { Link } from "./Link";
@@ -13,4 +14,4 @@ import type { Task } from "./Task";
  * One entity change made by a mutation. In JSON it is `{kind, before, after}`, where `before` is
  * `null` for a creation and `after` is `null` for a deletion.
  */
-export type Effect = { "kind": "folder" } & Change<Folder> | { "kind": "task" } & Change<Task> | { "kind": "dependency" } & Link<Dependency> | { "kind": "attachment" } & Change<Attachment> | { "kind": "ai_job" } & Change<AiJob> | { "kind": "share" } & Change<Share> | { "kind": "person" } & Change<Person>;
+export type Effect = { "kind": "folder" } & Change<Folder> | { "kind": "task" } & Change<Task> | { "kind": "dependency" } & Link<Dependency> | { "kind": "completion" } & Link<Completion> | { "kind": "attachment" } & Change<Attachment> | { "kind": "ai_job" } & Change<AiJob> | { "kind": "share" } & Change<Share> | { "kind": "person" } & Change<Person>;

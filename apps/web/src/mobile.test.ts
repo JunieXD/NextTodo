@@ -19,7 +19,7 @@ test("a reminder can't be done straight away once a repeating prerequisite holds
       task(2, "做阅读", { due: { date: "2026-11-13", time: "00:00", remind_before: 0 } }),
     ],
     dependencies: [{ before: id(1), after: id(2), created_at: 0 }],
-    attachments: [], ai_jobs: [], shares: [], people: [],
+    completions: [], attachments: [], ai_jobs: [], shares: [], people: [],
   };
   // The board as of 23:59, handed over before midnight and again just after it.
   const board = new Board(snapshot, { today: "2026-11-12", time: "23:59" }, ME);

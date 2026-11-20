@@ -125,7 +125,7 @@ svg { display: block; flex: none; }
 
 /* ---------- tab bar ---------- */
 .tabbar { position: absolute; z-index: 6; left: 0; right: 0; bottom: 0; height: var(--tabbar-h); padding-bottom: var(--safe-bottom);
-  display: grid; grid-template-columns: repeat(3, 1fr); background: var(--bar-bg); -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6); box-shadow: 0 -.5px 0 var(--outline-variant); }
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--bar-bg); -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6); box-shadow: 0 -.5px 0 var(--outline-variant); }
 .tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 12px; font-weight: 500; color: var(--on-surface-variant); }
 .tab-ic { width: 56px; height: 30px; border-radius: 15px; display: grid; place-items: center; transition: background .25s; }
 .tab.on { color: var(--on-surface); }
@@ -848,6 +848,51 @@ a.text-btn { display: inline-flex; align-items: center; }
 .cal-days [aria-pressed="true"]:focus-visible span { box-shadow: 0 0 0 2px var(--group-bg), 0 0 0 4px var(--primary); }
 @media (hover: hover) { .cal-days button:not([aria-pressed="true"], :disabled):hover span { background: var(--press); } }
 .cal-days button:not([aria-pressed="true"], :disabled):active span { background: var(--press); }
+
+/* The calendar page (docs/ui.md#日历): a month or a week of days tinted by how much was done on each,
+   or a year of small ones. As wide as the settings' column on desktops. */
+.desk .cal-page { max-width: 600px; margin-inline: auto; }
+.cal-bar { display: flex; align-items: center; gap: 4px; margin: 14px 16px 6px; }
+.cal-bar > span { flex: 1; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cal-page .cal-week, .cal-grid { margin: 0 12px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px 0; }
+.cal-grid button { height: 56px; display: flex; flex-direction: column; align-items: center; padding-top: 7px; border-radius: 12px; font-variant-numeric: tabular-nums; outline: none; transition: background-color .15s, box-shadow .15s; }
+.cal-num { font-size: 15px; line-height: 1.2; }
+.cal-grid small { font-size: 10px; line-height: 1.3; color: var(--on-surface-variant); }
+.cal-dots { display: flex; gap: 3px; height: 4px; margin-top: 4px; }
+.cal-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--primary); }
+.cal-dots i.overdue { background: var(--error); }
+.cal-grid .out { color: var(--outline); }
+.cal-grid .out small { color: inherit; }
+.cal-grid [aria-current="date"] .cal-num { color: var(--primary); font-weight: 700; }
+.cal-grid [aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--primary); }
+.cal-grid button:focus-visible { box-shadow: inset 0 0 0 2px var(--primary), inset 0 0 0 4px var(--surface); }
+@media (hover: hover) { .cal-grid button:not([aria-pressed="true"]):hover { box-shadow: inset 0 0 0 1px var(--outline-variant); } }
+/* How much was done, in four steps: a layer of the primary colour under the day, more or less see-through
+   (not `color-mix()`, which Chromium 99 has not, docs/web.md#浏览器). On the deeper two the text turns light. */
+:is(.heat-1, .heat-2, .heat-3, .heat-4) { position: relative; isolation: isolate; }
+:is(.heat-1, .heat-2, .heat-3, .heat-4)::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--primary); }
+.heat-1::before { opacity: .14; }
+.heat-2::before { opacity: .28; }
+.heat-3::before { opacity: .45; }
+.heat-4::before { opacity: .65; }
+.cal-grid :is(.heat-3, .heat-4), .cal-grid :is(.heat-3, .heat-4) small, .cal-grid :is(.heat-3, .heat-4)[aria-current="date"] .cal-num { color: var(--on-primary); }
+.cal-grid :is(.heat-3, .heat-4) .cal-dots i:not(.overdue) { background: var(--on-primary); }
+.cal-year { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 12px; margin: 10px 16px; }
+.desk .cal-year { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.cal-mini h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+.cal-mini > div { display: grid; grid-template-columns: repeat(7, 12px); gap: 2px; }
+.cal-mini > div > :first-child { grid-column-start: calc(var(--skip) + 1); }
+.cal-mini button { width: 12px; height: 12px; border-radius: 3px; outline: none; background: var(--surface-container); }
+/* Deeper, as days this small would hardly show the lighter steps apart from those with nothing done. */
+.cal-mini .heat-1::before { opacity: .3; }
+.cal-mini .heat-2::before { opacity: .5; }
+.cal-mini .heat-3::before { opacity: .7; }
+.cal-mini .heat-4::before { opacity: 1; }
+.cal-mini [aria-current="date"], .cal-mini button:focus-visible { box-shadow: 0 0 0 1.5px var(--primary); }
+.cal-date { margin: 20px 32px 0; font-size: 16px; font-weight: 600; }
+.cal-day .empty { margin-inline: 32px; }
+.occurrence .check { cursor: default; }
 
 /* Hours and minutes, side by side. */
 .time-menu { min-width: 0; padding: 6px; }

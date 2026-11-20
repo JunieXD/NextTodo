@@ -9,6 +9,7 @@ import type { AiJob } from "../api/types/AiJob";
 import type { AiJobId } from "../api/types/AiJobId";
 import type { Attachment } from "../api/types/Attachment";
 import type { AttachmentId } from "../api/types/AttachmentId";
+import type { Completion } from "../api/types/Completion";
 import type { Dependency } from "../api/types/Dependency";
 import type { Due } from "../api/types/Due";
 import type { Effect } from "../api/types/Effect";
@@ -30,6 +31,7 @@ export interface Data {
   folders: Map<FolderId, Folder>;
   tasks: Map<TaskId, Task>;
   deps: Map<string, Dependency>;
+  completions: Map<string, Completion>;
   attachments: Map<AttachmentId, Attachment>;
   jobs: Map<AiJobId, AiJob>;
   shares: Map<FolderId, Share>;
@@ -40,12 +42,14 @@ export interface Data {
 export const MAX_OPS = 1000;
 
 export const depKey = (before: TaskId, after: TaskId) => `${before}>${after}`;
+export const completionKey = (c: Completion) => `${c.task_id} ${c.due}`;
 
 export function fromSnapshot(s: Snapshot): Data {
   return {
     folders: new Map(s.folders.map((f) => [f.id, f])),
     tasks: new Map(s.tasks.map((t) => [t.id, t])),
     deps: new Map(s.dependencies.map((d) => [depKey(d.before, d.after), d])),
+    completions: new Map(s.completions.map((c) => [completionKey(c), c])),
     attachments: new Map(s.attachments.map((a) => [a.id, a])),
     jobs: new Map(s.ai_jobs.map((j) => [j.id, j])),
     shares: new Map(s.shares.map((sh) => [sh.folder_id, sh])),
@@ -58,6 +62,7 @@ export function toSnapshot(d: Data): Snapshot {
     folders: [...d.folders.values()],
     tasks: [...d.tasks.values()],
     dependencies: [...d.deps.values()],
+    completions: [...d.completions.values()],
     attachments: [...d.attachments.values()],
     ai_jobs: [...d.jobs.values()],
     shares: [...d.shares.values()],
@@ -70,6 +75,7 @@ export function copy(d: Data): Data {
     folders: new Map(d.folders),
     tasks: new Map(d.tasks),
     deps: new Map(d.deps),
+    completions: new Map(d.completions),
     attachments: new Map(d.attachments),
     jobs: new Map(d.jobs),
     shares: new Map(d.shares),
@@ -106,6 +112,12 @@ function set(d: Data, e: Effect, side: "before" | "after") {
       const [key, v] = [depKey(dep.before, dep.after), e[side]];
       if (v) d.deps.set(key, v);
       else d.deps.delete(key);
+      return;
+    }
+    case "completion": {
+      const [key, v] = [completionKey((e.before ?? e.after)!), e[side]];
+      if (v) d.completions.set(key, v);
+      else d.completions.delete(key);
       return;
     }
     case "attachment": {
@@ -278,12 +290,14 @@ class Applier {
           checkAssignees(this.space(t.folder_id), op.assign ?? []);
           t.assignees = [...new Set([...t.assignees, ...(op.assign ?? [])])].filter((u) => !op.unassign?.includes(u)).sort();
         }
+        let record: Completion | undefined;
         if (op.done !== undefined && op.done !== (t.done_at !== null)) {
           const repeat = t.due?.repeat;
           // Done, a repeating task stays open, due next time; done the last time, it is done
           // (docs/design.md#重复).
           if (op.done && t.due && repeat) {
             if (!op.today) throw new Rejected("invalid", "完成重复的事项需要给出今天的日期");
+            record = { task_id: t.id, due: t.due.date, done: op.today };
             const date = nextDue(repeat, t.due.date, op.today);
             if (date) {
               // The start date keeps as far before it, at the same time (docs/design.md#开始时间).
@@ -298,6 +312,7 @@ class Applier {
           } else t.done_at = op.done ? now : null;
         }
         this.updateTask(before, t);
+        if (record) this.recordCompletion(record);
         return;
       }
       case "task.delete":
@@ -544,7 +559,7 @@ class Applier {
     }
   }
 
-  /** Removes everything in the subtree: dependencies, attachments, tasks, AI jobs, then folders deepest first, so that
+  /** Removes everything in the subtree: dependencies, attachments, completion records, tasks, AI jobs, then folders deepest first, so that
    * undo brings it all back in reverse order. Shared folders inside go first. A shared folder stops
    * being shared first, its tasks assigned to nobody before, so that bringing it back shares it again
    * and then assigns them again. */
@@ -573,6 +588,7 @@ class Applier {
       this.push({ kind: "dependency", before: dep, after: null });
     }
     for (const a of [...this.d.attachments.values()].filter((a) => a.task_id !== null && ids.has(a.task_id))) this.deleteAttachment(a);
+    for (const c of [...this.d.completions.values()]) if (ids.has(c.task_id)) this.deleteCompletion(c);
     for (const t of tasks) this.push({ kind: "task", before: t, after: null });
     for (const j of [...this.d.jobs.values()].filter((j) => j.folder_id !== null && depth.has(j.folder_id))) this.deleteJob(j);
     const folders = [...depth].sort((a, b) => b[1] - a[1]).map(([f]) => this.d.folders.get(f)!);
@@ -606,6 +622,7 @@ class Applier {
       this.push({ kind: "dependency", before: dep, after: null });
     }
     for (const a of [...this.d.attachments.values()]) if (a.task_id === id) this.deleteAttachment(a);
+    for (const c of [...this.d.completions.values()]) if (c.task_id === id) this.deleteCompletion(c);
     this.push({ kind: "task", before: this.task(id), after: null });
   }
 
@@ -620,6 +637,17 @@ class Applier {
 
   private deleteDependency(dep: Dependency) {
     this.push({ kind: "dependency", before: dep, after: null });
+  }
+
+  /** Records a time its task was done, in place of the record of the same time done before. */
+  private recordCompletion(c: Completion) {
+    const old = this.d.completions.get(completionKey(c));
+    if (old) this.deleteCompletion(old);
+    this.push({ kind: "completion", before: null, after: c });
+  }
+
+  private deleteCompletion(c: Completion) {
+    this.push({ kind: "completion", before: c, after: null });
   }
 
   /** Shares the user's folder `root` with `user` too. The first time, its tasks lose their
@@ -773,6 +801,12 @@ class Applier {
         // Names are not undone.
       } else if (e.kind === "person") {
         continue;
+      } else if (e.kind === "completion") {
+        // A record goes with its task: with the task gone, there is nothing to put it back on.
+        const cur = this.d.completions.get(completionKey((e.before ?? e.after)!));
+        if (!e.before) {
+          if (cur) this.deleteCompletion(cur);
+        } else if (!cur && this.d.tasks.has(e.before.task_id)) this.recordCompletion(e.before);
       } else if (!e.before) {
         const dep = this.d.deps.get(depKey(e.after!.before, e.after!.after));
         if (dep) this.deleteDependency(dep);

@@ -22,7 +22,7 @@ const cx = {
 };
 
 function empty(): Data {
-  return fromSnapshot({ folders: [], tasks: [], dependencies: [], attachments: [], ai_jobs: [], shares: [], people: [] });
+  return fromSnapshot({ folders: [], tasks: [], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] });
 }
 
 /** Applies a mutation and remembers its effects under `mutation`, for undo. */
@@ -174,6 +174,25 @@ test("a repeating task moves on rather than being done, and is never done while 
   expect(d.tasks.get(id(1))!.done_at).not.toBeNull();
   const doneRepeating: Op = { op: "task.create", id: id(2), title: "交房租", done: true, due: { date: "2026-11-30", repeat: weekly } };
   expect(() => apply(d, [doneRepeating], cx)).toThrow("“交房租”已完成，不能设置重复，请先重新打开");
+});
+
+test("each time a repeating task is done is recorded, the later of the same time kept, until undone or deleted", () => {
+  const d = empty();
+  const daily = { every: 1, unit: "day", from: "due" } as const;
+  const records = () => [...d.completions.values()].map((c) => [c.due, c.done]);
+  run(d, 160, [{ op: "task.create", id: id(1), title: "浇花", due: { date: "2026-11-10", repeat: daily } }]);
+  run(d, 161, [{ op: "task.update", id: id(1), done: true, today: "2026-11-12" }]);
+  run(d, 162, [{ op: "task.update", id: id(1), due: { date: "2026-11-10", repeat: daily } }]);
+  run(d, 163, [{ op: "task.update", id: id(1), done: true, today: "2026-11-14" }]);
+  expect(records()).toEqual([["2026-11-10", "2026-11-14"]]);
+  run(d, 164, [{ op: "undo", mutation: id(163) }]);
+  expect(records()).toEqual([["2026-11-10", "2026-11-12"]]);
+  // Ending the repeat is no time done; deleted, the record goes with the task, and comes back with it.
+  run(d, 165, [{ op: "task.update", id: id(1), due: { date: "2026-11-10" }, done: true }]);
+  run(d, 166, [{ op: "task.delete", id: id(1) }]);
+  expect(records()).toEqual([]);
+  run(d, 167, [{ op: "undo", mutation: id(166) }]);
+  expect(records()).toEqual([["2026-11-10", "2026-11-12"]]);
 });
 
 test("a repeat by the lunar calendar is due within its table, an undo setting the date back too", () => {

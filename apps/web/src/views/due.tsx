@@ -8,7 +8,7 @@ import type { Due } from "../api/types/Due";
 import type { Repeat } from "../api/types/Repeat";
 import type { RepeatFrom } from "../api/types/RepeatFrom";
 import type { RepeatUnit } from "../api/types/RepeatUnit";
-import { MAX_REMIND, REMINDERS, REMIND_UNITS, type RemindUnit, day, formatDue, isoDate, parseTime, remindIn, remindLabel } from "../domain/dates";
+import { MAX_REMIND, REMINDERS, REMIND_UNITS, type RemindUnit, day, formatDue, isoDate, monthGrid, parseTime, remindIn, remindLabel } from "../domain/dates";
 import { dayName, lunarDate, lunarLabel, lunarText } from "../domain/lunar";
 import { WORKDAYS, repeatLabel } from "../domain/repeat";
 import { useBack } from "../ui/back";
@@ -230,9 +230,10 @@ export function DueEditor({
   );
 }
 
-const WEEKDAYS = "一二三四五六日";
+export const WEEKDAYS = "一二三四五六日";
 const monthOf = (d: Date) => ({ year: d.getFullYear(), month: d.getMonth() });
-const ARROWS = new Map([
+/** How many days each arrow key moves a calendar's day by. */
+export const ARROWS = new Map([
   ["ArrowLeft", -1],
   ["ArrowRight", 1],
   ["ArrowUp", -7],
@@ -311,12 +312,10 @@ function Calendar({
   const [shown, setShown] = useState(() => monthOf(day(value || (min && min > today ? min : today))));
   const out = (iso: string) => (min !== undefined && iso < min) || (max !== undefined && iso > max);
   const days = useRef<HTMLDivElement>(null);
-  const first = new Date(shown.year, shown.month, 1);
-  const start = 1 - ((first.getDay() + 6) % 7);
-  const weeks = Array.from({ length: 42 }, (_, i) => new Date(shown.year, shown.month, start + i));
+  const weeks = monthGrid(shown.year, shown.month);
   // Tab comes to the day picked, or with none there to the first of the month that can be.
   const tabStop =
-    weeks.some((d) => isoDate(d) === value) && !out(value) ? value : isoDate(weeks.find((d) => d.getMonth() === shown.month && !out(isoDate(d))) ?? first);
+    weeks.some((d) => isoDate(d) === value) && !out(value) ? value : isoDate(weeks.find((d) => d.getMonth() === shown.month && !out(isoDate(d))) ?? new Date(shown.year, shown.month, 1));
   const pick = (d: Date) => {
     onChange(isoDate(d));
     setShown(monthOf(d));

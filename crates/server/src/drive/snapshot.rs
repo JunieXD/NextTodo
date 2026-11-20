@@ -50,6 +50,7 @@ const TABLES: &[(&str, Kept)] = &[
     ),
     ("folders", Kept::Shared),
     ("tasks", Kept::Shared),
+    ("completions", Kept::Shared),
     ("dependencies", Kept::Shared),
     ("members", Kept::Shared),
     ("assignees", Kept::Shared),

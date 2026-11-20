@@ -40,7 +40,7 @@ function task(n: number, title: string, extra: Partial<Task> = {}): Task {
 function tidy(tasks: Task[], deps: [number, number][], suggestions: Suggestion[], keep: (key: string) => boolean = () => true) {
   const job: AiJob = { id: id(99), folder_id: null, kind: "tidy", text: "整理", local_time: "2026-11-09 10:00 星期一", state: "ready", error: null, suggestions, created_at: 0, updated_at: 0 };
   const dependencies = deps.map(([b, a]) => ({ before: id(b), after: id(a), created_at: 0 }));
-  const board = new Board({ folders: [], tasks, dependencies, attachments: [], ai_jobs: [job], shares: [], people: [] }, { today: "2026-11-12" }, ME);
+  const board = new Board({ folders: [], tasks, dependencies, completions: [], attachments: [], ai_jobs: [job], shares: [], people: [] }, { today: "2026-11-12" }, ME);
   const shown = groups(job, board);
   const taken = shown.flatMap((g) => g.parts.filter((p) => keep(p.key)));
   const d = fromSnapshot(board.snapshot);

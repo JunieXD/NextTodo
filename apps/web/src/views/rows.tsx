@@ -74,21 +74,7 @@ export function TaskRow({
   const status = board.status(t);
   const unlocks = status === "ready" ? board.unlocks(t).length : 0;
   const meta: ReactNode[] = [];
-  if (path && t.folder_id) {
-    const place = board.place(t.folder_id);
-    meta.push(
-      styled(board, t.folder_id) ? (
-        <span key="path" className="m-folder">
-          <FolderGlyph board={board} id={t.folder_id} size={14} />
-          <span className="m-path">{place}</span>
-        </span>
-      ) : (
-        <span key="path" className="m-path">
-          {place}
-        </span>
-      ),
-    );
-  }
+  if (path && t.folder_id) meta.push(<PathMeta key="path" board={board} folder={t.folder_id} />);
   if (t.done_at === null && t.completions?.last === isoDate(now)) {
     meta.push(
       <span key="today" className="m-done-today">
@@ -353,5 +339,18 @@ export function RailList({
         ))}
       </div>
     </>
+  );
+}
+
+/** Where a task is, in its row: the folder's path, after its glyph when the folder has a look. */
+export function PathMeta({ board, folder }: { board: Board; folder: FolderId }) {
+  const place = board.place(folder);
+  return styled(board, folder) ? (
+    <span className="m-folder">
+      <FolderGlyph board={board} id={folder} size={14} />
+      <span className="m-path">{place}</span>
+    </span>
+  ) : (
+    <span className="m-path">{place}</span>
   );
 }

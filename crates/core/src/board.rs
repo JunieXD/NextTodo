@@ -8,7 +8,7 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::model::{AiJob, Attachment, Date, Dependency, Folder, FolderId, Holder, Person, Share, SortKey, Task, TaskId, Time};
+use crate::model::{AiJob, Attachment, Completion, Date, Dependency, Folder, FolderId, Holder, Person, Share, SortKey, Task, TaskId, Time};
 
 /// All a user can see: their own data and the folders shared with them, where a folder someone else
 /// shares has no parent (docs/design.md#共享).
@@ -18,6 +18,9 @@ pub struct Snapshot {
     pub folders: Vec<Folder>,
     pub tasks: Vec<Task>,
     pub dependencies: Vec<Dependency>,
+    /// Of the repeating tasks, by task and the day due.
+    #[serde(default)]
+    pub completions: Vec<Completion>,
     /// Of the tasks and of the user's AI jobs, by id.
     #[serde(default)]
     pub attachments: Vec<Attachment>,

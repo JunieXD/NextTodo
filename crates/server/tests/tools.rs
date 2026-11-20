@@ -274,6 +274,40 @@ async fn a_repeating_task_counts_its_completions_and_can_end_done() {
 }
 
 #[tokio::test]
+async fn each_time_a_repeating_task_is_done_is_recorded_until_undone_or_deleted() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "浇花", "due": "2026-11-10", "repeat": "1d" })).await;
+    let records =
+        |snap: Value| snap["completions"].as_array().unwrap().iter().map(|r| (r["due"].clone(), r["done"].clone())).collect::<Vec<_>>();
+    // Late, then early: from the due date, the next time after today.
+    t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-12" })).await;
+    t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-12" })).await;
+    let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
+    assert!(
+        text(&shown)
+            .contains("最近的完成记录：\n  2026-11-12 完成，截止 2026-11-13，提前 1 天\n  2026-11-12 完成，截止 2026-11-10，晚 2 天"),
+        "{}",
+        text(&shown)
+    );
+    assert_eq!(shown["data"]["completion_records"][1], json!({ "due": "2026-11-10", "done": "2026-11-12" }));
+    // The same time done again keeps the later, and undone, the earlier is back.
+    t.ok(&s, "edit", json!({ "task": 1, "due": "2026-11-10" })).await;
+    let again = t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-14" })).await;
+    assert_eq!(records(t.snapshot(&s).await), [(json!("2026-11-10"), json!("2026-11-14")), (json!("2026-11-13"), json!("2026-11-12"))]);
+    t.ok(&s, "undo", json!({ "batch": again["data"]["batch"] })).await;
+    let before = records(t.snapshot(&s).await);
+    assert_eq!(before, [(json!("2026-11-10"), json!("2026-11-12")), (json!("2026-11-13"), json!("2026-11-12"))]);
+    // Ending the repeat is no time done; deleted, the records go with the task, and come back with it.
+    t.ok(&s, "done", json!({ "tasks": [1], "end_repeat": true, "today": "2026-11-14" })).await;
+    assert_eq!(records(t.snapshot(&s).await), before);
+    let deleted = t.ok(&s, "delete", json!({ "tasks": [1] })).await;
+    assert!(records(t.snapshot(&s).await).is_empty());
+    t.ok(&s, "undo", json!({ "batch": deleted["data"]["batch"] })).await;
+    assert_eq!(records(t.snapshot(&s).await), before);
+}
+
+#[tokio::test]
 async fn a_repeat_until_a_day_ends_done_the_last_time() {
     let t = TestApp::new();
     let s = t.admin().await;

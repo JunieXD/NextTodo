@@ -27,6 +27,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
+import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -46,8 +47,10 @@ import org.json.JSONObject
 data class Item(val id: String, val title: String, val folder: String, val due: Due?, val lastDone: LocalDate?, val step: String?)
 
 /** What the widget shows: the list with the tasks just ticked off in it, and how many `more` there are
- * past it; or that the app is signed out. Its text `scale`d as the user chose. */
-data class Shown(val signedIn: Boolean, val items: List<Item>, val more: Int, val ticked: Set<String>, val scale: Float)
+ * past it; or that the app is signed out. Its text `scale`d as the user chose. As of `now`, to the
+ * minute, which what it says of the time goes by: a part of it, so that the widget is drawn again as
+ * the time alone moves on. */
+data class Shown(val signedIn: Boolean, val items: List<Item>, val more: Int, val ticked: Set<String>, val scale: Float, val now: LocalDateTime)
 
 /** The widget's list, kept in its own preferences: written by the app, or fetched from the server. */
 object Widget {
@@ -197,7 +200,7 @@ object Widget {
         val token = Server.token(context)
         val ticked = ticked.value.filterValues { it.token == token }
         val (items, more) = listed(prefs(context), ticked.values.map { it.row })
-        return Shown(token != null, items, more, ticked.keys, scale(context))
+        return Shown(token != null, items, more, ticked.keys, scale(context), LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES))
     }
 
     /** Hides a task done in session `token` by the change `seq`, or by one not sent yet without it,

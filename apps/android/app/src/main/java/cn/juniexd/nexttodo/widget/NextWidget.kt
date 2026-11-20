@@ -92,7 +92,7 @@ class NextWidget : GlanceAppWidget() {
         // only recompose: what to show is read here, again on every change.
         provideContent {
             val shown by changes.collectAsState(Widget.shown(context))
-            Content(context, shown, LocalDateTime.now())
+            Content(context, shown)
         }
     }
 }
@@ -112,7 +112,8 @@ internal val UNDER_HEADER = 4.dp
 internal val HEADER = TOP + 32.dp + UNDER_HEADER
 
 @Composable
-private fun Content(context: Context, shown: Shown, now: LocalDateTime) {
+private fun Content(context: Context, shown: Shown) {
+    val now = shown.now
     val compact = LocalSize.current.height < COMPACT_BELOW
     Column(GlanceModifier.fillMaxSize().background(Colors.background).cornerRadius(20.dp)) {
         Row(GlanceModifier.fillMaxWidth().height(HEADER), verticalAlignment = Alignment.CenterVertically) {

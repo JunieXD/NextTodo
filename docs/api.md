@@ -77,7 +77,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 { "id": "…", "number": 5, "folder_id": "…", "title": "设计问卷", "description": "…", "done_at": null, "start": "2026-10-30", "start_time": "09:00",
   // 开始时间的日期和几点几分：没设时 start 为 null，只有日期时没有 start_time，见 design.md#开始时间
   "due": { "date": "2026-11-02", "time": "18:00", "remind_before": 60, "repeat": { "every": 1, "unit": "week", "from": "due" } },
-  // 没有截止时间时为 null；time、remind_before、repeat 可省略；按周的 repeat 可以带 "days": [1, 3, 5]，在周几（1 是周一，7 是周日）；按月的 days 是几号（1–31）。每年是 every 12、unit month。repeat 可以带 "until": "2026-12-19"，重复到哪天（含这天）
+  // 没有截止时间时为 null；time、remind_before、repeat 可省略；按周的 repeat 可以带 "days": [1, 3, 5]，在周几（1 是周一，7 是周日）；按月的 days 是几号（1–31）。每年是 every 12、unit month。repeat 可以带 "until": "2026-12-19"，重复到哪天（含这天）。按农历的按月 repeat 带 "lunar": true，这时一定有 days，是农历的几号（1–30，初一到三十），见[重复](design.md#重复)
   "completions": { "count": 12, "last": "2026-11-01" },
   // 重复的事项完成过几次、最近一次的日期；没完成过时没有这一项。只随完成改变，改动里不能直接写
   "sort_key": "a1", "assignees": ["<用户 id>"],

@@ -320,6 +320,39 @@ async fn a_repeat_until_a_day_ends_done_the_last_time() {
 }
 
 #[tokio::test]
+async fn a_repeat_by_the_lunar_calendar_moves_on_by_it_and_says_so() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    // 2026-09-25 is 八月十五 (fixtures/lunar.json has the calendar checked).
+    t.ok(&s, "add", json!({ "title": "给妈妈打电话", "due": "2026-09-25", "repeat": "1ly:15" })).await;
+    let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
+    assert!(text(&shown).contains("截止：2026-09-25（农历八月十五），每年农历八月十五"), "{}", text(&shown));
+    let repeat = json!({ "every": 12, "unit": "month", "from": "due", "days": [15], "lunar": true });
+    assert_eq!(shown["data"]["due"], json!({ "date": "2026-09-25", "repeat": repeat }));
+    let done = t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-09-25" })).await;
+    assert!(text(&done).starts_with("顺延 #1 给妈妈打电话 → 2027-09-15"), "{}", text(&done));
+    t.ok(&s, "edit", json!({ "task": 1, "repeat": "1lm:1,15" })).await;
+    let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
+    assert!(text(&shown).contains("截止：2027-09-15（农历八月十五），农历每月初一、十五"), "{}", text(&shown));
+    // Always on some days, 初一 to 三十; and only monthly.
+    for repeat in ["1lm", "1ly", "1lm:31", "1lw:1"] {
+        let r = t.tool(&s, "edit", json!({ "task": 1, "repeat": repeat })).await;
+        assert_eq!((r.status, r.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("repeat")), "{repeat}: {}", r.body);
+    }
+    // Within the calendar's table, given so or set back by an undo.
+    let r = t.tool(&s, "add", json!({ "title": "x", "due": "2101-02-01", "repeat": "1lm:1" })).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.body);
+    t.ok(&s, "add", json!({ "title": "百年后", "due": "2101-02-01" })).await;
+    let r = t.tool(&s, "edit", json!({ "task": 2, "repeat": "1lm:1" })).await;
+    assert_eq!((r.status, r.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("repeat")), "{}", r.body);
+    let moved = t.ok(&s, "edit", json!({ "task": 2, "due": "2101-01-28" })).await;
+    t.ok(&s, "edit", json!({ "task": 2, "repeat": "1ly:29" })).await;
+    let r = t.tool(&s, "undo", json!({ "batch": moved["data"]["batch"] })).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.body);
+    assert!(text(&t.ok(&s, "show", json!({ "task": 2 })).await).contains("截止：2101-01-28（农历腊月廿九）"));
+}
+
+#[tokio::test]
 async fn a_task_waits_for_its_start_date_and_keeps_it_as_far_before_its_due_date() {
     let t = TestApp::new();
     let s = t.admin().await;

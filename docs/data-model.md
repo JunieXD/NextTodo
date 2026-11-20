@@ -84,6 +84,7 @@
 | repeat_from | TEXT，可空 | 下一次从哪天算：`due`（截止日期）或 `done`（完成那天） |
 | repeat_days | INTEGER，可空 | 按周重复在周几，按位存：周一是 1，周二是 2，……，周日是 64；只能在 `repeat_unit` 为 `week` 时设置，空表示截止日期那天 |
 | repeat_monthdays | INTEGER，可空 | 按月重复在几号，按位存：1 号是 1，2 号是 2，3 号是 4，……，31 号是 2³⁰；只能在 `repeat_unit` 为 `month` 时设置，空表示截止日期那天 |
+| repeat_lunar | INTEGER | 按[农历](design.md#重复)重复为 1，否则为 0；为 1 时 `repeat_unit` 是 `month`，`repeat_monthdays` 不为空，只到 30 号（初一到三十） |
 | repeat_until | TEXT，可空 | [重复到](design.md#重复)哪天（含这天），空表示一直重复；只能在有重复时设置，不早于 `due_date` |
 | completion_count | INTEGER，可空 | 重复的事项[完成过几次](design.md#重复)，至少 1；从没完成过时为空。结束重复并完成不算 |
 | last_completed | TEXT，可空 | 最近一次完成的日期（完成那台设备上的当天） |

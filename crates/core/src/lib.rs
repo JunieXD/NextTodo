@@ -4,6 +4,7 @@
 
 pub mod board;
 pub mod dag;
+pub mod lunar;
 pub mod model;
 pub mod ops;
 pub mod repeat;

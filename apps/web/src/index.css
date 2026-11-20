@@ -833,10 +833,13 @@ a.text-btn { display: inline-flex; align-items: center; }
 .cal { margin-bottom: 14px; padding: 6px 8px 8px; }
 .cal-head { display: flex; align-items: center; gap: 4px; padding: 0 2px 4px 10px; }
 .cal-head span { flex: 1; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.cal-week, .cal-days { display: grid; grid-template-columns: repeat(7, 1fr); }
+.cal-week, .cal-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .cal-week span { height: 28px; display: grid; place-items: center; font-size: 12px; color: var(--outline); }
-.cal-days button { height: 40px; display: grid; place-items: center; font-size: 15px; font-variant-numeric: tabular-nums; outline: none; }
-.cal-days span { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; transition: background-color .15s, color .15s; }
+.cal-days button { height: 46px; display: grid; place-items: center; font-size: 15px; font-variant-numeric: tabular-nums; outline: none; }
+/* The day, and under it the lunar day (docs/design.md#农历). */
+.cal-days span { width: 100%; max-width: 42px; height: 42px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.15; transition: background-color .15s, color .15s; }
+.cal-days small { font-size: 10px; color: var(--on-surface-variant); }
+.cal-days .out, .cal-days .out small, .cal-days [aria-pressed="true"] small, .cal-days :disabled small { color: inherit; }
 .cal-days .out { color: var(--outline); }
 .cal-days :disabled { color: var(--outline); opacity: .4; cursor: default; }
 .cal-days [aria-current="date"] { color: var(--primary); font-weight: 700; }
@@ -869,6 +872,7 @@ a.text-btn { display: inline-flex; align-items: center; }
 .days { display: grid; grid-template-columns: repeat(7, 30px); gap: 4px; }
 .days button { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-variant-numeric: tabular-nums; background: var(--surface-container); color: var(--on-surface); }
 .days [aria-pressed="true"] { background: var(--primary); color: var(--on-primary); font-weight: 600; }
+.days.lunar button { font-size: 11px; }
 .days button:disabled { cursor: default; }
 .days button:not(:disabled):active { filter: brightness(.92); }
 .days :focus-visible { box-shadow: 0 0 0 2px var(--group-bg), 0 0 0 4px var(--primary); outline: none; }

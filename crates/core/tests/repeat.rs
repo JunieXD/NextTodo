@@ -10,7 +10,7 @@ struct Case {
     repeat: Repeat,
     due: Date,
     today: Date,
-    /// `null` when that was the last time: past `until`, or the year 9999.
+    /// `null` when that was the last time: past `until`, the year 9999, or the lunar calendar's table.
     next: Option<Date>,
     /// A start date, and where it moves with the due date.
     #[serde(default)]

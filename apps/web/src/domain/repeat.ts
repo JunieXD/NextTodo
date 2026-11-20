@@ -3,6 +3,7 @@
 import type { Due } from "../api/types/Due";
 import type { Repeat } from "../api/types/Repeat";
 import { formatDue } from "./dates";
+import { dayName, dayOf, lunarDate, monthName, monthOf, monthOn } from "./lunar";
 
 /** Midnight UTC of a day, years before 100 included (`Date.UTC` takes them for 19xx). */
 function utc(y: number, m: number, d: number): Date {
@@ -11,6 +12,7 @@ function utc(y: number, m: number, d: number): Date {
   return t;
 }
 
+const DAY = 86_400_000;
 const daysIn = (y: number, m: number) => utc(y, m + 1, 0).getUTCDate();
 const pad = (n: number, width = 2) => String(n).padStart(width, "0");
 
@@ -20,7 +22,8 @@ export const WORKDAYS = [1, 2, 3, 4, 5];
 /** The due date after `due`, the task done `today` (both `YYYY-MM-DD`): a step on from the start,
  * or as many as it takes to get past today. On some days of the week or month, a step is to the next
  * of them: later that week or month, or in the first one `every` on. Null when that was the last
- * time: the next is after `until`, or past the year 9999, which dates don't go beyond. */
+ * time: the next is after `until`, past the year 9999, which dates don't go beyond, or past the lunar
+ * calendar's table for a repeat by it. */
 export function nextDue(r: Repeat, due: string, today: string): string | null {
   const [y, m, d] = (r.from === "due" ? due : today).split("-").map(Number);
   // The day `day` of the month `k` months on, or its last day if it has none.
@@ -57,7 +60,19 @@ export function nextDue(r: Repeat, due: string, today: string): string | null {
         if (days.includes(i) && day.getTime() > after) return day;
       }
   };
-  const next = !r.days ? stepped() : r.unit === "week" ? onWeekdays(r.days) : onMonthdays(r.days);
+  const onLunarDays = (days: number[]) => {
+    const month = monthOf(utc(y, m, d).getTime() / DAY);
+    for (let k = 0; month !== undefined; k++) {
+      const at = monthOn(month, k * r.every, r.every % 12 === 0);
+      if (at === undefined) return undefined;
+      for (let i = 1; i <= 30; i++) {
+        const day = new Date(dayOf(at, i) * DAY);
+        if (days.includes(i) && day.getTime() > after) return day;
+      }
+    }
+  };
+  const next = !r.days ? stepped() : r.lunar ? onLunarDays(r.days) : r.unit === "week" ? onWeekdays(r.days) : onMonthdays(r.days);
+  if (!next) return null;
   const year = next.getUTCFullYear();
   const date = `${pad(year, 4)}-${pad(next.getUTCMonth() + 1)}-${pad(next.getUTCDate())}`;
   return year > 9999 || (r.until && date > r.until) ? null : date;
@@ -76,9 +91,19 @@ export function shifted(date: string, from: string, to: string): string {
   return `${pad(t.getUTCFullYear(), 4)}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
 }
 
-/** `每天`, `每 2 周`, `每 3 个月`, `每个工作日`, `每 2 周的周二、四`, `每月 1、15 号`, `每年`, as the
- * command line has them too. */
-export function repeatLabel(r: Repeat): string {
+/** `每天`, `每 2 周`, `每 3 个月`, `每个工作日`, `每 2 周的周二、四`, `每月 1、15 号`, `每年`; by the lunar
+ * calendar `农历每月初一、十五`, `每年农历八月十五`, its month that of the task `due`. As the command
+ * line has them too. */
+export function repeatLabel(r: Repeat, due: string): string {
+  if (r.days && r.lunar) {
+    const days = r.days.map(dayName).join("、");
+    // Picked past the table in the editor, which says so before it is saved.
+    const l = lunarDate(due);
+    const month = l ? monthName(l.month) : "";
+    if (r.every === 1) return `农历每月${days}`;
+    if (r.every === 12) return `每年农历${month}${days}`;
+    return r.every % 12 === 0 ? `每 ${r.every / 12} 年的农历${month}${days}` : `农历每 ${r.every} 个月的${days}`;
+  }
   if (r.days && r.unit === "week") {
     if (r.every === 1 && r.days.join() === WORKDAYS.join()) return "每个工作日";
     const names = r.days.map((d) => "一二三四五六日"[d - 1]).join("、");
@@ -91,5 +116,6 @@ export function repeatLabel(r: Repeat): string {
   return r.unit === "month" ? "每月" : `每${unit}`;
 }
 
-/** `每天，到12月19日`: how it repeats, and until when if it ends. */
-export const repeatText = (r: Repeat, now: Date) => (r.until ? `${repeatLabel(r)}，到${formatDue({ date: r.until }, now)}` : repeatLabel(r));
+/** `每天，到12月19日`: how a task due `due` repeats, and until when if it ends. */
+export const repeatText = (r: Repeat, due: string, now: Date) =>
+  r.until ? `${repeatLabel(r, due)}，到${formatDue({ date: r.until }, now)}` : repeatLabel(r, due);

@@ -2,13 +2,15 @@
 //! days it takes. The web app has a TypeScript twin, `apps/web/src/domain/repeat.ts`; both are checked
 //! against `fixtures/repeat.json`.
 
+use crate::lunar;
 use crate::model::{Date, Period, Repeat, RepeatFrom, days_in_month};
 
 impl Repeat {
     /// The due date after `due`, the task done `today`: a step on from the start, or as many as it
     /// takes to get past today. On some days of the week or month, a step is to the next of them: later
     /// that week or month, or in the first one `every` on. None when that was the last time: the next
-    /// is after `until`, or past the year 9999, which dates don't go beyond.
+    /// is after `until`, past the year 9999, which dates don't go beyond, or past the lunar calendar's
+    /// table for a repeat by it.
     pub fn next(&self, due: &Date, today: &Date) -> Option<Date> {
         let (y, m, d) = parts(match self.from {
             RepeatFrom::Due => due,
@@ -23,7 +25,13 @@ impl Repeat {
             let (y, m) = (months / 12, months % 12 + 1);
             day_number((y, m, d.min(days_in_month(y, m))))
         };
+        // A step on from the start, as many as it takes to get past today.
+        let stepped = |step: &dyn Fn(u32) -> i64| (1..).map(step).find(|&n| n > today);
         let next = match self.period {
+            Period::Day => stepped(&|k| start + i64::from(k * every)),
+            Period::Week(None) => stepped(&|k| start + i64::from(7 * k * every)),
+            // The end of a month stays the end of the month, the 28th or the 31st.
+            Period::Month(None) => stepped(&|k| in_month(k * every, if d == days_in_month(y, m) { 31 } else { d })),
             Period::Week(Some(days)) => {
                 // 1970-01-01 was a Thursday.
                 let monday = start - (start + 3).rem_euclid(7);
@@ -34,16 +42,15 @@ impl Repeat {
             Period::Month(Some(days)) => (0..)
                 .flat_map(|k: u32| (1..=31).filter(move |&d| days.has(d)).map(move |d| in_month(k * every, d)))
                 .find(|&n| n > start && n > today),
-            period => (1..)
-                .map(|k: u32| match period {
-                    Period::Day => start + i64::from(k * every),
-                    Period::Week(_) => start + i64::from(7 * k * every),
-                    // The end of a month stays the end of the month, the 28th or the 31st.
-                    Period::Month(_) => in_month(k * every, if d == days_in_month(y, m) { 31 } else { d }),
-                })
-                .find(|&n| n > today),
+            Period::LunarMonth(days) => {
+                let month = lunar::Month::of(start)?;
+                (0..)
+                    .map_while(|k: u32| month.on(k * every, every.is_multiple_of(12)))
+                    .flat_map(|month| (1..=30).filter(move |&d| days.has(d)).map(move |d| month.day(d)))
+                    .find(|&n| n > start && n > today)
+            }
         };
-        let (y, m, d) = civil(next.expect("dates go on"));
+        let (y, m, d) = civil(next?);
         Date::try_from(format!("{y:04}-{m:02}-{d:02}")).ok().filter(|next| self.until.as_ref().is_none_or(|until| next <= until))
     }
 }
@@ -65,13 +72,13 @@ impl Date {
 }
 
 /// Year, month and day of a date, which is valid.
-fn parts(d: &Date) -> (u32, u32, u32) {
+pub(crate) fn parts(d: &Date) -> (u32, u32, u32) {
     let n = |r: std::ops::Range<usize>| d.as_str()[r].parse().expect("a valid date");
     (n(0..4), n(5..7), n(8..10))
 }
 
 /// Days since 1970-01-01 (Howard Hinnant's `days_from_civil`).
-fn day_number((y, m, d): (u32, u32, u32)) -> i64 {
+pub(crate) fn day_number((y, m, d): (u32, u32, u32)) -> i64 {
     let y = i64::from(y) - i64::from(m <= 2);
     let era = y.div_euclid(400);
     let yoe = y - era * 400;

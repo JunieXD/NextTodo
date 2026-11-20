@@ -8,8 +8,8 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use nexttodo_core::board::{Board, Now, Status};
 use nexttodo_core::model::{
-    Attachment, AttachmentId, Change, Date, Description, Due, Effect, FileName, FileSize, FolderId, MediaType, MutationId, Name, Repeat,
-    RepeatFrom, Task, TaskId, Title,
+    Attachment, AttachmentId, Change, Date, Description, Due, Effect, FileName, FileSize, FolderId, MediaType, Misfit, MutationId, Name,
+    Repeat, RepeatFrom, Task, TaskId, Title,
 };
 use nexttodo_core::ops::{MAX_OPS, Op};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -464,9 +464,12 @@ pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiE
                 }
                 let time = c.at.as_ref().map(|at| at.time.clone());
                 // The date as it is, only a new reminder or repeat can be wrong: the one before it
-                // repeats no more, or the reminder.
-                let late = new_repeat.as_ref().and_then(|r| r.as_ref()?.until.as_ref()).is_some_and(|until| *until < c.date);
-                let field = if late { "repeat_until" } else { "remind" };
+                // repeats no more, one by the lunar calendar can't go from it, or the reminder.
+                let field = match new_repeat.as_ref().and_then(|r| r.as_ref()?.misfit(&c.date)) {
+                    Some(Misfit::Late) => "repeat_until",
+                    Some(Misfit::OffTable) => "repeat",
+                    None => "remind",
+                };
                 let new = Due::new(c.date.clone(), time, remind.unwrap_or(current_remind), new_repeat.unwrap_or(c.repeat.clone()))
                     .map_err(|m| ApiError::invalid(m, Some(field.into())))?;
                 // Clearing a reminder there isn't changes nothing.

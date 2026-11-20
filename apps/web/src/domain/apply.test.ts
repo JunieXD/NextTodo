@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import type { Effect } from "../api/types/Effect";
 import type { Op } from "../api/types/Op";
+import type { Repeat } from "../api/types/Repeat";
 import cases from "../../../../fixtures/undo-done.json";
 import { type Data, Rejected, apply, fromSnapshot, revert, stillLast } from "./apply";
 
@@ -173,6 +174,15 @@ test("a repeating task moves on rather than being done, and is never done while 
   expect(d.tasks.get(id(1))!.done_at).not.toBeNull();
   const doneRepeating: Op = { op: "task.create", id: id(2), title: "交房租", done: true, due: { date: "2026-11-30", repeat: weekly } };
   expect(() => apply(d, [doneRepeating], cx)).toThrow("“交房租”已完成，不能设置重复，请先重新打开");
+});
+
+test("a repeat by the lunar calendar is due within its table, an undo setting the date back too", () => {
+  const d = empty();
+  run(d, 150, [{ op: "task.create", id: id(1), title: "百年后", due: { date: "2101-02-01" } }]);
+  run(d, 151, [{ op: "task.update", id: id(1), due: { date: "2101-01-28" } }]);
+  const lunar: Repeat = { every: 12, unit: "month", from: "due", days: [29], lunar: true };
+  run(d, 152, [{ op: "task.update", id: id(1), due: { date: "2101-01-28", repeat: lunar } }]);
+  expect(() => apply(d, [{ op: "undo", mutation: id(151) }], cx)).toThrow("“百年后”的按农历重复的截止日期应在 1900-01-31 到 2101-01-28 之间");
 });
 
 test("a repeat until a day is done for good the last time, which counts, and undone repeats again", () => {

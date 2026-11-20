@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use nexttodo_core::board::{Board, Snapshot, Status};
+use nexttodo_core::lunar;
 use nexttodo_core::model::{
     AiJob, Change, Date, Due, Effect, FolderId, Holder, JobState, Link, Period, Person, Repeat, RepeatFrom, Task, TaskId, Time, Weekdays,
 };
@@ -23,7 +24,6 @@ pub fn status_tag(b: &Board, t: &Task) -> String {
     }
 }
 
-/// `2026-11-20 18:00`, with how it repeats: `2026-11-20，每周`, `2026-11-20，每天，到 2026-12-19`.
 /// When it starts, `2026-11-14` or `2026-11-14 09:30`, if it has a start.
 pub fn start(t: &Task) -> Option<String> {
     Some(moment(t.start.as_ref()?, t.start_time.as_ref()))
@@ -34,21 +34,38 @@ pub fn moment(date: &Date, time: Option<&Time>) -> String {
     time.map_or_else(|| date.as_str().to_owned(), |time| format!("{} {}", date.as_str(), time.as_str()))
 }
 
+/// `2026-11-20 18:00`, with how it repeats: `2026-11-20，每周`, `2026-11-20，每天，到 2026-12-19`; by
+/// the lunar calendar with the lunar date too, `2027-09-15（农历八月十五），每年农历八月十五`.
 pub fn due(d: &Due) -> String {
     let mut s = d.date.as_str().to_owned();
     if let Some(at) = &d.at {
         s += &format!(" {}", at.time.as_str());
     }
     if let Some(r) = &d.repeat {
-        s += &format!("，{}", repeat(r));
+        if matches!(r.period, Period::LunarMonth(_)) {
+            s += &format!("（农历{}）", d.date.lunar().expect("a lunar repeat's due date is in the table"));
+        }
+        s += &format!("，{}", repeat(r, &d.date));
     }
     s
 }
 
 /// `每天`, `每 2 周`, `每个工作日`, `每 2 周的周二、四`, `每月 1、15 号`, `每年`, `每 3 个月，从完成那天算`,
-/// `每天，到 2026-12-19`; the web app's `repeatLabel` has them so too, but for the last day.
-pub fn repeat(r: &Repeat) -> String {
+/// `每天，到 2026-12-19`; by the lunar calendar, `农历每月初一、十五`, `每年农历八月十五`, its month that of
+/// the task `due`. The web app's `repeatLabel` has them so too, but for the last day.
+pub fn repeat(r: &Repeat, due: &Date) -> String {
     let every = match (r.every.get(), r.period) {
+        (n, Period::LunarMonth(days)) => {
+            let days: Vec<String> = Vec::from(days).into_iter().map(|d| lunar::day_name(d.into())).collect();
+            let days = days.join("、");
+            let month = || lunar::month_name(due.lunar().expect("a lunar repeat's due date is in the table").month);
+            match n {
+                1 => format!("农历每月{days}"),
+                12 => format!("每年农历{}{days}", month()),
+                n if n % 12 == 0 => format!("每 {} 年的农历{}{days}", n / 12, month()),
+                n => format!("农历每 {n} 个月的{days}"),
+            }
+        }
         (1, Period::Week(Some(Weekdays::WORKDAYS))) => "每个工作日".to_owned(),
         (n, Period::Week(Some(days))) => {
             let names: Vec<&str> =

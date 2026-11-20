@@ -43,7 +43,7 @@ const sameDue = (a: Due | null, b: Due | null) =>
 
 /** `11月20日 18:00 · 提前 30 分钟 · 每周`, or `无`. */
 const dueText = (d: Due | null, now: Date) =>
-  d ? [formatDue(d, now), d.remind_before !== undefined && remindLabel(d.remind_before), d.repeat && repeatText(d.repeat, now)].filter(Boolean).join(" · ") : "无";
+  d ? [formatDue(d, now), d.remind_before !== undefined && remindLabel(d.remind_before), d.repeat && repeatText(d.repeat, d.date, now)].filter(Boolean).join(" · ") : "无";
 
 /** What `s` would still do: to tasks there and in the state it found them, and links not made yet. */
 function group(s: Suggestion, j: AiJob, board: Board, created: Map<TaskId, string>): Group | null {

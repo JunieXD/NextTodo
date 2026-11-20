@@ -9,9 +9,10 @@ import type { Repeat } from "../api/types/Repeat";
 import type { RepeatFrom } from "../api/types/RepeatFrom";
 import type { RepeatUnit } from "../api/types/RepeatUnit";
 import { MAX_REMIND, REMINDERS, REMIND_UNITS, type RemindUnit, day, formatDue, isoDate, parseTime, remindIn, remindLabel } from "../domain/dates";
+import { dayName, lunarDate, lunarLabel, lunarText } from "../domain/lunar";
 import { WORKDAYS, repeatLabel } from "../domain/repeat";
 import { useBack } from "../ui/back";
-import { Seg, Select, Stepper } from "../ui/controls";
+import { Seg, Select, Stepper, Switch } from "../ui/controls";
 import { Modal, RootContext, Tip } from "../ui/feedback";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
@@ -54,19 +55,23 @@ export function DueEditor({
   const was = due?.repeat;
   // One of the units, every one of them; a year, every 12 months; or every so many of a unit.
   const [kind, setKind] = useState<RepeatUnit | "year" | "custom" | "off">(
-    !was ? "off" : was.every === 1 ? was.unit : was.every === 12 && was.unit === "month" && !was.days ? "year" : "custom",
+    !was ? "off" : was.every === 1 ? was.unit : was.every === 12 && was.unit === "month" && (!was.days || was.lunar) ? "year" : "custom",
   );
   const [every, setEvery] = useState(was?.every ?? 2);
   const [unit, setUnit] = useState<RepeatUnit>(was?.unit ?? "day");
   const [from, setFrom] = useState<RepeatFrom>(was?.from ?? "due");
   // A weekly repeat's days of the week, or a monthly one's of the month; null for a plain one, on the
-  // due date's day whichever it is moved to.
+  // due date's day whichever it is moved to. One by the lunar calendar has them always, by default the
+  // due date's lunar day.
   const [days, setDays] = useState(was?.days ?? null);
+  const [lunar, setLunar] = useState(was?.lunar ?? false);
   // The last day it falls on, or none: on and on.
   const [until, setUntil] = useState(was?.until ?? null);
   const on = kind === "custom" ? unit : kind;
-  const shownDays = days ?? [on === "week" ? ((day(date).getDay() + 6) % 7) + 1 : day(date).getDate()];
-  const picked = (on === "week" || on === "month") && days ? days : undefined;
+  const monthly = on === "month" || on === "year";
+  const lunarDay = lunarDate(date);
+  const shownDays = days ?? [lunar ? (lunarDay?.day ?? 1) : on === "week" ? ((day(date).getDay() + 6) % 7) + 1 : day(date).getDate()];
+  const picked = lunar ? shownDays : (on === "week" || on === "month") && days ? days : undefined;
   const repeat: Repeat | null =
     kind === "off"
       ? null
@@ -74,12 +79,13 @@ export function DueEditor({
           ...(kind === "custom" ? { every, unit } : kind === "year" ? { every: 12, unit: "month" } : { every: 1, unit: kind }),
           from,
           ...(picked && { days: picked }),
+          ...(lunar && { lunar }),
           ...(until && { until }),
         };
   // Days picked are a menu item of their own, named by them as 每个工作日 is: picking any other item is
   // then a change, all the menu reports, and starts over without them.
-  const workdays = repeat?.every === 1 && repeat.days?.join() === WORKDAYS.join();
-  const named = repeat?.days && !workdays ? repeatLabel(repeat) : null;
+  const workdays = repeat?.every === 1 && repeat.unit === "week" && repeat.days?.join() === WORKDAYS.join();
+  const named = repeat?.days && !workdays ? repeatLabel(repeat, date) : null;
   const menu = workdays ? "workdays" : named ? "days" : kind;
   const remindBefore = remind === "custom" ? ahead[0] * REMIND_UNITS[ahead[1]].minutes : Number(remind);
   // Said once saving is tried, until it is put right.
@@ -87,8 +93,10 @@ export function DueEditor({
   const early = Boolean(startTime && time && date === start && time < startTime);
   // Moved past the last day it repeats on.
   const ended = Boolean(repeat?.until && repeat.until < date);
+  // By the lunar calendar, outside its table.
+  const unlisted = lunar && !lunarDay;
   const save = () => {
-    if (early || ended) return setTried(true);
+    if (early || ended || unlisted) return setTried(true);
     onSave({ date, ...(time && { time }), ...(time && remind !== "off" && { remind_before: remindBefore }), ...(repeat && { repeat }) });
     onClose();
   };
@@ -141,6 +149,7 @@ export function DueEditor({
             if (k === "days") return;
             setKind(k === "workdays" ? "week" : k);
             setDays(k === "workdays" ? WORKDAYS : null);
+            setLunar(false);
           }}
         />
         {kind === "custom" && (
@@ -154,6 +163,7 @@ export function DueEditor({
               onChange={(u) => {
                 setUnit(u);
                 setDays(null);
+                setLunar(false);
               }}
             />
           </Controls>
@@ -163,10 +173,27 @@ export function DueEditor({
             <Days label="周几" texts={[...WEEKDAYS]} name={(t) => `周${t}`} value={shownDays} onChange={setDays} />
           </Controls>
         )}
-        {on === "month" && (
+        {monthly && (
+          <Switch
+            label="按农历"
+            sub={lunarDay ? `截止日期是农历${lunarText(lunarDay)}` : "截止日期不在农历的范围里"}
+            on={lunar}
+            onChange={(to) => {
+              setLunar(to);
+              setDays(null);
+            }}
+          />
+        )}
+        {lunar ? (
           <Controls name="几号">
-            <Days label="几号" texts={MONTHDAYS} name={(t) => `${t} 号`} value={shownDays} onChange={setDays} />
+            <Days label="几号" lunar texts={LUNAR_DAYS} name={(t) => t} value={shownDays} onChange={setDays} />
           </Controls>
+        ) : (
+          on === "month" && (
+            <Controls name="几号">
+              <Days label="几号" texts={MONTHDAYS} name={(t) => `${t} 号`} value={shownDays} onChange={setDays} />
+            </Controls>
+          )
         )}
         {repeat && (
           <Controls name="下一次从">
@@ -184,9 +211,9 @@ export function DueEditor({
         )}
         {repeat && <UntilRow value={until} min={date} onChange={setUntil} />}
       </div>
-      {tried && (early || ended) && (
+      {tried && (early || ended || unlisted) && (
         <p className="form-error" role="alert">
-          {early ? "截止不能早于开始" : "重复到不能早于截止"}
+          {early ? "截止不能早于开始" : ended ? "重复到不能早于截止" : "按农历重复的截止日期应在 1900 年 1 月 31 日到 2101 年 1 月 28 日之间"}
         </p>
       )}
       <div className="actions">
@@ -330,6 +357,7 @@ function Calendar({
       <div className="cal-days" ref={days}>
         {weeks.map((d) => {
           const iso = isoDate(d);
+          const l = lunarDate(iso);
           return (
             <button
               key={iso}
@@ -339,11 +367,14 @@ function Calendar({
               aria-pressed={iso === value}
               aria-current={iso === today ? "date" : undefined}
               disabled={out(iso)}
-              aria-label={`${d.getMonth() + 1}月${d.getDate()}日`}
+              aria-label={`${d.getMonth() + 1}月${d.getDate()}日${l ? `，农历${lunarText(l)}` : ""}`}
               onClick={() => (pick(d), onPicked?.())}
               onKeyDown={(e) => move(e, d)}
             >
-              <span>{d.getDate()}</span>
+              <span>
+                {d.getDate()}
+                <small aria-hidden>{lunarLabel(iso)}</small>
+              </span>
             </button>
           );
         })}
@@ -500,6 +531,7 @@ function TimeInput({ onChange, onDone }: { onChange(time: string): void; onDone(
 }
 
 const MONTHDAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
+const LUNAR_DAYS = Array.from({ length: 30 }, (_, i) => dayName(i + 1));
 
 /** A row named on the left with controls for its value on the right, or under the name, to the right,
  * where the two don't fit side by side: a narrow screen, or large text. */
@@ -514,11 +546,11 @@ function Controls({ name, children }: { name: string; children: ReactNode }) {
   );
 }
 
-/** The days a repeat falls on, seven a line: Monday 1 to Sunday 7, or the 1st to the 31st. `texts`
- * are on the buttons, `name` says them in full. The last one picked stays. */
-function Days(p: { label: string; texts: string[]; name(text: string): string; value: number[]; onChange(days: number[]): void }) {
+/** The days a repeat falls on, seven a line: Monday 1 to Sunday 7, the 1st to the 31st, or 初一 to 三十
+ * of a `lunar` month. `texts` are on the buttons, `name` says them in full. The last one picked stays. */
+function Days(p: { label: string; lunar?: boolean; texts: string[]; name(text: string): string; value: number[]; onChange(days: number[]): void }) {
   return (
-    <span className="days" role="group" aria-label={p.label}>
+    <span className={p.lunar ? "days lunar" : "days"} role="group" aria-label={p.label}>
       {p.texts.map((text, i) => {
         const on = p.value.includes(i + 1);
         return (

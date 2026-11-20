@@ -218,12 +218,13 @@ fn with_references(was: &Description, new: Description) -> Result<Description, S
     Description::try_from(format!("{}{gap}{}", text.trim_end(), missing.join(" ")))
 }
 
-/// `1d`, `2w`, `3m`, `1w:1,3,5`, `1m:1,15`, as the tools take a repeat.
+/// `1d`, `2w`, `3m`, `1w:1,3,5`, `1m:1,15`, `12lm:15`, as the tools take a repeat.
 pub fn repeat_text(r: &Repeat) -> String {
     let (unit, days) = match r.period {
-        Period::Day => ('d', None),
-        Period::Week(days) => ('w', days.map(Vec::from)),
-        Period::Month(days) => ('m', days.map(Vec::from)),
+        Period::Day => ("d", None),
+        Period::Week(days) => ("w", days.map(Vec::from)),
+        Period::Month(days) => ("m", days.map(Vec::from)),
+        Period::LunarMonth(days) => ("lm", Some(Vec::from(days))),
     };
     let days = days.map(|d| format!(":{}", d.iter().map(u8::to_string).collect::<Vec<_>>().join(",")));
     format!("{}{unit}{}", r.every.get(), days.unwrap_or_default())

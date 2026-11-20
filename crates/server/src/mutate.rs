@@ -364,17 +364,17 @@ fn still_last<T: PartialEq>(before: &T, after: &T, later: Vec<(T, T)>) -> bool {
     counting == [0]
 }
 
-/// A repeating task is never done: done, it moves on (docs/design.md#重复); nor due after the last day it
-/// repeats on, which `Due` takes care of as given, and an undo may come to. It does not start after it
-/// is due, a due date without a time lasting all day (docs/design.md#开始时间).
+/// A repeating task is never done: done, it moves on (docs/design.md#重复); nor due where it can't repeat
+/// from, which `Due` takes care of as given, and an undo may come to. It does not start after it is due,
+/// a due date without a time lasting all day (docs/design.md#开始时间).
 fn check_task(t: &Task) -> Result<(), ApiError> {
     if t.done_at.is_some() && t.due.as_ref().is_some_and(|d| d.repeat.is_some()) {
         return Err(ApiError::invalid(format!("“{}”已完成，不能设置重复，请先重新打开", t.title.as_str()), Some("due".into())));
     }
     if let Some(d) = &t.due
-        && d.repeat.as_ref().and_then(|r| r.until.as_ref()).is_some_and(|until| *until < d.date)
+        && let Some(m) = d.repeat.as_ref().and_then(|r| r.misfit(&d.date))
     {
-        return Err(ApiError::invalid(format!("“{}”的重复到不能早于截止日期", t.title.as_str()), Some("due".into())));
+        return Err(ApiError::invalid(format!("“{}”的{m}", t.title.as_str()), Some("due".into())));
     }
     let Some(start) = &t.start else {
         return match t.start_time {

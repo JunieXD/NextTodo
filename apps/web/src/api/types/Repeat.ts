@@ -10,6 +10,10 @@ import type { RepeatUnit } from "./RepeatUnit";
 export type Repeat = { every: Every, unit: RepeatUnit, from: RepeatFrom, 
 /**
  * A weekly one's days of the week, Monday 1 to Sunday 7, or a monthly one's days of the month,
- * 1–31, when not just the due date's.
+ * 1–31, when not just the due date's; a lunar one's always, 1–30.
  */
-days?: Array<number>, until?: Date, };
+days?: Array<number>, 
+/**
+ * Whether a monthly one goes by the lunar calendar.
+ */
+lunar?: boolean, until?: Date, };

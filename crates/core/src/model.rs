@@ -371,13 +371,44 @@ pub struct Repeat {
     pub until: Option<Date>,
 }
 
+impl Repeat {
+    /// Why it can't repeat from the due date `date`, if it can't. An undo, setting back the date or
+    /// the repeat alone, may come to either.
+    pub fn misfit(&self, date: &Date) -> Option<Misfit> {
+        if self.until.as_ref().is_some_and(|until| until < date) {
+            return Some(Misfit::Late);
+        }
+        (matches!(self.period, Period::LunarMonth(_)) && date.lunar().is_none()).then_some(Misfit::OffTable)
+    }
+}
+
+/// Why a repeat can't go from a due date.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Misfit {
+    /// The date is after the day it repeats until.
+    Late,
+    /// It goes by the lunar calendar, and the date is outside its table.
+    OffTable,
+}
+
+impl std::fmt::Display for Misfit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Misfit::Late => "重复到不能早于截止日期",
+            Misfit::OffTable => "按农历重复的截止日期应在 1900-01-31 到 2101-01-28 之间",
+        })
+    }
+}
+
 /// What `every` counts: days; weeks, on some days of the week or the due date's; months, on some days
-/// of the month or the due date's. A year is 12 months.
+/// of the month or the due date's; lunar months, always on some days of them, the 1st to the 30th. A
+/// year is 12 months.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Period {
     Day,
     Week(Option<Weekdays>),
     Month(Option<Monthdays>),
+    LunarMonth(Monthdays),
 }
 
 impl Period {
@@ -385,7 +416,7 @@ impl Period {
         match self {
             Period::Day => RepeatUnit::Day,
             Period::Week(_) => RepeatUnit::Week,
-            Period::Month(_) => RepeatUnit::Month,
+            Period::Month(_) | Period::LunarMonth(_) => RepeatUnit::Month,
         }
     }
 }
@@ -399,10 +430,14 @@ pub struct RepeatFields {
     unit: RepeatUnit,
     from: RepeatFrom,
     /// A weekly one's days of the week, Monday 1 to Sunday 7, or a monthly one's days of the month,
-    /// 1–31, when not just the due date's.
+    /// 1–31, when not just the due date's; a lunar one's always, 1–30.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     days: Option<Vec<u8>>,
+    /// Whether a monthly one goes by the lunar calendar.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    lunar: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     until: Option<Date>,
@@ -412,11 +447,14 @@ impl TryFrom<RepeatFields> for Repeat {
     type Error = &'static str;
 
     fn try_from(f: RepeatFields) -> Result<Self, Self::Error> {
-        let period = match (f.unit, f.days) {
-            (RepeatUnit::Day, None) => Period::Day,
-            (RepeatUnit::Day, Some(_)) => return Err("按天重复不能选周几或几号"),
-            (RepeatUnit::Week, days) => Period::Week(days.map(Weekdays::try_from).transpose()?),
-            (RepeatUnit::Month, days) => Period::Month(days.map(Monthdays::try_from).transpose()?),
+        let period = match (f.unit, f.days, f.lunar) {
+            (RepeatUnit::Day, Some(_), _) => return Err("按天重复不能选周几或几号"),
+            (RepeatUnit::Day | RepeatUnit::Week, _, true) => return Err("只有按月重复能按农历"),
+            (RepeatUnit::Day, None, false) => Period::Day,
+            (RepeatUnit::Week, days, false) => Period::Week(days.map(Weekdays::try_from).transpose()?),
+            (RepeatUnit::Month, days, false) => Period::Month(days.map(Monthdays::try_from).transpose()?),
+            (RepeatUnit::Month, Some(days), true) => Period::LunarMonth(Monthdays::lunar(days)?),
+            (RepeatUnit::Month, None, true) => return Err("按农历重复要选几号（初一到三十）"),
         };
         Ok(Repeat { every: f.every, period, from: f.from, until: f.until })
     }
@@ -428,8 +466,10 @@ impl From<Repeat> for RepeatFields {
             Period::Day => None,
             Period::Week(days) => days.map(Vec::from),
             Period::Month(days) => days.map(Vec::from),
+            Period::LunarMonth(days) => Some(Vec::from(days)),
         };
-        RepeatFields { every: r.every, unit: r.period.unit(), from: r.from, days, until: r.until }
+        let lunar = matches!(r.period, Period::LunarMonth(_));
+        RepeatFields { every: r.every, unit: r.period.unit(), from: r.from, days, lunar, until: r.until }
     }
 }
 
@@ -518,6 +558,16 @@ impl Monthdays {
     /// Whether it has the day `d`, 1–31.
     pub fn has(self, d: u32) -> bool {
         self.0 & 1 << (d - 1) != 0
+    }
+}
+
+impl Monthdays {
+    /// The days of a lunar month: 1–30, 初一 to 三十.
+    pub fn lunar(days: Vec<u8>) -> Result<Self, &'static str> {
+        if days.iter().any(|&d| d > 30) {
+            return Err("农历的几号应为 1–30（初一到三十）");
+        }
+        Monthdays::try_from(days)
     }
 }
 
@@ -621,8 +671,8 @@ pub struct DueFields {
 impl Due {
     pub fn new(date: Date, time: Option<Time>, remind_before: Option<u32>, repeat: Option<Repeat>) -> Result<Due, String> {
         // Before the reminder, as editing says which is wrong (tools::write::edit_fields).
-        if repeat.as_ref().and_then(|r| r.until.as_ref()).is_some_and(|until| *until < date) {
-            return Err("重复到不能早于截止日期".into());
+        if let Some(m) = repeat.as_ref().and_then(|r| r.misfit(&date)) {
+            return Err(m.to_string());
         }
         if remind_before.is_some_and(|m| m > MAX_REMIND_BEFORE) {
             return Err("提醒最多提前 30 天".into());

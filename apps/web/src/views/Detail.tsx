@@ -207,7 +207,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
         <Prop
           icon={Calendar}
           label="截止"
-          value={t.due ? formatDue(t.due, now) + (t.due.repeat ? ` · ${repeatText(t.due.repeat, now)}` : "") : "未设置"}
+          value={t.due ? formatDue(t.due, now) + (t.due.repeat ? ` · ${repeatText(t.due.repeat, t.due.date, now)}` : "") : "未设置"}
           cls={t.due ? dueClass(t, now) : "muted"}
           onClick={() => setPanel("due")}
         />

@@ -22,6 +22,7 @@ import type { Snapshot } from "../api/types/Snapshot";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import { cmp } from "./board";
+import { lunarDate } from "./lunar";
 import { nextDue, shifted } from "./repeat";
 
 /** A user's data, keyed for changes. */
@@ -268,7 +269,7 @@ class Applier {
         if (op.start_time !== undefined) t.start_time = op.start_time ?? undefined;
         if (op.due !== undefined) {
           // As given, before doing it the last time could take the repeat away.
-          checkUntil(t.title, op.due);
+          checkRepeat(t.title, op.due);
           t.due = op.due;
         }
         if (op.sort_key !== undefined) t.sort_key = op.sort_key;
@@ -843,15 +844,17 @@ function restoreDue(cur: Due | null, before: Due | null, after: Due | null): Due
   };
 }
 
-/** A due date is not after the last day it repeats on. */
-function checkUntil(title: string, due: Due | null) {
+/** A due date it can repeat from: not after the last day it repeats on, and in the lunar calendar's
+ * table for a repeat by it. */
+function checkRepeat(title: string, due: Due | null) {
   if (due?.repeat?.until && due.repeat.until < due.date) throw new Rejected("invalid", `“${title}”的重复到不能早于截止日期`);
+  if (due?.repeat?.lunar && !lunarDate(due.date)) throw new Rejected("invalid", `“${title}”的按农历重复的截止日期应在 1900-01-31 到 2101-01-28 之间`);
 }
 
 /** What the server rejects too, so that a change it would refuse isn't applied here meanwhile. */
 function checkTask(t: Task) {
   if (t.done_at !== null && t.due?.repeat) throw new Rejected("invalid", `“${t.title}”已完成，不能设置重复，请先重新打开`);
-  checkUntil(t.title, t.due);
+  checkRepeat(t.title, t.due);
   if (!t.start) {
     if (t.start_time) throw new Rejected("invalid", "设置开始的几点需要先有开始日期");
     return;

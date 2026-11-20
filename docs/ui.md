@@ -38,6 +38,16 @@
 
 主题可选跟随系统、浅色、深色。切换时整页淡入淡出 0.3 秒（View Transitions），不让各元素的过渡各自播放。
 
+主题色可选 7 种：翡翠绿（默认，即上表）、草绿、青、蓝、靛蓝、紫、粉，名字和 HCT 色相同[文件夹的颜色](#文件夹的颜色和图标)（120、210、260、285、310、350）。
+
+- 每种由色相按 Material 3 的 Tonal Spot 配色生成整套颜色：主色调色板色度 36，次色 16，中性 6，中性变体 8。各角色取的色调和翡翠绿相同：
+  - 浅色：primary 40，primary-container 90 / on 10，inverse-primary 80；secondary-container 90 / on 10；surface 98，surface-low 96，surface-container 94，surface-high 92，surface-highest 90，on-surface 10，inverse-surface 20 / on 95；on-surface-variant 30，outline 50，outline-variant 和 rail 80。group、seg-on 是白色。
+  - 深色：primary 80 / on 20，primary-container 30 / on 90，inverse-primary 40；secondary-container 30 / on 90；surface 6，group 12，surface-low 10，surface-container 15.5，surface-high 19，surface-highest 24，seg-on 26.5，on-surface 90，inverse-surface 90 / on 20；on-surface-variant 80，outline 60，outline-variant 30，rail 40。
+  - 按下和悬停的底色、浅色下的阴影用各自的 on-surface 加透明度，深色下的阴影是黑色，和翡翠绿相同。
+- error、warn 不变。没有红、橙、琥珀、黄：主色表示“可做”，不能和逾期、今天到期混淆。
+- 在设置的“外观”里选，一排 7 个圆点，选中的带对勾，点了立即生效，和换主题一样整页淡入淡出。存在各自的设备上。
+- 小组件、通知、提醒弹窗这些由系统绘制的部分不跟着变，仍用翡翠绿。
+
 ## 字体和字号
 
 - 系统字体：`-apple-system, "SF Pro Text", "PingFang SC", "MiSans", "HarmonyOS Sans SC", "Noto Sans SC", Roboto, sans-serif`。
@@ -96,7 +106,7 @@ Android 的返回键（含侧滑返回）一次退一步：
 |---|---|---|
 | 账号（最上面的卡片：头像、显示名、用户名） | 显示名、修改密码、已登录的设备、退出登录 | |
 | 本机模式（本机模式下代替账号，见[本机模式](local.md#界面)） | 说明、借网盘同步、备份、恢复、改用服务器 | |
-| 外观 | 主题（跟随系统、浅色、深色）；保留最近完成的事项：0–20 项（默认 0），文件夹里最近完成的这几项划掉后留在原处（按依赖顺序，轨道照常连着），更早的才收进底部的“已完成”，“接下来”不受影响；Android 上还有小组件的文字大小（小、标准、大）；桌面 App 上还有主窗口和小窗各自的[界面大小](desktop.md#界面大小)。主题、保留几项和界面大小存在各自的设备上 | 主题 |
+| 外观 | 主题（跟随系统、浅色、深色）；[主题色](#颜色)；保留最近完成的事项：0–20 项（默认 0），文件夹里最近完成的这几项划掉后留在原处（按依赖顺序，轨道照常连着），更早的才收进底部的“已完成”，“接下来”不受影响；Android 上还有小组件的文字大小（小、标准、大）；桌面 App 上还有主窗口和小窗各自的[界面大小](desktop.md#界面大小)。主题、主题色、保留几项和界面大小存在各自的设备上 | 主题 |
 | 提醒和后台（App；iOS 上叫“提醒”） | Android：通知、准时提醒、[弹窗提醒](android.md#弹窗提醒)、自启动和省电、[写进系统日历](android.md#写进系统日历)；iOS：[通知](ios.md#设置)；桌面：登录时启动、[小窗快捷键](desktop.md#小窗快捷键) | |
 | AI 整理 | [模型配置](ai.md#模型配置) | 模型和保存位置 |
 | agent 接入 | 令牌；桌面 App 还有命令行 | |

@@ -18,9 +18,9 @@ import { NextTodo, type WidgetTextSize } from "../mobile";
 import * as local from "../local";
 import { newer, useServerVersions } from "../server-update";
 import { useSession } from "../session";
-import { type Theme, setTheme, useTheme } from "../theme";
+import { type Accent, type Theme, setAccent, setTheme, useAccent, useTheme } from "../theme";
 import { type Zoom, type Zoomed, setZoom, useZoom } from "../zoom";
-import { Seg, Stepper, Switch } from "../ui/controls";
+import { Seg, Stepper, Swatch, Switch } from "../ui/controls";
 import { Modal, Tip, forUser, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
 import { Icon } from "../ui/icons";
@@ -67,6 +67,16 @@ const THEMES: [Theme, string][] = [
   ["system", "跟随系统"],
   ["light", "浅色"],
   ["dark", "深色"],
+];
+
+const ACCENTS: [Accent, string][] = [
+  ["emerald", "翡翠绿"],
+  ["lime", "草绿"],
+  ["cyan", "青"],
+  ["blue", "蓝"],
+  ["indigo", "靛蓝"],
+  ["purple", "紫"],
+  ["pink", "粉"],
 ];
 
 /** The sections here, in the home page's groups. Agents reach no phone in local mode: its server
@@ -360,12 +370,19 @@ function Action({ label, value, onClick }: { label: string; value?: string; onCl
 
 function Appearance() {
   const theme = useTheme();
+  const accent = useAccent();
   const keepDone = useKeepDone();
   return (
     <>
       <h2 className="group-title">主题</h2>
       <div style={{ margin: "0 16px" }}>
         <Seg<Theme> label="主题" items={THEMES} value={theme} onChange={setTheme} />
+      </div>
+      <h2 className="group-title">主题色</h2>
+      <div className="color-choices accents">
+        {ACCENTS.map(([a, name]) => (
+          <Swatch key={a} label={name} tint={`accent-${a}`} chosen={a === accent} onChoose={() => setAccent(a)} />
+        ))}
       </div>
       <h2 className="group-title">已完成的事项</h2>
       <div className="group settings">

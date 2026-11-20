@@ -9,7 +9,6 @@ import {
   Calculator,
   Camera,
   Car,
-  Check,
   Code,
   Coffee,
   Dumbbell,
@@ -55,6 +54,7 @@ import type { FolderId } from "../api/types/FolderId";
 import type { Board } from "../domain/board";
 import { useCommit, useUndo } from "../session";
 import { Modal, useFeedback } from "../ui/feedback";
+import { Swatch } from "../ui/controls";
 import { Icon } from "../ui/icons";
 
 /** In the order the dialog lists them. */
@@ -174,9 +174,9 @@ export function FolderLookDialog({ board, folder: f, onClose }: { board: Board; 
     const r = commit([{ op: "folder.update", id: f.id, ...(color !== f.color && { color }), ...(icon !== f.icon && { icon }) }]);
     if (r) snack({ text: `已改“${f.name}”的颜色和图标`, action: "撤销", onAction: () => undo(r.id) });
   };
-  const choice = <T,>(value: T, chosen: T, set: (v: T) => void, label: string, face: React.ReactNode, className: string) => (
-    <button key={String(value)} type="button" className={className} aria-label={label} aria-pressed={value === chosen} title={label} onClick={() => set(value)}>
-      {face}
+  const iconChoice = (value: FolderIcon | null, label: string, face: LucideIcon) => (
+    <button key={String(value)} type="button" className="look-icon" aria-label={label} aria-pressed={value === icon} title={label} onClick={() => setIcon(value)}>
+      <Icon of={face} />
     </button>
   );
   return (
@@ -201,16 +201,16 @@ export function FolderLookDialog({ board, folder: f, onClose }: { board: Board; 
         <span className="truncate">{f.name}</span>
       </div>
       <h2 className="look-title">颜色</h2>
-      <div className="look-colors">
-        {choice(null, color, setColor, "默认", <span className="swatch none">{color === null && <Icon of={Check} size={16} />}</span>, "look-color")}
-        {COLORS.map(([key, name]) =>
-          choice(key, color, setColor, name, <span className={`swatch fc-${key}`}>{color === key && <Icon of={Check} size={16} />}</span>, "look-color"),
-        )}
+      <div className="color-choices">
+        <Swatch label="默认" chosen={color === null} onChoose={() => setColor(null)} />
+        {COLORS.map(([key, name]) => (
+          <Swatch key={key} label={name} tint={`fc-${key}`} chosen={color === key} onChoose={() => setColor(key)} />
+        ))}
       </div>
       <h2 className="look-title">图标</h2>
       <div className="look-icons">
-        {choice(null, icon, setIcon, "默认", <Icon of={shared ? FolderUsers : FolderDefault} />, "look-icon")}
-        {ICONS.map(([key, I, name]) => choice(key, icon, setIcon, name, <Icon of={I} />, "look-icon"))}
+        {iconChoice(null, "默认", shared ? FolderUsers : FolderDefault)}
+        {ICONS.map(([key, face, name]) => iconChoice(key, name, face))}
       </div>
     </Modal>
   );

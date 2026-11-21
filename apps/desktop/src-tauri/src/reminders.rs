@@ -1,5 +1,5 @@
-//! Deadline reminders while the app runs. The web app hands over the ones to come whenever they
-//! change (`apps/web/src/desktop.ts`); a thread waits for the earliest and shows it.
+//! Deadline reminders, and the daily digests, while the app runs. The web app hands over the ones to
+//! come whenever they change (`apps/web/src/desktop.ts`); a thread waits for the earliest and shows it.
 
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -18,8 +18,8 @@ pub struct Reminder {
     body: String,
     /// When to show it, in Unix milliseconds.
     at: i64,
-    /// The task, which a click on the reminder opens.
-    task: String,
+    /// The task, which a click on the reminder opens; none for a daily digest, which opens 接下来.
+    task: Option<String>,
 }
 
 #[derive(Default)]
@@ -78,7 +78,9 @@ pub fn start(app: AppHandle) {
             let (due, rest): (Vec<_>, Vec<_>) = queue.list.drain(..).partition(|r| r.at <= now);
             queue.list = rest;
             queue.looked = now;
-            for r in due {
+            // Of the daily digests come due while the computer slept, the last: the others are of days gone.
+            let digest = due.iter().filter(|r| r.task.is_none()).map(|r| r.at).max();
+            for r in due.into_iter().filter(|r| r.task.is_some() || Some(r.at) == digest) {
                 if let Err(e) =
                     app.notification().builder().title(&r.title).body(&r.body).action_type_id(KIND).extra("task", &r.task).show()
                 {
@@ -97,11 +99,11 @@ mod tests {
     use super::*;
 
     fn reminder(task: &str, at: i64) -> Reminder {
-        Reminder { title: task.into(), body: String::new(), at, task: task.into() }
+        Reminder { title: task.into(), body: String::new(), at, task: Some(task.into()) }
     }
 
     fn tasks(list: Vec<Reminder>) -> Vec<String> {
-        list.into_iter().map(|r| r.task).collect()
+        list.into_iter().filter_map(|r| r.task).collect()
     }
 
     #[test]

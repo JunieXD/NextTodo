@@ -17,6 +17,9 @@ object Channels {
     /** Reminders shown on the reminder card as well: a sound, no banner (docs/android.md#弹窗提醒). */
     const val DUE_QUIET = "due-quiet"
 
+    /** The daily digest: a banner, as reminders (docs/android.md#截止提醒). */
+    const val DIGEST = "digest"
+
     /** Changes made natively that the server turned down later (docs/android.md#原生发出的改动). */
     const val REFUSED = "refused"
 
@@ -27,6 +30,7 @@ object Channels {
             listOf(
                 NotificationChannel(DUE, "截止提醒", NotificationManager.IMPORTANCE_HIGH),
                 NotificationChannel(DUE_QUIET, "截止提醒（弹窗时）", NotificationManager.IMPORTANCE_DEFAULT),
+                NotificationChannel(DIGEST, "每日汇总", NotificationManager.IMPORTANCE_HIGH),
                 NotificationChannel(REFUSED, "未生效的改动", NotificationManager.IMPORTANCE_DEFAULT),
             ),
         )

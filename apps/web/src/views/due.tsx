@@ -132,7 +132,7 @@ export function DueEditor({
     <Modal title="截止时间" onClose={onClose}>
       <Calendar value={date} min={start ?? undefined} onChange={setDate} />
       <div className="group settings">
-        <TimeRow value={time} extra={due?.time} onChange={setTime} />
+        <TimeRow value={time} extra={due?.time} onChange={setTime} optional />
         <MultiSelect
           label="提醒"
           text={remindersLabel(reminders)}
@@ -325,7 +325,7 @@ export function StartEditor({
     <Modal title="开始时间" onClose={onClose}>
       <Calendar value={date} max={due?.date} onChange={setDate} />
       <div className="group settings">
-        <TimeRow value={time} extra={was} onChange={setTime} />
+        <TimeRow value={time} extra={was} onChange={setTime} optional />
       </div>
       {tried && late && (
         <p className="form-error" role="alert">
@@ -440,10 +440,22 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const HOURS = Array.from({ length: 24 }, (_, h) => h);
 const FIVES = Array.from({ length: 12 }, (_, i) => i * 5);
 
-/** The time of day, `HH:MM`, or none: typed, or the hour, then the minute, every 5, from two columns.
- * The minutes of `extra`, the time it was, and of the time now are there to pick too. Named `label`
- * otherwise than 时间, it can't be none. */
-function TimeRow({ label = "时间", value, extra, onChange }: { label?: string; value: string; extra?: string; onChange(time: string): void }) {
+/** The time of day, `HH:MM`: typed, or the hour, then the minute, every 5, from two columns. The
+ * minutes of `extra`, the time it was, and of the time now are there to pick too. `optional`, it can
+ * be none, "". */
+export function TimeRow({
+  label = "时间",
+  value,
+  extra,
+  optional = false,
+  onChange,
+}: {
+  label?: string;
+  value: string;
+  extra?: string;
+  optional?: boolean;
+  onChange(time: string): void;
+}) {
   const root = useContext(RootContext);
   const [open, setOpen] = useState(false);
   useBack("dialog", open ? () => setOpen(false) : null);
@@ -508,7 +520,7 @@ function TimeRow({ label = "时间", value, extra, onChange }: { label?: string;
               ))}
             </div>
           </div>
-          {label === "时间" && (
+          {optional && (
             <button className="menu-item" onClick={() => (onChange(""), setOpen(false))}>
               不设时间
             </button>

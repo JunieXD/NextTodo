@@ -11,12 +11,16 @@ enum Reminders {
     /// The reminders put off on this phone, by task, as JSON `{task: {at, until}}`: one a task, which the
     /// next of its reminders to come takes the place of.
     private static let SNOOZED = "reminders.snoozed"
+    /// The daily digests last handed over, less the tasks done here since, as JSON.
+    private static let DIGESTS = "reminders.digests"
     /// The most the system keeps scheduled for an app.
     private static let MOST = 64
 
     /// Categories of a reminder: of a task that can be marked done when it shows, or one that cannot.
     static let DONE = "remind"
     static let WAITING = "remind-waiting"
+    /// Of a daily digest, which has no actions: tapping it opens 接下来.
+    private static let DIGEST = "digest"
 
     /// How long a reminder can be put off by: the presets of Android's.
     static let SNOOZES = [(15, "15 分钟后提醒"), (60, "1 小时后提醒"), (180, "3 小时后提醒")]
@@ -33,6 +37,24 @@ enum Reminders {
         let waiting: Int
         let start: String?
         let start_time: String?
+    }
+
+    /// The daily digests as `apps/web/src/mobile.ts` gives them, and whether they hide what they are of.
+    private struct Digests: Codable {
+        var hide: Bool
+        var list: [Digest]
+    }
+
+    /// A daily digest: at `at`, in ms, of `tasks`, each with when its time is due, as a reminder has it.
+    private struct Digest: Codable {
+        struct Left: Codable {
+            let task: String
+            let due: Int64
+            let title: String
+        }
+
+        let at: Int64
+        var tasks: [Left]
     }
 
     /// Put off: until when, the reminder at `at`.
@@ -55,16 +77,18 @@ enum Reminders {
         ])
     }
 
-    /// Takes `json`, the reminders as the page reckons them, past ones too. The first time there are
-    /// some, asks for notifications.
-    static func set(_ json: String) throws {
+    /// Takes `json`, the reminders as the page reckons them, past ones too, and `digest`, the daily
+    /// digests. The first time there are some, asks for notifications.
+    static func set(_ json: String, digest: String) throws {
         dispatchPrecondition(condition: .onQueue(queue))
         let list = try JSONDecoder().decode([Reminder].self, from: Data(json.utf8))
-        if !list.isEmpty, settings().authorizationStatus == .notDetermined {
+        let digests = try JSONDecoder().decode(Digests.self, from: Data(digest.utf8))
+        if !list.isEmpty || !digests.list.isEmpty, settings().authorizationStatus == .notDetermined {
             _ = wait { done in center.requestAuthorization(options: [.alert, .sound, .badge]) { allowed, _ in done(allowed) } }
         }
         stored = list
-        schedule(list)
+        storedDigests = digests
+        schedule()
         // Shown already: those no longer in the list go, and those that say otherwise than they would
         // now, the content hidden since say, or are of a deadline moved since. The system can't change
         // one shown.
@@ -75,6 +99,22 @@ enum Reminders {
             return wanted[n.request.identifier].map { $0.title != c.title || $0.body != c.body || $0.due != due(of: c) } ?? true
         }
         center.removeDeliveredNotifications(withIdentifiers: stale.map(\.request.identifier))
+        // Hidden since one was shown, a digest may list titles still.
+        if digests.hide {
+            let listing = delivered(DIGEST).filter { !$0.request.content.body.isEmpty }
+            center.removeDeliveredNotifications(withIdentifiers: listing.map(\.request.identifier))
+        }
+    }
+
+    /// The digests last handed over, less the tasks done here since.
+    private static var storedDigests: Digests {
+        get { UserDefaults.standard.data(forKey: DIGESTS).map { try! JSONDecoder().decode(Digests.self, from: $0) } ?? Digests(hide: false, list: []) }
+        set { UserDefaults.standard.set(try! JSONEncoder().encode(newValue), forKey: DIGESTS) }
+    }
+
+    /// Those shown of category `category`.
+    private static func delivered(_ category: String) -> [UNNotification] {
+        wait { center.getDeliveredNotifications(completionHandler: $0) }.filter { $0.request.content.categoryIdentifier == category }
     }
 
     /// Whether `task`'s time due at `due` is still to be done: neither done since from one of its
@@ -90,36 +130,52 @@ enum Reminders {
         set { UserDefaults.standard.set(String(decoding: try! JSONEncoder().encode(newValue), as: UTF8.self), forKey: LIST) }
     }
 
-    /// Has the system show `list`'s reminders to come, the nearest `MOST`; one put off, when it was put
-    /// off to. That holds while the reminder is there at the same time, and until another of its task's
-    /// comes first, as on Android: put off past the next, it would come twice.
-    private static func schedule(_ list: [Reminder]) {
+    /// Has the system show the stored reminders and daily digests to come, the nearest `MOST`; a
+    /// reminder put off, when it was put off to. That holds while the reminder is there at the same
+    /// time, and until another of its task's comes first, as on Android: put off past the next, it would
+    /// come twice.
+    private static func schedule() {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let list = stored
         let put = snoozed.filter { task, s in
             list.contains { $0.task == task && $0.at == s.at } && !list.contains { $0.task == task && $0.at > now && $0.at <= s.until }
         }
         snoozed = put
         center.removeAllPendingNotificationRequests()
-        let due = list.map { r in (r, put[r.task].flatMap { $0.at == r.at ? $0.until : nil } ?? r.at) }.filter { $0.1 > now }.sorted { $0.1 < $1.1 }
-        for (reminder, at) in due.prefix(MOST) { center.add(request(reminder, at: at, now: now)) }
+        let digests = storedDigests
+        // A request only for what is to come: the system refuses a time past.
+        let reminders = list.map { r in
+            let at = put[r.task].flatMap { $0.at == r.at ? $0.until : nil } ?? r.at
+            return (at, { request(r, at: at, now: now) })
+        }
+        let due: [(Int64, () -> UNNotificationRequest)] = reminders + digests.list.map { d in (d.at, { request(d, hide: digests.hide, now: now) }) }
+        for (_, request) in due.filter({ $0.0 > now }).sorted(by: { $0.0 < $1.0 }).prefix(MOST) { center.add(request()) }
     }
 
-    /// Takes away every reminder, those shown already too.
+    /// Takes away every reminder and daily digest, those shown already too.
     static func clear() {
         dispatchPrecondition(condition: .onQueue(queue))
         UserDefaults.standard.removeObject(forKey: LIST)
+        UserDefaults.standard.removeObject(forKey: DIGESTS)
         UserDefaults.standard.removeObject(forKey: SNOOZED)
         center.removeAllPendingNotificationRequests()
-        center.removeDeliveredNotifications(withIdentifiers: wait { center.getDeliveredNotifications(completionHandler: $0) }.filter { isReminder($0.request.content) }.map(\.request.identifier))
+        let shown = wait { center.getDeliveredNotifications(completionHandler: $0) }.filter { isReminder($0.request.content) || $0.request.content.categoryIdentifier == DIGEST }
+        center.removeDeliveredNotifications(withIdentifiers: shown.map(\.request.identifier))
     }
 
     /// `task` was marked done, its time due at `due`: shown or put off, those reminders go. A repeating
     /// task's next time's, which the page may have handed over by the time the server answered, stay.
     static func completed(task: String, due: Int64) {
         dispatchPrecondition(condition: .onQueue(queue))
-        let list = stored.filter { $0.task != task || $0.due != due }
-        stored = list
-        schedule(list)
+        stored = stored.filter { $0.task != task || $0.due != due }
+        var digests = storedDigests
+        digests.list = digests.list.map { d in
+            var d = d
+            d.tasks.removeAll { $0.task == task && $0.due == due }
+            return d
+        }.filter { !$0.tasks.isEmpty }
+        storedDigests = digests
+        schedule()
         let shown = wait { center.getDeliveredNotifications(completionHandler: $0) }
             .filter { isReminder($0.request.content) && Reminders.task(of: $0.request.content) == task && Reminders.due(of: $0.request.content) == due }
         center.removeDeliveredNotifications(withIdentifiers: shown.map(\.request.identifier))
@@ -130,7 +186,7 @@ enum Reminders {
     static func snooze(content: UNNotificationContent, minutes: Int) {
         dispatchPrecondition(condition: .onQueue(queue))
         snoozed[task(of: content)] = Snooze(at: at(of: content), until: Int64(Date().timeIntervalSince1970 * 1000) + Int64(minutes) * 60_000)
-        schedule(stored)
+        schedule()
     }
 
     /// Says a change made here was turned down: which, and why. Tapping it opens the app.
@@ -163,6 +219,17 @@ enum Reminders {
         content.userInfo = ["task": r.task, "at": r.at, "due": r.due]
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: Double(at - now) / 1000, repeats: false)
         return UNNotificationRequest(identifier: id(task: r.task, at: r.at), content: content, trigger: trigger)
+    }
+
+    /// `d`, as `digestText` in apps/web/src/domain/reminders.ts says it; `hide`, without the titles.
+    private static func request(_ d: Digest, hide: Bool, now: Int64) -> UNNotificationRequest {
+        let content = UNMutableNotificationContent()
+        content.title = "今天还有 \(d.tasks.count) 项没做完"
+        content.body = hide ? "" : d.tasks.map(\.title).joined(separator: "、")
+        content.sound = .default
+        content.categoryIdentifier = DIGEST
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: Double(d.at - now) / 1000, repeats: false)
+        return UNNotificationRequest(identifier: "\(DIGEST) \(d.at)", content: content, trigger: trigger)
     }
 
     /// A reminder's notification: one for each of a task's reminders, which the system can't have take

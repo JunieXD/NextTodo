@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import type { Task } from "../api/types/Task";
 import { Board } from "./board";
-import { reminders } from "./reminders";
+import { digestText, digests, reminders } from "./reminders";
 
 /** The user whose data it is. */
 const ME = "019a4b2c-0000-7000-8000-0000000000ee";
@@ -78,4 +78,33 @@ test("reminders come at the times set, for the user's pending tasks, earliest fi
   expect(new Set(reminders(board, false).filter((r) => r.task.number === 1).map((r) => r.due.getTime())).size).toBe(1);
   // Hidden, they say only that something is due.
   expect(new Set(reminders(board, true).map((r) => `${r.title}|${r.body}`))).toEqual(new Set(["有事项到期|"]));
+});
+
+test("a daily digest each day from yesterday to a week on lists the open tasks due by then, earliest first, unless there are none", () => {
+  const board = (tasks: Task[]) =>
+    new Board({ folders: [], tasks, dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] }, { today: "2026-11-03" }, ME);
+  const tasks = [
+    task(1, { title: "交房租", due: { date: "2026-11-03", time: "18:00" } }),
+    task(2, { title: "还花呗", due: { date: "2026-11-01" } }), // overdue
+    task(3, { title: "写周报", due: { date: "2026-11-05" } }),
+    task(4, { title: "做完了", due: { date: "2026-11-02" }, done_at: 1 }),
+    task(5, { title: "没截止" }),
+  ];
+  const said = digests(board(tasks), "23:30").map((d) => [d.at.getDate(), d.at.getHours(), d.at.getMinutes(), digestText(d.tasks.map((t) => t.title), false)]);
+  const left = (titles: string[]) => ({ title: `今天还有 ${titles.length} 项没做完`, body: titles.join("、") });
+  expect(said).toEqual([
+    [2, 23, 30, left(["还花呗"])],
+    [3, 23, 30, left(["还花呗", "交房租"])],
+    [4, 23, 30, left(["还花呗", "交房租"])],
+    ...[5, 6, 7, 8, 9].map((date) => [date, 23, 30, left(["还花呗", "交房租", "写周报"])]),
+  ]);
+  // Each task with when its time is due, as its reminders have it.
+  expect(digests(board(tasks), "23:30")[1].tasks.map((t) => [t.task, t.due.getDate(), t.due.getHours()])).toEqual([
+    [tasks[1].id, 2, 0],
+    [tasks[0].id, 3, 18],
+  ]);
+  // Hidden, only how many.
+  expect(digestText(["还花呗", "交房租"], true)).toEqual({ title: "今天还有 2 项没做完", body: "" });
+  // Nothing due until the 5th: no digest before.
+  expect(digests(board([tasks[2], tasks[3], tasks[4]]), "21:00").map((d) => d.at.getDate())).toEqual([5, 6, 7, 8, 9]);
 });

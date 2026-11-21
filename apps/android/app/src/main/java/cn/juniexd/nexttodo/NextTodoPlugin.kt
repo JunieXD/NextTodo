@@ -35,6 +35,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 /** One APK download at a time, whichever activity asked for it: each one has a plugin of its own. */
 private val installing = AtomicBoolean(false)
@@ -75,9 +76,10 @@ class NextTodoPlugin : Plugin() {
     @PluginMethod
     fun setReminders(call: PluginCall) {
         val reminders = call.getString("reminders")!!
-        val card = Reminders.update(context, reminders)
+        val digest = call.getString("digest")!!
+        val card = Reminders.update(context, reminders, digest)
         Handler(Looper.getMainLooper()).post { Card.show(context, card) }
-        if (reminders != "[]" && mayAsk() && Reminders.ask(context)) requestPermissionForAlias("notifications", call, "asked") else call.resolve()
+        if ((reminders != "[]" || JSONObject(digest).getJSONArray("list").length() > 0) && mayAsk() && Reminders.ask(context)) requestPermissionForAlias("notifications", call, "asked") else call.resolve()
     }
 
     @PermissionCallback

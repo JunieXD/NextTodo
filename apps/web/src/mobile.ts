@@ -12,8 +12,8 @@ import type { Mutation } from "./api/types/Mutation";
 import type { Task } from "./api/types/Task";
 import { type Board, nowOf } from "./domain/board";
 import { agenda } from "./domain/calendar";
-import { reminders } from "./domain/reminders";
-import { hideReminders, onRemindSettings } from "./remind-settings";
+import { digests, reminders } from "./domain/reminders";
+import { type Digest, dailyDigest, hideReminders, onRemindSettings } from "./remind-settings";
 import type { Started } from "./local";
 import type { Store } from "./sync/store";
 import { back } from "./ui/back";
@@ -44,9 +44,9 @@ export interface ReminderSettings {
 /** The app's own plugin, in `apps/android` and `apps/ios`; iOS has what it needs only
  * (docs/ios.md#结构). */
 interface NextTodoPlugin {
-  /** Hands the device the reminders, as JSON in the shape `deviceReminders` gives; the first time
-   * there are some, asks for notifications. */
-  setReminders(o: { reminders: string }): Promise<void>;
+  /** Hands the device the reminders and the daily digests, as JSON in the shapes `deviceReminders`
+   * and `deviceDigests` give; the first time there are some, asks for notifications. */
+  setReminders(o: { reminders: string; digest: string }): Promise<void>;
   /** Takes every reminder away, those put off and those shown too. */
   clearReminders(): Promise<void>;
   reminderSettings(): Promise<ReminderSettings>;
@@ -217,6 +217,13 @@ export const deviceReminders = (board: Board, hide: boolean, now = Date.now()) =
     start_time: r.task.start_time,
   }));
 
+/** The daily digests the device shows (docs/android.md#截止提醒), none while off, and whether they
+ * hide what they are of: the device says them, as `digestText` does, of what is left by then. */
+export const deviceDigests = (board: Board, { on, time }: Digest, hide: boolean) => ({
+  hide,
+  list: on ? digests(board, time).map((d) => ({ at: d.at.getTime(), tasks: d.tasks.map((t) => ({ ...t, due: t.due.getTime() })) })) : [],
+});
+
 /** What the system calendar shows when it is written to: the open tasks with a deadline in `folders`
  * (the root is all of them), and where each is. */
 export const calendarEvents = (board: Board, folders: (FolderId | null)[]) =>
@@ -270,7 +277,8 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
       await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board, listed)), seq, nextStart, folders });
       await NextTodo.updateAgenda({ agenda: JSON.stringify(widgetAgenda(board, listed)), seq });
     }
-    await NextTodo.setReminders({ reminders: JSON.stringify(deviceReminders(board, hideReminders())) });
+    const hide = hideReminders();
+    await NextTodo.setReminders({ reminders: JSON.stringify(deviceReminders(board, hide)), digest: JSON.stringify(deviceDigests(board, dailyDigest(), hide)) });
   };
   const calendar = () => NextTodo.updateCalendar({ events: JSON.stringify(calendarEvents(store.getView().board, calendarFolders(user))) });
   const takeOver = async () => {

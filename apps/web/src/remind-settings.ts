@@ -1,5 +1,6 @@
 // What this device does about reminders (docs/design.md#提醒): those a task gets as it is given a due
-// date, and whether reminders hide what they are of. Each device keeps its own, as it does the theme.
+// date, whether reminders hide what they are of, and the daily digest. Each device keeps its own, as it
+// does the theme.
 
 import { useSyncExternalStore } from "react";
 import type { RemindBefore } from "./api/types/RemindBefore";
@@ -45,5 +46,24 @@ export function setHideReminders(on: boolean) {
   changed();
 }
 
+/** The daily digest: whether on, and at what time of the day. */
+export interface Digest {
+  on: boolean;
+  time: string;
+}
+
+const DIGEST = "nexttodo.digest";
+
+let digest: Digest | undefined;
+
+export const dailyDigest = (): Digest => (digest ??= JSON.parse(localStorage.getItem(DIGEST) ?? '{"on":false,"time":"21:00"}'));
+
+export function setDailyDigest(d: Digest) {
+  localStorage.setItem(DIGEST, JSON.stringify(d));
+  digest = d;
+  changed();
+}
+
 export const useDefaultReminders = () => useSyncExternalStore(onRemindSettings, defaultReminders);
 export const useHideReminders = () => useSyncExternalStore(onRemindSettings, hideReminders);
+export const useDailyDigest = () => useSyncExternalStore(onRemindSettings, dailyDigest);

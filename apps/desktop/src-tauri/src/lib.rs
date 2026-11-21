@@ -150,7 +150,7 @@ pub fn run() {
             window(app.handle())?;
             panel::build(app.handle())?;
             tray(app.handle())?;
-            // A click on a reminder, or on its button, opens its task.
+            // A click on a reminder, or on its button, opens its task; on a daily digest, 接下来.
             let open = Action::builder(reminders::OPEN, "打开").build();
             app.notification().register_action_types(vec![ActionType::builder(reminders::KIND).actions(vec![open]).build()])?;
             let handle = app.handle().clone();
@@ -158,9 +158,8 @@ pub fn run() {
                 if !matches!(action.action_id(), "tap" | reminders::OPEN) {
                     return;
                 }
-                if let Some(task) = action.notification().and_then(|n| n.extra().get("task")).and_then(|t| t.as_str()) {
-                    open_main(handle.clone(), format!("/?open={task}"));
-                }
+                let task = action.notification().and_then(|n| n.extra().get("task")).and_then(|t| t.as_str());
+                open_main(handle.clone(), task.map_or_else(|| "/".into(), |task| format!("/?open={task}")));
             })?;
             // One that can't be read does nothing, and the settings tell.
             let _ = shortcut::register(app.handle());

@@ -104,6 +104,13 @@ object Reminders {
      * before, in the notification and on the card. */
     private const val SHOWN = "shown"
 
+    /** The daily digests handed over, as JSON `{hide, list: [{at, tasks: [{task, due, title}]}]}`, less
+     * the tasks done here since (docs/android.md#截止提醒). */
+    private const val DIGEST = "digest"
+
+    /** The daily digest's notification: one at a time, the next day's in place of the one before. */
+    private const val DIGEST_TAG = "digest"
+
     /** Whether the app has asked for notifications, which it does once. */
     private const val ASKED = "asked"
 
@@ -115,6 +122,29 @@ object Reminders {
 
     /** And whether it has “完成”. */
     private const val READY = "nexttodo.ready"
+
+    /** A daily digest: at `at`, of `tasks`, each with when its time is due, as a reminder has it. */
+    private class Digest(val at: Long, val tasks: List<Left>)
+
+    private class Left(val task: String, val due: Long, val title: String)
+
+    private fun digest(context: Context) = JSONObject(prefs(context).getString(DIGEST, null) ?: """{"hide":false,"list":[]}""")
+
+    private fun digests(context: Context): List<Digest> {
+        val list = digest(context).getJSONArray("list")
+        return (0 until list.length()).map { i ->
+            val d = list.getJSONObject(i)
+            val tasks = d.getJSONArray("tasks")
+            Digest(d.getLong("at"), (0 until tasks.length()).map { tasks.getJSONObject(it).run { Left(getString("task"), getLong("due"), getString("title")) } })
+        }
+    }
+
+    private fun keepDigests(context: Context, list: List<Digest>) {
+        val json = list.map { d ->
+            JSONObject().put("at", d.at).put("tasks", JSONArray(d.tasks.map { JSONObject().put("task", it.task).put("due", it.due).put("title", it.title) }))
+        }
+        prefs(context).edit().putString(DIGEST, digest(context).put("list", JSONArray(json)).toString()).commit()
+    }
 
     fun list(context: Context): List<Reminder> {
         val list = JSONArray(prefs(context).getString(LIST, "[]"))
@@ -134,8 +164,10 @@ object Reminders {
     fun notified(context: Context, task: String) = context.getSystemService(NotificationManager::class.java).activeNotifications
         .find { it.notification.extras.getString(TASK) == task }?.notification?.extras?.getLong(AT)
 
-    /** When the time `task`'s reminders are of is due, to know them by once it is done. */
-    fun due(context: Context, task: String) = list(context).find { it.task == task }?.due
+    /** When the time `task`'s reminders, and the daily digests listing it, are of is due, to know them by
+     * once it is done. */
+    fun due(context: Context, task: String) =
+        list(context).find { it.task == task }?.due ?: digests(context).firstNotNullOfOrNull { d -> d.tasks.find { it.task == task }?.due }
 
     private fun snoozed(context: Context) = JSONObject(prefs(context).getString(SNOOZED, "{}"))
 
@@ -157,14 +189,22 @@ object Reminders {
 
     private fun JSONObject.entries() = keys().asSequence().toList().map { it to getJSONObject(it) }
 
-    /** Keeps `list` from now on, as JSON, and shows what came due of what was scheduled already: the
-     * alarm may have come late, or been held back. One just set in the app, already past, is not
-     * shown. Returns the reminders for the card, as `show` does. */
+    /** Keeps `list` and `digest` from now on, as JSON, and shows what came due of what was scheduled
+     * already: the alarm may have come late, or been held back. One just set in the app, already past,
+     * is not shown. Returns the reminders for the card, as `show` does. */
     @Synchronized
-    fun update(context: Context, list: String): List<Reminder> {
+    fun update(context: Context, list: String, digest: String): List<Reminder> {
         val scheduled = times(context).map { (r, at) -> r.task to at }.toSet()
+        val digested = digests(context).map { it.at }.toSet()
+        prefs(context).edit().putString(DIGEST, digest).commit()
+        // Hidden since one was shown: it may list titles still.
+        if (JSONObject(digest).getBoolean("hide")) {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            val shown = manager.activeNotifications.find { it.tag == DIGEST_TAG }
+            if (!shown?.notification?.extras?.getCharSequence(Notification.EXTRA_TEXT).isNullOrEmpty()) manager.cancel(DIGEST_TAG, 0)
+        }
         keep(context, list)
-        return show(context) { r, at -> (r.task to at) in scheduled }
+        return show(context, { r, at -> (r.task to at) in scheduled }, { it.at in digested })
     }
 
     /** Keeps `list`, as JSON. A reminder put off stays so while its time is the same. Notifications
@@ -204,15 +244,22 @@ object Reminders {
         schedule(context)
     }
 
+    /** Shows everything that came due since the last time: the alarm went off, the phone started, or the
+     * app was updated. */
+    fun show(context: Context) = show(context, { _, _ -> true }, { true })
+
     /** Shows the reminders that came due since the last time, those put off too, of those `which` picks,
-     * and sets the alarm for the next. Returns those to show on the reminder card as well, when it is to
-     * be: with those that came due while the phone was locked, should it have been unlocked unheard. */
+     * and the daily digest of those `digested` picks; sets the alarm for the next. Returns the reminders
+     * to show on the reminder card as well, when it is to be: with those that came due while the phone
+     * was locked, should it have been unlocked unheard. */
     @Synchronized
-    fun show(context: Context, which: (Reminder, at: Long) -> Boolean = { _, _ -> true }): List<Reminder> {
+    private fun show(context: Context, which: (Reminder, at: Long) -> Boolean, digested: (Digest) -> Boolean): List<Reminder> {
         val now = System.currentTimeMillis()
         val mark = mark(context, now)
         val snoozed = snoozed(context)
         val due = times(context).filter { (r, at) -> at in (mark + 1)..now && which(r, at) }.map { it.first }
+        // Of several days', as after days switched off, the last.
+        val digest = digests(context).filter { it.at in (mark + 1)..now && digested(it) }.maxByOrNull { it.at }
         val shown = shown(context)
         for (r in due) {
             snoozed.remove(r.task)
@@ -223,6 +270,7 @@ object Reminders {
         val card = card(context)
         val present = present(context)
         for (r in due) post(context, r, quiet = card && present, again = false)
+        digest?.let { post(context, it, digest(context).getBoolean("hide")) }
         if (!card) return emptyList()
         if (present) return unlocked(context) + due
         val locked = locked(context)
@@ -255,10 +303,12 @@ object Reminders {
         schedule(context)
     }
 
-    /** `task` is done, its time due at `due`: those reminders go, shown or not, put off or not. Those the
-     * app has handed over since, of a repeating task's next time, stay. */
+    /** `task` is done, its time due at `due`: those reminders go, shown or not, put off or not, and the
+     * daily digests to come no longer list it. Those the app has handed over since, of a repeating
+     * task's next time, stay. */
     @Synchronized
     fun completed(context: Context, task: String, due: Long) {
+        keepDigests(context, digests(context).map { d -> Digest(d.at, d.tasks.filter { it.task != task || it.due != due }) }.filter { it.tasks.isNotEmpty() })
         keep(context, JSONArray(list(context).filter { it.task != task || it.due != due }.map(::json)).toString())
     }
 
@@ -268,9 +318,10 @@ object Reminders {
     /** Signed out, or the data is gone: no reminders, none put off, none shown. */
     @Synchronized
     fun clear(context: Context) {
-        prefs(context).edit().remove(LIST).remove(SNOOZED).remove(LOCKED).remove(SHOWN).commit()
+        prefs(context).edit().remove(LIST).remove(SNOOZED).remove(LOCKED).remove(SHOWN).remove(DIGEST).commit()
         schedule(context)
         withdraw(context) { true }
+        context.getSystemService(NotificationManager::class.java).cancel(DIGEST_TAG, 0)
     }
 
     /** Takes back the reminders shown of `task`, as when it is done from one. */
@@ -304,7 +355,7 @@ object Reminders {
      * once and `show` shows it, the card too. */
     private fun schedule(context: Context) {
         val mark = mark(context, System.currentTimeMillis())
-        val at = times(context).map { it.second }.filter { it > mark }.minOrNull()
+        val at = (times(context).map { it.second } + digests(context).map { it.at }).filter { it > mark }.minOrNull()
         val alarms = context.getSystemService(AlarmManager::class.java)
         val intent = PendingIntent.getBroadcast(context, 0, Intent(context, ReminderReceiver::class.java).setAction(ReminderReceiver.ALARM), PendingIntent.FLAG_IMMUTABLE)
         when {
@@ -340,6 +391,26 @@ object Reminders {
      * brought up to date, without a sound. Its tag is the task's id: numbers are each owner's, and those
      * in shared folders may be the same as the user's own. So a task's next reminder takes the place of
      * the one shown before, and sounds. */
+    /** Shows daily digest `d`, in place of the one before, as `digestText` in apps/web/src/domain/reminders.ts
+     * says it; `hide`, without the titles. Tapping it opens 接下来. */
+    private fun post(context: Context, d: Digest, hide: Boolean) {
+        val title = "今天还有 ${d.tasks.size} 项没做完"
+        val body = if (hide) "" else d.tasks.joinToString("、") { it.title }
+        val home = Intent(Intent.ACTION_VIEW, Uri.parse("nexttodo://home"), context, MainActivity::class.java)
+        val notification = Notification.Builder(context, Channels.DIGEST)
+            .setSmallIcon(R.drawable.ic_stat_nexttodo)
+            .setColor(Palette.light.primary.toArgb())
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(Notification.BigTextStyle().bigText(body))
+            .setWhen(d.at)
+            .setShowWhen(true)
+            .setContentIntent(PendingIntent.getActivity(context, 0, home, PendingIntent.FLAG_IMMUTABLE))
+            .setAutoCancel(true)
+            .build()
+        context.getSystemService(NotificationManager::class.java).notify(DIGEST_TAG, 0, notification)
+    }
+
     private fun post(context: Context, r: Reminder, quiet: Boolean, again: Boolean) {
         val uri = Uri.parse("nexttodo://task/${r.task}")
         val open = PendingIntent.getActivity(context, 0, Intent(Intent.ACTION_VIEW, uri, context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)

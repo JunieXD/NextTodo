@@ -1,11 +1,13 @@
 // The settings of reminders every device has (docs/ui.md#设置): the reminders a task gets as it is given
-// a due date, and in the apps, which remind, whether reminders hide what they are of.
+// a due date, and in the apps, which remind, whether reminders hide what they are of, and the daily
+// digest.
 
 import type { Remind } from "../api/types/Remind";
 import { app } from "../api/http";
 import { DAY_REMINDERS, REMINDERS, inOrder, remindLabel, remindersLabel } from "../domain/dates";
-import { setDefaultReminders, setHideReminders, useDefaultReminders, useHideReminders } from "../remind-settings";
+import { setDailyDigest, setDefaultReminders, setHideReminders, useDailyDigest, useDefaultReminders, useHideReminders } from "../remind-settings";
 import { MultiSelect, Switch } from "../ui/controls";
+import { TimeRow } from "./due";
 
 /** `offered` as the menu lists them; `value`, those picked, in the order they come. */
 function Pick<R extends Remind>({ label, offered, value, onChange }: { label: string; offered: R[]; value: Remind[]; onChange(v: R[]): void }) {
@@ -25,6 +27,7 @@ function Pick<R extends Remind>({ label, offered, value, onChange }: { label: st
 export function RemindSettings() {
   const defaults = useDefaultReminders();
   const hidden = useHideReminders();
+  const digest = useDailyDigest();
   const timed = REMINDERS.map((before) => ({ before }));
   return (
     <>
@@ -39,9 +42,20 @@ export function RemindSettings() {
         />
       </div>
       {app && (
-        <div className="group settings">
-          <Switch label="隐藏通知内容" sub="通知只写“有事项到期”，不显示标题和文件夹" on={hidden} onChange={setHideReminders} />
-        </div>
+        <>
+          <div className="group settings">
+            <Switch label="隐藏通知内容" sub="通知里不显示事项的标题和文件夹" on={hidden} onChange={setHideReminders} />
+          </div>
+          <div className="group settings">
+            <Switch
+              label="每日汇总"
+              sub="每天到点通知一次今天截止和逾期、还没完成的事项"
+              on={digest.on}
+              onChange={(on) => setDailyDigest({ ...digest, on })}
+            />
+            {digest.on && <TimeRow value={digest.time} onChange={(time) => setDailyDigest({ ...digest, time })} />}
+          </div>
+        </>
       )}
     </>
   );

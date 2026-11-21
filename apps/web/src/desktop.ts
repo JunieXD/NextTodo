@@ -7,16 +7,17 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { navigate } from "wouter/use-browser-location";
 import { app } from "./api/http";
 import type { Attachment } from "./api/types/Attachment";
-import { reminders } from "./domain/reminders";
-import { hideReminders, onRemindSettings } from "./remind-settings";
+import { digestText, digests, reminders } from "./domain/reminders";
+import { dailyDigest, hideReminders, onRemindSettings } from "./remind-settings";
 import type { Store } from "./sync/store";
 
 /** Changes coming close together are handled once, at most this long after the first: a stream of
  * them does not hold back a reminder. */
 const SETTLE_MS = 2000;
 
-/** Hands the reminders to come to the app (`apps/desktop/src-tauri/src/reminders.rs`). */
-const hand = (list: { title: string; body: string; at: number; task: string }[]) => invoke("set_reminders", { reminders: list });
+/** Hands the reminders to come to the app (`apps/desktop/src-tauri/src/reminders.rs`): the daily
+ * digests too, of no task. */
+const hand = (list: { title: string; body: string; at: number; task?: string }[]) => invoke("set_reminders", { reminders: list });
 
 /** Keeps the app's reminders in step with the local copy, also when the window comes back: the time
  * has moved on. A handover that fails is reported to `failed`; the next change tries again. Returns
@@ -31,8 +32,14 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
     // From `now` instead, should the clock have gone back since.
     const after = since < now ? since : now;
     since = now;
-    const list = reminders(store.getView().board, hideReminders()).filter((r) => r.at > after);
-    return hand(list.map((r) => ({ title: r.title, body: r.body, at: r.at.getTime(), task: r.task.id })));
+    const { board } = store.getView();
+    const hide = hideReminders();
+    const { on, time } = dailyDigest();
+    const list = [
+      ...reminders(board, hide).map((r) => ({ title: r.title, body: r.body, at: r.at, task: r.task.id })),
+      ...(on ? digests(board, time).map((d) => ({ at: d.at, ...digestText(d.tasks.map((t) => t.title), hide) })) : []),
+    ];
+    return hand(list.filter((r) => r.at > after).map((r) => ({ ...r, at: r.at.getTime() })));
   };
   const changed = () => {
     timer ??= setTimeout(() => {

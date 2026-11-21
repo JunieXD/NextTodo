@@ -122,6 +122,33 @@ test("folders saved before they had colours and icons have the defaults, deleted
   expect(log).toEqual([[deletion, [{ kind: "folder", before: { ...deleted, color: null, icon: null }, after: null }]]]);
 });
 
+test("a reminder saved before tasks could have several is the one of a list, wherever a due date is", async () => {
+  const u = user(0);
+  await load(someone(u), "here");
+  const old = { date: "2026-12-08", time: "18:00", remind_before: 60 };
+  const now = { date: "2026-12-08", time: "18:00", reminders: [{ before: 60 }] };
+  const task = { id: "t", title: "还花呗", due: old };
+  const edit = { task: "t", due: old, after: [], reason: "", was: { title: "还花呗", description: "", due: old } };
+  const create = { create: "n", title: "核算", due: old, after: [], before: [], reason: "" };
+  const job = { id: "j", suggestions: [edit, create] };
+  const m = pending(1).mutation.id;
+  const saved = {
+    ...copy(4),
+    base: { ...Store.empty().base, tasks: [task], ai_jobs: [job] },
+    log: [[m, [{ kind: "task", before: task, after: { ...task, due: { date: "2026-12-08" } } }]]],
+  };
+  const db = await raw();
+  await db.put("copies", saved, [u, "here"]);
+  const change = { mutation: { id: m, ops: [{ op: "task.update", id: "t", due: old }] }, at: 1 };
+  await db.put("outbox", change, [u, m]);
+  const { base, log, outbox } = (await load(someone(u), "here"))!;
+  expect(base.tasks[0].due).toEqual(now);
+  expect(base.ai_jobs[0].suggestions).toEqual([{ ...edit, due: now, was: { ...edit.was, due: now } }, { ...create, due: now }]);
+  // Undoing the change here brings the reminder back.
+  expect(log[0][1][0]).toEqual({ kind: "task", before: { ...task, due: now }, after: { ...task, due: { date: "2026-12-08" } } });
+  expect(outbox[0].mutation.ops).toEqual([{ op: "task.update", id: "t", due: now }]);
+});
+
 test("a change withdrawn into a draft leaves the outbox as the app opens, its text and files back in the box once", async () => {
   const u = user(7);
   await load(someone(u), "here");

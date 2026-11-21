@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, HashMap};
 use nexttodo_core::board::{Board, Snapshot, Status};
 use nexttodo_core::lunar;
 use nexttodo_core::model::{
-    AiJob, Change, Date, Due, Effect, FolderId, Holder, JobState, Link, Period, Person, Repeat, RepeatFrom, Task, TaskId, Time, Weekdays,
+    AiJob, Change, Date, Due, Effect, FolderId, Holder, JobState, Link, Period, Person, Remind, RemindBefore, RemindOn, Repeat, RepeatFrom,
+    Task, TaskId, Time, Weekdays,
 };
 use serde_json::{Value, json};
 
@@ -32,6 +33,20 @@ pub fn start(t: &Task) -> Option<String> {
 /// `2026-11-14`, or `2026-11-14 09:30` with a time.
 pub fn moment(date: &Date, time: Option<&Time>) -> String {
     time.map_or_else(|| date.as_str().to_owned(), |time| format!("{} {}", date.as_str(), time.as_str()))
+}
+
+/// A reminder as the app writes it: `截止时`, `提前 90 分钟`, `提前 3 小时`, `提前 2 天`, `当天 09:00`,
+/// `前一天 20:00`, `提前 3 天 09:00`.
+pub fn remind(r: &Remind) -> String {
+    match r {
+        Remind::Before(RemindBefore { before: 0 }) => "截止时".into(),
+        Remind::Before(RemindBefore { before: m }) if m % 1440 == 0 => format!("提前 {} 天", m / 1440),
+        Remind::Before(RemindBefore { before: m }) if m % 60 == 0 => format!("提前 {} 小时", m / 60),
+        Remind::Before(RemindBefore { before: m }) => format!("提前 {m} 分钟"),
+        Remind::On(RemindOn { days: 0, time }) => format!("当天 {}", time.as_str()),
+        Remind::On(RemindOn { days: 1, time }) => format!("前一天 {}", time.as_str()),
+        Remind::On(RemindOn { days, time }) => format!("提前 {days} 天 {}", time.as_str()),
+    }
 }
 
 /// `2026-11-20 18:00`, with how it repeats: `2026-11-20，每周`, `2026-11-20，每天，到 2026-12-19`; by

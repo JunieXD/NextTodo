@@ -30,6 +30,7 @@ import { About } from "./About";
 import { AiPage, useAiSummary } from "./AiSettings";
 import { BackgroundSettings } from "./Background";
 import { DesktopBackground } from "./DesktopBackground";
+import { RemindSettings } from "./RemindSettings";
 import { DriveSyncDialog, syncLine, useDriveSync } from "./DriveSync";
 import { MAX_KEEP_DONE, setKeepDone, useKeepDone } from "./keep-done";
 import { type SettingsSection, settingsUrl } from "./nav";
@@ -42,8 +43,8 @@ const TITLES: Record<SettingsSection, string> = {
   account: "账号",
   local: "本机模式",
   appearance: "外观",
-  // iOS has nothing to allow for running in the background (docs/ios.md#设置).
-  background: app === "ios" ? "提醒" : "提醒和后台",
+  // iOS has nothing to allow for running in the background (docs/ios.md#设置), the web nothing to run.
+  background: app === "ios" || !app ? "提醒" : "提醒和后台",
   ai: "AI 整理",
   agent: "agent 接入",
   invites: "邀请注册",
@@ -85,7 +86,7 @@ const ACCENTS: [Accent, string][] = [
 function useSections(): SettingsSection[][] {
   const { user } = useSession();
   const inLocal = local.inLocalMode();
-  const groups: SettingsSection[][] = [[inLocal ? "local" : "account"], app ? ["appearance", "background"] : ["appearance"]];
+  const groups: SettingsSection[][] = [[inLocal ? "local" : "account"], ["appearance", "background"]];
   groups.push(!inLocal || app === "desktop" ? ["ai", "agent"] : ["ai"]);
   // The server's own: its admin's, or in local mode the user's, who has it alone.
   const server: SettingsSection[] = [...(user.is_admin && !inLocal ? (["invites"] as const) : []), ...(user.is_admin || inLocal ? (["attachments"] as const) : [])];
@@ -175,7 +176,12 @@ export function SettingsPage({ section, onSignOut }: { section: SettingsSection;
     account: () => <Account onSignOut={onSignOut} />,
     local: () => <LocalMode />,
     appearance: () => <Appearance />,
-    background: () => (phoneApp ? <BackgroundSettings /> : <DesktopBackground />),
+    background: () => (
+      <>
+        <RemindSettings />
+        {phoneApp ? <BackgroundSettings /> : app && <DesktopBackground />}
+      </>
+    ),
     ai: () => <AiPage />,
     agent: () => <Agent />,
     invites: () => <Invites />,

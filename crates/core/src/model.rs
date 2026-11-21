@@ -340,24 +340,56 @@ pub fn days_in_month(y: u32, m: u32) -> u32 {
     }
 }
 
-/// When a task is due: a date, optionally with a time and a reminder, and how it repeats.
+/// When a task is due: a date, optionally with a time, its reminders, and how it repeats.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(try_from = "DueFields", into = "DueFields")]
 #[ts(export, as = "DueFields")]
 pub struct Due {
     pub date: Date,
     pub at: Option<DueAt>,
+    /// Reminders on the due date or days before it, at a time of day (docs/design.md#提醒). Sorted,
+    /// none twice.
+    pub remind_on: Vec<RemindOn>,
     pub repeat: Option<Repeat>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DueAt {
     pub time: Time,
-    /// Minutes before the due time; 0 means at the due time.
-    pub remind_before: Option<u32>,
+    /// Reminders so many minutes before the due time, 0 at it. Sorted, none twice.
+    pub remind_before: Vec<u32>,
 }
 
 pub const MAX_REMIND_BEFORE: u32 = 30 * 24 * 60;
+pub const MAX_REMIND_DAYS: u32 = 30;
+/// Only against misuse: the app sets no limit.
+pub const MAX_REMINDERS: usize = 100;
+
+/// A reminder so many minutes before the due time, as JSON has it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export)]
+pub struct RemindBefore {
+    pub before: u32,
+}
+
+/// A reminder on the due date, `days` 0, or so many days before it, at `time`.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export)]
+pub struct RemindOn {
+    pub days: u32,
+    pub time: Time,
+}
+
+/// A reminder of either kind, as JSON has it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(untagged)]
+#[ts(export)]
+pub enum Remind {
+    Before(RemindBefore),
+    On(RemindOn),
+}
 
 /// A repeating task stays open: done, its due date moves on, until the last time (docs/design.md#重复).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -670,8 +702,13 @@ pub struct DueFields {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     time: Option<Time>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<Remind>>")]
+    reminders: Vec<Remind>,
+    /// One reminder so many minutes before, as versions before several reminders wrote it: in older
+    /// changes, drive commits and apps. Read, never written.
+    #[serde(default, skip_serializing)]
+    #[ts(skip)]
     remind_before: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -679,20 +716,50 @@ pub struct DueFields {
 }
 
 impl Due {
-    pub fn new(date: Date, time: Option<Time>, remind_before: Option<u32>, repeat: Option<Repeat>) -> Result<Due, String> {
-        // Before the reminder, as editing says which is wrong (tools::write::edit_fields).
+    pub fn new(date: Date, time: Option<Time>, reminders: Vec<Remind>, repeat: Option<Repeat>) -> Result<Due, String> {
+        // Before the reminders, as editing says which is wrong (tools::write::edit_fields).
         if let Some(m) = repeat.as_ref().and_then(|r| r.misfit(&date)) {
             return Err(m.to_string());
         }
-        if remind_before.is_some_and(|m| m > MAX_REMIND_BEFORE) {
-            return Err("提醒最多提前 30 天".into());
+        let (mut before, mut on) = (Vec::new(), Vec::new());
+        for r in reminders {
+            match r {
+                Remind::Before(RemindBefore { before: m }) if m > MAX_REMIND_BEFORE => return Err("提醒最多提前 30 天".into()),
+                Remind::On(RemindOn { days, .. }) if days > MAX_REMIND_DAYS => return Err("提醒最多提前 30 天".into()),
+                Remind::Before(RemindBefore { before: m }) => before.push(m),
+                Remind::On(o) => on.push(o),
+            }
         }
-        let at = match (time, remind_before) {
-            (Some(time), remind_before) => Some(DueAt { time, remind_before }),
-            (None, Some(_)) => return Err("设置提醒需要具体的截止时间".into()),
-            (None, None) => None,
+        before.sort_unstable();
+        before.dedup();
+        on.sort();
+        on.dedup();
+        if before.len() + on.len() > MAX_REMINDERS {
+            return Err(format!("提醒最多 {MAX_REMINDERS} 个"));
+        }
+        let at = match time {
+            Some(time) => Some(DueAt { time, remind_before: before }),
+            None if before.is_empty() => None,
+            None => return Err("提前多久的提醒需要具体的截止时间".into()),
         };
-        Ok(Due { date, at, repeat })
+        Ok(Due { date, at, remind_on: on, repeat })
+    }
+
+    /// The reminders, the first to come first.
+    pub fn reminders(&self) -> Vec<Remind> {
+        let minutes = |t: &Time| {
+            let (h, m) = t.as_str().split_once(':').expect("HH:MM");
+            i64::from(h.parse::<u16>().expect("hours")) * 60 + i64::from(m.parse::<u16>().expect("minutes"))
+        };
+        // Minutes from the start of the due date.
+        let mut all: Vec<(i64, Remind)> = self
+            .at
+            .iter()
+            .flat_map(|at| at.remind_before.iter().map(|&m| (minutes(&at.time) - i64::from(m), Remind::Before(RemindBefore { before: m }))))
+            .chain(self.remind_on.iter().map(|o| (minutes(&o.time) - i64::from(o.days) * 1440, Remind::On(o.clone()))))
+            .collect();
+        all.sort_by_key(|(at, _)| *at);
+        all.into_iter().map(|(_, r)| r).collect()
     }
 }
 
@@ -700,14 +767,15 @@ impl TryFrom<DueFields> for Due {
     type Error = String;
 
     fn try_from(f: DueFields) -> Result<Self, String> {
-        Due::new(f.date, f.time, f.remind_before, f.repeat)
+        let old = f.remind_before.map(|before| Remind::Before(RemindBefore { before }));
+        Due::new(f.date, f.time, f.reminders.into_iter().chain(old).collect(), f.repeat)
     }
 }
 
 impl From<Due> for DueFields {
     fn from(d: Due) -> Self {
-        let (time, remind_before) = d.at.map_or((None, None), |at| (Some(at.time), at.remind_before));
-        DueFields { date: d.date, time, remind_before, repeat: d.repeat }
+        let reminders = d.reminders();
+        DueFields { date: d.date, time: d.at.map(|at| at.time), reminders, remind_before: None, repeat: d.repeat }
     }
 }
 
@@ -930,7 +998,7 @@ sql_text_enum!(JobKind { Organize = "organize", Tidy = "tidy" });
 #[serde(untagged)]
 #[ts(export)]
 pub enum Suggestion {
-    Edit(TaskEdit),
+    Edit(Box<TaskEdit>),
     Delete(TaskDeletion),
     Create(NewTask),
     Order(Reorder),
@@ -1197,11 +1265,36 @@ mod tests {
 
     #[test]
     fn due_round_trips_and_rejects_reminder_without_time() {
-        let due = json!({ "date": "2026-11-02", "time": "18:00", "remind_before": 60 });
+        let due = json!({ "date": "2026-11-02", "time": "18:00", "reminders": [{ "before": 60 }] });
         assert_eq!(to_value(from_value::<Due>(due.clone()).unwrap()).unwrap(), due);
         assert_eq!(to_value(from_value::<Due>(json!({ "date": "2026-11-20" })).unwrap()).unwrap(), json!({ "date": "2026-11-20" }));
-        assert!(from_value::<Due>(json!({ "date": "2026-11-20", "remind_before": 0 })).is_err());
-        assert!(from_value::<Due>(json!({ "date": "2026-11-20", "time": "08:00", "remind_before": 50000 })).is_err());
+        // The first to come first, each once; by the day on a date alone too.
+        let several = json!({ "date": "2026-11-08", "time": "09:00", "reminders": [
+            { "before": 0 }, { "days": 0, "time": "08:00" }, { "before": 1440 }, { "days": 1, "time": "20:00" }, { "before": 0 }
+        ] });
+        let sorted = [
+            json!({ "before": 1440 }),
+            json!({ "days": 1, "time": "20:00" }),
+            json!({ "days": 0, "time": "08:00" }),
+            json!({ "before": 0 }),
+        ];
+        assert_eq!(to_value(from_value::<Due>(several).unwrap()).unwrap()["reminders"], json!(sorted));
+        let by_day = json!({ "date": "2026-11-08", "reminders": [{ "days": 1, "time": "20:00" }] });
+        assert_eq!(to_value(from_value::<Due>(by_day.clone()).unwrap()).unwrap(), by_day);
+        // As versions before several reminders wrote it.
+        let old = from_value::<Due>(json!({ "date": "2026-11-02", "time": "18:00", "remind_before": 60 })).unwrap();
+        assert_eq!(to_value(old).unwrap(), due);
+        for bad in [
+            json!({ "date": "2026-11-20", "reminders": [{ "before": 0 }] }),
+            json!({ "date": "2026-11-20", "remind_before": 0 }),
+            json!({ "date": "2026-11-20", "time": "08:00", "reminders": [{ "before": 50000 }] }),
+            json!({ "date": "2026-11-20", "reminders": [{ "days": 31, "time": "08:00" }] }),
+            json!({ "date": "2026-11-20", "reminders": [{ "days": 1 }] }),
+            json!({ "date": "2026-11-20", "reminders": [{ "days": 1, "time": "8:00" }] }),
+            json!({ "date": "2026-11-20", "reminders": (0..101).map(|d| json!({ "days": d % 31, "time": format!("{:02}:00", d / 31) })).collect::<Vec<_>>() }),
+        ] {
+            assert!(from_value::<Due>(bad.clone()).is_err(), "{bad}");
+        }
         assert!(from_value::<Due>(json!({ "date": "2026-11-20", "when": "soon" })).is_err());
         let repeating = json!({ "date": "2026-11-20", "repeat": { "every": 2, "unit": "week", "from": "done" } });
         assert_eq!(to_value(from_value::<Due>(repeating.clone()).unwrap()).unwrap(), repeating);

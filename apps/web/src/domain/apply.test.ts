@@ -157,9 +157,9 @@ test("a repeating task moves on rather than being done, and is never done while 
   run(d, 121, [{ op: "task.update", id: id(1), done: true, today: "2026-11-11" }]);
   expect(d.tasks.get(id(1))).toMatchObject({ done_at: null, due: { date: "2026-11-16", time: "10:00", repeat: weekly }, completions: { count: 1, last: "2026-11-11" } });
   // Undone after the reminder changed, it moves back and the reminder stays as changed; it was never done.
-  run(d, 122, [{ op: "task.update", id: id(1), due: { date: "2026-11-16", time: "10:00", remind_before: 30, repeat: weekly } }]);
+  run(d, 122, [{ op: "task.update", id: id(1), due: { date: "2026-11-16", time: "10:00", reminders: [{ before: 30 }], repeat: weekly } }]);
   run(d, 123, [{ op: "undo", mutation: id(121) }]);
-  expect(d.tasks.get(id(1))!.due).toEqual({ date: "2026-11-09", time: "10:00", remind_before: 30, repeat: weekly });
+  expect(d.tasks.get(id(1))!.due).toEqual({ date: "2026-11-09", time: "10:00", reminders: [{ before: 30 }], repeat: weekly });
   expect(d.tasks.get(id(1))!.completions).toBeUndefined();
   // Undone after the due date was cleared, only the date comes back: the rest stays cleared.
   run(d, 124, [{ op: "task.update", id: id(1), done: true, today: "2026-11-11" }]);

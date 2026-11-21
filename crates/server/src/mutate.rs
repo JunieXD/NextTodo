@@ -328,16 +328,19 @@ impl Space {
 }
 
 /// `cur`'s due date with what changed from `b` to `a` set back to `b`, part by part: the date, the
-/// time with its reminder, and the repeat. Undoing moving a repeating task on so keeps a reminder or
+/// time with the reminders, and the repeat. Undoing moving a repeating task on so keeps reminders or
 /// a repeat changed since, or cleared since with the due date; without a date to go on, the other
 /// parts have nothing to come back to.
 fn restore_due(cur: &Option<Due>, b: &Option<Due>, a: &Option<Due>) -> Option<Due> {
     let (Some(b), Some(a)) = (b, a) else { return if b != a { b.clone() } else { cur.clone() } };
     let cur = cur.as_ref();
     let date = if b.date != a.date { Some(&b.date) } else { cur.map(|c| &c.date) };
+    let timed = |d: &Due| (d.at.clone(), d.remind_on.clone());
+    let (at, remind_on) = if timed(b) != timed(a) { timed(b) } else { cur.map(timed).unwrap_or_default() };
     Some(Due {
         date: date?.clone(),
-        at: if b.at != a.at { b.at.clone() } else { cur.and_then(|c| c.at.clone()) },
+        at,
+        remind_on,
         repeat: if b.repeat != a.repeat { b.repeat.clone() } else { cur.and_then(|c| c.repeat.clone()) },
     })
 }

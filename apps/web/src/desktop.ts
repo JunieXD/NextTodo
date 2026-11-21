@@ -8,6 +8,7 @@ import { navigate } from "wouter/use-browser-location";
 import { app } from "./api/http";
 import type { Attachment } from "./api/types/Attachment";
 import { reminders } from "./domain/reminders";
+import { hideReminders, onRemindSettings } from "./remind-settings";
 import type { Store } from "./sync/store";
 
 /** Changes coming close together are handled once, at most this long after the first: a stream of
@@ -30,7 +31,7 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
     // From `now` instead, should the clock have gone back since.
     const after = since < now ? since : now;
     since = now;
-    const list = reminders(store.getView().board).filter((r) => r.at > after);
+    const list = reminders(store.getView().board, hideReminders()).filter((r) => r.at > after);
     return hand(list.map((r) => ({ title: r.title, body: r.body, at: r.at.getTime(), task: r.task.id })));
   };
   const changed = () => {
@@ -41,10 +42,12 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
   };
   const shown = () => document.visibilityState === "visible" && changed();
   const unsubscribe = store.subscribe(changed);
+  const unset = onRemindSettings(changed);
   document.addEventListener("visibilitychange", shown);
   update().catch(failed);
   return async () => {
     unsubscribe();
+    unset();
     document.removeEventListener("visibilitychange", shown);
     clearTimeout(timer);
     // Those due but not shown yet go too.

@@ -9,7 +9,7 @@ import type { Op } from "../api/types/Op";
 import type { Suggestion } from "../api/types/Suggestion";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "./board";
-import { formatDue, isoDate, remindLabel } from "./dates";
+import { formatDue, isoDate, remindersLabel } from "./dates";
 import { rekey } from "./reorder";
 import { lastTime, repeatText } from "./repeat";
 
@@ -34,16 +34,16 @@ export type Group = { key: string; heading: string; reason: string; parts: Part[
 const sameDue = (a: Due | null, b: Due | null) =>
   a?.date === b?.date &&
   a?.time === b?.time &&
-  a?.remind_before === b?.remind_before &&
+  JSON.stringify(a?.reminders) === JSON.stringify(b?.reminders) &&
   a?.repeat?.every === b?.repeat?.every &&
   a?.repeat?.unit === b?.repeat?.unit &&
   a?.repeat?.from === b?.repeat?.from &&
   a?.repeat?.days?.join() === b?.repeat?.days?.join() &&
   a?.repeat?.until === b?.repeat?.until;
 
-/** `11月20日 18:00 · 提前 30 分钟 · 每周`, or `无`. */
+/** `11月20日 18:00 · 前一天 20:00、提前 30 分钟 · 每周`, or `无`. */
 const dueText = (d: Due | null, now: Date) =>
-  d ? [formatDue(d, now), d.remind_before !== undefined && remindLabel(d.remind_before), d.repeat && repeatText(d.repeat, d.date, now)].filter(Boolean).join(" · ") : "无";
+  d ? [formatDue(d, now), d.reminders && remindersLabel(d.reminders), d.repeat && repeatText(d.repeat, d.date, now)].filter(Boolean).join(" · ") : "无";
 
 /** What `s` would still do: to tasks there and in the state it found them, and links not made yet. */
 function group(s: Suggestion, j: AiJob, board: Board, created: Map<TaskId, string>): Group | null {

@@ -861,19 +861,19 @@ function restore<T extends object>(cur: T, before: T, after: T, fields: readonly
 }
 
 /** `cur`'s due date with what changed from `before` to `after` set back, part by part: the date, the
- * time with its reminder, and the repeat. Undoing moving a repeating task on so keeps a reminder or a
+ * time with the reminders, and the repeat. Undoing moving a repeating task on so keeps reminders or a
  * repeat changed since, or cleared since with the due date; without a date to go on, the other parts
  * have nothing to come back to. */
 function restoreDue(cur: Due | null, before: Due | null, after: Due | null): Due | null {
   if (!before || !after) return same(before, after) ? cur : before;
   const date = before.date !== after.date ? before.date : cur?.date;
   if (!date) return null;
-  const at = before.time !== after.time || before.remind_before !== after.remind_before ? before : cur;
+  const at = before.time !== after.time || !same(before.reminders, after.reminders) ? before : cur;
   const repeat = same(before.repeat, after.repeat) ? cur?.repeat : before.repeat;
   return {
     date,
     ...(at?.time && { time: at.time }),
-    ...(at?.remind_before !== undefined && { remind_before: at.remind_before }),
+    ...(at?.reminders && { reminders: at.reminders }),
     ...(repeat && { repeat }),
   };
 }

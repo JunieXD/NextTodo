@@ -116,8 +116,8 @@ enum Command {
         start: Option<String>,
         #[arg(long, help = "截止时间：2026-11-20 或 \"2026-11-20 18:00\"")]
         due: Option<String>,
-        #[arg(long, help = "提前多少分钟提醒，0 表示截止时")]
-        remind: Option<u32>,
+        #[arg(long, num_args = 1.., value_name = "提醒", help = "提醒，可以几个：提前多少分钟（0 是截止时），或截止那天的几点 09:00、提前几天的几点 \"1d 20:00\"")]
+        remind: Vec<String>,
         #[arg(
             long,
             value_name = "间隔",
@@ -167,8 +167,8 @@ enum Command {
         due: Option<String>,
         #[arg(long, help = "清除截止时间")]
         no_due: bool,
-        #[arg(long, conflicts_with = "no_remind", help = "提前多少分钟提醒")]
-        remind: Option<u32>,
+        #[arg(long, num_args = 1.., value_name = "提醒", conflicts_with = "no_remind", help = "提醒，可以几个：提前多少分钟（0 是截止时），或截止那天的几点 09:00、提前几天的几点 \"1d 20:00\"，整个换掉原来的")]
+        remind: Vec<String>,
         #[arg(long, help = "清除提醒")]
         no_remind: bool,
         #[arg(
@@ -903,8 +903,8 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Add { title, folder, description, start, due, remind, repeat, repeat_from, repeat_until, assign, after, before } => write(
             "add",
             json!({
-                "title": title, "folder": folder, "description": description, "start": start, "due": due, "remind": remind,
-                "repeat": repeat, "repeat_from": repeat_from, "repeat_until": repeat_until, "assign": assign, "after": after, "before": before
+                "title": title, "folder": folder, "description": description, "start": start, "due": due,
+                "remind": (!remind.is_empty()).then_some(remind), "repeat": repeat, "repeat_from": repeat_from, "repeat_until": repeat_until, "assign": assign, "after": after, "before": before
             }),
             j,
         ),
@@ -947,8 +947,8 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             if no_due || due.is_some() {
                 args.insert("due".into(), due.into());
             }
-            if no_remind || remind.is_some() {
-                args.insert("remind".into(), remind.into());
+            if no_remind || !remind.is_empty() {
+                args.insert("remind".into(), (!no_remind).then_some(remind).into());
             }
             if no_repeat || repeat.is_some() {
                 args.insert("repeat".into(), repeat.into());

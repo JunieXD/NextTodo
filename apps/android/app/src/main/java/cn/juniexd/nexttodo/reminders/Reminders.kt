@@ -26,11 +26,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** A task's reminder, as the app hands them over (`apps/web/src/mobile.ts`): at `at`, in
- * milliseconds; `waiting`, how many of its prerequisites are not done; `start` and `startTime`, when it
- * starts, at the start of the day without a time. */
+ * milliseconds; `due`, when the time it is of is due, the same for a task's reminders of one time;
+ * `waiting`, how many of its prerequisites are not done; `start` and `startTime`, when it starts, at
+ * the start of the day without a time. */
 data class Reminder(
     val task: String,
     val at: Long,
+    val due: Long,
     val title: String,
     val body: String,
     val waiting: Int,
@@ -62,6 +64,8 @@ data class Reminder(
         fun from(o: JSONObject) = Reminder(
             o.getString("task"),
             o.getLong("at"),
+            // Kept by a version before several reminders a task, without it: each a time of its own.
+            o.optLong("due", o.getLong("at")),
             o.getString("title"),
             o.getString("body"),
             o.getInt("waiting"),
@@ -85,7 +89,8 @@ object Reminders {
     /** Up to when reminders have been shown, in milliseconds. */
     private const val MARK = "mark"
 
-    /** Reminders put off, by task: `{at, until}`, the time of the reminder and when to show it again. */
+    /** Reminders put off, by task: `{at, until}`, the time of the reminder and when to show it again. One
+     * a task: the next of its reminders to come takes the place of the one put off. */
     private const val SNOOZED = "snoozed"
 
     /** Whether the reminder card is on (docs/android.md#弹窗提醒). */
@@ -95,12 +100,18 @@ object Reminders {
      * their time. The card shows them once it is unlocked. */
     private const val LOCKED = "locked"
 
+    /** The reminder each task showed last, by task: its time. A later one takes the place of the one
+     * before, in the notification and on the card. */
+    private const val SHOWN = "shown"
+
     /** Whether the app has asked for notifications, which it does once. */
     private const val ASKED = "asked"
 
-    /** Notification extras: which task and reminder time a notification is of. */
+    /** Notification extras: which task and reminder time a notification is of, and when that time of
+     * the task is due. */
     private const val TASK = "nexttodo.task"
     private const val AT = "nexttodo.at"
+    private const val DUE = "nexttodo.due"
 
     /** And whether it has “完成”. */
     private const val READY = "nexttodo.ready"
@@ -110,14 +121,31 @@ object Reminders {
         return (0 until list.length()).map { Reminder.from(list.getJSONObject(it)) }
     }
 
-    fun find(context: Context, task: String) = list(context).find { it.task == task }
+    /** `task`'s reminder shown last, that at `at` or one shown since in its place; none once done,
+     * deleted, moved or put off. */
+    fun shown(context: Context, task: String, at: Long): Reminder? {
+        val last = maxOf(at, shown(context).optLong(task, at))
+        return current(context).find { it.task == task && it.at == last }
+    }
+
+    private fun shown(context: Context) = JSONObject(prefs(context).getString(SHOWN, "{}"))
+
+    /** The time of the reminder `task`'s notification shows, while it does. */
+    fun notified(context: Context, task: String) = context.getSystemService(NotificationManager::class.java).activeNotifications
+        .find { it.notification.extras.getString(TASK) == task }?.notification?.extras?.getLong(AT)
+
+    /** When the time `task`'s reminders are of is due, to know them by once it is done. */
+    fun due(context: Context, task: String) = list(context).find { it.task == task }?.due
 
     private fun snoozed(context: Context) = JSONObject(prefs(context).getString(SNOOZED, "{}"))
+
+    /** Whether `r` is the reminder put off, of those in `snoozed`. */
+    private fun JSONObject.puts(r: Reminder) = optJSONObject(r.task)?.getLong("at") == r.at
 
     /** The reminders still to show: none done, deleted or put off since. */
     fun current(context: Context): List<Reminder> {
         val snoozed = snoozed(context)
-        return list(context).filter { !snoozed.has(it.task) }
+        return list(context).filter { !snoozed.puts(it) }
     }
 
     /** Calls `changed`, on the main thread, each time the reminders change; returns how to stop. */
@@ -145,28 +173,32 @@ object Reminders {
      * the next. */
     private fun keep(context: Context, list: String) {
         val now = LocalDateTime.now()
-        val wanted = JSONArray(list).let { a -> (0 until a.length()).map { Reminder.from(a.getJSONObject(it)) } }.associateBy { it.task }
+        val wanted = JSONArray(list).let { a -> (0 until a.length()).map { Reminder.from(a.getJSONObject(it)) } }.associateBy { it.task to it.at }
         val snoozed = snoozed(context)
-        for ((task, s) in snoozed.entries()) if (wanted[task]?.at != s.getLong("at")) snoozed.remove(task)
-        prefs(context).edit().putString(LIST, list).putString(SNOOZED, snoozed.toString()).commit()
+        for ((task, s) in snoozed.entries()) if ((task to s.getLong("at")) !in wanted) snoozed.remove(task)
+        val shown = shown(context)
+        for (task in shown.keys().asSequence().toList()) if ((task to shown.getLong(task)) !in wanted) shown.remove(task)
+        prefs(context).edit().putString(LIST, list).putString(SNOOZED, snoozed.toString()).putString(SHOWN, shown.toString()).commit()
         val manager = context.getSystemService(NotificationManager::class.java)
         for (shown in manager.activeNotifications) {
             // Reminders only, as in `withdraw`.
             val extras = shown.notification.extras
             val task = extras.getString(TASK) ?: continue
-            val r = wanted[task]
-            if (r == null || r.at != extras.getLong(AT)) {
+            val r = wanted[task to extras.getLong(AT)]
+            // Of a time done since, should the next have a reminder at the same moment. Shown by an
+            // earlier version, without it: of the time it is now.
+            if (r == null || extras.getLong(DUE, r.due) != r.due) {
                 manager.cancel(shown.tag, shown.id)
             } else if (shown.tag != task) {
                 // Shown by an earlier version, by the task's number: again by its id, without a sound.
                 manager.cancel(shown.tag, shown.id)
-                post(context, r, true)
+                post(context, r, quiet = true, again = true)
             } else if (
                 extras.getCharSequence(Notification.EXTRA_TITLE).toString() != r.title ||
                 extras.getCharSequence(Notification.EXTRA_TEXT).toString() != r.body ||
                 extras.getBoolean(READY) != r.ready(now)
             ) {
-                post(context, r, shown.notification.channelId == Channels.DUE_QUIET)
+                post(context, r, quiet = shown.notification.channelId == Channels.DUE_QUIET, again = true)
             }
         }
         schedule(context)
@@ -181,12 +213,16 @@ object Reminders {
         val mark = mark(context, now)
         val snoozed = snoozed(context)
         val due = times(context).filter { (r, at) -> at in (mark + 1)..now && which(r, at) }.map { it.first }
-        for (r in due) snoozed.remove(r.task)
-        prefs(context).edit().putLong(MARK, now).putString(SNOOZED, snoozed.toString()).commit()
+        val shown = shown(context)
+        for (r in due) {
+            snoozed.remove(r.task)
+            shown.put(r.task, maxOf(r.at, shown.optLong(r.task, r.at)))
+        }
+        prefs(context).edit().putLong(MARK, now).putString(SNOOZED, snoozed.toString()).putString(SHOWN, shown.toString()).commit()
         schedule(context)
         val card = card(context)
         val present = present(context)
-        for (r in due) post(context, r, card && present)
+        for (r in due) post(context, r, quiet = card && present, again = false)
         if (!card) return emptyList()
         if (present) return unlocked(context) + due
         val locked = locked(context)
@@ -210,30 +246,29 @@ object Reminders {
 
     private fun locked(context: Context) = JSONObject(prefs(context).getString(LOCKED, "{}"))
 
-    /** Puts `task`'s reminder off for `minutes`: its notification goes, and comes again then. */
+    /** Puts reminder `r` off for `minutes`: its notification goes, and comes again then. */
     @Synchronized
-    fun snooze(context: Context, task: String, minutes: Int) {
-        val r = find(context, task) ?: return
-        val snoozed = snoozed(context).put(task, JSONObject().put("at", r.at).put("until", System.currentTimeMillis() + minutes * 60_000L))
+    fun snooze(context: Context, r: Reminder, minutes: Int) {
+        val snoozed = snoozed(context).put(r.task, JSONObject().put("at", r.at).put("until", System.currentTimeMillis() + minutes * 60_000L))
         prefs(context).edit().putString(SNOOZED, snoozed.toString()).commit()
         withdraw(context, r.task)
         schedule(context)
     }
 
-    /** `task` is done from its reminder `at`: that reminder goes, shown or not, put off or not. One the
-     * app has handed over since, a repeating task's next, stays. */
+    /** `task` is done, its time due at `due`: those reminders go, shown or not, put off or not. Those the
+     * app has handed over since, of a repeating task's next time, stay. */
     @Synchronized
-    fun completed(context: Context, task: String, at: Long) {
-        keep(context, JSONArray(list(context).filter { it.task != task || it.at != at }.map(::json)).toString())
+    fun completed(context: Context, task: String, due: Long) {
+        keep(context, JSONArray(list(context).filter { it.task != task || it.due != due }.map(::json)).toString())
     }
 
-    private fun json(r: Reminder) = JSONObject().put("task", r.task).put("at", r.at).put("title", r.title)
+    private fun json(r: Reminder) = JSONObject().put("task", r.task).put("at", r.at).put("due", r.due).put("title", r.title)
         .put("body", r.body).put("waiting", r.waiting).put("start", r.start?.toString()).put("start_time", r.startTime?.toString())
 
     /** Signed out, or the data is gone: no reminders, none put off, none shown. */
     @Synchronized
     fun clear(context: Context) {
-        prefs(context).edit().remove(LIST).remove(SNOOZED).remove(LOCKED).commit()
+        prefs(context).edit().remove(LIST).remove(SNOOZED).remove(LOCKED).remove(SHOWN).commit()
         schedule(context)
         withdraw(context) { true }
     }
@@ -262,7 +297,7 @@ object Reminders {
     /** When each reminder is to show: at its time, or when it was put off to. */
     private fun times(context: Context): List<Pair<Reminder, Long>> {
         val snoozed = snoozed(context)
-        return list(context).map { r -> r to if (snoozed.has(r.task)) snoozed.getJSONObject(r.task).getLong("until") else r.at }
+        return list(context).map { r -> r to if (snoozed.puts(r)) snoozed.getJSONObject(r.task).getLong("until") else r.at }
     }
 
     /** Sets the alarm for the next reminder not shown yet, which may be due already: it goes off at
@@ -301,9 +336,11 @@ object Reminders {
         return true
     }
 
-    /** Shows `r`; `quiet` while the card shows it, without a banner. Its tag is the task's id: numbers are
-     * each owner's, and those in shared folders may be the same as the user's own. */
-    private fun post(context: Context, r: Reminder, quiet: Boolean) {
+    /** Shows `r`; `quiet` while the card shows it, without a banner; `again`, shown already and only
+     * brought up to date, without a sound. Its tag is the task's id: numbers are each owner's, and those
+     * in shared folders may be the same as the user's own. So a task's next reminder takes the place of
+     * the one shown before, and sounds. */
+    private fun post(context: Context, r: Reminder, quiet: Boolean, again: Boolean) {
         val uri = Uri.parse("nexttodo://task/${r.task}")
         val open = PendingIntent.getActivity(context, 0, Intent(Intent.ACTION_VIEW, uri, context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val builder = Notification.Builder(context, if (quiet) Channels.DUE_QUIET else Channels.DUE)
@@ -316,10 +353,9 @@ object Reminders {
             .setShowWhen(true)
             .setContentIntent(open)
             .setAutoCancel(true)
-            // Shown again as the task changes: the sound only the first time.
-            .setOnlyAlertOnce(true)
+            .setOnlyAlertOnce(again)
         val ready = r.ready(LocalDateTime.now())
-        builder.addExtras(Bundle().apply { putString(TASK, r.task); putLong(AT, r.at); putBoolean(READY, ready) })
+        builder.addExtras(Bundle().apply { putString(TASK, r.task); putLong(AT, r.at); putLong(DUE, r.due); putBoolean(READY, ready) })
         if (ready) {
             val done = Intent(context, ReminderReceiver::class.java).setAction(ReminderReceiver.DONE).setData(uri)
                 .putExtra(ReminderReceiver.TITLE, r.title)

@@ -13,6 +13,7 @@ import type { Task } from "./api/types/Task";
 import { type Board, nowOf } from "./domain/board";
 import { agenda } from "./domain/calendar";
 import { reminders } from "./domain/reminders";
+import { hideReminders, onRemindSettings } from "./remind-settings";
 import type { Started } from "./local";
 import type { Store } from "./sync/store";
 import { back } from "./ui/back";
@@ -200,13 +201,14 @@ export function widgetAgenda(board: Board, folders: (FolderId | null)[]) {
   };
 }
 
-/** What the device reminds of (docs/android.md#截止提醒): every reminder, past ones too, with whether
- * the task waits for prerequisites as the reminder comes (a repeating one may hold it up again by then),
- * and for its start, which the device reads by its own clock. */
-export const deviceReminders = (board: Board, now = Date.now()) =>
-  reminders(board).map((r) => ({
+/** What the device reminds of (docs/android.md#截止提醒): every reminder, past ones too, with when its
+ * time is due, whether the task waits for prerequisites as the reminder comes (a repeating one may
+ * hold it up again by then), and for its start, which the device reads by its own clock. */
+export const deviceReminders = (board: Board, hide: boolean, now = Date.now()) =>
+  reminders(board, hide).map((r) => ({
     task: r.task.id,
     at: r.at.getTime(),
+    due: r.due.getTime(),
     title: r.title,
     body: r.body,
     // By the clock, not the board's moment, which may lag behind it.
@@ -268,7 +270,7 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
       await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board, listed)), seq, nextStart, folders });
       await NextTodo.updateAgenda({ agenda: JSON.stringify(widgetAgenda(board, listed)), seq });
     }
-    await NextTodo.setReminders({ reminders: JSON.stringify(deviceReminders(board)) });
+    await NextTodo.setReminders({ reminders: JSON.stringify(deviceReminders(board, hideReminders())) });
   };
   const calendar = () => NextTodo.updateCalendar({ events: JSON.stringify(calendarEvents(store.getView().board, calendarFolders(user))) });
   const takeOver = async () => {
@@ -293,6 +295,7 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
   };
   const unsubscribe = store.subscribe(changed);
   const unpicked = onNextFolders(changed);
+  const unset = onRemindSettings(changed);
   document.addEventListener("visibilitychange", shown);
   if (app === "android") writeCalendar = calendar;
   takeOver().catch(failed);
@@ -302,6 +305,7 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
     if (writeCalendar === calendar) writeCalendar = undefined;
     unsubscribe();
     unpicked();
+    unset();
     document.removeEventListener("visibilitychange", shown);
     clearTimeout(timer);
     await clear(failed);

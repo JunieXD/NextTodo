@@ -78,7 +78,7 @@
 | start_time | TEXT，可空 | 开始的几点几分，只能在有 `start_date` 时设置；没有时从那天 0 点开始 |
 | due_date | TEXT，可空 | |
 | due_time | TEXT，可空 | 只能在有 `due_date` 时设置 |
-| remind_before | INTEGER，可空 | 提前多少分钟提醒，0 表示截止时；只能在有 `due_time` 时设置 |
+| reminders | TEXT，可空 | [提醒](design.md#提醒)，JSON 列表，写法同 [API](api.md) 的 `reminders`；提前多久的只能在有 `due_time` 时设置；没有提醒时为空 |
 | repeat_every | INTEGER，可空 | [重复](design.md#重复)的间隔数，1–365；只能在有 `due_date` 时设置 |
 | repeat_unit | TEXT，可空 | `day`、`week` 或 `month` |
 | repeat_from | TEXT，可空 | 下一次从哪天算：`due`（截止日期）或 `done`（完成那天） |

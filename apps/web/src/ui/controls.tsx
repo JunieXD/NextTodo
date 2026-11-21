@@ -1,5 +1,5 @@
 import { Check as CheckIcon, ChevronsUpDown, type LucideIcon, Minus, Plus } from "lucide-react";
-import { Select as Choice, RadioGroup, Switch as Toggle } from "radix-ui";
+import { Select as Choice, DropdownMenu, RadioGroup, Switch as Toggle } from "radix-ui";
 import { useContext, useState } from "react";
 import type { Status } from "../domain/board";
 import { useBack } from "./back";
@@ -147,6 +147,74 @@ export function Select<T extends string>({
         </Choice.Content>
       </Choice.Portal>
     </Choice.Root>
+  );
+}
+
+/** A row whose menu ticks any number of `items` and stays open meanwhile; `text` says what is ticked.
+ * First is `none`, ticked while nothing else is, which takes the rest off; last may be `more`, an action
+ * of its own that closes the menu, such as adding one not listed. */
+export function MultiSelect<T extends string>({
+  label,
+  text,
+  items,
+  value,
+  onChange,
+  none,
+  more,
+}: {
+  label: string;
+  text: string;
+  items: [T, string][];
+  value: T[];
+  onChange(v: T[]): void;
+  none: string;
+  more?: [string, () => void];
+}) {
+  const root = useContext(RootContext);
+  const [open, setOpen] = useState(false);
+  useBack("dialog", open ? () => setOpen(false) : null);
+  const tick = (
+    <DropdownMenu.ItemIndicator className="tick">
+      <Icon of={CheckIcon} size={18} />
+    </DropdownMenu.ItemIndicator>
+  );
+  return (
+    <DropdownMenu.Root open={open} onOpenChange={setOpen}>
+      <DropdownMenu.Trigger className="row pick" aria-label={label}>
+        <div className="row-inner">
+          <span className="row-name" aria-hidden>
+            {label}
+          </span>
+          <span className="row-value">{text}</span>
+          <Icon of={ChevronsUpDown} size={16} />
+        </div>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal container={root}>
+        <DropdownMenu.Content className="menu choose multi" align="end" sideOffset={4}>
+          <DropdownMenu.CheckboxItem className="menu-item" checked={value.length === 0} onSelect={(e) => e.preventDefault()} onCheckedChange={() => onChange([])}>
+            {none}
+            {tick}
+          </DropdownMenu.CheckboxItem>
+          {items.map(([v, text]) => (
+            <DropdownMenu.CheckboxItem
+              key={v}
+              className="menu-item"
+              checked={value.includes(v)}
+              onSelect={(e) => e.preventDefault()}
+              onCheckedChange={(on) => onChange(on ? [...value, v] : value.filter((x) => x !== v))}
+            >
+              {text}
+              {tick}
+            </DropdownMenu.CheckboxItem>
+          ))}
+          {more && (
+            <DropdownMenu.Item className="menu-item" onSelect={more[1]}>
+              {more[0]}
+            </DropdownMenu.Item>
+          )}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
 

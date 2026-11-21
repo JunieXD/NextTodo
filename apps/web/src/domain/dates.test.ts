@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { deadline, dueKind, formatDue, parseTime, remindLabel } from "./dates";
+import { deadline, dueKind, formatDue, inOrder, parseTime, remindAt, remindersLabel } from "./dates";
 
 // Monday 2 November 2026, 10:30
 const now = new Date(2026, 10, 2, 10, 30);
@@ -22,9 +22,20 @@ test("a date alone is due at the end of that day", () => {
 });
 
 test("reminders", () => {
-  expect([undefined, 0, 30, 120, 2880].map(remindLabel)).toEqual(["不提醒", "截止时", "提前 30 分钟", "提前 2 小时", "提前 2 天"]);
+  expect(remindersLabel(undefined)).toBe("不提醒");
+  expect(remindersLabel([0, 30, 120, 2880].map((before) => ({ before })))).toBe("截止时、提前 30 分钟、提前 2 小时、提前 2 天");
   // Not a whole number of a larger unit, as an agent may set it.
-  expect([90, 1500].map(remindLabel)).toEqual(["提前 90 分钟", "提前 25 小时"]);
+  expect(remindersLabel([{ before: 90 }, { before: 1500 }])).toBe("提前 90 分钟、提前 25 小时");
+  expect(remindersLabel([0, 1, 3].map((days) => ({ days, time: "09:00" })))).toBe("当天 09:00、前一天 09:00、提前 3 天 09:00");
+  // As the server keeps them: the first to come first, each once, none before a time there isn't.
+  const all = [{ before: 0 }, { days: 0, time: "08:00" }, { before: 1440 }, { days: 1, time: "20:00" }, { before: 0 }];
+  expect(inOrder(all, "09:00")).toEqual([{ before: 1440 }, { days: 1, time: "20:00" }, { days: 0, time: "08:00" }, { before: 0 }]);
+  expect(inOrder(all, undefined)).toEqual([{ days: 1, time: "20:00" }, { days: 0, time: "08:00" }]);
+  // By the day, on the date or before it at the time; before the time, by the minute.
+  const due = { date: "2026-11-08", time: "09:00" };
+  expect(remindAt(due, { days: 1, time: "20:00" })).toEqual(new Date(2026, 10, 7, 20, 0));
+  expect(remindAt(due, { before: 90 })).toEqual(new Date(2026, 10, 8, 7, 30));
+  expect(remindAt({ date: "2026-12-01" }, { days: 2, time: "09:30" })).toEqual(new Date(2026, 10, 29, 9, 30));
 });
 
 test("times typed", () => {

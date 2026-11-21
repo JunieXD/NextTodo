@@ -99,10 +99,14 @@ object Card {
     /** Changes go on after the card has gone. */
     private val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    /** Shows `reminders` on the card, behind those on it already. */
+    /** Shows `reminders` on the card, behind those on it already; one of a task there takes the place of
+     * the one before, as in the notification. */
     fun show(context: Context, reminders: List<Reminder>) {
         now = LocalDateTime.now()
-        for (r in reminders) if (queue.none { it.task == r.task }) queue.add(r)
+        for (r in reminders) {
+            val i = queue.indexOfFirst { it.task == r.task }
+            if (i < 0) queue.add(r) else if (r.task != completing) queue[i] = r
+        }
         if (queue.isNotEmpty() && window == null) open(context.applicationContext)
     }
 
@@ -130,7 +134,7 @@ object Card {
                             complete(context, r)
                         },
                         snooze = {
-                            Reminders.snooze(context, r.task, it)
+                            Reminders.snooze(context, r, it)
                             next(r.task)
                         },
                         next = { next(r.task) },
@@ -163,9 +167,11 @@ object Card {
      * has come to wait would skip what the app asks first. */
     private fun retain(context: Context) {
         now = LocalDateTime.now()
-        val current = Reminders.current(context).associateBy { it.task to it.at }
-        queue.removeAll { (it.task to it.at) !in current && it.task != completing }
-        for (i in queue.indices) current[queue[i].task to queue[i].at]?.let { queue[i] = it }
+        for (i in queue.indices.reversed()) {
+            // Of the same time: the next may have a reminder at the same moment.
+            val r = Reminders.shown(context, queue[i].task, queue[i].at)?.takeIf { it.due == queue[i].due }
+            if (r != null) queue[i] = r else if (queue[i].task != completing) queue.removeAt(i)
+        }
         if (queue.isEmpty()) close()
     }
 
@@ -218,14 +224,17 @@ class SnoozeActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        var r by mutableStateOf(Reminders.find(this, intent.data!!.lastPathSegment!!) ?: return finish())
+        val uri = intent.data!!
+        // Opened from the task's notification, which says which of its reminders it shows.
+        val task = uri.lastPathSegment!!
+        var r by mutableStateOf(Reminders.notified(this, task)?.let { Reminders.shown(this, task, it) } ?: return finish())
         var now by mutableStateOf(LocalDateTime.now())
         var completing = false
         // As the card: gone once done, deleted, moved or put off meanwhile, from the notification say;
         // shown as it is now otherwise.
         unwatch = Reminders.watch(this) {
             now = LocalDateTime.now()
-            val current = Reminders.current(this).find { it.task == r.task && it.at == r.at }
+            val current = Reminders.shown(this, r.task, r.at)?.takeIf { it.due == r.due }
             if (current != null) r = current else if (!completing) finish()
         }
         setContent {
@@ -245,7 +254,7 @@ class SnoozeActivity : ComponentActivity() {
                         Card.complete(applicationContext, r)
                     },
                     snooze = {
-                        Reminders.snooze(this, r.task, it)
+                        Reminders.snooze(this, r, it)
                         finish()
                     },
                     next = ::finish,

@@ -5,14 +5,31 @@ import { Popover } from "radix-ui";
 import { type ReactNode, useContext, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import type { Due } from "../api/types/Due";
+import type { Remind } from "../api/types/Remind";
 import type { Repeat } from "../api/types/Repeat";
 import type { RepeatFrom } from "../api/types/RepeatFrom";
 import type { RepeatUnit } from "../api/types/RepeatUnit";
-import { MAX_REMIND, REMINDERS, REMIND_UNITS, type RemindUnit, day, formatDue, isoDate, monthGrid, parseTime, remindIn, remindLabel } from "../domain/dates";
+import {
+  DAY_REMINDERS,
+  MAX_REMIND,
+  MAX_REMIND_DAYS,
+  REMINDERS,
+  REMIND_UNITS,
+  type RemindUnit,
+  day,
+  formatDue,
+  inOrder,
+  isoDate,
+  monthGrid,
+  parseTime,
+  remindLabel,
+  remindersLabel,
+} from "../domain/dates";
 import { dayName, lunarDate, lunarLabel, lunarText } from "../domain/lunar";
 import { WORKDAYS, repeatLabel } from "../domain/repeat";
+import { useDefaultReminders } from "../remind-settings";
 import { useBack } from "../ui/back";
-import { Seg, Select, Stepper, Switch } from "../ui/controls";
+import { MultiSelect, Seg, Select, Stepper, Switch } from "../ui/controls";
 import { Modal, RootContext, Tip } from "../ui/feedback";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
@@ -47,11 +64,23 @@ export function DueEditor({
     return due?.date ?? (start && start > today ? start : today);
   });
   const [time, setTime] = useState(due?.time ?? "");
-  // One of the menu's reminders, its minutes as text; or so many of a unit ahead, which one not on the
-  // menu (set by an agent, say) is.
-  const before = due?.remind_before;
-  const [remind, setRemind] = useState(before === undefined ? "off" : REMINDERS.includes(before) ? String(before) : "custom");
-  const [ahead, setAhead] = useState(() => remindIn(before || 10));
+  // As picked; for a task given a due date now, until they are, this device's defaults for a due
+  // date with a time or without (docs/design.md#提醒). Those before the time go with it.
+  const defaults = useDefaultReminders();
+  const [chosen, setChosen] = useState<Remind[] | null>(due ? (due.reminders ?? []) : null);
+  const reminders = inOrder(chosen ?? (time ? defaults.timed : defaults.dated), time || undefined);
+  // One not on the menu being added: so far ahead of the time, or on a day before at a time.
+  const [adding, setAdding] = useState(false);
+  const [byDay, setByDay] = useState(false);
+  const [ahead, setAhead] = useState<[number, RemindUnit]>([10, "minute"]);
+  const [onDay, setOnDay] = useState<[number, string]>([1, "09:00"]);
+  const add = () => {
+    setChosen([...reminders, time && !byDay ? { before: ahead[0] * REMIND_UNITS[ahead[1]].minutes } : { days: onDay[0], time: onDay[1] }]);
+    setAdding(false);
+  };
+  // From the due time back, as the menu lists them.
+  const offered = inOrder([...(time ? REMINDERS.map((before) => ({ before })) : DAY_REMINDERS), ...reminders], time || undefined).reverse();
+  const key = (r: Remind) => ("before" in r ? `before ${r.before}` : `${r.days} days ${r.time}`);
   const was = due?.repeat;
   // One of the units, every one of them; a year, every 12 months; or every so many of a unit.
   const [kind, setKind] = useState<RepeatUnit | "year" | "custom" | "off">(
@@ -87,7 +116,6 @@ export function DueEditor({
   const workdays = repeat?.every === 1 && repeat.unit === "week" && repeat.days?.join() === WORKDAYS.join();
   const named = repeat?.days && !workdays ? repeatLabel(repeat, date) : null;
   const menu = workdays ? "workdays" : named ? "days" : kind;
-  const remindBefore = remind === "custom" ? ahead[0] * REMIND_UNITS[ahead[1]].minutes : Number(remind);
   // Said once saving is tried, until it is put right.
   const [tried, setTried] = useState(false);
   const early = Boolean(startTime && time && date === start && time < startTime);
@@ -97,7 +125,7 @@ export function DueEditor({
   const unlisted = lunar && !lunarDay;
   const save = () => {
     if (early || ended || unlisted) return setTried(true);
-    onSave({ date, ...(time && { time }), ...(time && remind !== "off" && { remind_before: remindBefore }), ...(repeat && { repeat }) });
+    onSave({ date, ...(time && { time }), ...(reminders.length && { reminders }), ...(repeat && { repeat }) });
     onClose();
   };
   return (
@@ -105,28 +133,54 @@ export function DueEditor({
       <Calendar value={date} min={start ?? undefined} onChange={setDate} />
       <div className="group settings">
         <TimeRow value={time} extra={due?.time} onChange={setTime} />
-        <Select
+        <MultiSelect
           label="提醒"
-          row
-          items={[["off", time ? "不提醒" : "设置时间后才能提醒"], ...REMINDERS.map((m): [string, string] => [String(m), remindLabel(m)]), ["custom", "自定义"]]}
-          value={time ? remind : "off"}
-          disabled={!time}
-          onChange={(r) => {
-            // Customizing what was picked: it is the place to start from.
-            if (r === "custom" && Number(remind) > 0) setAhead(remindIn(Number(remind)));
-            setRemind(r);
-          }}
+          text={remindersLabel(reminders)}
+          items={offered.map((r) => [key(r), remindLabel(r)])}
+          value={reminders.map(key)}
+          onChange={(keys) => setChosen(offered.filter((r) => keys.includes(key(r))))}
+          none="不提醒"
+          more={["自定义…", () => setAdding(true)]}
         />
-        {time && remind === "custom" && (
-          <Controls name="提前">
-            <Stepper label="提前多少" min={1} value={ahead[0]} max={MAX_REMIND / REMIND_UNITS[ahead[1]].minutes} onChange={(n) => setAhead([n, ahead[1]])} />
-            <Seg<RemindUnit>
-              label="提前的单位"
+        {adding && time && (
+          <Controls name="提醒方式">
+            <Seg<"ahead" | "day">
+              label="提醒方式"
               small
-              items={AHEAD}
-              value={ahead[1]}
-              onChange={(u) => setAhead([Math.min(ahead[0], MAX_REMIND / REMIND_UNITS[u].minutes), u])}
+              items={[
+                ["ahead", "提前多久"],
+                ["day", "按日子"],
+              ]}
+              value={byDay ? "day" : "ahead"}
+              onChange={(k) => setByDay(k === "day")}
             />
+          </Controls>
+        )}
+        {adding &&
+          (time && !byDay ? (
+            <Controls name="提前">
+              <Stepper label="提前多少" min={1} value={ahead[0]} max={MAX_REMIND / REMIND_UNITS[ahead[1]].minutes} onChange={(n) => setAhead([n, ahead[1]])} />
+              <Seg<RemindUnit>
+                label="提前的单位"
+                small
+                items={AHEAD}
+                value={ahead[1]}
+                onChange={(u) => setAhead([Math.min(ahead[0], MAX_REMIND / REMIND_UNITS[u].minutes), u])}
+              />
+            </Controls>
+          ) : (
+            <>
+              <Controls name="提前几天">
+                <Stepper label="提前几天" min={0} value={onDay[0]} max={MAX_REMIND_DAYS} onChange={(n) => setOnDay([n, onDay[1]])} />
+              </Controls>
+              <TimeRow label="几点" value={onDay[1]} onChange={(t) => setOnDay([onDay[0], t])} />
+            </>
+          ))}
+        {adding && (
+          <Controls name="">
+            <button className="text-btn" onClick={add}>
+              添加
+            </button>
           </Controls>
         )}
         <Select<typeof menu>
@@ -387,8 +441,9 @@ const HOURS = Array.from({ length: 24 }, (_, h) => h);
 const FIVES = Array.from({ length: 12 }, (_, i) => i * 5);
 
 /** The time of day, `HH:MM`, or none: typed, or the hour, then the minute, every 5, from two columns.
- * The minutes of `extra`, the time it was, and of the time now are there to pick too. */
-function TimeRow({ value, extra, onChange }: { value: string; extra?: string; onChange(time: string): void }) {
+ * The minutes of `extra`, the time it was, and of the time now are there to pick too. Named `label`
+ * otherwise than 时间, it can't be none. */
+function TimeRow({ label = "时间", value, extra, onChange }: { label?: string; value: string; extra?: string; onChange(time: string): void }) {
   const root = useContext(RootContext);
   const [open, setOpen] = useState(false);
   useBack("dialog", open ? () => setOpen(false) : null);
@@ -423,7 +478,7 @@ function TimeRow({ value, extra, onChange }: { value: string; extra?: string; on
     <Popover.Root open={open} onOpenChange={setOpen} modal>
       <Popover.Trigger className="row pick">
         <div className="row-inner">
-          时间
+          {label}
           <span className="row-value">{value || "不设时间"}</span>
           <Icon of={ChevronsUpDown} size={16} />
         </div>
@@ -453,9 +508,11 @@ function TimeRow({ value, extra, onChange }: { value: string; extra?: string; on
               ))}
             </div>
           </div>
-          <button className="menu-item" onClick={() => (onChange(""), setOpen(false))}>
-            不设时间
-          </button>
+          {label === "时间" && (
+            <button className="menu-item" onClick={() => (onChange(""), setOpen(false))}>
+              不设时间
+            </button>
+          )}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

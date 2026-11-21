@@ -248,11 +248,8 @@ pub fn show(c: &Connection, cx: &Cx, a: ShowArgs) -> Result<Output, ApiError> {
         lines.push(format!("开始：{s}"));
     }
     if let Some(d) = &t.due {
-        let remind = match d.at.as_ref().and_then(|at| at.remind_before) {
-            None => String::new(),
-            Some(0) => "，截止时提醒".into(),
-            Some(m) => format!("，提前 {m} 分钟提醒"),
-        };
+        let reminders: Vec<String> = d.reminders().iter().map(text::remind).collect();
+        let remind = if reminders.is_empty() { String::new() } else { format!("，提醒：{}", reminders.join("、")) };
         lines.push(format!("截止：{}{remind}", text::due(d)));
     }
     if let Some(done_at) = t.done_at {

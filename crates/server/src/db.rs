@@ -31,6 +31,7 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/018_folder_style.sql"),
     include_str!("../migrations/019_repeat_lunar.sql"),
     include_str!("../migrations/020_completions.sql"),
+    include_str!("../migrations/021_reminders.sql"),
 ];
 
 #[derive(Clone)]
@@ -300,5 +301,30 @@ fn replaced_seq(db: &Path) -> anyhow::Result<i64> {
             Ok(0)
         }
         Err(e) => Err(e).context("无法读取现在的数据库"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_reminder_of_before_becomes_a_list_of_one() {
+        let mut c = Connection::open_in_memory().unwrap();
+        let at = MIGRATIONS.iter().position(|m| m.contains("ADD COLUMN reminders")).unwrap();
+        for sql in &MIGRATIONS[..at] {
+            c.execute_batch(sql).unwrap();
+        }
+        c.pragma_update(None, "user_version", i64::try_from(at).unwrap()).unwrap();
+        c.execute_batch(
+            "INSERT INTO users (id, username, display_name, password_hash, created_at) VALUES ('u', 'u', 'u', 'x', 0);
+             INSERT INTO tasks (id, owner_id, number, title, due_date, due_time, remind_before, sort_key, created_at, updated_at)
+             VALUES ('a', 'u', 1, 'a', '2026-11-20', '18:00', 60, 'a0', 0, 0), ('b', 'u', 2, 'b', '2026-11-20', NULL, NULL, 'a1', 0, 0);",
+        )
+        .unwrap();
+        migrate(&mut c).unwrap();
+        let mut q = c.prepare("SELECT reminders FROM tasks ORDER BY number").unwrap();
+        let reminders: Vec<Option<String>> = q.query_map([], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+        assert_eq!(reminders, [Some(r#"[{"before":60}]"#.to_owned()), None]);
     }
 }

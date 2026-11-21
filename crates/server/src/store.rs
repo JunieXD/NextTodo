@@ -5,8 +5,8 @@ use std::collections::HashMap;
 
 use nexttodo_core::board::Snapshot;
 use nexttodo_core::model::{
-    AiJob, AiJobId, Attachment, AttachmentId, Completion, Completions, Date, Dependency, Due, DueAt, Every, FileSize, Folder, FolderId,
-    Holder, MediaType, Monthdays, NoteText, Period, Person, Repeat, RepeatFrom, RepeatUnit, Share, SortKey, Task, TaskId, Time, Weekdays,
+    AiJob, AiJobId, Attachment, AttachmentId, Completion, Completions, Date, Dependency, Due, Every, FileSize, Folder, FolderId, Holder,
+    MediaType, Monthdays, NoteText, Period, Person, Remind, Repeat, RepeatFrom, RepeatUnit, Share, SortKey, Task, TaskId, Time, Weekdays,
 };
 use rusqlite::{Connection, OptionalExtension, Params, Row, params};
 
@@ -17,7 +17,7 @@ const ATTACHMENTS: &str =
     "SELECT a.id, a.task_id, a.job_id, a.name, f.type, f.size, a.created_at FROM attachments a JOIN files f ON f.id = a.id";
 macro_rules! task_columns {
     () => {
-        "id, number, folder_id, title, description, done_at, due_date, due_time, remind_before, sort_key, created_at, updated_at, created_via, updated_via, repeat_every, repeat_unit, repeat_from, repeat_days, completion_count, last_completed, repeat_monthdays, start_date, created_by, updated_by, start_time, repeat_until, repeat_lunar"
+        "id, number, folder_id, title, description, done_at, due_date, due_time, reminders, sort_key, created_at, updated_at, created_via, updated_via, repeat_every, repeat_unit, repeat_from, repeat_days, completion_count, last_completed, repeat_monthdays, start_date, created_by, updated_by, start_time, repeat_until, repeat_lunar"
     };
 }
 const TASK_COLUMNS: &str = task_columns!();
@@ -51,7 +51,12 @@ fn folder_row(r: &Row) -> rusqlite::Result<Folder> {
 fn task_row(r: &Row) -> rusqlite::Result<Task> {
     let date: Option<Date> = r.get(6)?;
     let time: Option<Time> = r.get(7)?;
-    let remind_before: Option<u32> = r.get(8)?;
+    let reminders: Option<String> = r.get(8)?;
+    let reminders: Vec<Remind> = match reminders {
+        Some(json) => serde_json::from_str(&json)
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, Box::new(e)))?,
+        None => Vec::new(),
+    };
     // Set together or not at all, as the table checks.
     let repeat = match (r.get(14)?, r.get(15)?, r.get(16)?) {
         (Some(every), Some(unit), Some(from)) => {
@@ -79,7 +84,10 @@ fn task_row(r: &Row) -> rusqlite::Result<Task> {
         done_at: r.get(5)?,
         start: r.get(21)?,
         start_time: r.get(24)?,
-        due: date.map(|date| Due { date, at: time.map(|time| DueAt { time, remind_before }), repeat }),
+        due: date
+            .map(|date| Due::new(date, time, reminders, repeat))
+            .transpose()
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(8, rusqlite::types::Type::Text, e.into()))?,
         completions,
         sort_key: r.get(9)?,
         assignees: serde_json::from_str(&assignees)
@@ -144,12 +152,12 @@ fn all<T>(c: &Connection, sql: &str, p: impl Params, f: fn(&Row) -> rusqlite::Re
     c.prepare_cached(sql)?.query_map(p, f)?.collect()
 }
 
-/// The due date's columns: date, time, reminder, and the repeat's every, unit, from, days of the week,
+/// The due date's columns: date, time, reminders as JSON, and the repeat's every, unit, from, days of the week,
 /// days of the month, last day and whether it goes by the lunar calendar.
 type DueColumns<'a> = (
     Option<&'a Date>,
     Option<&'a Time>,
-    Option<u32>,
+    Option<String>,
     Option<Every>,
     Option<RepeatUnit>,
     Option<RepeatFrom>,
@@ -172,7 +180,9 @@ fn due_columns(due: &Option<Due>) -> DueColumns<'_> {
     let (every, unit, from) = (r.map(|r| r.every), r.map(|r| r.period.unit()), r.map(|r| r.from));
     let until = r.and_then(|r| r.until.as_ref());
     let lunar = r.is_some_and(|r| matches!(r.period, Period::LunarMonth(_)));
-    (Some(&d.date), at.map(|at| &at.time), at.and_then(|at| at.remind_before), every, unit, from, days, monthdays, until, lunar)
+    let reminders = d.reminders();
+    let reminders = (!reminders.is_empty()).then(|| serde_json::to_string(&reminders).expect("reminders are JSON"));
+    (Some(&d.date), at.map(|at| &at.time), reminders, every, unit, from, days, monthdays, until, lunar)
 }
 
 /// A folder and its owner.
@@ -332,7 +342,7 @@ pub fn update_task(c: &Connection, owner: &str, t: &Task) -> rusqlite::Result<()
     let (date, time, remind, every, unit, from, days, monthdays, until, lunar) = due_columns(&t.due);
     c.execute(
         "UPDATE tasks SET folder_id = ?2, title = ?3, description = ?4, done_at = ?5, due_date = ?6, due_time = ?7,
-         remind_before = ?8, sort_key = ?9, updated_at = ?10, updated_via = ?11, repeat_every = ?12, repeat_unit = ?13,
+         reminders = ?8, sort_key = ?9, updated_at = ?10, updated_via = ?11, repeat_every = ?12, repeat_unit = ?13,
          repeat_from = ?14, repeat_days = ?15, completion_count = ?16, last_completed = ?17, repeat_monthdays = ?18,
          start_date = ?19, updated_by = ?20, owner_id = ?21, number = ?22, start_time = ?23, repeat_until = ?24, repeat_lunar = ?25 WHERE id = ?1",
         params![

@@ -1,8 +1,8 @@
 //! Tool arguments. Descriptions are written for the agents that read the tool list.
 
 use nexttodo_core::model::{
-    AttachmentId, Date, Description, Every, FileName, FolderColor, FolderIcon, MediaType, Monthdays, Period, RepeatFrom, Time, Title,
-    Weekdays,
+    AttachmentId, Date, Description, Every, FileName, FolderColor, FolderIcon, MediaType, Monthdays, Period, Remind, RemindBefore,
+    RemindOn, RepeatFrom, Time, Title, Weekdays,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer};
@@ -142,8 +142,11 @@ pub struct AddArgs {
     pub start: Option<WhenText>,
     #[schemars(with = "Option<String>", description = "截止时间：2026-11-20 或 2026-11-20 18:00")]
     pub due: Option<WhenText>,
-    #[schemars(description = "提前多少分钟提醒，0 表示截止时；截止时间要带具体时间")]
-    pub remind: Option<u32>,
+    #[schemars(
+        with = "Option<RemindInput>",
+        description = "提醒，一个或几个（列表）：数字是提前多少分钟，0 是截止时，要有带具体时间的截止；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设。如 [60, \"1d 20:00\"]"
+    )]
+    pub remind: Option<RemindText>,
     #[schemars(
         with = "Option<String>",
         description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l 并写几号（1–30，初一到三十），1lm:1,15 农历每月初一和十五、1ly:15 每年农历的十五（在截止日期的农历月）；要有截止时间。完成时顺延截止时间，开始时间跟着顺延，不会真的完成（repeat_until 前的最后一次除外）"
@@ -192,12 +195,15 @@ pub struct EditArgs {
     #[serde(default, deserialize_with = "nullable")]
     #[schemars(
         with = "Option<String>",
-        description = "截止时间：2026-11-20 或 2026-11-20 18:00；null 清除。不给 remind 时，新时间带具体时间就保留原来的提醒"
+        description = "截止时间：2026-11-20 或 2026-11-20 18:00；null 清除。不给 remind 时保留原来的提醒，新时间不带具体时间的去掉提前多少分钟的"
     )]
     pub due: Option<Option<WhenText>>,
     #[serde(default, deserialize_with = "nullable")]
-    #[schemars(description = "提前多少分钟提醒，0 表示截止时；null 清除")]
-    pub remind: Option<Option<u32>>,
+    #[schemars(
+        with = "Option<RemindInput>",
+        description = "提醒，一个或几个（列表），整个换掉原来的：数字是提前多少分钟，0 是截止时，要有带具体时间的截止；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设；null 或 [] 清除"
+    )]
+    pub remind: Option<Option<RemindText>>,
     #[serde(default, deserialize_with = "nullable")]
     #[schemars(
         with = "Option<String>",
@@ -410,8 +416,11 @@ pub struct PlanTask {
     pub start: Option<WhenText>,
     #[schemars(with = "Option<String>", description = "截止时间：2026-11-20 或 2026-11-20 18:00")]
     pub due: Option<WhenText>,
-    #[schemars(description = "提前多少分钟提醒，0 表示截止时；截止时间要带具体时间")]
-    pub remind: Option<u32>,
+    #[schemars(
+        with = "Option<RemindInput>",
+        description = "提醒，一个或几个（列表）：数字是提前多少分钟，0 是截止时，要有带具体时间的截止；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设。如 [60, \"1d 20:00\"]"
+    )]
+    pub remind: Option<RemindText>,
     #[schemars(
         with = "Option<String>",
         description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l 并写几号（1–30，初一到三十），1lm:1,15 农历每月初一和十五、1ly:15 每年农历的十五（在截止日期的农历月）；要有截止时间。完成时顺延截止时间，不会真的完成（repeat_until 前的最后一次除外）"
@@ -467,6 +476,64 @@ impl TryFrom<String> for WhenText {
         let (date, time) = s.split_once(' ').map_or((s, None), |(d, t)| (d, Some(t.trim())));
         Ok(WhenText { date: date.to_owned().try_into()?, time: time.map(|t| t.to_owned().try_into()).transpose()? })
     }
+}
+
+/// Reminders as typed: one or a list of minutes before the due time, `60`, or a time on the due date,
+/// `"09:00"`, or so many days before it, `"1d 20:00"`.
+#[derive(Clone, Deserialize)]
+#[serde(try_from = "RemindInput")]
+pub struct RemindText(pub Vec<Remind>);
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum RemindInput {
+    One(RemindItem),
+    Many(Vec<RemindItem>),
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum RemindItem {
+    Minutes(u32),
+    Text(String),
+}
+
+impl TryFrom<RemindInput> for RemindText {
+    type Error = String;
+
+    fn try_from(input: RemindInput) -> Result<Self, String> {
+        let items = match input {
+            RemindInput::One(item) => vec![item],
+            RemindInput::Many(items) => items,
+        };
+        items.into_iter().map(remind).collect::<Result<_, _>>().map(RemindText)
+    }
+}
+
+/// `r` as it is typed: the other way round from `remind`.
+pub fn remind_text(r: &Remind) -> serde_json::Value {
+    match r {
+        Remind::Before(RemindBefore { before }) => (*before).into(),
+        Remind::On(RemindOn { days: 0, time }) => time.as_str().into(),
+        Remind::On(RemindOn { days, time }) => format!("{days}d {}", time.as_str()).into(),
+    }
+}
+
+fn remind(item: RemindItem) -> Result<Remind, String> {
+    let s = match item {
+        RemindItem::Minutes(before) => return Ok(Remind::Before(RemindBefore { before })),
+        RemindItem::Text(s) => s,
+    };
+    let wrong = || format!("提醒“{s}”格式错误，应为提前的分钟数如 60，截止那天的几点如 \"09:00\"，或提前几天的几点如 \"1d 20:00\"");
+    let t = s.trim();
+    if let Ok(before) = t.parse() {
+        return Ok(Remind::Before(RemindBefore { before }));
+    }
+    let (days, time) = match t.split_once(char::is_whitespace) {
+        Some((days, time)) => (days.strip_suffix('d').and_then(|d| d.parse().ok()).ok_or_else(wrong)?, time.trim()),
+        None => (0, t),
+    };
+    Ok(Remind::On(RemindOn { days, time: Time::try_from(time.to_owned()).map_err(|_| wrong())? }))
 }
 
 /// A repeat as typed: `1d`, `2w`, `3m`, `1y` (12 months); weekly on some days, Monday 1 to Sunday 7,

@@ -8,7 +8,8 @@ enum Reminders {
     private static let center = UNUserNotificationCenter.current()
     /// The list last handed over, as JSON.
     private static let LIST = "reminders.list"
-    /// The reminders put off on this phone, by task, as JSON `{task: {at, until}}`.
+    /// The reminders put off on this phone, by task, as JSON `{task: {at, until}}`: one a task, which the
+    /// next of its reminders to come takes the place of.
     private static let SNOOZED = "reminders.snoozed"
     /// The most the system keeps scheduled for an app.
     private static let MOST = 64
@@ -20,11 +21,13 @@ enum Reminders {
     /// How long a reminder can be put off by: the presets of Android's.
     static let SNOOZES = [(15, "15 分钟后提醒"), (60, "1 小时后提醒"), (180, "3 小时后提醒")]
 
-    /// A reminder as `apps/web/src/mobile.ts` gives it: `at` in ms; `waiting`, how many of its
-    /// prerequisites are not done.
+    /// A reminder as `apps/web/src/mobile.ts` gives it: `at` in ms; `due`, when the time it is of is
+    /// due, the same for a task's reminders of one time; `waiting`, how many of its prerequisites are
+    /// not done.
     private struct Reminder: Codable {
         let task: String
         let at: Int64
+        let due: Int64
         let title: String
         let body: String
         let waiting: Int
@@ -60,17 +63,45 @@ enum Reminders {
         if !list.isEmpty, settings().authorizationStatus == .notDetermined {
             _ = wait { done in center.requestAuthorization(options: [.alert, .sound, .badge]) { allowed, _ in done(allowed) } }
         }
-        UserDefaults.standard.set(json, forKey: LIST)
-        let byTask = Dictionary(list.map { ($0.task, $0) }) { first, _ in first }
-        // Put off, a reminder stays so while its time is the same.
-        snoozed = snoozed.filter { byTask[$0.key]?.at == $0.value.at }
+        stored = list
+        schedule(list)
+        // Shown already: those no longer in the list go, and those that say otherwise than they would
+        // now, the content hidden since say, or are of a deadline moved since. The system can't change
+        // one shown.
+        let wanted = Dictionary(list.map { (id(task: $0.task, at: $0.at), $0) }) { first, _ in first }
+        let shown = wait { center.getDeliveredNotifications(completionHandler: $0) }.filter { isReminder($0.request.content) }
+        let stale = shown.filter { n in
+            let c = n.request.content
+            return wanted[n.request.identifier].map { $0.title != c.title || $0.body != c.body || $0.due != due(of: c) } ?? true
+        }
+        center.removeDeliveredNotifications(withIdentifiers: stale.map(\.request.identifier))
+    }
+
+    /// Whether `task`'s time due at `due` is still to be done: neither done since from one of its
+    /// reminders, nor done, moved or deleted elsewhere since the last list.
+    static func listed(task: String, due: Int64) -> Bool {
+        dispatchPrecondition(condition: .onQueue(queue))
+        return stored.contains { $0.task == task && $0.due == due }
+    }
+
+    /// The list last handed over, less the times done since from a reminder.
+    private static var stored: [Reminder] {
+        get { UserDefaults.standard.string(forKey: LIST).map { try! JSONDecoder().decode([Reminder].self, from: Data($0.utf8)) } ?? [] }
+        set { UserDefaults.standard.set(String(decoding: try! JSONEncoder().encode(newValue), as: UTF8.self), forKey: LIST) }
+    }
+
+    /// Has the system show `list`'s reminders to come, the nearest `MOST`; one put off, when it was put
+    /// off to. That holds while the reminder is there at the same time, and until another of its task's
+    /// comes first, as on Android: put off past the next, it would come twice.
+    private static func schedule(_ list: [Reminder]) {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let put = snoozed.filter { task, s in
+            list.contains { $0.task == task && $0.at == s.at } && !list.contains { $0.task == task && $0.at > now && $0.at <= s.until }
+        }
+        snoozed = put
         center.removeAllPendingNotificationRequests()
-        let due = list.map { ($0, snoozed[$0.task]?.until ?? $0.at) }.filter { $0.1 > now }.sorted { $0.1 < $1.1 }
+        let due = list.map { r in (r, put[r.task].flatMap { $0.at == r.at ? $0.until : nil } ?? r.at) }.filter { $0.1 > now }.sorted { $0.1 < $1.1 }
         for (reminder, at) in due.prefix(MOST) { center.add(request(reminder, at: at, now: now)) }
-        // Shown already: those no longer in the list, or of another time, go.
-        let shown = wait { center.getDeliveredNotifications(completionHandler: $0) }.filter(isReminder)
-        center.removeDeliveredNotifications(withIdentifiers: shown.filter { byTask[$0.request.identifier]?.at != at(of: $0.request.content) }.map(\.request.identifier))
     }
 
     /// Takes away every reminder, those shown already too.
@@ -79,29 +110,27 @@ enum Reminders {
         UserDefaults.standard.removeObject(forKey: LIST)
         UserDefaults.standard.removeObject(forKey: SNOOZED)
         center.removeAllPendingNotificationRequests()
-        center.removeDeliveredNotifications(withIdentifiers: wait { center.getDeliveredNotifications(completionHandler: $0) }.filter(isReminder).map(\.request.identifier))
+        center.removeDeliveredNotifications(withIdentifiers: wait { center.getDeliveredNotifications(completionHandler: $0) }.filter { isReminder($0.request.content) }.map(\.request.identifier))
     }
 
-    /// `task` was marked done from its reminder at `at`: shown or put off, that one goes. A repeating
-    /// task's next, which the page may have handed over by the time the server answered, stays.
-    static func completed(task: String, at: Int64) {
+    /// `task` was marked done, its time due at `due`: shown or put off, those reminders go. A repeating
+    /// task's next time's, which the page may have handed over by the time the server answered, stay.
+    static func completed(task: String, due: Int64) {
         dispatchPrecondition(condition: .onQueue(queue))
-        if snoozed[task]?.at == at { snoozed[task] = nil }
-        let pending = wait { center.getPendingNotificationRequests(completionHandler: $0) }
-        if pending.contains(where: { $0.identifier == task && Reminders.at(of: $0.content) == at }) {
-            center.removePendingNotificationRequests(withIdentifiers: [task])
-        }
+        let list = stored.filter { $0.task != task || $0.due != due }
+        stored = list
+        schedule(list)
         let shown = wait { center.getDeliveredNotifications(completionHandler: $0) }
-        if shown.contains(where: { $0.request.identifier == task && Reminders.at(of: $0.request.content) == at }) {
-            center.removeDeliveredNotifications(withIdentifiers: [task])
-        }
+            .filter { isReminder($0.request.content) && Reminders.task(of: $0.request.content) == task && Reminders.due(of: $0.request.content) == due }
+        center.removeDeliveredNotifications(withIdentifiers: shown.map(\.request.identifier))
     }
 
-    /// Shows the reminder of `content` again `minutes` from now, on this phone only.
-    static func snooze(task: String, content: UNNotificationContent, minutes: Int) {
+    /// Shows the reminder of `content` again `minutes` from now, on this phone only, as it is now: its
+    /// content hidden since, say.
+    static func snooze(content: UNNotificationContent, minutes: Int) {
         dispatchPrecondition(condition: .onQueue(queue))
-        snoozed[task] = Snooze(at: at(of: content), until: Int64(Date().timeIntervalSince1970 * 1000) + Int64(minutes) * 60_000)
-        center.add(UNNotificationRequest(identifier: task, content: content, trigger: UNTimeIntervalNotificationTrigger(timeInterval: Double(minutes * 60), repeats: false)))
+        snoozed[task(of: content)] = Snooze(at: at(of: content), until: Int64(Date().timeIntervalSince1970 * 1000) + Int64(minutes) * 60_000)
+        schedule(stored)
     }
 
     /// Says a change made here was turned down: which, and why. Tapping it opens the app.
@@ -128,11 +157,17 @@ enum Reminders {
         content.body = r.body
         content.sound = .default
         content.categoryIdentifier = completable(r, at: at) ? DONE : WAITING
+        // A task's together.
+        content.threadIdentifier = r.task
         // The reminder's own time, which one put off keeps.
-        content.userInfo = ["at": r.at]
+        content.userInfo = ["task": r.task, "at": r.at, "due": r.due]
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: Double(at - now) / 1000, repeats: false)
-        return UNNotificationRequest(identifier: r.task, content: content, trigger: trigger)
+        return UNNotificationRequest(identifier: id(task: r.task, at: r.at), content: content, trigger: trigger)
     }
+
+    /// A reminder's notification: one for each of a task's reminders, which the system can't have take
+    /// another's place once shown.
+    private static func id(task: String, at: Int64) -> String { "\(task) \(at)" }
 
     /// Whether `r`'s task can be marked done as it shows at `at`: it waits for nothing, and has started
     /// by then, by this phone's clock. Decided as it is scheduled: the app may not run when it shows.
@@ -145,10 +180,16 @@ enum Reminders {
         return Int64(format.date(from: "\(start) \(r.start_time ?? "00:00")")!.timeIntervalSince1970 * 1000) <= at
     }
 
-    private static func isReminder(_ n: UNNotification) -> Bool { [DONE, WAITING].contains(n.request.content.categoryIdentifier) }
+    private static func isReminder(_ content: UNNotificationContent) -> Bool { [DONE, WAITING].contains(content.categoryIdentifier) }
 
     /// The time of the reminder `content` shows, which one put off keeps.
     static func at(of content: UNNotificationContent) -> Int64 { (content.userInfo["at"] as! NSNumber).int64Value }
+
+    /// When the time the reminder `content` shows is of is due.
+    static func due(of content: UNNotificationContent) -> Int64 { (content.userInfo["due"] as! NSNumber).int64Value }
+
+    /// The task the reminder `content` shows is of.
+    static func task(of content: UNNotificationContent) -> String { content.userInfo["task"] as! String }
 
     /// Waits for what the system answers `ask` with: off the main thread.
     private static func wait<T>(_ ask: (@escaping (T) -> Void) -> Void) -> T {
@@ -175,11 +216,11 @@ final class NotificationActions: NSObject, UNUserNotificationCenterDelegate {
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler done: @escaping () -> Void) {
         let request = response.notification.request
-        let task = request.identifier
         guard [Reminders.DONE, Reminders.WAITING].contains(request.content.categoryIdentifier) else {
             Opening.open(URL(string: "nexttodo://home")!)
             return done()
         }
+        let task = Reminders.task(of: request.content)
         switch response.actionIdentifier {
         case "done":
             Local.queue.async {
@@ -190,7 +231,7 @@ final class NotificationActions: NSObject, UNUserNotificationCenterDelegate {
                     if Local.running { _ = Local.resume() } else { _ = try? Local.open() }
                 }
                 Changes.queue.async {
-                    if case let .refused(message) = Changes.complete(task: task, title: request.content.title, at: Reminders.at(of: request.content)) {
+                    if case let .refused(message)? = Changes.complete(task: task, title: request.content.title, due: Reminders.due(of: request.content)) {
                         Reminders.queue.sync { Reminders.refused(id: Server.uuid7(), what: "完成“\(request.content.title)”", message: message) }
                     }
                     DispatchQueue.main.async(execute: done)
@@ -198,7 +239,7 @@ final class NotificationActions: NSObject, UNUserNotificationCenterDelegate {
             }
         case let action where action.hasPrefix("snooze-"):
             Reminders.queue.async {
-                Reminders.snooze(task: task, content: request.content, minutes: Int(action.dropFirst("snooze-".count))!)
+                Reminders.snooze(content: request.content, minutes: Int(action.dropFirst("snooze-".count))!)
                 DispatchQueue.main.async(execute: done)
             }
         case UNNotificationDefaultActionIdentifier:

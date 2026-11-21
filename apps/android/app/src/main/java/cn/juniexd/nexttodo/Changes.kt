@@ -63,16 +63,16 @@ object Changes {
     private fun JSONArray.objects() = (0 until length()).map(::getJSONObject)
 
     /** Marks `task`, titled `title`, done; a repeating one moves on from today here. Done or kept, its
-     * reminder goes, and the widget stops showing it. */
+     * reminders of this time go, and the widget stops showing it. */
     suspend fun complete(context: Context, task: String, title: String): Outcome {
         val token = Server.token(context)
-        // The one it was done from: the app may hand over the next by the time the server answers.
-        val at = Reminders.find(context, task)?.at
+        // This time's: the app may hand over the next time's by the time the server answers.
+        val due = Reminders.due(context, task)
         val op = JSONObject().put("op", "task.update").put("id", task).put("done", true).put("today", LocalDate.now().toString())
         val outcome = submit(context, op, "完成“$title”")
         // Signed in again meanwhile, maybe as someone else, whose reminders these are.
         if (outcome is Outcome.Refused || token == null || Server.token(context) != token) return outcome
-        if (at != null) Reminders.completed(context, task, at)
+        if (due != null) Reminders.completed(context, task, due)
         return outcome
     }
 

@@ -1,6 +1,8 @@
 // Due dates as people read them. Dates and times are the user's local ones, as stored.
 
 import type { Due } from "../api/types/Due";
+import type { Remind } from "../api/types/Remind";
+import type { RemindOn } from "../api/types/RemindOn";
 
 const WEEK = "日一二三四五六";
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -105,8 +107,45 @@ export function ago(ms: number, now: Date): string {
   return `${Math.floor(s / 86_400)} 天前`;
 }
 
-/** The reminder choices offered, in minutes before the deadline. */
+/** The reminders offered for a task due at a time, in minutes before it. */
 export const REMINDERS = [0, 5, 15, 30, 60, 120, 1440, 2880, 10_080];
+
+/** And on the due date or days before it, for a task due on a date alone; as menus list them, from the
+ * due date back. */
+export const DAY_REMINDERS: RemindOn[] = [
+  { days: 0, time: "09:00" },
+  { days: 1, time: "20:00" },
+  { days: 1, time: "09:00" },
+  { days: 2, time: "09:00" },
+  { days: 7, time: "09:00" },
+];
+
+/** The furthest ahead a reminder by the day may be, as the server has it. */
+export const MAX_REMIND_DAYS = 30;
+
+const minutesOf = (time: string) => {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+};
+
+/** `reminders` of a task due at `time`, if any, as the server keeps them: those before the time only
+ * with one, each once, the first to come first, one before the time ahead of one by the day at the
+ * same moment. */
+export function inOrder(reminders: Remind[], time: string | undefined): Remind[] {
+  // Minutes from the start of the due date.
+  const before = time === undefined ? [] : reminders.flatMap((r) => ("before" in r ? [[minutesOf(time) - r.before, r] as const] : []));
+  const on = reminders.flatMap((r) => ("days" in r ? [[minutesOf(r.time) - r.days * 1440, r] as const] : []));
+  const unique = new Map([...before, ...on].map(([at, r]) => [JSON.stringify(r), [at, r] as const]));
+  return [...unique.values()].sort(([a], [b]) => a - b).map(([, r]) => r);
+}
+
+/** When reminder `r` of `due` comes. */
+export function remindAt(due: Due, r: Remind): Date {
+  if ("before" in r) return new Date(deadline(due).getTime() - r.before * 60_000);
+  const d = day(due.date);
+  const [h, m] = r.time.split(":").map(Number);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - r.days, h, m);
+}
 
 /** The furthest ahead a reminder may be, as the server has it: 30 days. */
 export const MAX_REMIND = 30 * 1440;
@@ -124,9 +163,13 @@ export function remindIn(minutes: number): [number, RemindUnit] {
   return minutes % 1440 === 0 ? [minutes / 1440, "day"] : minutes % 60 === 0 ? [minutes / 60, "hour"] : [minutes, "minute"];
 }
 
-export function remindLabel(minutes: number | undefined): string {
-  if (minutes === undefined) return "不提醒";
-  if (minutes === 0) return "截止时";
-  const [n, unit] = remindIn(minutes);
+/** `截止时`, `提前 90 分钟`, `提前 3 小时`, `提前 2 天`; `当天 09:00`, `前一天 20:00`, `提前 3 天 09:00`. */
+export function remindLabel(r: Remind): string {
+  if ("days" in r) return r.days === 0 ? `当天 ${r.time}` : r.days === 1 ? `前一天 ${r.time}` : `提前 ${r.days} 天 ${r.time}`;
+  if (r.before === 0) return "截止时";
+  const [n, unit] = remindIn(r.before);
   return `提前 ${n} ${REMIND_UNITS[unit].name}`;
 }
+
+/** All of a due date's reminders, in the order they come: `前一天 20:00、当天 09:00`; `不提醒` for none. */
+export const remindersLabel = (reminders: Remind[] | undefined) => (reminders?.length ? reminders.map(remindLabel).join("、") : "不提醒");

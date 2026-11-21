@@ -17,7 +17,7 @@ use uuid::Uuid;
 use super::llm::Prompt;
 use super::organize::{chat, due_text, unwrap};
 use crate::error::from_value;
-use crate::tools::args::{EditArgs, PlanRef, RepeatText, TaskRef, WhenText, task_ref};
+use crate::tools::args::{EditArgs, PlanRef, RemindText, RepeatText, TaskRef, WhenText, remind_text, task_ref};
 use crate::tools::{Edit, edit_fields, new_due};
 
 /// How many of the folder's open tasks the model is shown, and of its done ones, the latest.
@@ -34,7 +34,7 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
 - folder：这个文件夹；
 - request：用户这次的要求；
 - subfolders：这个文件夹下的子文件夹，可以把事项移进去；
-- open_tasks：文件夹里未完成的事项，按现在的顺序。number 是编号；requires 是它已有的前置事项的编号，那些事项要先做完才能做它；due 是截止时间，remind 是提前多少分钟提醒，repeat 是重复，写成间隔数加单位 d（天）、w（周）、m（月）或 y（年，就是 12 个月），如 1d 每天、2w 每两周、1m 每月、3m 每三个月、1y 每年；按周重复在某几天的，冒号后写周几（1 是周一，7 是周日），如 1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五、2w:2,4 每两周的周二和周四；按月重复在某几号的，冒号后写几号（1–31，没有这天的月份取最后一天），如 1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；repeat_from 为 done 表示下一次从完成那天算；repeat_until 是重复到哪天（含这天），做完这天以前的最后一次，事项就完成了；description_omitted 为 true 的事项描述太长，没有发来；
+- open_tasks：文件夹里未完成的事项，按现在的顺序。number 是编号；requires 是它已有的前置事项的编号，那些事项要先做完才能做它；due 是截止时间，remind 是提醒（数字是提前多少分钟，"09:00" 是截止那天的几点，"1d 20:00" 是提前 1 天的 20:00，几个时是列表），repeat 是重复，写成间隔数加单位 d（天）、w（周）、m（月）或 y（年，就是 12 个月），如 1d 每天、2w 每两周、1m 每月、3m 每三个月、1y 每年；按周重复在某几天的，冒号后写周几（1 是周一，7 是周日），如 1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五、2w:2,4 每两周的周二和周四；按月重复在某几号的，冒号后写几号（1–31，没有这天的月份取最后一天），如 1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；repeat_from 为 done 表示下一次从完成那天算；repeat_until 是重复到哪天（含这天），做完这天以前的最后一次，事项就完成了；description_omitted 为 true 的事项描述太长，没有发来；
 - done_tasks：最近完成的事项，只有编号和标题。
 
 只输出一个 json 对象，不要有任何别的文字，格式如下：
@@ -50,7 +50,7 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
    - title：新标题，一行，简短（最好不超过 30 个字），以动作开头；原标题没说是什么动作的，不要为了以动作开头而猜一个动作或删词。
    - description：新描述，是改好后的完整内容，不是修改说明；Markdown，步骤可以写成清单“- [ ] ”。
    - due：截止时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"。原来有几点几分、这次只改日期的，带上原来的几点几分；原来和 request 都没说几点的，不要加；原来的提醒和重复保留，新的截止时间不带具体时间的，提醒去掉。
-   - remind：提前多少分钟提醒，0 表示到截止时间时提醒；要有带具体时间的截止时间。“不用提醒了”是去掉提醒，写 clear: ["remind"]，不是写 0。
+   - remind：提醒，写法同上，整个换掉原来的；数字（提前多少分钟，0 表示到截止时间时提醒）要有带具体时间的截止时间。“不用提醒了”是去掉提醒，写 clear: ["remind"]，不是写 0。
    - repeat、repeat_from、repeat_until：重复，写法同输入；要有截止时间。按天数说的照天数写（每 90 天是 90d，不是 3m）；在一周里某几天的写周几，“每个工作日”是 1w:1,2,3,4,5，不是 1d（1d 周末也会出现）。request 说了重复到哪天为止的写 repeat_until，截止时间不能晚于它。这三项也只写要改的，不写的照旧，如只改间隔时不写 repeat_from 和 repeat_until；新设的重复不写 repeat_from 就是从截止日期算，不写 repeat_until 就是一直重复。
    - clear：要清除的设置，是一个列表，可以包含 "due"、"remind"、"repeat"、"repeat_until"（不再重复到哪天，一直重复下去），如 "clear": ["due"]；清除截止时间时，提醒和重复一起清除。去掉前置用 drop_requires，不用 clear。
    - done：true 标为完成（重复的事项会顺延到下一次，做的是 repeat_until 以前的最后一次的直接完成；request 说这件事整个做完了、不再重复的，如书读完了，同时在 clear 里写 "repeat"），false 重新打开 done_tasks 里的事项。done_tasks 里的事项可以删除；要改别的，先重新打开。
@@ -133,8 +133,10 @@ pub fn prompt(job: &AiJob, snap: Snapshot, user: &str, notes: Vec<Value>) -> (Pr
             }
             if let Some(d) = &t.due {
                 v["due"] = due_text(d).into();
-                if let Some(m) = d.at.as_ref().and_then(|at| at.remind_before) {
-                    v["remind"] = m.into();
+                match d.reminders().as_slice() {
+                    [] => {}
+                    [one] => v["remind"] = remind_text(one),
+                    all => v["remind"] = all.iter().map(remind_text).collect(),
                 }
                 if let Some(r) = &d.repeat {
                     v["repeat"] = repeat_text(r).into();
@@ -250,7 +252,7 @@ struct Suggested {
     title: Option<Title>,
     description: Option<Description>,
     due: Option<WhenText>,
-    remind: Option<u32>,
+    remind: Option<RemindText>,
     repeat: Option<RepeatText>,
     repeat_from: Option<RepeatFrom>,
     repeat_until: Option<Date>,
@@ -311,7 +313,7 @@ impl Suggested {
         self.title = later.title.or(self.title.take());
         self.description = later.description.or(self.description.take());
         self.due = later.due.or(self.due.take());
-        self.remind = later.remind.or(self.remind);
+        self.remind = later.remind.or(self.remind.take());
         self.repeat = later.repeat.or(self.repeat);
         self.repeat_from = later.repeat_from.or(self.repeat_from);
         self.repeat_until = later.repeat_until.or(self.repeat_until.take());
@@ -524,7 +526,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
         if state == Seen::Done && edit.done.is_none() && changes(&edit) {
             return Err(format!("事项 #{n} 已完成，要先重新打开才能修改"));
         }
-        out.push(Suggestion::Edit(edit));
+        out.push(Suggestion::Edit(Box::new(edit)));
     }
 
     // A task deleted goes with its dependencies: those suggested for it are of no use.
@@ -656,7 +658,7 @@ mod tests {
         let long = "字".repeat(18_000);
         let tasks = vec![
             task(1, "官网", json!({ "description": "就是说要做一个官网" })),
-            task(2, "写官网文档", json!({ "due": { "date": "2026-11-20", "time": "18:00", "remind_before": 30 } })),
+            task(2, "写官网文档", json!({ "due": { "date": "2026-11-20", "time": "18:00", "reminders": [{ "before": 30 }] } })),
             task(3, "长的", json!({ "description": long })),
             task(
                 4,
@@ -744,7 +746,7 @@ mod tests {
         assert_eq!(a.was.title.as_str(), "官网");
         // Moved on, the reminder stays; an existing link is not added again, nor a missing one removed.
         let due = b.due.clone().flatten().unwrap();
-        assert_eq!((due.date.as_str(), due.at.unwrap().remind_before), ("2026-11-21", Some(30)));
+        assert_eq!((due.date.as_str(), due.at.unwrap().remind_before), ("2026-11-21", vec![30]));
         assert_eq!(b.folder, Some(FolderId(id(101).parse().unwrap())));
         assert!(b.after.is_empty() && b.unlink.is_empty());
         // Not having seen the description, no new title.
@@ -752,7 +754,7 @@ mod tests {
         assert_eq!(c.due.clone().flatten().unwrap().repeat, None);
         assert_eq!(d.delete, tid(3));
         assert_eq!(e.before, [tid(2)]);
-        assert_eq!(e.due.as_ref().unwrap().at.as_ref().unwrap().remind_before, Some(60));
+        assert_eq!(e.due.as_ref().unwrap().at.as_ref().unwrap().remind_before, [60]);
         assert!(f.done == Some(false) && f.after == [tid(1)]);
         assert_eq!(g.order, [tid(2), tid(1)]);
         // Given twice, a task's suggestion is one, the later's way where they differ.
@@ -842,7 +844,7 @@ mod tests {
             &shown,
         );
         assert!(matches!(deleting.unwrap().as_slice(), [Suggestion::Delete(d)] if d.delete == tid(2)));
-        assert_eq!(err(r#"{"number": 3, "remind": 10, "reason": ""}"#), "事项 #3：该事项没有具体的截止时间，无法设置提醒（remind）");
+        assert_eq!(err(r#"{"number": 3, "remind": 10, "reason": ""}"#), "事项 #3：该事项没有截止时间，无法设置提醒（remind）");
         // Due after the last day it would repeat on, a suggestion can't be taken.
         assert_eq!(
             err(r#"{"number": 4, "repeat": "1w", "repeat_until": "2026-11-01", "reason": ""}"#),

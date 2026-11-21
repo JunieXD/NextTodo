@@ -135,7 +135,7 @@ async fn a_job_becomes_tasks_and_undoing_that_gives_it_back() {
     assert_eq!(draft["folder_id"], folder.as_str());
     assert_eq!(draft["created_via"], ACTOR);
     assert_eq!(draft["description"], "- [ ] 引言");
-    assert_eq!(revise["due"], json!({ "date": "2026-11-05", "time": "15:00", "remind_before": 30 }));
+    assert_eq!(revise["due"], json!({ "date": "2026-11-05", "time": "15:00", "reminders": [{ "before": 30 }] }));
     let deps: Vec<(Value, Value)> =
         snap["dependencies"].as_array().unwrap().iter().map(|d| (d["before"].clone(), d["after"].clone())).collect();
     assert!(deps.contains(&(task("买材料")["id"].clone(), draft["id"].clone())));

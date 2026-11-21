@@ -13,7 +13,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use clap::Parser;
 use nexttodo_core::board::{Board, Now, Snapshot};
 use nexttodo_core::dag::find_path;
-use nexttodo_core::model::{AiJob, Due, RepeatFrom, Suggestion, TaskId};
+use nexttodo_core::model::{AiJob, Due, Remind, RepeatFrom, Suggestion, TaskId};
 use nexttodo_core::ops::{MAX_OPS, Op};
 use nexttodo_server::ai::llm::{Api, Config, Http, Prompt, Thinking};
 use nexttodo_server::ai::{organize, tidy};
@@ -515,7 +515,8 @@ fn check(e: &Expect, input: &Value, v: &Value, snap: &Snapshot, ops: &[Op]) -> (
     (problems, found)
 }
 
-/// A due date in full, for comparing: `2026-12-01 09:00 !1440 ~1m`, the reminder after `!` and the
+/// A due date in full, for comparing: `2026-12-01 09:00 !1440 ~1m`, each reminder after a `!` (`!1d20:00`
+/// by the day) and the
 /// repeat after `~` as the model writes it (`1w:1,3,5` on some days), `/done` when counted from the day
 /// it is done, `..2026-12-19` when it ends; empty for none.
 fn due_text(d: Option<&Due>) -> String {
@@ -523,9 +524,12 @@ fn due_text(d: Option<&Due>) -> String {
     let mut s = d.date.as_str().to_owned();
     if let Some(at) = &d.at {
         s += &format!(" {}", at.time.as_str());
-        if let Some(m) = at.remind_before {
-            s += &format!(" !{m}");
-        }
+    }
+    for r in d.reminders() {
+        s += &match r {
+            Remind::Before(b) => format!(" !{}", b.before),
+            Remind::On(o) => format!(" !{}d{}", o.days, o.time.as_str()),
+        };
     }
     if let Some(r) = &d.repeat {
         s += &format!(" ~{}{}", tidy::repeat_text(r), if r.from == RepeatFrom::Done { "/done" } else { "" });
@@ -635,7 +639,8 @@ fn tidy_data(input: &Value) -> (Snapshot, AiJob) {
                 };
                 json!({ "every": every.parse::<u32>().expect("a number"), "unit": unit, "from": t["repeat_from"].as_str().unwrap_or("due"), "days": days, "until": t["repeat_until"] })
             });
-            json!({ "date": date, "time": time, "remind_before": t["remind"], "repeat": repeat })
+            let reminders = t["remind"].as_u64().map(|before| json!([{ "before": before }]));
+            json!({ "date": date, "time": time, "reminders": reminders, "repeat": repeat })
         });
         let due = due.map(|mut d| {
             d.as_object_mut().unwrap().retain(|_, v| !v.is_null());

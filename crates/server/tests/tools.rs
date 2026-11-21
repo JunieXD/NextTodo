@@ -41,7 +41,7 @@ async fn a_plan_builds_folders_tasks_and_dependencies_and_undoes_as_one_batch() 
     assert_eq!(joint["folder"], "/工作/网站改版");
     assert_eq!(t.ok(&s, "show", json!({ "task": 3 })).await["data"]["folder"], "/工作/网站改版/后端");
     let design = t.ok(&s, "show", json!({ "task": 2 })).await["data"].clone();
-    assert_eq!(design["due"], json!({ "date": "2026-11-20", "time": "18:00", "remind_before": 60 }));
+    assert_eq!(design["due"], json!({ "date": "2026-11-20", "time": "18:00", "reminders": [{ "before": 60 }] }));
 
     t.ok(&s, "undo", json!({ "batch": applied["data"]["batch"] })).await;
     let snap = t.snapshot(&s).await;
@@ -219,9 +219,25 @@ async fn editing_a_task() {
     t.ok(&s, "edit", json!({ "task": 1, "due": "2026-11-20 18:00", "remind": 30 })).await;
     t.ok(&s, "edit", json!({ "task": 1, "due": "2026-11-21 09:00" })).await;
     let due = t.ok(&s, "show", json!({ "task": 1 })).await["data"]["due"].clone();
-    assert_eq!(due, json!({ "date": "2026-11-21", "time": "09:00", "remind_before": 30 }), "moving the deadline keeps the reminder");
+    assert_eq!(
+        due,
+        json!({ "date": "2026-11-21", "time": "09:00", "reminders": [{ "before": 30 }] }),
+        "moving the deadline keeps the reminder"
+    );
     t.ok(&s, "edit", json!({ "task": 1, "remind": null })).await;
-    assert_eq!(t.ok(&s, "show", json!({ "task": 1 })).await["data"]["due"]["remind_before"], Value::Null);
+    assert_eq!(t.ok(&s, "show", json!({ "task": 1 })).await["data"]["due"]["reminders"], Value::Null);
+    // Several, the first to come first, also by the day; moved to a date alone, those before its time go.
+    t.ok(&s, "edit", json!({ "task": 1, "remind": [0, "1d 20:00", "09:00"] })).await;
+    let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
+    assert!(text(&shown).contains("截止：2026-11-21 09:00，提醒：前一天 20:00、截止时、当天 09:00"), "{}", text(&shown));
+    t.ok(&s, "edit", json!({ "task": 1, "due": "2026-11-22" })).await;
+    let due = t.ok(&s, "show", json!({ "task": 1 })).await["data"]["due"].clone();
+    assert_eq!(due, json!({ "date": "2026-11-22", "reminders": [{ "days": 1, "time": "20:00" }, { "days": 0, "time": "09:00" }] }));
+    t.ok(&s, "edit", json!({ "task": 1, "remind": [] })).await;
+    assert_eq!(t.ok(&s, "show", json!({ "task": 1 })).await["data"]["due"]["reminders"], Value::Null);
+    for bad in [json!("1x 20:00"), json!("25:00"), json!(["31d 09:00"])] {
+        assert_eq!(t.tool(&s, "edit", json!({ "task": 1, "remind": bad })).await.status, StatusCode::BAD_REQUEST, "{bad}");
+    }
     assert_eq!(t.tool(&s, "edit", json!({ "task": 1 })).await.status, StatusCode::BAD_REQUEST, "nothing to change");
 }
 
@@ -603,8 +619,8 @@ async fn a_repeating_task_moves_on_when_done() {
     let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
     assert_eq!(shown["data"]["status"], "ready", "it stays open");
     let repeat = json!({ "every": 1, "unit": "week", "from": "due" });
-    assert_eq!(shown["data"]["due"], json!({ "date": "2026-11-16", "time": "10:00", "remind_before": 15, "repeat": repeat }));
-    assert!(text(&shown).contains("截止：2026-11-16 10:00，每周，提前 15 分钟提醒"), "{}", text(&shown));
+    assert_eq!(shown["data"]["due"], json!({ "date": "2026-11-16", "time": "10:00", "reminders": [{ "before": 15 }], "repeat": repeat }));
+    assert!(text(&shown).contains("截止：2026-11-16 10:00，每周，提醒：提前 15 分钟"), "{}", text(&shown));
     let status = async |today: &str| t.ok(&s, "show", json!({ "task": 2, "today": today })).await["data"]["status"].clone();
     assert_eq!(status("2026-11-15").await, "ready");
     assert_eq!(status("2026-11-16").await, "waiting", "the next time come, what follows waits for it again");
@@ -613,7 +629,7 @@ async fn a_repeating_task_moves_on_when_done() {
     t.ok(&s, "edit", json!({ "task": 1, "remind": 30 })).await;
     t.ok(&s, "undo", json!({ "batch": done["data"]["batch"] })).await;
     let due = t.ok(&s, "show", json!({ "task": 1 })).await["data"]["due"].clone();
-    assert_eq!(due, json!({ "date": "2026-11-09", "time": "10:00", "remind_before": 30, "repeat": repeat }));
+    assert_eq!(due, json!({ "date": "2026-11-09", "time": "10:00", "reminders": [{ "before": 30 }], "repeat": repeat }));
     // Undone after the due date was cleared, only the date comes back: the rest stays cleared.
     let done = t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-11" })).await;
     t.ok(&s, "edit", json!({ "task": 1, "due": null })).await;
@@ -976,7 +992,7 @@ async fn a_folder_copies_with_all_in_it_open_again() {
     let stamp = t.ok(&s, "show", json!({ "task": stamp["number"] })).await["data"].clone();
     assert_eq!(
         stamp["due"],
-        json!({ "date": "2026-11-27", "time": "18:00", "remind_before": 60, "repeat": { "every": 1, "unit": "week", "from": "due" } })
+        json!({ "date": "2026-11-27", "time": "18:00", "reminders": [{ "before": 60 }], "repeat": { "every": 1, "unit": "week", "from": "due" } })
     );
     assert_eq!(stamp["completions"], Value::Null, "counted from nothing again");
     assert_eq!(stamp["waiting_on"], 1, "it waits for the copy of 审价");

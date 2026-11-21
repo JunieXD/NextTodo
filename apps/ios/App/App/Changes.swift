@@ -52,10 +52,12 @@ enum Changes {
 
     private static var user: String? { UserDefaults.standard.string(forKey: USER) }
 
-    /// Marks `task`, titled `title`, done from its reminder at `at`; a repeating one moves on from today
-    /// here. Done or kept, that reminder goes.
-    static func complete(task: String, title: String, at: Int64) -> Outcome {
+    /// Marks `task`, titled `title`, done from a reminder of its time due at `due`; a repeating one
+    /// moves on from today here. Done or kept, those reminders go. Nothing, should that time be done
+    /// already, from another of its reminders still shown say: a repeating task would move on twice.
+    static func complete(task: String, title: String, due: Int64) -> Outcome? {
         dispatchPrecondition(condition: .onQueue(queue))
+        guard Reminders.queue.sync(execute: { Reminders.listed(task: task, due: due) }) else { return nil }
         let token = Server.token
         let day = DateFormatter()
         day.locale = Locale(identifier: "en_US_POSIX")
@@ -65,7 +67,7 @@ enum Changes {
         let outcome = send(mine: change.id)
         if case .refused = outcome { return outcome }
         // Unless signed in again meanwhile, maybe as someone else, whose reminders these are.
-        if token != nil, Server.token == token { Reminders.queue.sync { Reminders.completed(task: task, at: at) } }
+        if token != nil, Server.token == token { Reminders.queue.sync { Reminders.completed(task: task, due: due) } }
         return outcome
     }
 

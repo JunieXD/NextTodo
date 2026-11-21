@@ -99,7 +99,7 @@ async fn one_mutation_creates_folders_tasks_and_dependencies() {
             &s,
             json!([
                 { "op": "folder.create", "id": folder, "name": "毕业论文" },
-                { "op": "task.create", "id": a, "folder_id": folder, "title": "设计问卷", "due": { "date": "2026-11-02", "time": "18:00", "remind_before": 60 } },
+                { "op": "task.create", "id": a, "folder_id": folder, "title": "设计问卷", "due": { "date": "2026-11-02", "time": "18:00", "reminders": [{ "before": 60 }] } },
                 { "op": "task.create", "id": b, "folder_id": folder, "title": "发放问卷" },
                 { "op": "dep.add", "before": a, "after": b }
             ]),
@@ -113,7 +113,7 @@ async fn one_mutation_creates_folders_tasks_and_dependencies() {
     let tasks = snap["tasks"].as_array().unwrap();
     assert_eq!((tasks[0]["number"].as_i64(), tasks[1]["number"].as_i64()), (Some(1), Some(2)));
     assert_eq!((tasks[0]["sort_key"].as_str(), tasks[1]["sort_key"].as_str()), (Some("a0"), Some("a1")));
-    assert_eq!(tasks[0]["due"], json!({ "date": "2026-11-02", "time": "18:00", "remind_before": 60 }));
+    assert_eq!(tasks[0]["due"], json!({ "date": "2026-11-02", "time": "18:00", "reminders": [{ "before": 60 }] }));
     assert_eq!(tasks[0]["created_via"], Value::Null);
     assert_eq!(snap["dependencies"], json!([{ "before": a, "after": b, "created_at": tasks[0]["created_at"] }]));
 }
@@ -448,10 +448,13 @@ async fn bad_input_names_the_field() {
     let t = TestApp::new();
     let s = t.admin().await;
     let r = t
-        .mutate(&s, json!([{ "op": "task.create", "id": id(), "title": "x", "due": { "date": "2026-11-20", "remind_before": 10 } }]))
+        .mutate(
+            &s,
+            json!([{ "op": "task.create", "id": id(), "title": "x", "due": { "date": "2026-11-20", "reminders": [{ "before": 10 }] } }]),
+        )
         .await;
     assert_eq!((r.status, r.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("ops[0]")));
-    assert_eq!(r.body["message"], "设置提醒需要具体的截止时间");
+    assert_eq!(r.body["message"], "提前多久的提醒需要具体的截止时间");
     let r = t.mutate(&s, json!([{ "op": "task.create", "id": id(), "title": "   " }])).await;
     assert_eq!((r.body["details"]["field"].as_str(), r.body["message"].as_str()), (Some("ops[0]"), Some("标题不能为空")));
     let r = t.call("GET", "/changes?since=abc", Some(&s), None).await;

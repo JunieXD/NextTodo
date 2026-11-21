@@ -9,7 +9,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use nexttodo_core::board::{Board, Now, Status};
 use nexttodo_core::model::{
     Attachment, AttachmentId, Change, Date, Description, Due, Effect, FileName, FileSize, FolderId, MediaType, Misfit, MutationId, Name,
-    Repeat, RepeatFrom, Task, TaskId, Title,
+    Remind, Repeat, RepeatFrom, Task, TaskId, Title,
 };
 use nexttodo_core::ops::{MAX_OPS, Op};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -18,7 +18,8 @@ use uuid::Uuid;
 
 use super::args::{
     AddArgs, ApplyArgs, AttachArgs, CopyArgs, DeleteArgs, DepArgs, DetachArgs, DoneArgs, EditArgs, MkdirArgs, MoveArgs, Plan, PlanRef,
-    PlanTask, RenameArgs, RepeatText, Replace, ShareArgs, StyleArgs, TaskRef, TasksArgs, UndoArgs, UnshareArgs, WhenText, task_ref,
+    PlanTask, RemindText, RenameArgs, RepeatText, Replace, ShareArgs, StyleArgs, TaskRef, TasksArgs, UndoArgs, UnshareArgs, WhenText,
+    task_ref,
 };
 use super::text::{self, Names, task_view};
 use super::{Output, WriteFn, find_folder, find_task, person};
@@ -223,26 +224,24 @@ impl Folders<'_, '_> {
     }
 }
 
-fn due(due: Option<WhenText>, remind: Option<u32>, repeat: Option<Repeat>) -> Result<Option<Due>, ApiError> {
-    match (due, remind, repeat) {
-        (None, None, None) => Ok(None),
-        (None, Some(_), _) => Err(ApiError::invalid("设置提醒需要截止时间", Some("remind".into()))),
-        (None, None, Some(_)) => Err(ApiError::invalid("设置重复需要截止时间", Some("repeat".into()))),
-        (Some(d), remind, repeat) => {
-            Due::new(d.date, d.time, remind, repeat).map(Some).map_err(|m| ApiError::invalid(m, Some("due".into())))
-        }
+fn due(due: Option<WhenText>, remind: Vec<Remind>, repeat: Option<Repeat>) -> Result<Option<Due>, ApiError> {
+    match (due, repeat) {
+        (None, _) if !remind.is_empty() => Err(ApiError::invalid("设置提醒需要截止时间", Some("remind".into()))),
+        (None, None) => Ok(None),
+        (None, Some(_)) => Err(ApiError::invalid("设置重复需要截止时间", Some("repeat".into()))),
+        (Some(d), repeat) => Due::new(d.date, d.time, remind, repeat).map(Some).map_err(|m| ApiError::invalid(m, Some("due".into()))),
     }
 }
 
 /// A new task's due date, as a plan gives it.
 pub(crate) fn new_due(
     due_text: Option<WhenText>,
-    remind: Option<u32>,
+    remind: Option<RemindText>,
     repeat_text: Option<RepeatText>,
     from: Option<RepeatFrom>,
     until: Option<Date>,
 ) -> Result<Option<Due>, ApiError> {
-    due(due_text, remind, repeat(repeat_text, from, until)?)
+    due(due_text, remind.map_or_else(Vec::new, |r| r.0), repeat(repeat_text, from, until)?)
 }
 
 /// The repeat given, from the due date and on and on unless said.
@@ -436,14 +435,15 @@ pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiE
     }
     let description = if revising { Some(revise(t.description.as_str(), a.replace, a.append)?) } else { a.description };
     let current = t.due.as_ref();
-    let current_remind = current.and_then(|d| d.at.as_ref()).and_then(|at| at.remind_before);
+    let current_reminders = current.map(Due::reminders).unwrap_or_default();
+    // `Some(empty)` clears them.
+    let remind = a.remind.map(|r| r.map_or_else(Vec::new, |r| r.0));
     // `Some(None)` stops it repeating.
     let new_repeat = if changes_repeat { Some(repeat(a.repeat.flatten(), a.repeat_from, a.repeat_until)?) } else { None };
-    let no_time = || ApiError::invalid("该事项没有具体的截止时间，无法设置提醒", Some("remind".into()));
-    let new_due = match (a.due, a.remind) {
+    let new_due = match (a.due, remind) {
         (None, None) if new_repeat.is_none() => None,
         (Some(None), remind) => {
-            if matches!(remind, Some(Some(_))) {
+            if remind.is_some_and(|r| !r.is_empty()) {
                 return Err(ApiError::invalid("清除截止时间时不能同时设置提醒", Some("remind".into())));
             }
             if matches!(new_repeat, Some(Some(_))) {
@@ -452,16 +452,14 @@ pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiE
             Some(None)
         }
         (Some(Some(d)), remind) => {
-            // Moving the deadline keeps the reminder as long as there is still a time to remind before,
-            // and the repeat.
-            let remind = remind.unwrap_or(if d.time.is_some() { current_remind } else { None });
+            // Moving the deadline keeps the reminders, those before its time while it has one, and the
+            // repeat.
+            let timed = d.time.is_some();
+            let remind = remind.unwrap_or_else(|| current_reminders.into_iter().filter(|r| timed || matches!(r, Remind::On(_))).collect());
             Some(due(Some(d), remind, new_repeat.unwrap_or(current.and_then(|c| c.repeat.clone())))?)
         }
         (None, remind) => match current {
             Some(c) => {
-                if matches!(remind, Some(Some(_))) && c.at.is_none() {
-                    return Err(no_time());
-                }
                 let time = c.at.as_ref().map(|at| at.time.clone());
                 // The date as it is, only a new reminder or repeat can be wrong: the one before it
                 // repeats no more, one by the lunar calendar can't go from it, or the reminder.
@@ -470,12 +468,14 @@ pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiE
                     Some(Misfit::OffTable) => "repeat",
                     None => "remind",
                 };
-                let new = Due::new(c.date.clone(), time, remind.unwrap_or(current_remind), new_repeat.unwrap_or(c.repeat.clone()))
+                let new = Due::new(c.date.clone(), time, remind.unwrap_or(current_reminders), new_repeat.unwrap_or(c.repeat.clone()))
                     .map_err(|m| ApiError::invalid(m, Some(field.into())))?;
                 // Clearing a reminder there isn't changes nothing.
                 (Some(&new) != current).then_some(Some(new))
             }
-            None if matches!(remind, Some(Some(_))) => return Err(no_time()),
+            None if remind.as_ref().is_some_and(|r| !r.is_empty()) => {
+                return Err(ApiError::invalid("该事项没有截止时间，无法设置提醒", Some("remind".into())));
+            }
             None if matches!(new_repeat, Some(Some(_))) => {
                 return Err(ApiError::invalid("该事项没有截止时间，无法设置重复", Some("repeat".into())));
             }

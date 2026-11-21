@@ -11,7 +11,7 @@ import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
 import { lateness } from "../domain/calendar";
-import { day, formatDay, formatDue, formatMoment, isoDate, remindLabel, startLabel } from "../domain/dates";
+import { day, formatDay, formatDue, formatMoment, isoDate, remindersLabel, startLabel } from "../domain/dates";
 import { doneToday, repeatText, skippable } from "../domain/repeat";
 import { filesIn, reference } from "../attach";
 import { checkDescription, checkTitle } from "../domain/text";
@@ -213,9 +213,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
           cls={t.due ? dueClass(t, now) : "muted"}
           onClick={() => setPanel("due")}
         />
-        {t.due?.time && (
-          <Prop icon={Bell} label="提醒" value={remindLabel(t.due.remind_before)} cls={t.due.remind_before === undefined ? "muted" : ""} onClick={() => setPanel("due")} />
-        )}
+        {t.due && <Prop icon={Bell} label="提醒" value={remindersLabel(t.due.reminders)} cls={t.due.reminders ? "" : "muted"} onClick={() => setPanel("due")} />}
         {t.due?.repeat && <Prop icon={Repeat} label="重复" value={repeatText(t.due.repeat, t.due.date, now)} onClick={() => setPanel("due")} />}
         {(t.due?.repeat || t.completions) && (
           <Prop

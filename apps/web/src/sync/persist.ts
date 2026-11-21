@@ -15,10 +15,15 @@
 // and go along with the rest.
 
 import { type IDBPDatabase, openDB } from "idb";
+import type { AiJob } from "../api/types/AiJob";
+import type { Due } from "../api/types/Due";
 import type { Effect } from "../api/types/Effect";
 import type { Folder } from "../api/types/Folder";
 import type { MutationId } from "../api/types/MutationId";
+import type { Suggestion } from "../api/types/Suggestion";
+import type { Task } from "../api/types/Task";
 import type { User } from "../api/types/User";
+import type { Was } from "../api/types/Was";
 import { forgetAiConfig, forgetOtherAiConfigs } from "../ai";
 import { forgetDrafts, forgetOtherDrafts, withdrawn } from "./drafts";
 import type { Copy, Pending, Saved } from "./store";
@@ -81,7 +86,7 @@ export async function load(user: User, copyId: string): Promise<Saved | undefine
   await copies.delete(all(user.id));
   await copies.put(newest, [user.id, copyId]);
   await tx.done;
-  return { ...newest, outbox: pending };
+  return { ...newest, outbox: pending.map(pendingOf) };
 }
 
 /** The changes in the user's outbox, as every tab has saved them. */
@@ -94,19 +99,51 @@ export async function unqueue(userId: string, id: MutationId) {
   await (await db()).delete("outbox", [userId, id]);
 }
 
+/** A due date as kept before a task could have several reminders: with one before its time, if any. */
+const dueOf = ({ remind_before, ...due }: Due & { remind_before?: number }): Due =>
+  remind_before === undefined ? due : { ...due, reminders: [{ before: remind_before }] };
+
+const taskOf = (t: Task): Task => (t.due ? { ...t, due: dueOf(t.due) } : t);
+const wasOf = (w: Was): Was => (w.due ? { ...w, due: dueOf(w.due) } : w);
+
+function suggestionOf(s: Suggestion): Suggestion {
+  if ("create" in s) return s.due ? { ...s, due: dueOf(s.due) } : s;
+  if ("delete" in s) return { ...s, was: wasOf(s.was) };
+  if ("task" in s) return { ...s, ...(s.due && { due: dueOf(s.due) }), was: wasOf(s.was) };
+  return s;
+}
+
+const jobOf = (j: AiJob): AiJob => (j.suggestions ? { ...j, suggestions: j.suggestions.map(suggestionOf) } : j);
+
+/** A change saved by an earlier version, as one is now: due dates as they are. */
+const pendingOf = (p: Pending): Pending => ({
+  ...p,
+  mutation: { ...p.mutation, ops: p.mutation.ops.map((op) => ((op.op === "task.create" || op.op === "task.update") && op.due ? { ...op, due: dueOf(op.due) } : op)) },
+});
+
 /** A copy saved by an earlier version, as one is now. Before folders could be shared, nothing was,
  * every task was the user's, and the user was the only one in it; its log of changes goes, being of
  * tasks as they were then. Before AI organizing there were no jobs, before attachments none, before
  * completion records none, and before folders had colours and icons, none of those: neither for
- * folders kept nor for those its log of changes brings back when one is undone. */
+ * folders kept nor for those its log of changes brings back when one is undone. Due dates, of tasks
+ * and AI's suggestions, in the log too, are as they are now. */
 function current(saved: Copy, { id, username, display_name }: User): Copy {
   const looked = (f: Folder): Folder => ({ ...f, color: f.color ?? null, icon: f.icon ?? null });
   const folders = saved.base.folders.map(looked);
   const log = saved.log.map(([m, effects]): [MutationId, Effect[]] => [
     m,
-    effects.map((e) => (e.kind === "folder" ? { ...e, before: e.before && looked(e.before), after: e.after && looked(e.after) } : e)),
+    effects.map((e) =>
+      e.kind === "folder"
+        ? { ...e, before: e.before && looked(e.before), after: e.after && looked(e.after) }
+        : e.kind === "task"
+          ? { ...e, before: e.before && taskOf(e.before), after: e.after && taskOf(e.after) }
+          : e.kind === "ai_job"
+            ? { ...e, before: e.before && jobOf(e.before), after: e.after && jobOf(e.after) }
+            : e,
+    ),
   ]);
-  const c = { ...saved, base: { ...saved.base, folders, attachments: saved.base.attachments ?? [], completions: saved.base.completions ?? [] }, log };
+  const base = { ...saved.base, folders, tasks: saved.base.tasks.map(taskOf), ai_jobs: saved.base.ai_jobs?.map(jobOf) };
+  const c = { ...saved, base: { ...base, attachments: saved.base.attachments ?? [], completions: saved.base.completions ?? [] }, log };
   if (c.base.people) return c;
   const tasks = c.base.tasks.map((t) => ({ ...t, assignees: [], created_by: id, updated_by: id }));
   const people = [{ id, username, display_name }];

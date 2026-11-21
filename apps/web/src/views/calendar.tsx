@@ -151,13 +151,14 @@ export function CalendarBody({ now }: { now: Date }) {
                 const dots = due.get(iso) ?? [];
                 const n = done.get(iso)?.length ?? 0;
                 const lunar = lunarDate(iso);
-                const cls = [view === "month" && d.getMonth() !== shown.getMonth() && "out", n && `heat-${heat(n)}`].filter(Boolean).join(" ");
+                // The other months' days, in their faint colour, aren't tinted: on a tint it would be hard to read.
+                const out = view === "month" && d.getMonth() !== shown.getMonth();
                 return (
                   <button
                     key={iso}
                     type="button"
                     data-date={iso}
-                    className={cls || undefined}
+                    className={out ? "out" : undefined}
                     tabIndex={iso === picked ? 0 : -1}
                     aria-pressed={iso === picked}
                     aria-current={iso === today ? "date" : undefined}
@@ -165,12 +166,14 @@ export function CalendarBody({ now }: { now: Date }) {
                     onClick={() => setPicked(iso)}
                     onKeyDown={(e) => move(e, d)}
                   >
-                    <span className="cal-num">{d.getDate()}</span>
-                    <small>{lunarLabel(iso)}</small>
-                    <span className="cal-dots">
-                      {dots.slice(0, 3).map((o, j) => (
-                        <i key={j} className={!o.later && dueKind(o.task.due!, now) === "overdue" ? "overdue" : undefined} />
-                      ))}
+                    <span className={n && !out ? `heat-${heat(n)}` : undefined}>
+                      <span className="cal-num">{d.getDate()}</span>
+                      <small>{lunarLabel(iso)}</small>
+                      <span className="cal-dots">
+                        {dots.slice(0, 3).map((o, j) => (
+                          <i key={j} className={!o.later && dueKind(o.task.due!, now) === "overdue" ? "overdue" : undefined} />
+                        ))}
+                      </span>
                     </span>
                   </button>
                 );

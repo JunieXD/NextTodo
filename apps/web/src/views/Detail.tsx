@@ -1,7 +1,7 @@
 // A task's details: title, folder, who is to do it, due date, description, attachments, what it
 // waits for and what waits for it.
 
-import { Bell, Calendar, CalendarCheck, CalendarClock, Folder as FolderIcon, KeyRound, type LucideIcon, Plus, User, Users, X } from "lucide-react";
+import { Bell, Calendar, CalendarCheck, CalendarClock, Folder as FolderIcon, KeyRound, type LucideIcon, Plus, Repeat, User, Users, X } from "lucide-react";
 import { type ReactNode, Suspense, useEffect, useRef, useState } from "react";
 import type { Attachment } from "../api/types/Attachment";
 import type { Completion } from "../api/types/Completion";
@@ -209,13 +209,14 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
         <Prop
           icon={Calendar}
           label="截止"
-          value={t.due ? formatDue(t.due, now) + (t.due.repeat ? ` · ${repeatText(t.due.repeat, t.due.date, now)}` : "") : "未设置"}
+          value={t.due ? formatDue(t.due, now) : "未设置"}
           cls={t.due ? dueClass(t, now) : "muted"}
           onClick={() => setPanel("due")}
         />
         {t.due?.time && (
           <Prop icon={Bell} label="提醒" value={remindLabel(t.due.remind_before)} cls={t.due.remind_before === undefined ? "muted" : ""} onClick={() => setPanel("due")} />
         )}
+        {t.due?.repeat && <Prop icon={Repeat} label="重复" value={repeatText(t.due.repeat, t.due.date, now)} onClick={() => setPanel("due")} />}
         {(t.due?.repeat || t.completions) && (
           <Prop
             icon={CalendarCheck}
@@ -334,9 +335,9 @@ function Completions({ records, count, now, onClose }: { records: Completion[]; 
       <div className="group">
         {records.map((c) => (
           <div key={c.due} className="row prop">
-            <div className="row-inner">
-              <span>{formatDay(day(c.done).getTime(), now)}</span>
-              <span className="value">
+            <div className="row-inner controls">
+              <span className="row-name">{formatDay(day(c.done).getTime(), now)}</span>
+              <span className="row-value">
                 截止{formatDue({ date: c.due }, now)} · {lateness(c)}
               </span>
             </div>
@@ -353,8 +354,8 @@ function Prop({ icon, label, value, cls = "", onClick }: { icon: LucideIcon; lab
   const inner = (
     <div className="row-inner">
       <Icon of={icon} />
-      <span>{label}</span>
-      <span className={`value ${cls}`}>{value}</span>
+      <span className="row-name">{label}</span>
+      <span className={`row-value long ${cls}`}>{value}</span>
     </div>
   );
   return onClick ? (

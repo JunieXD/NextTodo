@@ -208,7 +208,7 @@ local/
 - 网页版本：本机模式只用 APK 自带的网页，网页和服务端打在同一个 APK 里，版本始终一致。
   - 本机模式下启动时，删掉从服务器热更新下来的版本，把 `serverBasePath` 换回 APK 自带的。
   - 本机模式下不查 `web.json`。
-- 明文 HTTP：网络安全配置只放行到 `127.0.0.1` 的明文请求，其他地址照旧只能用 HTTPS。
+- 明文 HTTP：网络安全配置允许明文，见[直接用 HTTP](design.md#直接用-http)。
 - 进程在后台会被冻结或结束，服务端只在进程存在时运行，不保证 AI 整理在后台做完：
   - 冻结期间整理暂停，回到前台后接着做，或者按超时失败。
   - 进程被结束的，下次启动时记为失败（“整理中断”），可以重试。
@@ -478,7 +478,6 @@ local/
 - 加密后端：桌面现有的依赖加上 `tokio-rustls`（只开 ring）和 `rcgen`，仍然只有 ring，rustls 不会 panic。
 - Windows 上的改名：进程刚退出就改名它用过的目录，200 次都成功；一边读地址文件一边改名替换它，2000 次没有失败，也没读到写了一半的内容。
 - Android 的页面：`https://localhost` 的页面连 `ws://127.0.0.1`、`fetch` `http://127.0.0.1`，都不算混合内容，WebView 的混合内容设置是默认最严的那档也一样。WebView 的请求在系统设了代理时也直连。带 `Authorization` 头的跨域请求（有预检）正常。
-- Android 的明文配置：只放行 `127.0.0.1` 的网络安全配置生效，`HttpURLConnection` 连 `127.0.0.1` 正常，明文连别的地址被拒。
 - Android 的代理：系统设了代理时，`HttpURLConnection` 默认连 `127.0.0.1` 也走代理，`Proxy.NO_PROXY` 时直连。由此改了[页面直连](#页面直连)的做法。
 - Android 的启动：`Application.onCreate` 里同步启动服务端，加载动态库约 0.5 毫秒，启动见 [Android](#android)。冷启动到页面显示 570～710 毫秒，大部分是 WebView 初始化。
 - Android 的重启：ProcessPhoenix 的做法在 16 和 17 上都能用，新进程约 0.1 秒后启动，拿锁不用等；`AlarmManager` 定时打开被后台启动限制拦下（即使创建 PendingIntent 时声明了允许）。

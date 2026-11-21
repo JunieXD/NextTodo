@@ -4,7 +4,7 @@ NextTodo 的服务端和网页端在同一个 Docker 镜像里，部署一次，
 
 ## 用 Docker 部署
 
-需要一台装了 Docker 和 Docker Compose 的 Linux 服务器（amd64 或 arm64），以及受信任的 HTTPS 证书：一般给域名申请，没有能用的域名时也可以给公网 IP 申请 Let's Encrypt 的短期证书，配置见官网的[只用 IP 地址](https://juniexd.github.io/NextTodo/guide/server#ip)。
+需要一台装了 Docker 和 Docker Compose 的 Linux 服务器（amd64 或 arm64），以及受信任的 HTTPS 证书（[直接用 HTTP](#直接用-http) 的不用）：一般给域名申请，没有能用的域名时也可以给公网 IP 申请 Let's Encrypt 的短期证书，配置见官网的[只用 IP 地址](https://juniexd.github.io/NextTodo/guide/server#ip)。
 
 ```sh
 mkdir nexttodo && cd nexttodo
@@ -18,6 +18,9 @@ docker compose exec nexttodo /nexttodo-server create-admin <用户名>
 - 默认只监听本机的 `127.0.0.1:8080`，交给同一台机器上的反向代理。换端口在同目录的 `.env` 里写 `NEXTTODO_PORT=8790`。
 - 默认跟随最新版本（`latest`）。要固定版本，在 `.env` 里写 `NEXTTODO_IMAGE=ghcr.io/juniexd/nexttodo:<版本号>`，版本号见 [Releases](https://github.com/JunieXD/NextTodo/releases)。
 - [AI 整理](ai.md)的配置要同步到服务器（提交后设备可以离线），在 `.env` 里写 `NEXTTODO_SECRET_KEY=<32 字节的 base64>`，可以用 `openssl rand -base64 32` 生成。服务端用它加密用户的 API 密钥，它不在 `data/` 里，数据库和快照单独泄露时密钥仍然安全。不设置时，配置只能保存在各自的设备上。换掉或丢了它，已保存的 API 密钥就解不开，要在设置里重新填写。
+- 想让 AI 整理用这台机器或它所在网络里的模型（比如 Ollama），在 `compose.yaml` 的 `environment` 里加上 `NEXTTODO_AI_PRIVATE_NETWORK: "true"`。这样模型的接口地址可以是内网地址，也可以用 `http://`，见 [AI 整理](ai.md#保存位置和安全)。
+  - 默认不行，免得这台服务器上的用户借它访问它所在的内网，所以只在信任所有用户时打开。
+  - 服务端在容器里，`127.0.0.1` 是容器自己：同一台机器上的 Ollama，地址要填这台机器的局域网 IP，并让 Ollama 只监听这个地址（`OLLAMA_HOST=<局域网 IP>`）。Ollama 没有密码，不能监听公网地址。
 - `create-admin` 会让你输两次密码。其他人用邀请码注册：管理员在设置的“邀请注册”里生成邀请码或复制邀请链接。
 - 有人忘了密码（包括管理员自己）：运行 `docker compose exec nexttodo /nexttodo-server reset-password <用户名>`，同样输两次新密码。这个账号已登录的设备都要重新登录，API 令牌照常能用。在设置里升级过、镜像还是旧的，旧的服务端认不出这个命令，先按[升级](#升级)里的命令拉取新镜像。
 
@@ -55,6 +58,13 @@ server {
 ```
 
 配好以后，浏览器打开这个域名就是网页端；App 第一次登录时在“服务器地址”里填这个域名（只用 IP 的填 IP）。
+
+## 直接用 HTTP
+
+不要证书和反向代理，直接用 HTTP 连服务端。适合只在家里的局域网，或 Tailscale 这类加密的组网里用。明文传输的代价和各端的做法见[总体设计](design.md#直接用-http)。
+
+1. 把 `compose.yaml` 里 `ports` 一行开头的 `127.0.0.1` 换成这台机器在局域网（或组网）里的 IP，再 `docker compose up -d`。不写 IP 会在所有网卡上监听，机器有公网地址时公网也连得上；要经公网用 HTTP 的才这样做。用命令升级时不重新下载 `compose.yaml`，改动一直有效。
+2. 浏览器打开 `http://<这台机器的 IP>:8080`。App 的服务器地址填 `<IP>:8080`：局域网地址不写协议时按 `http://`，公网 IP 要写上 `http://`。
 
 ## 升级
 

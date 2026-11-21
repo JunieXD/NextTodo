@@ -7,7 +7,7 @@
 - 请求头 `Authorization: Bearer <令牌>`；网页用 HttpOnly Cookie `nt_session`，两者任选其一。
 - 令牌明文是 `nt_` 加 43 位 base62 随机串（256 位熵），只在生成时返回一次，数据库只存它的 SHA-256。
 - 只读令牌调用会产生改动的接口时返回 403。
-- Cookie 属性：`HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=34560000`（400 天）。
+- Cookie 属性：`HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=34560000`（400 天）。页面经 HTTP 打开时（设置和清除 Cookie 的请求，`Origin` 以 `http://` 开头）不带 `Secure`，否则浏览器不存，见[网页端](web.md#经-http-打开)。
 - 带请求体的接口只接受 `Content-Type: application/json`。别的网站用表单提交不了这种请求，所以不能借用户的 Cookie 调接口。上传附件的 `PUT /files/{id}` 例外，请求体是文件本身：表单发不了 PUT，别的网站同样借不了 Cookie。
 - 文件夹、事项和改动的 ID 必须是 UUIDv7。
 

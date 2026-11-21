@@ -146,8 +146,8 @@ pub struct Endpoint<'a> {
 
 impl Endpoint<'_> {
     pub fn check(self) -> Result<(), String> {
-        if !self.base_url.starts_with("https://") || !word(self.base_url, 300) {
-            return Err("接口地址要以 https:// 开头，不含空格".into());
+        if !(self.base_url.starts_with("https://") || self.base_url.starts_with("http://")) || !word(self.base_url, 300) {
+            return Err("接口地址要以 http:// 或 https:// 开头，不含空格".into());
         }
         if !word(self.api_key, 500) {
             return Err("API 密钥不能为空，不含空格".into());
@@ -244,11 +244,12 @@ pub fn body(c: &Config, p: &Provider, prompt: &Prompt, json: bool) -> Value {
     b
 }
 
-/// The API over HTTPS, at the address the user gives: no redirects, and only so much read back.
-pub struct Https {
-    /// Public addresses only, on a server: several people use it, and none of them is to reach into
-    /// the network it runs in. Not in local mode, where the device's user is the only one, and a
-    /// proxy there may give every name an address of its own (fake-ip, in `198.18.0.0/15`).
+/// The API at the address the user gives: no redirects, and only so much read back.
+pub struct Http {
+    /// Public addresses over HTTPS only, on a server: several people use it, and none of them is to
+    /// reach into the network it runs in. Not where its administrator allows that, for a model on
+    /// that network, nor in local mode, where the device's user is the only one, and a proxy there
+    /// may give every name an address of its own (fake-ip, in `198.18.0.0/15`).
     pub public_only: bool,
 }
 
@@ -297,7 +298,8 @@ fn public(ip: IpAddr) -> bool {
     }
 }
 
-const NOT_PUBLIC: &str = "接口地址不是公网地址，服务器不会访问";
+const NOT_PUBLIC: &str = "接口地址不是公网地址，服务器不会访问；内网里的模型要服务器管理员放行";
+const NOT_HTTPS: &str = "服务器只访问 https:// 的接口地址；内网里的模型要服务器管理员放行";
 
 /// Resolves names as usual and, told to, keeps only public addresses, whatever a name resolves to.
 /// The connection goes to the addresses kept, so a name resolving differently later changes nothing.
@@ -322,7 +324,7 @@ impl Resolver for Addresses {
 
 fn agent(timeout: Duration, public_only: bool) -> ureq::Agent {
     let config = ureq::Agent::config_builder()
-        .https_only(true)
+        .https_only(public_only)
         // It connects itself, so that the addresses are the ones checked.
         .proxy(None)
         .max_redirects(0)
@@ -339,6 +341,7 @@ fn transport(e: ureq::Error) -> Failure {
         ureq::Error::Timeout(_) => "接口超时，请稍后重试",
         ureq::Error::BodyExceedsLimit(_) => "接口的回复过长",
         ureq::Error::Io(e) if e.kind() == ErrorKind::PermissionDenied => NOT_PUBLIC,
+        ureq::Error::RequireHttpsOnly(_) => NOT_HTTPS,
         ureq::Error::HostNotFound => "找不到接口地址的域名，请检查接口地址",
         ureq::Error::Tls(_) | ureq::Error::Rustls(_) => "接口的 HTTPS 证书无效，请检查接口地址",
         e => {
@@ -383,7 +386,7 @@ fn refused(status: u16, body: &str) -> Failure {
     Failure { status: Some(status), message: meaning(status).map_or_else(|| said.clone(), |m| format!("{m}（{said}）")) }
 }
 
-impl Https {
+impl Http {
     fn send(&self, c: &Config, req: ureq::RequestBuilder<ureq::typestate::WithBody>, body: &Value) -> Result<ureq::Body, Failure> {
         let res = req
             .header("Authorization", format!("Bearer {}", c.api_key))
@@ -429,7 +432,7 @@ impl Https {
     }
 }
 
-impl Api for Https {
+impl Api for Http {
     fn chat(&self, c: &Config, prompt: &Prompt, json: bool, timeout: Duration) -> Result<String, Failure> {
         self.answer(c, prompt, json, timeout).map_err(|f| f.without(&c.api_key))
     }
@@ -477,6 +480,7 @@ fn read_whole(mut reader: impl std::io::Read) -> Result<String, Failure> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
 
     fn config(provider: &str, thinking: Thinking) -> Config {
         Config {
@@ -533,7 +537,8 @@ mod tests {
     fn checks_the_config() {
         assert!(config("deepseek", Thinking::Off).check().is_ok());
         assert!(config("anthropic", Thinking::Off).check().is_err());
-        for url in ["http://x.test/v1", "https://x.test/ v1", "ftp://x"] {
+        assert!(Config { base_url: "http://x.test/v1".into(), ..config("custom", Thinking::Off) }.check().is_ok());
+        for url in ["https://x.test/ v1", "ftp://x", "x.test/v1"] {
             assert!(Config { base_url: url.into(), ..config("custom", Thinking::Off) }.check().is_err(), "{url}");
         }
         assert!(Config { api_key: "a b".into(), ..config("deepseek", Thinking::Off) }.check().is_err());
@@ -580,10 +585,26 @@ mod tests {
         }
         for url in ["https://127.0.0.1:9/v1", "https://localhost:9/v1", "https://[::1]:9/v1"] {
             let e = Endpoint { base_url: url, api_key: "k" };
-            assert_eq!(Https { public_only: true }.models(e).unwrap_err().message, NOT_PUBLIC, "{url}");
+            assert_eq!(Http { public_only: true }.models(e).unwrap_err().message, NOT_PUBLIC, "{url}");
             // In local mode it is called: nothing listens there.
-            assert!(Https { public_only: false }.models(e).unwrap_err().message.starts_with("无法连接接口"), "{url}");
+            assert!(Http { public_only: false }.models(e).unwrap_err().message.starts_with("无法连接接口"), "{url}");
         }
+    }
+
+    /// Plain HTTP, such as a local model's, only where the network is open too.
+    #[test]
+    fn plain_http_only_where_the_network_is_open() {
+        let model = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/v1", model.local_addr().unwrap());
+        let e = Endpoint { base_url: &url, api_key: "k" };
+        assert_eq!(Http { public_only: true }.models(e).unwrap_err().message, NOT_HTTPS);
+        std::thread::spawn(move || {
+            let (mut s, _) = model.accept().unwrap();
+            let _ = s.read(&mut [0; 4096]);
+            let body = r#"{"data":[{"id":"llama3"}]}"#;
+            write!(s, "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}", body.len()).unwrap();
+        });
+        assert_eq!(Http { public_only: false }.models(e).unwrap(), ["llama3"]);
     }
 
     #[test]

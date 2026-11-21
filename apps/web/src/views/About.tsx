@@ -7,6 +7,7 @@ import { inLocalMode } from "../local";
 import { type ServerVersions, checkServer, followUpgrade, newer, upgrade, useServerVersions, useUpgrading } from "../server-update";
 import { useSession } from "../session";
 import { ago } from "../domain/dates";
+import { useCopy } from "../ui/clipboard";
 import { Tip, forUser, useFeedback } from "../ui/feedback";
 import { Help, QQ_GROUP, REPOSITORY } from "../ui/help";
 import { Icon } from "../ui/icons";
@@ -15,6 +16,7 @@ import { Changelog } from "./Changelog";
 
 export function About() {
   const { snack } = useFeedback();
+  const copy = useCopy();
   const pending = usePending();
   const { user } = useSession();
   const server = useServerVersions();
@@ -93,7 +95,7 @@ export function About() {
               <span className="folder-sub">反馈和交流</span>
             </span>
             <Tip label="复制群号">
-              <button className="row-value copy-value" onClick={() => navigator.clipboard.writeText(QQ_GROUP.number).then(() => snack("已复制群号"))}>
+              <button className="row-value copy-value" onClick={() => copy(QQ_GROUP.number, "群号")}>
                 {QQ_GROUP.number}
                 <Icon of={Copy} size={16} />
               </button>

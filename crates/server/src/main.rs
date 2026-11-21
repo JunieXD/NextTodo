@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
 
-use nexttodo_server::ai::{Ai, llm::Https, secret::SecretKey};
+use nexttodo_server::ai::{Ai, llm::Http, secret::SecretKey};
 use nexttodo_server::files::{self, Files};
 use nexttodo_server::upgrade::{self, Upgrade};
 use nexttodo_server::{AppState, Clock, Db, app, auth, db, start, with_web};
@@ -39,6 +39,10 @@ enum Command {
         /// Directory with the built web app (`apps/web/dist`)
         #[arg(long, env = "NEXTTODO_WEB")]
         web: Option<PathBuf>,
+        /// Let AI organizing call models on this server's own network, and over plain HTTP: anyone
+        /// with an account can then reach that network through the server
+        #[arg(long, env = "NEXTTODO_AI_PRIVATE_NETWORK")]
+        ai_private_network: bool,
     },
     /// Replace the database with a snapshot, the server stopped; the data replaced is kept beside it
     Restore { snapshot: PathBuf },
@@ -81,9 +85,9 @@ async fn main() -> anyhow::Result<()> {
         upgrade::hand_over(&cli.data, own, matches!(cli.command, Command::Serve { .. }))?;
     }
     match cli.command {
-        Command::Serve { listen, web } => {
+        Command::Serve { listen, web, ai_private_network } => {
             let _lock = lock(&cli.data, false)?;
-            let ai = Ai::new(secret, Arc::new(Https { public_only: true }));
+            let ai = Ai::new(secret, Arc::new(Http { public_only: !ai_private_network }));
             let (started, ()) = start::start(&db, cli.data.join("snapshots"), listen, ai, None, |_| Ok(())).await?;
             let web = match (&installed, own) {
                 // Listening: the switch to it is done.

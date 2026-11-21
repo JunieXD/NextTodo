@@ -83,7 +83,7 @@ impl AppState {
             db,
             clock,
             hub: Hub::default(),
-            ai: Arc::new(ai::Ai::new(None, Arc::new(ai::llm::Https { public_only: true }))),
+            ai: Arc::new(ai::Ai::new(None, Arc::new(ai::llm::Http { public_only: true }))),
             upgrade: None,
             files: Arc::new(files),
             local: None,

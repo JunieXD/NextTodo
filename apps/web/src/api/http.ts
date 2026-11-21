@@ -33,13 +33,42 @@ export async function loadServer() {
 
 export const serverUrl = () => server.url;
 
-/** Points the app at a server, as typed on the sign-in page: `todo.example.com` means https. */
+/** Points the app at a server, as typed on the sign-in page: `todo.example.com` means https, an
+ * address on the local network plain HTTP. */
 export function setServer(typed: string) {
   const url = typed.trim().replace(/\/+$/, "");
-  server.url = /^https?:\/\//.test(url) ? url : `https://${url}`;
+  const scheme = /^https?(?=:\/\/)/i.exec(url)?.[0];
+  // In lower case, which the sync connection's address is made from.
+  server.url = scheme ? scheme.toLowerCase() + url.slice(scheme.length) : `${onLocalNetwork(url) ? "http" : "https"}://${url}`;
   // A token left from an earlier sign-in is the old server's, and never goes to another.
   server.token = undefined;
   server.local = false;
+}
+
+/** Whether an address typed without a scheme is on this device or the local network, where servers
+ * often have no certificate (docs/design.md#直接用-http). HTTPS is not tried first: a server on the
+ * internet would then be reached in the clear whenever someone blocks its HTTPS. */
+function onLocalNetwork(typed: string) {
+  let host: string;
+  try {
+    // A name may end in the dot of the DNS root.
+    host = new URL(`http://${typed}`).hostname.replace(/\.$/, "");
+  } catch {
+    // Not an address: the request to it says so.
+    return false;
+  }
+  const v4 = /^(\d+)\.(\d+)\.\d+\.\d+$/.exec(host);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    // Loopback, private, link-local, and the shared range Tailscale gives its devices.
+    return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127);
+  }
+  if (host.startsWith("[")) {
+    // Loopback, unique local (fc00::/7) and link-local (fe80::/10), by the first group in full.
+    const first = parseInt(host.slice(1).split(":")[0] || "0", 16);
+    return host === "[::1]" || (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80;
+  }
+  return !host.includes(".") || /\.(local|lan|internal|home\.arpa)$/.test(host);
 }
 
 /** Points the app at its own server on this device, for as long as the page is loaded. */

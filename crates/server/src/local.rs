@@ -12,7 +12,7 @@ use axum::extract::Request;
 use axum::middleware::Next;
 use rusqlite::{Connection, params};
 
-use crate::ai::{Ai, llm::Https};
+use crate::ai::{Ai, llm::Http};
 use crate::auth::{self, TokenKind};
 use crate::backup::{self, DB_DIR, DB_FILE};
 use crate::error::ApiError;
@@ -102,7 +102,7 @@ impl Local {
             &db,
             dir.join("snapshots"),
             (Ipv4Addr::LOCALHOST, port).into(),
-            Ai::new(None, Arc::new(Https { public_only: false })),
+            Ai::new(None, Arc::new(Http { public_only: false })),
             Some(dir.to_owned()),
             move |c| Ok((local_user(c, now)?, db::epoch(c)?)),
         )

@@ -32,6 +32,32 @@ async fn login_sessions_and_logout() {
     assert_eq!((after.status, after.body["code"].as_str()), (StatusCode::UNAUTHORIZED, Some("unauthenticated")));
 }
 
+/// A page on plain HTTP, from a server used without HTTPS: its browser keeps no `Secure` cookie, so
+/// it gets one without, to sign in and to sign out with.
+#[tokio::test]
+async fn a_page_on_plain_http_gets_a_cookie_it_can_keep() {
+    let t = TestApp::new();
+    t.admin().await;
+    let sign_in = |origin: &'static str| {
+        let req = Request::post("/api/v1/auth/login").header(header::CONTENT_TYPE, "application/json").header(header::ORIGIN, origin);
+        t.raw(req, Body::from(json!({ "username": "alice", "password": "correct horse", "device": "Chrome · macOS" }).to_string()))
+    };
+    let (_, headers, _) = sign_in("https://todo.example.com").await;
+    assert!(headers[header::SET_COOKIE].to_str().unwrap().contains("Secure"));
+    let (status, headers, _) = sign_in("http://192.168.1.10:8080").await;
+    assert_eq!(status, StatusCode::OK);
+    let cookie = headers[header::SET_COOKIE].to_str().unwrap();
+    assert!(cookie.starts_with("nt_session=nt_") && !cookie.contains("Secure"), "{cookie}");
+
+    let out = Request::post("/api/v1/auth/logout")
+        .header(header::COOKIE, cookie.split(';').next().unwrap())
+        .header(header::ORIGIN, "http://192.168.1.10:8080");
+    let (status, headers, _) = t.raw(out, Body::empty()).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let cleared = headers[header::SET_COOKIE].to_str().unwrap();
+    assert!(cleared.starts_with("nt_session=;") && cleared.contains("Max-Age=0") && !cleared.contains("Secure"), "{cleared}");
+}
+
 #[tokio::test]
 async fn invites_registration_and_token_permissions() {
     let t = TestApp::new();

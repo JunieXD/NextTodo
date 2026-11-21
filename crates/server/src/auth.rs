@@ -301,9 +301,17 @@ pub(crate) fn create_session(c: &Connection, user_id: &str, device: &str, now: i
     Ok(secret)
 }
 
-fn with_session_cookie(session: Session) -> Response {
-    let cookie = format!("{COOKIE}={}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=34560000", session.secret);
-    ([(header::SET_COOKIE, HeaderValue::from_str(&cookie).expect("cookie is ASCII"))], Json(session)).into_response()
+fn with_session_cookie(headers: &HeaderMap, session: Session) -> Response {
+    ([(header::SET_COOKIE, cookie(headers, &session.secret, 34_560_000))], Json(session)).into_response()
+}
+
+/// The session cookie, `Secure` unless the page is on plain HTTP (a server used without HTTPS,
+/// docs/design.md#直接用-http): its browser would not keep it then. Browsers say which page it is in
+/// `Origin` on any request that changes something.
+fn cookie(headers: &HeaderMap, value: &str, max_age: u32) -> HeaderValue {
+    let plain = headers.get(header::ORIGIN).is_some_and(|o| o.as_bytes().starts_with(b"http://"));
+    let secure = if plain { "" } else { " Secure;" };
+    HeaderValue::from_str(&format!("{COOKIE}={value}; HttpOnly;{secure} SameSite=Lax; Path=/; Max-Age={max_age}")).expect("cookie is ASCII")
 }
 
 #[derive(Deserialize, TS)]
@@ -315,7 +323,7 @@ pub struct Login {
     device: DeviceName,
 }
 
-pub async fn login(State(st): State<AppState>, Json(req): Json<Login>) -> Result<Response, ApiError> {
+pub async fn login(State(st): State<AppState>, headers: HeaderMap, Json(req): Json<Login>) -> Result<Response, ApiError> {
     let username = req.username;
     let found: Option<(String, String)> = st
         .db
@@ -343,7 +351,7 @@ pub async fn login(State(st): State<AppState>, Json(req): Json<Login>) -> Result
             Ok(Session { secret, user: load_user(c, &user_id)? })
         })
         .await?;
-    Ok(with_session_cookie(session))
+    Ok(with_session_cookie(&headers, session))
 }
 
 #[derive(Deserialize, TS)]
@@ -366,7 +374,7 @@ fn check_invite(c: &Connection, code: &str) -> Result<(), ApiError> {
     }
 }
 
-pub async fn register(State(st): State<AppState>, Json(req): Json<Register>) -> Result<Response, ApiError> {
+pub async fn register(State(st): State<AppState>, headers: HeaderMap, Json(req): Json<Register>) -> Result<Response, ApiError> {
     let Register { invite, username, password, display_name, device } = req;
     // Checked before the costly hashing, and again in the transaction that uses it up.
     let code = invite.clone();
@@ -386,10 +394,10 @@ pub async fn register(State(st): State<AppState>, Json(req): Json<Register>) -> 
             Ok(Session { secret, user })
         })
         .await?;
-    Ok(with_session_cookie(session))
+    Ok(with_session_cookie(&headers, session))
 }
 
-pub async fn logout(State(st): State<AppState>, auth: Auth) -> Result<Response, ApiError> {
+pub async fn logout(State(st): State<AppState>, auth: Auth, headers: HeaderMap) -> Result<Response, ApiError> {
     auth.require_session()?;
     let hub = st.hub.clone();
     st.db
@@ -400,8 +408,7 @@ pub async fn logout(State(st): State<AppState>, auth: Auth) -> Result<Response, 
             Ok(())
         })
         .await?;
-    let cookie = format!("{COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0");
-    Ok((StatusCode::NO_CONTENT, [(header::SET_COOKIE, HeaderValue::from_str(&cookie).expect("cookie is ASCII"))]).into_response())
+    Ok((StatusCode::NO_CONTENT, [(header::SET_COOKIE, cookie(&headers, "", 0))]).into_response())
 }
 
 pub async fn me(State(st): State<AppState>, auth: Auth) -> Result<Json<User>, ApiError> {

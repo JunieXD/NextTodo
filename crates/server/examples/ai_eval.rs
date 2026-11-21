@@ -15,7 +15,7 @@ use nexttodo_core::board::{Board, Now, Snapshot};
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{AiJob, Due, RepeatFrom, Suggestion, TaskId};
 use nexttodo_core::ops::{MAX_OPS, Op};
-use nexttodo_server::ai::llm::{Api, Config, Https, Prompt, Thinking};
+use nexttodo_server::ai::llm::{Api, Config, Http, Prompt, Thinking};
 use nexttodo_server::ai::{organize, tidy};
 use nexttodo_server::tools;
 use serde::Deserialize;
@@ -331,7 +331,7 @@ fn chat(config: &Config, prompt: &Prompt) -> (Result<String, String>, f64) {
     loop {
         let start = Instant::now();
         // As in local mode, where any address is called: a proxy here may give every name one of its own.
-        let answer = Https { public_only: false }.chat(config, prompt, true, TIMEOUT);
+        let answer = Http { public_only: false }.chat(config, prompt, true, TIMEOUT);
         if let Err(f) = &answer
             && f.status.is_some_and(|s| s == 429 || s >= 500)
             && let Some(wait) = waits.next()

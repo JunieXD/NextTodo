@@ -20,6 +20,7 @@ import { newer, useServerVersions } from "../server-update";
 import { useSession } from "../session";
 import { type Accent, type Theme, setAccent, setTheme, useAccent, useTheme } from "../theme";
 import { type Zoom, type Zoomed, setZoom, useZoom } from "../zoom";
+import { copyText, useCopy } from "../ui/clipboard";
 import { Seg, Stepper, Swatch, Switch } from "../ui/controls";
 import { Modal, Tip, forUser, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
@@ -507,15 +508,17 @@ function Invites() {
     api<Invite[]>("GET", "/invites").then(setInvites, failed);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- loads once when opened
   }, []);
+  const copy = useCopy();
   const invite = async () => {
-    try {
-      const made = await api<Invite>("POST", "/invites");
-      setInvites((list) => [made, ...(list ?? [])]);
-      await copy(inviteLink(made.code));
-      snack("已复制邀请链接");
-    } catch (e) {
-      failed(e);
-    }
+    const made = await api<Invite>("POST", "/invites").catch(failed);
+    if (!made) return;
+    setInvites((list) => [made, ...(list ?? [])]);
+    // The invite is made whether or not the link reaches the clipboard: a click a while back may no
+    // longer allow copying, on a page on plain HTTP.
+    await copyText(inviteLink(made.code)).then(
+      () => snack("已复制邀请链接"),
+      () => snack("邀请码已生成，点它右边的按钮复制链接"),
+    );
   };
   const now = new Date();
   return (
@@ -535,7 +538,7 @@ function Invites() {
               </span>
               {!i.used_by && (
                 <Tip label="复制邀请链接">
-                  <button className="icon-btn sm" onClick={() => copy(inviteLink(i.code)).then(() => snack("已复制邀请链接"))}>
+                  <button className="icon-btn sm" onClick={() => copy(inviteLink(i.code), "邀请链接")}>
                     <Icon of={Copy} size={16} />
                   </button>
                 </Tip>
@@ -727,10 +730,6 @@ function TokenPage({ onCreated, onClose }: { onCreated(c: CreatedToken): void; o
   );
 }
 
-async function copy(text: string) {
-  await navigator.clipboard.writeText(text);
-}
-
 /** A new token, shown this once, and the ways to connect an agent with it, filled in. In local mode
  * the app's address changes each time it starts: agents go through the command line, which finds
  * it (docs/local.md#agent-接入). */
@@ -795,7 +794,7 @@ function EnvVars({ url, secret }: { url: string; secret: string }) {
 /** Text to copy, such as a token or a command, with the button that copies it; `children` go next to
  * the label. */
 function Copyable({ label, hint, text, children }: { label: string; hint?: string; text: string; children?: ReactNode }) {
-  const { snack } = useFeedback();
+  const copy = useCopy();
   return (
     <div className="field">
       <div className="copy-head">
@@ -807,7 +806,7 @@ function Copyable({ label, hint, text, children }: { label: string; hint?: strin
       <div className="secret">
         <span>{text}</span>
         <Tip label={`复制${label}`}>
-          <button className="icon-btn sm" onClick={() => copy(text).then(() => snack(`已复制${label}`))}>
+          <button className="icon-btn sm" onClick={() => copy(text, label)}>
             <Icon of={Copy} size={18} />
           </button>
         </Tip>

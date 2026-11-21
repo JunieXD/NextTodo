@@ -10,9 +10,9 @@ const config: CapacitorConfig = {
   loggingBehavior: "none",
   android: {
     path: "../android",
-    // A development server is plain HTTP; the app's pages are https://localhost, so its WebSocket
-    // counts as mixed content. Set for `cap sync` only when building against one.
-    allowMixedContent: process.env.NEXTTODO_DEV_SERVER === "1",
+    // The app's pages are https://localhost: with a server on plain HTTP (docs/design.md#直接用-http),
+    // the sync connection and the attachments' files count as mixed content.
+    allowMixedContent: true,
     // Not the keyboard plugin: Android's WebView gets shorter by itself as the keyboard opens.
     includePlugins: ["@capacitor/app", "@capacitor/preferences"],
   },

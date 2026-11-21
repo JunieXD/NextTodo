@@ -33,6 +33,7 @@
   },
   "plugins": {
     "updater": {
+      "dangerousInsecureTransportProtocol": true,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRDNjdBQTQxNDMxRDA3NkEKUldScUJ4MURRYXBuVEwvMUg2bHpTUlRrNDJTTFhUVE95Z3pIUG0yb0lhbERmMjhMMDJwd2Q1Q2MK"
     }
   },

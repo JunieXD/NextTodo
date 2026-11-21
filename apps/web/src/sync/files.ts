@@ -13,6 +13,7 @@ import type { Mutation } from "../api/types/Mutation";
 import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
 import { allStaged, withdraw, withdrawn, withdrawnGone } from "./drafts";
+import { exclusive } from "./locks";
 import { all, db, outbox, unqueue } from "./persist";
 import type { Store } from "./store";
 
@@ -193,7 +194,7 @@ export class Files {
   private upload() {
     if (this.requested || this.timer || this.stopped) return;
     this.requested = true;
-    void navigator.locks.request(`upload:${this.user}`, async () => {
+    void exclusive(`upload:${this.user}`, async () => {
       // From here, work joining the outbox asks again.
       this.requested = false;
       while (!this.stopped) {

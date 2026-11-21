@@ -67,7 +67,7 @@ iOS App（iPhone 和 iPad）：和 [Android](android.md) 一样，Capacitor 外�
   - 页面也不抢在前面：从页面隐藏起（加载时就是隐藏的也算），它发往本机服务端的请求和同步连接都先等着；回到前台时再向原生要一次地址（`openLocal`，同样查一遍端口），还是原来的地址和令牌才发出；换了的，或服务端起不来的，页面重新加载，在这之前什么都不发。后来又隐藏过的，等最后一次的确认。确认排在原生正在做的事后面（比如要从网盘下载附件的备份），可能要等一阵：等着的请求到了自己的时限照常失败，同步连接接着等。
   - 在后台处理通知上的“完成”时也一样：App 被叫醒时端口可能早已收回，先这样查一遍再发改动，不然改动只能存着，等下次打开 App 才发出。同一个端口用不了的，改动先存下，不发往旧地址。
   - 回到前台时也马上看一次网盘（[借网盘同步](local.md#运行)），同 Android 的 `onResume`。
-- **明文 HTTP**：App Transport Security 只放行本机地址（`NSAllowsLocalNetworking`），其他地址照旧只能用 HTTPS。页面（`capacitor://localhost`）连 `http://127.0.0.1` 和 `ws://127.0.0.1` 不算混合内容。本机的服务端允许来源 `capacitor://localhost` 跨域，同 Android 的 `https://localhost`。
+- **明文 HTTP**：App Transport Security 允许明文，见[直接用 HTTP](design.md#直接用-http)。页面（`capacitor://localhost`）连 `http://127.0.0.1` 和 `ws://127.0.0.1` 不算混合内容。本机的服务端允许来源 `capacitor://localhost` 跨域，同 Android 的 `https://localhost`。
 - 和 Android 一样：网页只用安装包自带的；设置里不显示令牌一组，agent 接不进来；后台挂起期间 AI 整理暂停，进程被结束的下次启动时记为失败。
 
 ## 附件

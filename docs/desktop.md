@@ -156,4 +156,4 @@ Windows 版在 Windows 11 虚拟机（ARM 版，x64 模拟运行）里验证过�
 
 - 操作页面：启动前设环境变量 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`，在虚拟机里经 CDP（`http://127.0.0.1:9222/json`）连接。
 - 查看日志和 panic：正式版没有控制台窗口，从命令行启动 `nexttodo-desktop.exe`，把标准错误重定向到文件。
-- 测试更新：正式版的更新地址必须是 `https`。用本机的 `http` 服务器测试时，先装一个设了 `plugins.updater.dangerousInsecureTransportProtocol` 的测试包，再从它更新。
+- 测试更新：用本机的 `http` 服务器就行，更新插件允许 `http` 的更新地址，见[直接用 HTTP](design.md#直接用-http)。

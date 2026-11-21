@@ -372,7 +372,7 @@ async fn a_device_hands_its_settings_over_for_one_job() {
 
     let run = format!("/ai/jobs/{job}/run");
     let mut bad = config();
-    bad["base_url"] = "http://192.168.1.1/v1".into();
+    bad["base_url"] = "192.168.1.1/v1".into();
     assert_eq!(t.call("POST", &run, Some(&s), Some(bad)).await.status, StatusCode::BAD_REQUEST);
     let token = t.call("POST", "/tokens", Some(&s), Some(json!({ "name": "Claude Code", "scope": "write" }))).await.body;
     let token = token["secret"].as_str().unwrap();

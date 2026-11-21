@@ -394,7 +394,7 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 ## 部署
 
 - 服务端是一个进程、一个端口：同时提供 API、WebSocket、MCP 和网页静态文件。静态文件在构建时预先压缩好，放在镜像里，见[网页端](web.md#部署)。
-- 自己部署：用 GHCR 上的镜像 `ghcr.io/juniexd/nexttodo`（amd64 和 arm64），`docker compose` 启动，数据在挂载的 `data/` 里；前面放一个提供 HTTPS 的反向代理。步骤见[部署](deploy.md)。
+- 自己部署：用 GHCR 上的镜像 `ghcr.io/juniexd/nexttodo`（amd64 和 arm64），`docker compose` 启动，数据在挂载的 `data/` 里；前面一般放一个提供 HTTPS 的反向代理，也可以[直接用 HTTP](#直接用-http)。步骤见[部署](deploy.md)。
 - 升级由管理员发起，数据库在新版本启动时自动迁移。为了让管理员知道有新版本，管理员登录的网页和 App 在设置“关于”里显示服务器的版本（服务器上 `/app/desktop.json` 的 `version`），并向 GitHub 查最新的 Release（`api.github.com`，打开时和之后每天最多一次，进“关于”时不论多久前查过都再查一次，请求里没有用户数据）。已是最新时这一行写“已是最新版本，3 分钟前检查”，查过的结果过时了也看得出来；有新版本时写“可升级到 0.1.N”，旁边是“升级”按钮；同一个新版本在打开时用提示条提醒一次（“服务器可升级到 0.1.N”，附“查看”打开设置）。查不到时只在这一行写“无法查询最新版本”。普通用户和本机模式不查。
 - 点“升级”并确认（“升级到 0.1.N？服务器会下载约 45 MB，换上新版本时各设备断开几秒”）后，服务端自己从 GHCR 下载新版本、换上，起不来时连同数据库一起退回，不经过 Docker，见[部署](deploy.md#在设置里升级)。这一行显示进度：正在下载（百分比）、正在重启，换上后写“已升级到 0.1.N”，网页端随后自动刷新，App 立即检查自己的更新；失败时写明原因，附官网上用命令升级的方法，可以重试。不能这样升级的服务端（开发版、加上这个功能以前的版本），这一行没有按钮，照旧附升级方法的链接。也可以照旧在服务器上用 `docker compose` 换镜像。
 - 镜像基于 `scratch`，里面只有静态链接的 Linux 服务端和网页文件（含 [App 更新](#app-更新)），容器以 65534 用户运行，只监听容器里的 8080。镜像在 Mac 上用 `cargo-zigbuild` 交叉编译后打包，服务器上不编译。
@@ -402,6 +402,31 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 - 反向代理要开启 WebSocket，并把原来的 `Host` 传过去（或设 `X-Forwarded-Host`），网页的同步连接靠它确认是同源页面。
 - 服务端启动时和之后每天用 `VACUUM INTO` 做一次数据库快照，放在 `data/snapshots/snapshot-<Unix 秒>.db`，保留最近 7 份。[附件](#附件)的文件不在快照里，在 `data/files/`，备份时要一起复制。恢复时停掉服务，用服务端的 `restore` 命令换上快照再启动，设备随后重新下载全部数据，见[部署](deploy.md#备份和恢复)。
 - 发布：`deploy/build.sh` 构建镜像内容和各端安装包，`deploy/release.sh` 把镜像推到 GHCR、安装包传到 GitHub Releases；`deploy/deploy.sh` 经 ssh 部署到自己的服务器，换版本失败时自动换回上一个。签名密钥从环境变量读取，不进仓库。见[部署](deploy.md#构建发布)。
+
+### 直接用 HTTP
+
+服务端本身只用 HTTP，HTTPS 由反向代理提供。没有证书时（比如只在家里的局域网里用），也可以直接用 HTTP 连它的端口。网页和各个 App 都支持，包括同步、附件和 App 更新，配置见[部署](deploy.md#直接用-http)。
+
+代价是明文传输：途中的人看得到密码、令牌和所有数据，也改得了，包括 Android 热更新的网页部分。APK 和桌面更新包有签名，改不了。所以经公网访问时仍建议用 HTTPS。
+
+- **不写协议的地址**：App 登录页的服务器地址不写协议时，本机和局域网的地址按 `http://`，其余按 `https://`。算本机和局域网的有：
+  - 名字：`localhost`、不带点的（如 `nas`），以及 `.local`、`.lan`、`.internal`、`.home.arpa` 结尾的；
+  - IPv4：回环 `127/8`、内网 `10/8`、`172.16/12`、`192.168/16`、链路本地 `169.254/16`，以及 Tailscale 这类组网用的 `100.64/10`；
+  - IPv6：`::1`、`fc00::/7`、`fe80::/10`。
+
+  不先试 `https://`、失败了再换 `http://`：那样公网上有人挡住 HTTPS 时，App 会悄悄改用明文。写了 `http://` 的照写的连，公网地址也一样。
+- **网页**：经 HTTP 打开时不是安全上下文，有几处不同，见[网页端](web.md#经-http-打开)。
+- **Android**：
+  - 网络安全配置允许明文。
+  - 页面来自 `https://localhost`，同步的 `ws://` 和附件的 `http://` 都算混合内容，所以 WebView 允许混合内容（Capacitor 的 `allowMixedContent`）。
+- **iOS**：
+  - App Transport Security 允许任意地址（`NSAllowsArbitraryLoads`）。
+  - 连局域网的地址时，系统会请用户允许访问本地网络（`NSLocalNetworkUsageDescription`）。
+- **桌面**：
+  - HTTP 插件本来就能发往任意 `http(s)://` 地址。
+  - 更新插件允许 `http` 的更新地址（`dangerousInsecureTransportProtocol`），更新包照样校验签名。
+  - Windows 的页面本身就是 `http://tauri.localhost`，没有混合内容的问题。
+- macOS 和 iOS 的页面（`tauri://localhost`、`capacitor://localhost`）是安全上下文，但 WebKit 不拦它们连局域网的 `ws://` 和 `http://`。2026-11-22 用 macOS 上的 WKWebView 实测过。
 
 ## App 更新
 
@@ -414,7 +439,7 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 | iOS | 网页打包在 App 里，随整包更新 | App 不能自己安装：提示有新版本，在 SideStore 里更新 |
 
 - 平时的改动几乎都在网页部分，Android 只在原生部分（`apps/android`、Capacitor 配置和插件）改了时才要装新 APK；桌面 App 每次发布都是整包，几 MB。
-- 只从登录的服务器经 HTTPS 下载，和网页端一样信任这台服务器。APK 由系统校验签名，必须和已装的一致；桌面更新包用单独的更新密钥签名，App 里带着公钥校验。
+- 只从登录的服务器下载（[直接用 HTTP](#直接用-http) 时经 HTTP），和网页端一样信任这台服务器。APK 由系统校验签名，必须和已装的一致；桌面更新包用单独的更新密钥签名，App 里带着公钥校验。
 - 每次构建除了服务端，还构建 Android 正式包和桌面更新包，连同版本说明一起放进镜像的 `/app/`。细节见 [Android](android.md#更新) 和[桌面 App](desktop.md#更新)。
 - 本机模式没有服务器，从 GitHub Releases 取更新，见[本机模式](local.md#更新)。iOS 总是从 GitHub 取：服务器上没有 iOS 的安装包，见 [iOS](ios.md#更新)。
 - 设置页“关于”只显示一个版本号：正在用的这一份的版本，写法和服务器、Release 一样，是 `0.1.<提交数>`。浏览器里叫“网页版本”，App 里叫“App 版本”。Android 的网页部分单独热更新，常常比安装包新，两者不同时“App 版本”下面另写一行“安装包 0.1.<提交数>”；桌面 App、iOS App 和本机模式的网页就在安装包里，版本总是相同，不另列。

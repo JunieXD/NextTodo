@@ -3,6 +3,7 @@
 // holds.
 
 import { createContext, useContext, useSyncExternalStore } from "react";
+import { v7 as uuidv7 } from "uuid";
 import { ApiError, api, app, connectedLocally, dropSession, native, phoneApp, syncToken, syncUrl } from "./api/http";
 import type { Effect } from "./api/types/Effect";
 import type { ErrorBody } from "./api/types/ErrorBody";
@@ -16,6 +17,7 @@ import { Rejected } from "./domain/apply";
 import * as mobile from "./mobile";
 import * as desktop from "./desktop";
 import { type FileMessage, Files } from "./sync/files";
+import { exclusive } from "./sync/locks";
 import { type Saver, forget, forgetCopy, forgetOthers, load, saver } from "./sync/persist";
 import { type Connection, Socket } from "./sync/socket";
 import { type Saved, Store } from "./sync/store";
@@ -85,7 +87,7 @@ export function onSignInElsewhere(f: () => void) {
 
 /** Runs `f` while no other tab is signing in or out: what it finds on the device stays so until it
  * is done. */
-const turn = <T,>(f: () => Promise<T>): Promise<T> => navigator.locks.request("nexttodo.login", f);
+const turn = <T,>(f: () => Promise<T>): Promise<T> => exclusive("nexttodo.login", f);
 
 /** What the UI wants to hear about; set once it is on screen. */
 export interface Listeners {
@@ -211,7 +213,7 @@ export class Session {
   /** Signs in with `request`, which asks the server and says who signed in, and opens their data:
    * the copy on this device, or a fresh one from the server. Anyone else's data on this device goes. */
   static async open(request: () => Promise<User>): Promise<Session> {
-    const copy = crypto.randomUUID();
+    const copy = uuidv7();
     // The request sets the browser's cookie: in turn, so that a sign-out in another tab can neither
     // end this sign-in nor clear its cookie. One cut short goes first, while the cookie is its own.
     const opened = await turn(async () => {
@@ -227,7 +229,7 @@ export class Session {
     // In the app, the session is the token kept on the device: without one, what the widget and the
     // reminders show is no one's. On the Mac they last only while the app runs.
     if (phoneApp && !syncToken()) await mobile.clear();
-    const copy = crypto.randomUUID();
+    const copy = uuidv7();
     const found = await turn(async () => {
       const out = pendingSignOut();
       if (out) {

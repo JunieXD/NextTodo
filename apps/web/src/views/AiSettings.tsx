@@ -129,7 +129,7 @@ export function AiPage() {
     run("save", async () => {
       if (place === "local") {
         // The server checks these when they are handed over, which may be much later.
-        if (!/^https:\/\/\S+$/.test(form.base_url)) return setError("接口地址要以 https:// 开头，不含空格");
+        if (!/^https?:\/\/\S+$/.test(form.base_url)) return setError("接口地址要以 http:// 或 https:// 开头，不含空格");
         if (!form.model) return setError("请填写模型");
         if (!typed) return setError("请填写 API 密钥");
         const config: AiConfig = {
@@ -173,7 +173,7 @@ export function AiPage() {
       </div>
       <label className="field">
         <span>
-          接口地址 <span className="hint">OpenAI 兼容，https 开头</span>
+          接口地址 <span className="hint">OpenAI 兼容</span>
         </span>
         <input value={form.base_url} onChange={(e) => set({ base_url: e.target.value.trim() })} placeholder="https://api.example.com/v1" inputMode="url" />
       </label>

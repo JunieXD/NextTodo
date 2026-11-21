@@ -20,7 +20,7 @@ Android App（包括小米澎湃 OS）：Capacitor 外壳加载打包在安装�
 
 App 的页面来自 `https://localhost`，和服务器不同源，所以不用 Cookie：
 
-- 登录页多一个“服务器地址”栏，第一次登录时填写，不写协议时按 `https://`。
+- 登录页多一个“服务器地址”栏，第一次登录时填写，不写协议时按地址选 `http://` 或 `https://`，见[直接用 HTTP](design.md#直接用-http)。
 - 登录得到的会话令牌和服务器地址存在 Capacitor Preferences（Android 的 SharedPreferences，App 私有）；小组件从同一处读取。App 不参加系统备份（`allowBackup="false"`），令牌不会进云端备份。
 - HTTP 请求加 `Authorization: Bearer <令牌>`，经 Capacitor 的原生 HTTP 发出（`CapacitorHttp`），不受跨域限制，服务端不需要 CORS。Capacitor 不给 POST 等写请求转发 `AbortSignal`，所以网页端请求的 20 秒期限在 App 里只对 GET 有效，登录、注销等写请求要等系统的网络超时。
 - WebSocket 在 `hello` 里带令牌（见 [API](api.md#同步协议)）。

@@ -43,6 +43,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `add` | `add <标题> [--folder] [-d 描述] [--start] [--due] [--remind] [--repeat [--repeat-from] [--repeat-until]] [--assign 用户名…] [--after 编号…] [--before 编号…]` | `title`、`folder?`、`description?`、`start?`、`due?`、`remind?`、`repeat?`、`repeat_from?`、`repeat_until?`、`assign?`、`after?`、`before?` | 添加一个事项；文件夹不存在时一起新建 |
 | `edit` | `edit <事项> [--title] [-d 描述 \| --replace 原文 新文… \| --append 文本] [--start \| --no-start] [--due \| --no-due] [--remind \| --no-remind] [--repeat [--repeat-from] [--repeat-until] \| --no-repeat] [--assign 用户名…] [--unassign 用户名…]` | `task`、`title?`、`description?`、`replace?`、`append?`、`start?`、`due?`、`remind?`、`repeat?`、`repeat_from?`、`repeat_until?`、`assign?`、`unassign?` | 修改事项；`due`、`remind`、`repeat` 给 `null` 表示清除；描述的改法见[同时修改](#同时修改)；负责人在现有的上面加、减 |
 | `done` | `done <事项…> [--end-repeat]` | `tasks`、`today?`、`end_repeat?` | 标为完成，输出因此变成可做的事项；重复的事项改为顺延，输出下一次的截止时间；做的是 `repeat_until` 前的最后一次的，直接完成。有重复的事项时必须给 `today`（用户当地的当天日期），命令行自动带上本机日期。`end_repeat` 让重复的事项结束重复、直接完成，用于打卡的长期事项全部做完时，见[总体设计](design.md#重复) |
+| `skip` | `skip <事项…>` | `tasks`、`today` | 跳过重复事项的这一次：和完成一样顺延到下一次，但不算完成，见[总体设计](design.md#重复)。已是最后一次的报错，用 `done --end-repeat`；不重复的事项报错。命令行自动带上本机日期 |
 | `reopen` | `reopen <事项…>` | `tasks` | 重新打开 |
 | `mkdir` | `mkdir <路径>` | `path` | 新建文件夹，路径上缺的层级一起建；已存在时报错 |
 | `rename` | `rename <文件夹> <新名字>`、`rename --attachment <附件 ID> <新名字>` | `folder?`、`attachment?`、`name` | 文件夹或附件改名，`folder` 和 `attachment` 正好给一个 |

@@ -12,6 +12,7 @@ import type { Snapshot } from "../api/types/Snapshot";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import { isoDate, isoTime } from "./dates";
+import { nextDue, shifted } from "./repeat";
 
 export type Status = "ready" | "waiting" | "done";
 
@@ -248,9 +249,17 @@ export class Board {
     return t.done_at === null && (!a || !before(at, a.date, a.time));
   }
 
+  /** Whether a repeating task done now would still hold up the tasks after it: its next time has
+   * begun by now too, as one caught up on is due today again. */
+  private heldAgain(t: Task): boolean {
+    const next = t.due?.repeat && nextDue(t.due.repeat, t.due.date, this.now.today);
+    if (!t.due || !next) return false;
+    return t.start !== null ? !before(this.now, shifted(t.start, t.due.date, next), t.start_time) : !before(this.now, next);
+  }
+
   /** Tasks that become ready once this one is done. */
   unlocks(t: Task): Task[] {
-    if (!this.holdsUp(t)) return [];
+    if (!this.holdsUp(t) || this.heldAgain(t)) return [];
     return this.after(t).filter((a) => a.done_at === null && this.waitingOn(a) === 1 && !this.notStarted(a));
   }
 

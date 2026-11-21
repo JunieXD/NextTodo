@@ -7,12 +7,16 @@ import type { TaskId } from "../api/types/TaskId";
 import { v7 as uuidv7 } from "uuid";
 import { lastKey } from "../domain/apply";
 import { formatDue, isoDate } from "../domain/dates";
+import { shifted, skipTo } from "../domain/repeat";
 import { useCommit, useSession, useUndo } from "../session";
 import { useFeedback } from "../ui/feedback";
 import { useMarking } from "./marks";
 import { useSelection } from "./nav";
 import type { RowActions } from "./rows";
 import { lost } from "./share";
+
+/** “解锁了“写周报””, “解锁了 3 项”, or nothing. */
+const unlocking = (unlocked: Task[]) => (unlocked.length === 1 ? `解锁了“${unlocked[0].title}”` : unlocked.length ? `解锁了 ${unlocked.length} 项` : "");
 
 export function useTaskActions(): RowActions & {
   link(before: TaskId, after: TaskId): void;
@@ -76,8 +80,7 @@ export function useTaskActions(): RowActions & {
     if (repeating && !last) {
       marking.pop(t.id);
       marking.flash(unlocked.map((x) => x.id));
-      const next = `下一次：${formatDue(board().task(t.id)!.due!, new Date())}`;
-      const text = unlocked.length === 1 ? `${next}，解锁了“${unlocked[0].title}”` : unlocked.length ? `${next}，解锁了 ${unlocked.length} 项` : next;
+      const text = [`下一次：${formatDue(board().task(t.id)!.due!, new Date())}`, unlocking(unlocked)].filter(Boolean).join("，");
       snack({ text, action: "撤销", onAction: () => undo(r.id) });
       return;
     }
@@ -85,7 +88,7 @@ export function useTaskActions(): RowActions & {
       t.id,
       unlocked.map((x) => x.id),
     );
-    const unlocks = unlocked.length === 1 ? `解锁了“${unlocked[0].title}”` : unlocked.length ? `解锁了 ${unlocked.length} 项` : "";
+    const unlocks = unlocking(unlocked);
     const text = last ? (unlocks ? `已完成最后一次，${unlocks}` : `“${t.title}”已完成最后一次`) : unlocks || `已完成“${t.title}”`;
     snack({ text, action: "撤销", onAction: () => undo(r.id) });
   };
@@ -96,6 +99,24 @@ export function useTaskActions(): RowActions & {
 
     toggle: (t) => setDone(t, false),
     endRepeat: (t) => setDone(t, true),
+
+    skip(task) {
+      const t = board().task(task.id);
+      const due = t?.due;
+      const next = due && skipTo(due, isoDate(new Date()));
+      if (!t || !due || !next) return;
+      const moved = { ...due, date: next };
+      const readyBefore = new Set(board().next().map((x) => x.id));
+      const r = commit([{ op: "task.update", id: t.id, due: moved, ...(t.start && { start: shifted(t.start, due.date, next) }) }]);
+      if (!r) return;
+      // Skipped while its time had begun, the tasks after it can start, as when it is done.
+      const unlocked = board()
+        .next()
+        .filter((x) => !readyBefore.has(x.id));
+      marking.flash(unlocked.map((x) => x.id));
+      const text = [`已跳过，下一次：${formatDue(moved, new Date())}`, unlocking(unlocked)].filter(Boolean).join("，");
+      snack({ text, action: "撤销", onAction: () => undo(r.id) });
+    },
 
     /** Moves `t` to the end of `folder`. */
     move(t: Task, folder: FolderId | null) {

@@ -280,24 +280,28 @@ async fn each_time_a_repeating_task_is_done_is_recorded_until_undone_or_deleted(
     t.ok(&s, "add", json!({ "title": "浇花", "due": "2026-11-10", "repeat": "1d" })).await;
     let records =
         |snap: Value| snap["completions"].as_array().unwrap().iter().map(|r| (r["due"].clone(), r["done"].clone())).collect::<Vec<_>>();
-    // Late, then early: from the due date, the next time after today.
+    // Late, caught up to today; then early.
+    t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-12" })).await;
     t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-12" })).await;
     t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-12" })).await;
     let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
     assert!(
-        text(&shown)
-            .contains("最近的完成记录：\n  2026-11-12 完成，截止 2026-11-13，提前 1 天\n  2026-11-12 完成，截止 2026-11-10，晚 2 天"),
+        text(&shown).contains(
+            "最近的完成记录：\n  2026-11-12 完成，截止 2026-11-13，提前 1 天\n  2026-11-12 完成，截止 2026-11-12，按时\n  2026-11-12 完成，截止 2026-11-10，晚 2 天"
+        ),
         "{}",
         text(&shown)
     );
-    assert_eq!(shown["data"]["completion_records"][1], json!({ "due": "2026-11-10", "done": "2026-11-12" }));
+    assert_eq!(shown["data"]["completion_records"][2], json!({ "due": "2026-11-10", "done": "2026-11-12" }));
     // The same time done again keeps the later, and undone, the earlier is back.
     t.ok(&s, "edit", json!({ "task": 1, "due": "2026-11-10" })).await;
     let again = t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-14" })).await;
-    assert_eq!(records(t.snapshot(&s).await), [(json!("2026-11-10"), json!("2026-11-14")), (json!("2026-11-13"), json!("2026-11-12"))]);
+    let today = (json!("2026-11-12"), json!("2026-11-12"));
+    let early = (json!("2026-11-13"), json!("2026-11-12"));
+    assert_eq!(records(t.snapshot(&s).await), [(json!("2026-11-10"), json!("2026-11-14")), today.clone(), early.clone()]);
     t.ok(&s, "undo", json!({ "batch": again["data"]["batch"] })).await;
     let before = records(t.snapshot(&s).await);
-    assert_eq!(before, [(json!("2026-11-10"), json!("2026-11-12")), (json!("2026-11-13"), json!("2026-11-12"))]);
+    assert_eq!(before, [(json!("2026-11-10"), json!("2026-11-12")), today, early]);
     // Ending the repeat is no time done; deleted, the records go with the task, and come back with it.
     t.ok(&s, "done", json!({ "tasks": [1], "end_repeat": true, "today": "2026-11-14" })).await;
     assert_eq!(records(t.snapshot(&s).await), before);
@@ -351,6 +355,40 @@ async fn a_repeat_until_a_day_ends_done_the_last_time() {
     t.ok(&s, "edit", json!({ "task": 1, "repeat": "1d" })).await;
     let due = t.ok(&s, "show", json!({ "task": 1 })).await["data"]["due"].clone();
     assert_eq!(due, json!({ "date": "2026-12-19", "repeat": { "every": 1, "unit": "day", "from": "due" } }));
+}
+
+#[tokio::test]
+async fn a_time_skipped_moves_on_without_counting_as_done() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "开周会", "start": "2026-11-15", "due": "2026-11-16", "repeat": "1w", "repeat_until": "2026-11-30" }))
+        .await;
+    t.ok(&s, "add", json!({ "title": "写周报", "after": [1] })).await;
+    t.ok(&s, "add", json!({ "title": "交房租", "due": "2026-11-16" })).await;
+    let r = t.tool(&s, "skip", json!({ "tasks": [1] })).await;
+    assert_eq!((r.status, r.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("today")), "{}", r.body);
+    assert_eq!(t.tool(&s, "skip", json!({ "tasks": [3], "today": "2026-11-18" })).await.status, StatusCode::CONFLICT);
+
+    // Missed on Monday, it is next week's, the start as far before; nothing waiting on it starts.
+    let skipped = t.ok(&s, "skip", json!({ "tasks": [1], "today": "2026-11-18" })).await;
+    assert!(text(&skipped).starts_with("顺延 #1 开周会 → 2026-11-23") && !text(&skipped).contains("解锁"), "{}", text(&skipped));
+    let shown = t.ok(&s, "show", json!({ "task": 1, "today": "2026-11-18" })).await;
+    assert_eq!((shown["data"]["start"].as_str(), shown["data"]["due"]["date"].as_str()), (Some("2026-11-22"), Some("2026-11-23")));
+    assert_eq!(shown["data"]["completions"], Value::Null);
+    assert!(t.snapshot(&s).await["completions"].as_array().unwrap().is_empty());
+    assert_eq!(t.ok(&s, "show", json!({ "task": 2 })).await["data"]["status"], "waiting");
+
+    // Skipped early, one counted from the day done moves on from its due date, not back.
+    t.ok(&s, "add", json!({ "title": "换滤芯", "start": "2026-12-20", "due": "2026-12-22", "repeat": "30d", "repeat_from": "done" })).await;
+    let filter = t.ok(&s, "skip", json!({ "tasks": [4], "today": "2026-11-22" })).await;
+    assert!(text(&filter).starts_with("顺延 #4 换滤芯 → 2027-01-21"), "{}", text(&filter));
+    assert_eq!(t.ok(&s, "show", json!({ "task": 4 })).await["data"]["start"], "2027-01-19");
+
+    let again = t.ok(&s, "skip", json!({ "tasks": [1], "today": "2026-11-23" })).await;
+    let r = t.tool(&s, "skip", json!({ "tasks": [1], "today": "2026-11-30" })).await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "the last time can't be skipped: {}", r.body);
+    t.ok(&s, "undo", json!({ "batch": again["data"]["batch"] })).await;
+    assert_eq!(t.ok(&s, "show", json!({ "task": 1 })).await["data"]["due"]["date"], "2026-11-23");
 }
 
 #[tokio::test]

@@ -2,6 +2,7 @@
 
 import type { Due } from "../api/types/Due";
 import type { Repeat } from "../api/types/Repeat";
+import type { Task } from "../api/types/Task";
 import { formatDue } from "./dates";
 import { dayName, dayOf, lunarDate, monthName, monthOf, monthOn } from "./lunar";
 
@@ -20,7 +21,8 @@ const pad = (n: number, width = 2) => String(n).padStart(width, "0");
 export const WORKDAYS = [1, 2, 3, 4, 5];
 
 /** The due date after `due`, the task done `today` (both `YYYY-MM-DD`): a step on from the start,
- * or as many as it takes to get past today. On some days of the week or month, a step is to the next
+ * or as many as it takes to reach today, so that the times missed are made up for at once and today's
+ * is still to do. On some days of the week or month, a step is to the next
  * of them: later that week or month, or in the first one `every` on. Null when that was the last
  * time: the next is after `until`, past the year 9999, which dates don't go beyond, or past the lunar
  * calendar's table for a repeat by it. */
@@ -38,11 +40,13 @@ export function nextDue(r: Repeat, due: string, today: string): string | null {
         inMonth(k * r.every, d === daysIn(y, m) ? 31 : d)
       : utc(y, m, d + k * r.every * (r.unit === "week" ? 7 : 1));
   const [ty, tm, td] = today.split("-").map(Number);
-  const past = utc(ty, tm, td).getTime();
-  const after = Math.max(past, utc(y, m, d).getTime());
+  const todayTime = utc(ty, tm, td).getTime();
+  const startTime = utc(y, m, d).getTime();
+  // After the start, and today or later.
+  const counts = (day: Date) => day.getTime() > startTime && day.getTime() >= todayTime;
   const stepped = () => {
     let k = 1;
-    while (step(k).getTime() <= past) k++;
+    while (step(k).getTime() < todayTime) k++;
     return step(k);
   };
   const onWeekdays = (days: number[]) => {
@@ -50,14 +54,14 @@ export function nextDue(r: Repeat, due: string, today: string): string | null {
     for (let w = 0; ; w += r.every)
       for (let i = 0; i < 7; i++) {
         const day = utc(y, m, monday + 7 * w + i);
-        if (days.includes(i + 1) && day.getTime() > after) return day;
+        if (days.includes(i + 1) && counts(day)) return day;
       }
   };
   const onMonthdays = (days: number[]) => {
     for (let k = 0; ; k += r.every)
       for (let i = 1; i <= 31; i++) {
         const day = inMonth(k, i);
-        if (days.includes(i) && day.getTime() > after) return day;
+        if (days.includes(i) && counts(day)) return day;
       }
   };
   const onLunarDays = (days: number[]) => {
@@ -67,7 +71,7 @@ export function nextDue(r: Repeat, due: string, today: string): string | null {
       if (at === undefined) return undefined;
       for (let i = 1; i <= 30; i++) {
         const day = new Date(dayOf(at, i) * DAY);
-        if (days.includes(i) && day.getTime() > after) return day;
+        if (days.includes(i) && counts(day)) return day;
       }
     }
   };
@@ -78,8 +82,19 @@ export function nextDue(r: Repeat, due: string, today: string): string | null {
   return year > 9999 || (r.until && date > r.until) ? null : date;
 }
 
+/** Whether a repeating task was done `today` and is next due after it: catching up on a time missed
+ * leaves it due today still, today's time to do (docs/design.md#重复). */
+export const doneToday = (t: Task, today: string) => t.completions?.last === today && (t.due?.date ?? "") > today;
+
 /** Whether a task due `due`, done `today`, is done for good: it repeats, and this was the last time. */
 export const lastTime = (due: Due, today: string) => due.repeat !== undefined && nextDue(due.repeat, due.date, today) === null;
+
+/** Where skipping the time due `due` moves it `today`, never back: skipped early, one counted from the
+ * day done is counted from its due date. Null when that was the last time. */
+export const skipTo = (due: Due, today: string) => (due.repeat ? nextDue(due.repeat, due.date, due.date > today ? due.date : today) : null);
+
+/** Whether a task can skip to its next time `today`: it repeats, is to do, and this isn't the last time. */
+export const skippable = (t: Task, today: string) => t.done_at === null && t.due !== null && skipTo(t.due, today) !== null;
 
 /** `date` moved as many days as `from` moved to `to`: a start date kept as far before its due date. */
 export function shifted(date: string, from: string, to: string): string {

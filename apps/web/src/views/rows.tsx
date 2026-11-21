@@ -1,6 +1,6 @@
 // Rows in lists: tasks, folders, and the folder view's tasks with the dependency rail on the left.
 
-import { CalendarClock, CheckCheck, ChevronRight, Clock, FolderInput, Check as CheckIcon, PanelRightOpen, Paperclip, Repeat, RotateCcw, Trash2 } from "lucide-react";
+import { CalendarClock, CheckCheck, ChevronRight, Clock, FolderInput, Check as CheckIcon, PanelRightOpen, Paperclip, Repeat, RotateCcw, SkipForward, Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FolderId } from "../api/types/FolderId";
 import type { Op } from "../api/types/Op";
@@ -10,6 +10,7 @@ import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
 import { dueKind, formatDue, isoDate, startLabel } from "../domain/dates";
 import { plainRail, railLayout } from "../domain/rail";
+import { doneToday, skippable } from "../domain/repeat";
 import { range, rekey } from "../domain/reorder";
 import { useCommit } from "../session";
 import { useFeedback } from "../ui/feedback";
@@ -31,6 +32,8 @@ export interface RowActions {
   toggle(t: Task): void;
   /** Stops a repeating task so that it is done. */
   endRepeat(t: Task): void;
+  /** Moves a repeating task on to its next time without counting it done. */
+  skip(t: Task): void;
   move(t: Task, folder: FolderId | null): void;
   remove(t: Task): void;
 }
@@ -75,7 +78,7 @@ export function TaskRow({
   const unlocks = status === "ready" ? board.unlocks(t).length : 0;
   const meta: ReactNode[] = [];
   if (path && t.folder_id) meta.push(<PathMeta key="path" board={board} folder={t.folder_id} />);
-  if (t.done_at === null && t.completions?.last === isoDate(now)) {
+  if (t.done_at === null && doneToday(t, isoDate(now))) {
     meta.push(
       <span key="today" className="m-done-today">
         <Icon of={CheckIcon} size={14} />
@@ -138,6 +141,7 @@ export function TaskRow({
   const menu: MenuItem[] = [
     ...(selected ? [] : [{ icon: PanelRightOpen, label: "打开", onSelect: () => actions.open(t) }]),
     t.done_at === null ? { icon: CheckIcon, label: "标为完成", onSelect: () => actions.toggle(t) } : { icon: RotateCcw, label: "重新打开", onSelect: () => actions.toggle(t) },
+    ...(skippable(t, isoDate(now)) ? [{ icon: SkipForward, label: "跳过这一次", onSelect: () => actions.skip(t) }] : []),
     ...(t.due?.repeat ? [{ icon: CheckCheck, label: "结束重复并完成", onSelect: () => actions.endRepeat(t) }] : []),
     { icon: FolderInput, label: "移动到…", onSelect: () => setMoving(true) },
     { icon: Trash2, label: "删除", danger: true, onSelect: () => actions.remove(t) },

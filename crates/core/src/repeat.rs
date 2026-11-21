@@ -7,7 +7,8 @@ use crate::model::{Date, Period, Repeat, RepeatFrom, days_in_month};
 
 impl Repeat {
     /// The due date after `due`, the task done `today`: a step on from the start, or as many as it
-    /// takes to get past today. On some days of the week or month, a step is to the next of them: later
+    /// takes to reach today, so that the times missed are made up for at once and today's is still to
+    /// do. On some days of the week or month, a step is to the next of them: later
     /// that week or month, or in the first one `every` on. None when that was the last time: the next
     /// is after `until`, past the year 9999, which dates don't go beyond, or past the lunar calendar's
     /// table for a repeat by it.
@@ -25,8 +26,8 @@ impl Repeat {
             let (y, m) = (months / 12, months % 12 + 1);
             day_number((y, m, d.min(days_in_month(y, m))))
         };
-        // A step on from the start, as many as it takes to get past today.
-        let stepped = |step: &dyn Fn(u32) -> i64| (1..).map(step).find(|&n| n > today);
+        // A step on from the start, as many as it takes to reach today.
+        let stepped = |step: &dyn Fn(u32) -> i64| (1..).map(step).find(|&n| n >= today);
         let next = match self.period {
             Period::Day => stepped(&|k| start + i64::from(k * every)),
             Period::Week(None) => stepped(&|k| start + i64::from(7 * k * every)),
@@ -37,17 +38,17 @@ impl Repeat {
                 let monday = start - (start + 3).rem_euclid(7);
                 (0..)
                     .flat_map(|w: i64| (0..7).filter(move |&i| days.has(i)).map(move |i| monday + 7 * w * i64::from(every) + i64::from(i)))
-                    .find(|&n| n > start && n > today)
+                    .find(|&n| n > start && n >= today)
             }
             Period::Month(Some(days)) => (0..)
                 .flat_map(|k: u32| (1..=31).filter(move |&d| days.has(d)).map(move |d| in_month(k * every, d)))
-                .find(|&n| n > start && n > today),
+                .find(|&n| n > start && n >= today),
             Period::LunarMonth(days) => {
                 let month = lunar::Month::of(start)?;
                 (0..)
                     .map_while(|k: u32| month.on(k * every, every.is_multiple_of(12)))
                     .flat_map(|month| (1..=30).filter(move |&d| days.has(d)).map(move |d| month.day(d)))
-                    .find(|&n| n > start && n > today)
+                    .find(|&n| n > start && n >= today)
             }
         };
         let (y, m, d) = civil(next?);

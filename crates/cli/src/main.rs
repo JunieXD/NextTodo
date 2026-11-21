@@ -206,6 +206,11 @@ enum Command {
         #[arg(required = true, value_parser = task, help = TASK)]
         tasks: Vec<String>,
     },
+    #[command(about = "跳过重复事项的这一次：顺延到下一次，不算完成")]
+    Skip {
+        #[arg(required = true, value_parser = task, help = TASK)]
+        tasks: Vec<String>,
+    },
     #[command(about = "新建文件夹，缺的上级一起建")]
     Mkdir { path: String },
     #[command(about = "文件夹或附件改名")]
@@ -964,6 +969,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Command::Done { tasks, end_repeat } => write("done", json!({ "tasks": tasks, "end_repeat": end_repeat }), j),
         Command::Reopen { tasks } => write("reopen", json!({ "tasks": tasks }), j),
+        Command::Skip { tasks } => write("skip", json!({ "tasks": tasks }), j),
         Command::Mkdir { path } => write("mkdir", json!({ "path": path }), j),
         Command::Rename { target, name, attachment: true } => write("rename", json!({ "attachment": target, "name": name }), j),
         Command::Rename { target, name, attachment: false } => write("rename", json!({ "folder": target, "name": name }), j),

@@ -12,7 +12,7 @@ import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
 import { lateness } from "../domain/calendar";
 import { day, formatDay, formatDue, formatMoment, isoDate, remindLabel, startLabel } from "../domain/dates";
-import { repeatText } from "../domain/repeat";
+import { doneToday, repeatText, skippable } from "../domain/repeat";
 import { filesIn, reference } from "../attach";
 import { checkDescription, checkTitle } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
@@ -265,6 +265,11 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
             <div className="row-inner">撤销上一次完成</div>
           </button>
         )}
+        {skippable(t, isoDate(now)) && (
+          <button className="row end-repeat" onClick={() => actions.skip(t)}>
+            <div className="row-inner">跳过这一次</div>
+          </button>
+        )}
         {t.due?.repeat && (
           <button className="row end-repeat" onClick={() => actions.endRepeat(t)}>
             <div className="row-inner">结束重复并完成</div>
@@ -371,7 +376,7 @@ function Prop({ icon, label, value, cls = "", onClick }: { icon: LucideIcon; lab
 function completionsLabel(t: Task, now: Date): string {
   if (!t.completions) return "还没有完成过";
   const { count, last } = t.completions;
-  return `共 ${count} 次，${last === isoDate(now) ? "今天已完成" : `上次是${formatDay(day(last).getTime(), now)}`}`;
+  return `共 ${count} 次，${doneToday(t, isoDate(now)) ? "今天已完成" : `上次是${formatDay(day(last).getTime(), now)}`}`;
 }
 
 /** The title, edited in place. */

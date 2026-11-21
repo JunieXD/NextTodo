@@ -165,7 +165,8 @@ private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boole
                 fontSize = 15.sp * scale,
                 textDecoration = if (ticked) TextDecoration.LineThrough else null,
             )
-            val doneToday = "今天已完成".takeIf { item.lastDone == now.toLocalDate() }
+            // Not when catching up left it due today still: today's time is to do (docs/design.md#重复).
+            val doneToday = "今天已完成".takeIf { item.lastDone == now.toLocalDate() && item.due?.date?.isAfter(now.toLocalDate()) == true }
             // In a line, the folder gives way to the title.
             val meta = listOfNotNull(item.folder.takeIf { it.isNotEmpty() && !compact }, doneToday, item.due?.label(now)).joinToString(" · ")
             val color = when {

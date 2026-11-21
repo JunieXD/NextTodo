@@ -8,7 +8,9 @@ use std::collections::{BinaryHeap, HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::model::{AiJob, Attachment, Completion, Date, Dependency, Folder, FolderId, Holder, Person, Share, SortKey, Task, TaskId, Time};
+use crate::model::{
+    AiJob, Attachment, Completion, Date, Dependency, Due, Folder, FolderId, Holder, Person, Share, SortKey, Task, TaskId, Time,
+};
 
 /// All a user can see: their own data and the folders shared with them, where a folder someone else
 /// shares has no parent (docs/design.md#共享).
@@ -280,9 +282,20 @@ impl<'a> Board<'a> {
         t.done_at.is_none() && again(t).is_none_or(|(date, time)| !self.now.before(date, time))
     }
 
+    /// Whether a repeating task done now would still hold up the tasks after it: its next time has
+    /// begun by now too, as one caught up on is due today again.
+    fn held_again(&self, t: &Task) -> bool {
+        let Some(Due { date, repeat: Some(r), .. }) = &t.due else { return false };
+        let Some(next) = r.next(date, &self.now.today) else { return false };
+        match &t.start {
+            Some(start) => !self.now.before(&start.shifted(date, &next), t.start_time.as_ref()),
+            None => !self.now.before(&next, None),
+        }
+    }
+
     /// Tasks that become ready once this one is done.
     pub fn unlocks(&self, t: &Task) -> Vec<&'a Task> {
-        if !self.holds_up(t) {
+        if !self.holds_up(t) || self.held_again(t) {
             return Vec::new();
         }
         self.after(t).into_iter().filter(|a| self.status(a) == Status::Waiting { on: 1, not_started: false }).collect()

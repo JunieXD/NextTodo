@@ -568,6 +568,44 @@ pub fn reopen(w: &WriteCx, a: TasksArgs) -> Result<Write, ApiError> {
     set_done(b, a.tasks, false, None, false)
 }
 
+/// Moves repeating tasks on to their next time without counting them done (docs/design.md#重复).
+pub fn skip(w: &WriteCx, a: TasksArgs) -> Result<Write, ApiError> {
+    if a.tasks.is_empty() {
+        return Err(ApiError::invalid("至少需要指定一个事项", Some("tasks".into())));
+    }
+    let today = w.today.as_ref().ok_or_else(|| ApiError::invalid("跳过重复的事项需要给出今天的日期", Some("today".into())))?;
+    let mut seen = HashSet::new();
+    let mut ops = Vec::new();
+    for r in &a.tasks {
+        let t = find_task(w.board, r)?;
+        if !seen.insert(t.id) {
+            continue;
+        }
+        let (Some(due @ Due { repeat: Some(repeat), .. }), None) = (&t.due, t.done_at) else {
+            return Err(ApiError::conflict(format!("事项 {r} 不是待办的重复事项")));
+        };
+        // Skipped early, one counted from the day done is counted from its due date: never back.
+        let Some(next) = repeat.next(&due.date, today.max(&due.date)) else {
+            return Err(ApiError::conflict(format!("事项 {r} 已是最后一次，不能跳过；不再做了就用 done 的 end_repeat 结束重复")));
+        };
+        ops.push(Op::TaskUpdate {
+            id: t.id,
+            folder_id: None,
+            title: None,
+            description: None,
+            start: t.start.as_ref().map(|s| Some(s.shifted(&due.date, &next))),
+            start_time: None,
+            due: Some(Some(Due { date: next, ..due.clone() })),
+            sort_key: None,
+            done: None,
+            today: None,
+            assign: Vec::new(),
+            unassign: Vec::new(),
+        });
+    }
+    Ok(ops.into())
+}
+
 pub fn mkdir(w: &WriteCx, a: MkdirArgs) -> Result<Write, ApiError> {
     let b = w.board;
     let mut ops = Vec::new();

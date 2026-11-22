@@ -7,7 +7,7 @@ import type { TaskId } from "../api/types/TaskId";
 import { v7 as uuidv7 } from "uuid";
 import { lastKey } from "../domain/apply";
 import { formatDue, isoDate } from "../domain/dates";
-import { shifted, skipTo } from "../domain/repeat";
+import { occurrence, shifted, skipTo } from "../domain/repeat";
 import { useCommit, useSession, useUndo } from "../session";
 import { useFeedback } from "../ui/feedback";
 import { useMarking } from "./marks";
@@ -62,8 +62,9 @@ export function useTaskActions(): RowActions & {
         id: t.id,
         done: completing,
         ...(ended && { due: ended }),
-        // A repeating task's next due date counts from the day here.
-        ...(repeating && { today: isoDate(new Date()) }),
+        // A repeating task's next due date counts from the day here; the time done is the one seen,
+        // not one after it done meanwhile elsewhere.
+        ...(repeating && { today: isoDate(new Date()), occurrence: occurrence(t) }),
       },
     ]);
     if (!r) return;

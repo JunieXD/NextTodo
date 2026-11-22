@@ -11,7 +11,7 @@ import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import { MAX_OPS, lastKeys } from "../domain/apply";
 import { isoDate } from "../domain/dates";
-import { lastTime } from "../domain/repeat";
+import { lastTime, occurrence } from "../domain/repeat";
 import { useCommit, useSession, useUndo, useView } from "../session";
 import { useBack } from "../ui/back";
 import { Tip, useFeedback } from "../ui/feedback";
@@ -154,22 +154,33 @@ function useBatchActions(place: Place, chosen: Task[], end: () => void): { actio
     const moving = todo.filter((t) => t.due?.repeat && !lastTime(t.due, isoDate(new Date()))).length;
     const notes = [waiting && `其中 ${waiting} 项还在等待`, moving && `重复的 ${moving} 项将顺延到下一次`].filter(Boolean);
     const body = notes.length ? `${notes.join("，")}。` : "可撤销。";
+    // The times seen: one done elsewhere while the dialog is open is not done again, nor the next.
+    const seen = new Map(todo.map((t) => [t.id, occurrence(t)]));
     if (!(await confirm({ title: `将 ${todo.length} 项标为完成？`, body, ok: "标为完成" }))) return;
     const going = still(todo).filter((t) => t.done_at === null);
     if (!going.length) return end();
     const readyBefore = new Set(board().next().map((t) => t.id));
+    const counts = new Map(going.map((t) => [t.id, t.completions?.count]));
     // A repeating task's next due date counts from the day here.
     const today = isoDate(new Date());
-    const r = commit(going.map((t): Op => ({ op: "task.update", id: t.id, done: true, ...(t.due?.repeat && { today }) })));
+    const r = commit(going.map((t): Op => ({ op: "task.update", id: t.id, done: true, ...(t.due?.repeat && { today, occurrence: seen.get(t.id) }) })));
     if (!r) return;
+    const took = going.filter((t) => {
+      const now = board().task(t.id)!;
+      return now.done_at !== null || now.completions?.count !== counts.get(t.id);
+    });
+    if (!took.length) {
+      snack("事项已在别处更改，未标为完成");
+      return end();
+    }
     const unlocked = board()
       .next()
       .filter((t) => !readyBefore.has(t.id))
       .map((t) => t.id);
     // As one completed alone: each stays a moment before folding away, and what they unlocked flashes.
-    going.filter((t) => board().task(t.id)?.done_at !== null).forEach((t) => marking.completed(t.id, []));
+    took.filter((t) => board().task(t.id)?.done_at !== null).forEach((t) => marking.completed(t.id, []));
     marking.flash(unlocked);
-    done(r, unlocked.length ? `已完成 ${going.length} 项，解锁了 ${unlocked.length} 项` : `已完成 ${going.length} 项`);
+    done(r, unlocked.length ? `已完成 ${took.length} 项，解锁了 ${unlocked.length} 项` : `已完成 ${took.length} 项`);
   };
 
   const reopen = async () => {

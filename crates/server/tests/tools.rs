@@ -775,6 +775,39 @@ async fn the_log_pages_back_finds_deletions_and_says_what_is_undone() {
 }
 
 #[tokio::test]
+async fn a_change_undone_twice_reads_undone_as_things_are() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "甲" })).await;
+    let batch = |r: Value| r["data"]["batch"].clone();
+    let deleted = batch(t.ok(&s, "delete", json!({ "tasks": [1] })).await);
+    let restored = batch(t.ok(&s, "undo", json!({ "batch": deleted })).await);
+    let again = batch(t.ok(&s, "undo", json!({ "batch": restored })).await);
+    let back = batch(t.ok(&s, "undo", json!({ "batch": again })).await);
+    // The restoring undone once more, not the last undo: deleted again, as the first and `again` did.
+    let last = batch(t.ok(&s, "undo", json!({ "batch": restored })).await);
+    let log = t.ok(&s, "log", json!({ "limit": 5 })).await["data"].clone();
+    let read: Vec<_> = log.as_array().unwrap().iter().map(|b| (b["batch"].clone(), b["undone"].as_bool().unwrap())).collect();
+    assert_eq!(read, [(last, false), (back, true), (again, false), (restored, true), (deleted, false)]);
+
+    // One batch undoing two, itself undone, then one of them undone alone: the other is not undone.
+    let (x, y) = (common::id(), common::id());
+    let x_batch = batch(t.ok(&s, "add", json!({ "title": "乙", "request_id": x })).await);
+    let y_batch = batch(t.ok(&s, "add", json!({ "title": "丙", "request_id": y })).await);
+    let both = t.mutate(&s, json!([{ "op": "undo", "mutation": x }, { "op": "undo", "mutation": y }])).await.body["seq"].clone();
+    let redone = batch(t.ok(&s, "undo", json!({ "batch": both })).await);
+    let alone = batch(t.ok(&s, "undo", json!({ "batch": x_batch })).await);
+    let log = t.ok(&s, "log", json!({ "limit": 5 })).await["data"].clone();
+    let read: Vec<_> = log.as_array().unwrap().iter().map(|b| (b["batch"].clone(), b["undone"].as_bool().unwrap())).collect();
+    assert_eq!(read, [(alone, false), (redone, false), (both, true), (y_batch, false), (x_batch, true)]);
+    // The same, read a page at a time.
+    for b in &read {
+        let one = t.ok(&s, "log", json!({ "limit": 1, "before": b.0.as_i64().unwrap() + 1 })).await["data"][0]["undone"].clone();
+        assert_eq!(one, json!(b.1), "{b:?}");
+    }
+}
+
+#[tokio::test]
 async fn a_start_set_or_undone_reads_as_an_edit() {
     let t = TestApp::new();
     let s = t.admin().await;

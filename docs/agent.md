@@ -165,7 +165,7 @@ $ nexttodo graph 工作
 | `show` | 事项加上 `created_at, updated_at`；`description`、`created_by`、`updated_by`（用户名，自己时没有）、`created_via`、`updated_via`（令牌名，没用令牌时没有）、`before: [事项]`、`after: [事项]` 有内容时才有 |
 | `search` | `{tasks: [事项], total}` |
 | `graph` | `{tasks: [事项], edges: [{before, after}]}`，边用编号，别人共享给我的文件夹里的事项写成 `"@alice#42"` |
-| `log` | `[{batch, user, actor, source, created_at, summary, undone}]`，`user` 是做的人的用户名，自己为 `null`；`actor` 是令牌名，没用令牌为 `null`；`source` 是文字里写的来源，如“本人（iPhone）”；`undone` 是已经撤销了（撤销它的批次没再被撤销） |
+| `log` | `[{batch, user, actor, source, created_at, summary, undone}]`，`user` 是做的人的用户名，自己为 `null`；`actor` 是令牌名，没用令牌为 `null`；`source` 是文字里写的来源，如“本人（iPhone）”；`undone` 是已经撤销了（同[改动记录](design.md#改动记录和撤销)：撤销和撤销的撤销连成一串，和最新的一次方向相反的） |
 | `jobs` | `[{id, kind, start, folder, state, updated_at}]`，`kind` 是 `organize` 或 `tidy`，`start` 是原文开头，`state` 是 `waiting`、`running`、`failed`、`ready`，失败的另有 `error` |
 | 写操作 | `{batch, changes: [变化]}`，预览时 `batch` 为 `null`；完成事项后有事项因此可做时另有 `unlocked: [事项]` |
 | `attach`（命令行） | 每个文件一项写操作的数据，按给出的顺序组成一个数组；中途失败时只列已经加上的，再报错，退出码为 1 |

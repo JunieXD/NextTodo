@@ -599,25 +599,67 @@ pub struct LogBatch {
     undone: bool,
 }
 
-/// Whether a change the user sees is undone: by a change that is not undone itself. Only changes
-/// from batch `from` on: what undoes a change comes after it.
+/// Whether a change the user sees is undone: what it did is not there now, as far as undoing goes.
+/// A change and the undos of it, each a batch undoing that one change alone, make a line, each
+/// turning it over: a change is undone when it goes the other way from the latest in its line, so
+/// undoing a change again after its undo was undone turns that undo of the undo back too. A batch
+/// undoing several changes, or doing more besides, which only the API makes, undoes them while it is
+/// not undone itself: which of them it changed is not known. Only the undos from batch `from` on can
+/// be the latest of a line with a change from there on in it: what undoes a change comes after it.
 fn undone(c: &Connection, user: &str, from: i64) -> Result<impl Fn(&str) -> bool, ApiError> {
     // An undo that changed nothing, of a change undone already, undoes nothing.
-    let mut stmt = c.prepare(
-        "SELECT json_extract(o.value, '$.mutation'), m.id
+    const UNDOING: &str = "SELECT m.id, json_extract(o.value, '$.mutation'), json_array_length(m.ops)
          FROM deliveries d JOIN mutations m ON m.seq = d.seq, json_each(m.ops) o
-         WHERE d.user_id = ?1 AND d.seq >= ?2 AND json_array_length(m.effects) > 0
-           AND json_extract(o.value, '$.op') = 'undo'",
-    )?;
+         WHERE d.user_id = ?1 AND json_array_length(m.effects) > 0 AND json_extract(o.value, '$.op') = 'undo'";
+    // What each undo of one change alone undoes, and those from `from` on in order; the batches
+    // undoing several, by what they undo.
+    let mut parent: HashMap<String, Option<String>> = HashMap::new();
+    let mut order = Vec::new();
     let mut by: HashMap<String, Vec<String>> = HashMap::new();
-    for r in stmt.query_map(params![user, from], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
-        let (undone, undoing) = r?;
-        by.entry(undone).or_default().push(undoing);
+    let mut stmt = c.prepare(&format!("{UNDOING} AND d.seq >= ?2 ORDER BY d.seq"))?;
+    for r in stmt.query_map(params![user, from], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?)))? {
+        let (undoing, undone, ops) = r?;
+        if ops == 1 {
+            order.push(undoing.clone());
+            parent.insert(undoing, Some(undone));
+        } else {
+            by.entry(undone).or_default().push(undoing);
+        }
     }
-    fn undone(by: &HashMap<String, Vec<String>>, id: &str) -> bool {
-        by.get(id).is_some_and(|undoing| undoing.iter().any(|u| !undone(by, u)))
+    // Where each line of those starts, and how far along it each is: lines run through undos from
+    // before `from` too.
+    let mut older = c.prepare(&format!("{UNDOING} AND m.id = ?2 AND json_array_length(m.ops) = 1"))?;
+    let mut place: HashMap<String, (String, usize)> = HashMap::new();
+    for undo in &order {
+        // Up to where it starts, or to one placed already, placing those on the way after.
+        let (mut way, mut at) = (Vec::new(), undo.clone());
+        let (start, mut far) = loop {
+            if let Some((start, far)) = place.get(&at) {
+                break (start.clone(), *far);
+            }
+            let up = match parent.get(&at) {
+                Some(up) => up.clone(),
+                None => {
+                    let up = older.query_row(params![user, at], |r| r.get::<_, String>(1)).optional()?;
+                    parent.insert(at.clone(), up.clone());
+                    up
+                }
+            };
+            let Some(up) = up else { break (at, 0) };
+            way.push(std::mem::replace(&mut at, up));
+        };
+        for id in way.into_iter().rev() {
+            far += 1;
+            place.insert(id, (start.clone(), far));
+        }
     }
-    Ok(move |id: &str| undone(&by, id))
+    // Which way each line goes now: as the latest in it.
+    let now: HashMap<String, usize> = order.iter().map(|u| (place[u].0.clone(), place[u].1 % 2)).collect();
+    fn undone(id: &str, place: &HashMap<String, (String, usize)>, now: &HashMap<String, usize>, by: &HashMap<String, Vec<String>>) -> bool {
+        let (start, far) = place.get(id).map_or((id, 0), |(start, far)| (start.as_str(), *far));
+        now.get(start).is_some_and(|way| *way != far % 2) || by.get(id).is_some_and(|all| all.iter().any(|b| !undone(b, place, now, by)))
+    }
+    Ok(move |id: &str| undone(id, &place, &now, &by))
 }
 
 /// Who made a change: `本人`, the token's name, or someone else by name, with their token's:

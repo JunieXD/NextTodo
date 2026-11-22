@@ -100,12 +100,14 @@ test("signing in as someone deletes everyone else's data", async () => {
 test("a copy saved before sharing has the user in it, and every task as theirs", async () => {
   const u = user(9);
   await load(someone(u), "here");
-  // As saved then: no shares, people, assignees or authors.
-  const old = { ...copy(7), base: { folders: [], tasks: [{ id: "t", title: "旧" }], dependencies: [], ai_jobs: [] } };
+  // As saved then: no shares or people; a task with assignees and authors came from a newer server.
+  const other = user(1);
+  const tasks = [{ id: "t", title: "旧" }, { id: "s", title: "新", assignees: [other], created_by: other, updated_by: other }];
+  const old = { ...copy(7), base: { folders: [], tasks, dependencies: [], ai_jobs: [] } };
   await (await raw()).put("copies", old, [u, "here"]);
   const { seq, base } = (await load(someone(u), "here"))!;
   expect([seq, base.shares, base.people, base.completions]).toEqual([7, [], [{ id: u, username: "alice", display_name: "Alice" }], []]);
-  expect(base.tasks[0]).toMatchObject({ assignees: [], created_by: u, updated_by: u });
+  for (const t of base.tasks) expect(t).toMatchObject({ assignees: [], created_by: u, updated_by: u });
 });
 
 test("folders saved before they had colours and icons have the defaults, deleted ones too", async () => {

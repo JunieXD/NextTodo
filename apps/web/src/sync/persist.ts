@@ -16,6 +16,7 @@
 
 import { type IDBPDatabase, openDB } from "idb";
 import type { AiJob } from "../api/types/AiJob";
+import type { Change } from "../api/types/Change";
 import type { Due } from "../api/types/Due";
 import type { Effect } from "../api/types/Effect";
 import type { Folder } from "../api/types/Folder";
@@ -77,7 +78,7 @@ export async function load(user: User, copyId: string): Promise<Saved | undefine
   const gone = withdrawn(user.id);
   const tx = (await db()).transaction(["copies", "outbox"], "readwrite");
   const copies = tx.objectStore("copies");
-  const found: Copy[] = await copies.getAll(all(user.id));
+  const found: SavedCopy[] = await copies.getAll(all(user.id));
   if (!found.length) return undefined;
   const newest = current(found.reduce((a, b) => (b.seq > a.seq ? b : a)), user);
   const outbox = tx.objectStore("outbox");
@@ -121,15 +122,41 @@ const pendingOf = (p: Pending): Pending => ({
   mutation: { ...p.mutation, ops: p.mutation.ops.map((op) => ((op.op === "task.create" || op.op === "task.update") && op.due ? { ...op, due: dueOf(op.due) } : op)) },
 });
 
+type SavedFolder = Omit<Folder, "color" | "icon"> & Partial<Pick<Folder, "color" | "icon">>;
+type SavedEffect = Exclude<Effect, { kind: "folder" }> | ({ kind: "folder" } & Change<SavedFolder>);
+type SavedBase = Omit<Copy["base"], "folders" | "attachments" | "completions" | "ai_jobs"> &
+  Partial<Pick<Copy["base"], "attachments" | "completions" | "ai_jobs">> & { folders: SavedFolder[] };
+
+/** A copy as an earlier version may have saved it: without what came later. */
+type SavedCopy = Omit<Copy, "base" | "log"> & {
+  base:
+    | SavedBase
+    | (Omit<SavedBase, "tasks" | "shares" | "people"> & {
+        tasks: Omit<Task, "assignees" | "created_by" | "updated_by">[];
+        shares?: undefined;
+        people?: undefined;
+      });
+  log: [MutationId, SavedEffect[]][];
+};
+
 /** A copy saved by an earlier version, as one is now. Before folders could be shared, nothing was,
  * every task was the user's, and the user was the only one in it; its log of changes goes, being of
  * tasks as they were then. Before AI organizing there were no jobs, before attachments none, before
  * completion records none, and before folders had colours and icons, none of those: neither for
  * folders kept nor for those its log of changes brings back when one is undone. Due dates, of tasks
  * and AI's suggestions, in the log too, are as they are now. */
-function current(saved: Copy, { id, username, display_name }: User): Copy {
-  const looked = (f: Folder): Folder => ({ ...f, color: f.color ?? null, icon: f.icon ?? null });
-  const folders = saved.base.folders.map(looked);
+function current(saved: SavedCopy, { id, username, display_name }: User): Copy {
+  const looked = (f: SavedFolder): Folder => ({ ...f, color: f.color ?? null, icon: f.icon ?? null });
+  const kept = {
+    folders: saved.base.folders.map(looked),
+    attachments: saved.base.attachments ?? [],
+    completions: saved.base.completions ?? [],
+    ai_jobs: (saved.base.ai_jobs ?? []).map(jobOf),
+  };
+  if (!saved.base.people) {
+    const tasks = saved.base.tasks.map((t) => taskOf({ ...t, assignees: [], created_by: id, updated_by: id }));
+    return { ...saved, base: { ...saved.base, ...kept, tasks, shares: [], people: [{ id, username, display_name }] }, log: [] };
+  }
   const log = saved.log.map(([m, effects]): [MutationId, Effect[]] => [
     m,
     effects.map((e) =>
@@ -142,12 +169,7 @@ function current(saved: Copy, { id, username, display_name }: User): Copy {
             : e,
     ),
   ]);
-  const base = { ...saved.base, folders, tasks: saved.base.tasks.map(taskOf), ai_jobs: saved.base.ai_jobs?.map(jobOf) };
-  const c = { ...saved, base: { ...base, attachments: saved.base.attachments ?? [], completions: saved.base.completions ?? [] }, log };
-  if (c.base.people) return c;
-  const tasks = c.base.tasks.map((t) => ({ ...t, assignees: [], created_by: id, updated_by: id }));
-  const people = [{ id, username, display_name }];
-  return { ...c, base: { ...c.base, tasks, ai_jobs: c.base.ai_jobs ?? [], shares: [], people }, log: [] };
+  return { ...saved, base: { ...saved.base, ...kept, tasks: saved.base.tasks.map(taskOf) }, log };
 }
 
 export interface Saver {

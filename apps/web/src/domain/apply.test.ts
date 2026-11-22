@@ -3,7 +3,7 @@ import type { Effect } from "../api/types/Effect";
 import type { Op } from "../api/types/Op";
 import type { Repeat } from "../api/types/Repeat";
 import cases from "../../../../fixtures/undo-done.json";
-import { type Data, Rejected, apply, fromSnapshot, revert, stillLast } from "./apply";
+import { type Data, Rejected, apply, fromSnapshot, replay, revert, stillLast } from "./apply";
 
 test.each(cases)("a time done is still the last as the fixtures say: $name", ({ done, later, last }) => {
   expect(stillLast(done[0], done[1], later as [number, number][])).toBe(last);
@@ -258,23 +258,99 @@ test("done from a list behind, a repeating task's time done already is not done 
   expect(d.tasks.get(id(2))).toMatchObject({ completions: { count: 2 } });
 });
 
-test("each time a repeating task is done is recorded, the later of the same time kept, until undone or deleted", () => {
+test("each time a repeating task is done is recorded, the same time again too, until undone or deleted", () => {
   const d = empty();
   const daily = { every: 1, unit: "day", from: "due" } as const;
-  const records = () => [...d.completions.values()].map((c) => [c.due, c.done]);
+  const records = () => [...d.completions.values()].map((c) => [c.due, c.done, c.again]);
   run(d, 160, [{ op: "task.create", id: id(1), title: "浇花", due: { date: "2026-11-10", repeat: daily } }]);
   run(d, 161, [{ op: "task.update", id: id(1), done: true, today: "2026-11-12" }]);
   run(d, 162, [{ op: "task.update", id: id(1), due: { date: "2026-11-10", repeat: daily } }]);
   run(d, 163, [{ op: "task.update", id: id(1), done: true, today: "2026-11-14" }]);
-  expect(records()).toEqual([["2026-11-10", "2026-11-14"]]);
+  expect(records()).toEqual([
+    ["2026-11-10", "2026-11-12", 0],
+    ["2026-11-10", "2026-11-14", 1],
+  ]);
   run(d, 164, [{ op: "undo", mutation: id(163) }]);
-  expect(records()).toEqual([["2026-11-10", "2026-11-12"]]);
+  expect(records()).toEqual([["2026-11-10", "2026-11-12", 0]]);
   // Ending the repeat is no time done; deleted, the record goes with the task, and comes back with it.
   run(d, 165, [{ op: "task.update", id: id(1), due: { date: "2026-11-10" }, done: true }]);
   run(d, 166, [{ op: "task.delete", id: id(1) }]);
   expect(records()).toEqual([]);
   run(d, 167, [{ op: "undo", mutation: id(166) }]);
-  expect(records()).toEqual([["2026-11-10", "2026-11-12"]]);
+  expect(records()).toEqual([["2026-11-10", "2026-11-12", 0]]);
+  // Counted from the day it is done, done early twice in a day, it is due the same day each time.
+  const fromDone = { every: 1, unit: "day", from: "done" } as const;
+  run(d, 168, [{ op: "task.create", id: id(2), title: "喝水", due: { date: "2026-11-13", repeat: fromDone } }]);
+  run(d, 169, [{ op: "task.update", id: id(2), done: true, today: "2026-11-12" }]);
+  run(d, 170, [{ op: "task.update", id: id(2), done: true, today: "2026-11-12" }]);
+  expect(records().slice(1)).toEqual([
+    ["2026-11-13", "2026-11-12", 0],
+    ["2026-11-13", "2026-11-12", 1],
+  ]);
+  run(d, 171, [{ op: "undo", mutation: id(170) }]);
+  expect(records().slice(1)).toEqual([["2026-11-13", "2026-11-12", 0]]);
+});
+
+test("records come back with their task, not onto one back from elsewhere", () => {
+  const d = empty();
+  const fromDone = { every: 1, unit: "day", from: "done" } as const;
+  const records = () => [...d.completions.values()].map((c) => [c.due, c.again]);
+  run(d, 430, [{ op: "task.create", id: id(1), title: "喝水", due: { date: "2026-11-13", repeat: fromDone } }]);
+  run(d, 431, [{ op: "task.delete", id: id(1) }]);
+  run(d, 432, [{ op: "undo", mutation: id(431) }]);
+  run(d, 433, [{ op: "task.update", id: id(1), done: true, today: "2026-11-12" }]);
+  run(d, 434, [{ op: "task.delete", id: id(1) }]);
+  // Back as it was before it was done, from the first deletion: undoing the second leaves it so.
+  run(d, 435, [{ op: "undo", mutation: id(431) }]);
+  run(d, 436, [{ op: "undo", mutation: id(434) }]);
+  expect([records(), d.tasks.get(id(1))!.completions]).toEqual([[], undefined]);
+  run(d, 437, [{ op: "task.update", id: id(1), done: true, today: "2026-11-12" }]);
+  run(d, 438, [{ op: "task.update", id: id(1), done: true, today: "2026-11-12" }]);
+  expect(records()).toEqual([
+    ["2026-11-13", 0],
+    ["2026-11-13", 1],
+  ]);
+});
+
+test("undoing a batch that deleted a task and brought it back as it was earlier brings its records back", () => {
+  const d = empty();
+  const fromDone = { every: 1, unit: "day", from: "done" } as const;
+  const records = () => [...d.completions.values()].map((c) => [c.due, c.again]);
+  run(d, 450, [{ op: "task.create", id: id(1), title: "喝水", due: { date: "2026-11-13", repeat: fromDone } }]);
+  run(d, 451, [{ op: "task.delete", id: id(1) }]);
+  run(d, 452, [{ op: "undo", mutation: id(451) }]);
+  run(d, 453, [{ op: "task.update", id: id(1), done: true, today: "2026-11-12" }]);
+  run(d, 454, [
+    { op: "task.delete", id: id(1) },
+    { op: "undo", mutation: id(451) },
+  ]);
+  expect([records(), d.tasks.get(id(1))!.completions]).toEqual([[], undefined]);
+  run(d, 455, [{ op: "undo", mutation: id(454) }]);
+  expect([records(), d.tasks.get(id(1))!.completions?.count]).toEqual([[["2026-11-13", 0]], 1]);
+});
+
+test("undoing a time done again as an earlier version kept it, its record in place of the one before, brings that back", () => {
+  const d = empty();
+  const fromDone = { every: 1, unit: "day", from: "done" } as const;
+  run(d, 440, [{ op: "task.create", id: id(1), title: "喝水", due: { date: "2026-11-13", repeat: fromDone } }]);
+  run(d, 441, [{ op: "task.update", id: id(1), done: true, today: "2026-11-12" }]);
+  // Done again the next day as an earlier version did it: the count up, then the record before out.
+  const before = d.tasks.get(id(1))!;
+  const after = { ...before, due: { ...before.due!, date: "2026-11-14" }, completions: { count: 2, last: "2026-11-13" } };
+  const earlier = { task_id: id(1), due: "2026-11-13", done: "2026-11-12", again: 0 };
+  const later = { ...earlier, done: "2026-11-13" };
+  const old: Effect[] = [
+    { kind: "task", before, after },
+    { kind: "completion", before: earlier, after: null },
+    { kind: "completion", before: null, after: later },
+  ];
+  replay(d, old);
+  log.set(id(442), old);
+  const done = () => [d.tasks.get(id(1))!.completions, [...d.completions.values()]];
+  run(d, 443, [{ op: "undo", mutation: id(442) }]);
+  expect(done()).toEqual([{ count: 1, last: "2026-11-12" }, [earlier]]);
+  run(d, 444, [{ op: "undo", mutation: id(443) }]);
+  expect(done()).toEqual([{ count: 2, last: "2026-11-13" }, [later]]);
 });
 
 test("a repeat by the lunar calendar is due within its table, an undo setting the date back too", () => {

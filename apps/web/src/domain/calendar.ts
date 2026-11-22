@@ -62,18 +62,20 @@ export function agenda(board: Board, days: number) {
 /** What the user did, by day: the tasks done, on the day they were here, and the times repeating tasks
  * were done. A task done for good the last time it repeated is there once, as the task, on the day
  * of that time's record: its due date stays that time's, and `done_at` is when the server took it,
- * which may be a day later for one done offline. */
+ * which may be a day later for one done offline. That time done more than once, the record is the
+ * latest. */
 export function doneByDay(board: Board): Map<string, DoneOn[]> {
   const days = new Map<string, DoneOn[]>();
-  const last = (task: Task, record: Completion) => task.done_at !== null && record.due === task.due?.date;
+  const last = new Set<Completion>();
   for (const task of board.snapshot.tasks) {
     if (task.done_at === null || !board.mine(task)) continue;
-    const record = board.completions(task.id).find((r) => last(task, r));
+    const record = board.completions(task.id).reduce<Completion | undefined>((l, r) => (r.due === task.due?.date && (!l || r.again > l.again) ? r : l), undefined);
+    if (record) last.add(record);
     add(days, record?.done ?? isoDate(new Date(task.done_at)), { task });
   }
   for (const record of board.snapshot.completions) {
     const task = board.task(record.task_id);
-    if (task && board.mine(task) && !last(task, record)) add(days, record.done, { task, record });
+    if (task && board.mine(task) && !last.has(record)) add(days, record.done, { task, record });
   }
   return days;
 }

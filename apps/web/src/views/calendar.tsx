@@ -4,6 +4,7 @@
 import { Check as CheckIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
+import { completionKey } from "../domain/apply";
 import { type DoneOn, type DueOn, doneByDay, dueBetween, heat, lateness } from "../domain/calendar";
 import { day, dueKind, formatToday, isoDate, monthGrid } from "../domain/dates";
 import type { Task } from "../api/types/Task";
@@ -264,7 +265,7 @@ function DayList({ date, now, due, done }: { date: string; now: Date; due: DueOn
           <div className="group">
             {done.map(({ task, record }) =>
               record ? (
-                <Occurrence key={`record ${task.id} ${record.due}`} done task={task} meta={`完成一次 · ${lateness(record)}`} onOpen={() => actions.open(task)} />
+                <Occurrence key={`record ${completionKey(record)}`} done task={task} meta={`完成一次 · ${lateness(record)}`} onOpen={() => actions.open(task)} />
               ) : (
                 <TaskRow key={task.id} task={task} board={board} now={now} path selected={selected === task.id} actions={actions} />
               ),

@@ -3,13 +3,15 @@ import { openDB } from "idb";
 import { IDBFactory } from "fake-indexeddb";
 import { expect, test, vi } from "vitest";
 import { draft, keepDraft, stagedFiles, withdraw, withdrawn } from "./drafts";
-import { forget, forgetCopy, forgetOthers, load, saver } from "./persist";
+import { COPY_FORMAT, forget, forgetCopy, forgetOthers, load, saver } from "./persist";
 import { type Copy, Store } from "./store";
 
 const user = (n: number) => `019a4b2c-0000-7000-8000-00000000000${n}`;
 const someone = (id: string) => ({ id, username: "alice", display_name: "Alice", is_admin: false });
 const pending = (n: number) => ({ mutation: { id: `019a4b2c-0000-7000-8000-00000000010${n}`, ops: [] }, at: n });
 const copy = (seq: number): Copy => ({ ...Store.empty(), seq });
+/** A copy as this version keeps it. */
+const kept = (seq: number) => ({ ...copy(seq), format: COPY_FORMAT });
 const fail = (e: unknown) => {
   throw e;
 };
@@ -23,9 +25,9 @@ test("opening takes the newest copy and the whole outbox, in the order the chang
   const u = user(1);
   expect(await load(someone(u), "here")).toBeUndefined();
   const db = await raw();
-  await db.put("copies", copy(5), [u, "tab-a"]);
-  await db.put("copies", copy(9), [u, "tab-b"]);
-  await db.put("copies", copy(1), [user(2), "tab-a"]);
+  await db.put("copies", kept(5), [u, "tab-a"]);
+  await db.put("copies", kept(9), [u, "tab-b"]);
+  await db.put("copies", kept(1), [user(2), "tab-a"]);
   for (const n of [3, 1, 2]) await db.put("outbox", pending(n), [u, pending(n).mutation.id]);
 
   const opened = await load(someone(u), "here");
@@ -106,7 +108,9 @@ test("a copy saved before sharing has the user in it, and every task as theirs",
   const old = { ...copy(7), base: { folders: [], tasks, dependencies: [], ai_jobs: [] } };
   await (await raw()).put("copies", old, [u, "here"]);
   const { seq, base } = (await load(someone(u), "here"))!;
-  expect([seq, base.shares, base.people, base.completions]).toEqual([7, [], [{ id: u, username: "alice", display_name: "Alice" }], []]);
+  // Kept by an earlier version, it is downloaded afresh: the server sends everything for a copy from
+  // before the first change.
+  expect([seq, base.shares, base.people, base.completions]).toEqual([-1, [], [{ id: u, username: "alice", display_name: "Alice" }], []]);
   for (const t of base.tasks) expect(t).toMatchObject({ assignees: [], created_by: u, updated_by: u });
 });
 
@@ -151,6 +155,19 @@ test("a reminder saved before tasks could have several is the one of a list, whe
   expect(outbox[0].mutation.ops).toEqual([{ op: "task.update", id: "t", due: now }]);
 });
 
+test("a completion record saved while a time kept only its latest is that time's first, in the log too", async () => {
+  const u = user(6);
+  await load(someone(u), "here");
+  const old = { task_id: "t", due: "2026-12-08", done: "2026-12-07" };
+  const m = pending(1).mutation.id;
+  const saved = { ...copy(5), base: { ...Store.empty().base, completions: [old] }, log: [[m, [{ kind: "completion", before: null, after: old }]]] };
+  await (await raw()).put("copies", saved, [u, "here"]);
+  const { base, log } = (await load(someone(u), "here"))!;
+  expect(base.completions).toEqual([{ ...old, again: 0 }]);
+  // Undoing the completion here takes the record out.
+  expect(log).toEqual([[m, [{ kind: "completion", before: null, after: { ...old, again: 0 } }]]]);
+});
+
 test("a change withdrawn into a draft leaves the outbox as the app opens, its text and files back in the box once", async () => {
   const u = user(7);
   await load(someone(u), "here");
@@ -183,7 +200,8 @@ test("the copies and outbox of the version released before attachments stay as i
   await old.put("outbox", pending(1), [u, pending(1).mutation.id]);
   old.close();
   const opened = await (await import("./persist")).load(someone(u), "here");
-  expect(opened!.seq).toBe(4);
+  // Shown until downloaded afresh, as any an earlier version kept.
+  expect(opened!.seq).toBe(-1);
   expect(opened!.outbox).toEqual([pending(1)]);
   vi.unstubAllGlobals();
 });

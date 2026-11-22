@@ -294,8 +294,14 @@ async fn each_time_a_repeating_task_is_done_is_recorded_until_undone_or_deleted(
     let t = TestApp::new();
     let s = t.admin().await;
     t.ok(&s, "add", json!({ "title": "浇花", "due": "2026-11-10", "repeat": "1d" })).await;
-    let records =
-        |snap: Value| snap["completions"].as_array().unwrap().iter().map(|r| (r["due"].clone(), r["done"].clone())).collect::<Vec<_>>();
+    let records = |snap: Value| {
+        snap["completions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| (r["due"].clone(), r["done"].clone(), r["again"].clone()))
+            .collect::<Vec<_>>()
+    };
     // Late, caught up to today; then early.
     t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-12" })).await;
     t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-12" })).await;
@@ -309,15 +315,16 @@ async fn each_time_a_repeating_task_is_done_is_recorded_until_undone_or_deleted(
         text(&shown)
     );
     assert_eq!(shown["data"]["completion_records"][2], json!({ "due": "2026-11-10", "done": "2026-11-12" }));
-    // The same time done again keeps the later, and undone, the earlier is back.
+    // The same time done again is recorded again; undone, that record goes.
     t.ok(&s, "edit", json!({ "task": 1, "due": "2026-11-10" })).await;
     let again = t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-14" })).await;
-    let today = (json!("2026-11-12"), json!("2026-11-12"));
-    let early = (json!("2026-11-13"), json!("2026-11-12"));
-    assert_eq!(records(t.snapshot(&s).await), [(json!("2026-11-10"), json!("2026-11-14")), today.clone(), early.clone()]);
+    let first = (json!("2026-11-10"), json!("2026-11-12"), json!(0));
+    let today = (json!("2026-11-12"), json!("2026-11-12"), json!(0));
+    let early = (json!("2026-11-13"), json!("2026-11-12"), json!(0));
+    let before = [first.clone(), today.clone(), early.clone()];
+    assert_eq!(records(t.snapshot(&s).await), [first, (json!("2026-11-10"), json!("2026-11-14"), json!(1)), today, early]);
     t.ok(&s, "undo", json!({ "batch": again["data"]["batch"] })).await;
-    let before = records(t.snapshot(&s).await);
-    assert_eq!(before, [(json!("2026-11-10"), json!("2026-11-12")), today, early]);
+    assert_eq!(records(t.snapshot(&s).await), before);
     // Ending the repeat is no time done; deleted, the records go with the task, and come back with it.
     t.ok(&s, "done", json!({ "tasks": [1], "end_repeat": true, "today": "2026-11-14" })).await;
     assert_eq!(records(t.snapshot(&s).await), before);
@@ -325,6 +332,15 @@ async fn each_time_a_repeating_task_is_done_is_recorded_until_undone_or_deleted(
     assert!(records(t.snapshot(&s).await).is_empty());
     t.ok(&s, "undo", json!({ "batch": deleted["data"]["batch"] })).await;
     assert_eq!(records(t.snapshot(&s).await), before);
+    // Counted from the day it is done, done early twice in a day, it is due the same day each time:
+    // a record each, alike but for how often that time was done before.
+    t.ok(&s, "add", json!({ "title": "喝水", "due": "2026-11-13", "repeat": "1d", "repeat_from": "done" })).await;
+    t.ok(&s, "done", json!({ "tasks": [2], "today": "2026-11-12" })).await;
+    let second = t.ok(&s, "done", json!({ "tasks": [2], "today": "2026-11-12" })).await;
+    let water = |again: u32| (json!("2026-11-13"), json!("2026-11-12"), json!(again));
+    assert_eq!(records(t.snapshot(&s).await)[3..], [water(0), water(1)]);
+    t.ok(&s, "undo", json!({ "batch": second["data"]["batch"] })).await;
+    assert_eq!(records(t.snapshot(&s).await)[3..], [water(0)]);
 }
 
 #[tokio::test]
@@ -775,6 +791,92 @@ async fn lists_search_and_the_log() {
     let undo = t.ok(&s, "undo", json!({ "batch": log[0]["batch"] })).await;
     assert!(text(&undo).contains("重新打开 #1 写初稿"), "{}", text(&undo));
     assert!(t.ok(&s, "log", json!({ "limit": 1 })).await["data"][0]["summary"].as_str().unwrap().starts_with("撤销批次"));
+}
+
+#[tokio::test]
+async fn records_come_back_with_their_task_not_onto_one_back_from_elsewhere() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let batch = |r: Value| r["data"]["batch"].clone();
+    let records =
+        |snap: Value| snap["completions"].as_array().unwrap().iter().map(|r| (r["due"].clone(), r["again"].clone())).collect::<Vec<_>>();
+    t.ok(&s, "add", json!({ "title": "喝水", "due": "2026-11-13", "repeat": "1d", "repeat_from": "done" })).await;
+    let deleted = batch(t.ok(&s, "delete", json!({ "tasks": [1] })).await);
+    t.ok(&s, "undo", json!({ "batch": deleted })).await;
+    t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-12" })).await;
+    let again = batch(t.ok(&s, "delete", json!({ "tasks": [1] })).await);
+    // Back as it was before it was done, from the first deletion: undoing the second leaves it so.
+    t.ok(&s, "undo", json!({ "batch": deleted })).await;
+    t.ok(&s, "undo", json!({ "batch": again })).await;
+    let snap = t.snapshot(&s).await;
+    assert_eq!((records(snap.clone()), &snap["tasks"][0]["completions"]), (vec![], &Value::Null));
+    t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-12" })).await;
+    t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-12" })).await;
+    assert_eq!(records(t.snapshot(&s).await), [(json!("2026-11-13"), json!(0)), (json!("2026-11-13"), json!(1))]);
+}
+
+#[tokio::test]
+async fn undoing_a_batch_that_deleted_a_task_and_brought_it_back_as_it_was_earlier_brings_its_records_back() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let send = |ops: Value| {
+        let (t, s) = (&t, s.clone());
+        async move {
+            let id = common::id();
+            let r = t.call("POST", "/mutations", Some(&s), Some(json!({ "id": id, "ops": ops }))).await;
+            assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+            id
+        }
+    };
+    let done = |snap: Value| {
+        let records: Vec<_> = snap["completions"].as_array().unwrap().iter().map(|r| (r["due"].clone(), r["again"].clone())).collect();
+        (records, snap["tasks"][0]["completions"]["count"].clone())
+    };
+    t.ok(&s, "add", json!({ "title": "喝水", "due": "2026-11-13", "repeat": "1d", "repeat_from": "done" })).await;
+    let task = t.snapshot(&s).await["tasks"][0]["id"].clone();
+    let deleted = send(json!([{ "op": "task.delete", "id": task }])).await;
+    send(json!([{ "op": "undo", "mutation": deleted }])).await;
+    t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-12" })).await;
+    let both = send(json!([{ "op": "task.delete", "id": task }, { "op": "undo", "mutation": deleted }])).await;
+    assert_eq!(done(t.snapshot(&s).await), (vec![], Value::Null));
+    send(json!([{ "op": "undo", "mutation": both }])).await;
+    assert_eq!(done(t.snapshot(&s).await), (vec![(json!("2026-11-13"), json!(0))], json!(1)));
+}
+
+#[tokio::test]
+async fn undoing_a_time_done_again_as_an_earlier_version_kept_it_brings_the_record_before_back() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let done = |snap: Value| {
+        let records: Vec<_> = snap["completions"].as_array().unwrap().iter().map(|r| (r["done"].clone(), r["again"].clone())).collect();
+        (records, snap["tasks"][0]["completions"]["count"].clone())
+    };
+    t.ok(&s, "add", json!({ "title": "喝水", "due": "2026-11-13", "repeat": "1d", "repeat_from": "done" })).await;
+    t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-12" })).await;
+    let again = t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-13" })).await["data"]["batch"].as_i64().unwrap();
+    // As an earlier version kept it: the count up, then the record before taken out for its own, both
+    // without `again`.
+    t.state
+        .db
+        .call(move |c| {
+            let effects: String = c.query_row("SELECT effects FROM mutations WHERE seq = ?1", [again], |r| r.get(0))?;
+            let mut effects: Vec<Value> = serde_json::from_str(&effects).unwrap();
+            let task = effects[0]["after"]["id"].clone();
+            let record = |done: &str| json!({ "task_id": task, "due": "2026-11-13", "done": done });
+            effects.truncate(1);
+            effects.push(json!({ "kind": "completion", "before": record("2026-11-12"), "after": null }));
+            effects.push(json!({ "kind": "completion", "before": null, "after": record("2026-11-13") }));
+            c.execute("UPDATE mutations SET effects = ?1 WHERE seq = ?2", rusqlite::params![Value::from(effects).to_string(), again])?;
+            c.execute("DELETE FROM completions WHERE again = 0", [])?;
+            c.execute("UPDATE completions SET again = 0", [])?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    let undo = t.ok(&s, "undo", json!({ "batch": again })).await["data"]["batch"].clone();
+    assert_eq!(done(t.snapshot(&s).await), (vec![(json!("2026-11-12"), json!(0))], json!(1)));
+    t.ok(&s, "undo", json!({ "batch": undo })).await;
+    assert_eq!(done(t.snapshot(&s).await), (vec![(json!("2026-11-13"), json!(0))], json!(2)));
 }
 
 #[tokio::test]

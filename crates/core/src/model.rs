@@ -529,13 +529,17 @@ pub struct Occurrence {
 }
 
 /// A time a repeating task was done (docs/design.md#重复): the time `due` on a day, `done` on a day, on
-/// the device that did it. One per time due: done twice, the later stays.
+/// the device that did it. Each time it was done is kept: `again` is how often that time was done
+/// before, 0 the first time.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Completion {
     pub task_id: TaskId,
     pub due: Date,
     pub done: Date,
+    // Missing in what was recorded while a time kept only its latest record: the only one.
+    #[serde(default)]
+    pub again: u32,
 }
 
 /// How many units apart the due dates of a repeating task are: 1–365.

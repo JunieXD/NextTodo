@@ -337,7 +337,7 @@ function Completions({ records, count, now, onClose }: { records: Completion[]; 
     <Modal title="完成记录" onClose={onClose}>
       <div className="group">
         {records.map((c) => (
-          <div key={c.due} className="row prop">
+          <div key={`${c.due} ${c.again}`} className="row prop">
             <div className="row-inner controls">
               <span className="row-name">{formatDay(day(c.done).getTime(), now)}</span>
               <span className="row-value">

@@ -39,13 +39,17 @@ test("what was done on a day: tasks on the day done, and times repeating ones we
       task(3, "练卷子", { due: { date: "2026-11-20" }, done_at: at(19, 21) }),
       // Done for good offline, the server taking it the day after.
       task(4, "背单词", { due: { date: "2026-11-18" }, done_at: at(20, 8) }),
+      // Done for good the last time, which had been done the day before as well.
+      task(5, "喝水", { due: { date: "2026-11-19" }, done_at: at(19, 21) }),
     ],
     [
-      { task_id: id(2), due: "2026-11-18", done: "2026-11-19" },
-      { task_id: id(2), due: "2026-11-20", done: "2026-11-19" },
-      { task_id: id(3), due: "2026-11-19", done: "2026-11-19" },
-      { task_id: id(3), due: "2026-11-20", done: "2026-11-19" },
-      { task_id: id(4), due: "2026-11-18", done: "2026-11-19" },
+      { task_id: id(2), due: "2026-11-18", done: "2026-11-19", again: 0 },
+      { task_id: id(2), due: "2026-11-20", done: "2026-11-19", again: 0 },
+      { task_id: id(3), due: "2026-11-19", done: "2026-11-19", again: 0 },
+      { task_id: id(3), due: "2026-11-20", done: "2026-11-19", again: 0 },
+      { task_id: id(4), due: "2026-11-18", done: "2026-11-19", again: 0 },
+      { task_id: id(5), due: "2026-11-19", done: "2026-11-18", again: 0 },
+      { task_id: id(5), due: "2026-11-19", done: "2026-11-19", again: 1 },
     ],
   );
   const done = doneByDay(b);
@@ -54,9 +58,11 @@ test("what was done on a day: tasks on the day done, and times repeating ones we
     ["交报告", null],
     ["练卷子", null],
     ["背单词", null],
+    ["喝水", null],
     ["浇花", "2026-11-18"],
     ["浇花", "2026-11-20"],
     ["练卷子", "2026-11-19"],
   ]);
+  expect(on("2026-11-18")).toEqual([["喝水", "2026-11-19"]]);
   expect(on("2026-11-20")).toBeUndefined();
 });

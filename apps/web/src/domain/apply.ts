@@ -42,7 +42,7 @@ export interface Data {
 export const MAX_OPS = 1000;
 
 export const depKey = (before: TaskId, after: TaskId) => `${before}>${after}`;
-export const completionKey = (c: Completion) => `${c.task_id} ${c.due}`;
+export const completionKey = (c: Pick<Completion, "task_id" | "due" | "again">) => `${c.task_id} ${c.due} ${c.again}`;
 
 export function fromSnapshot(s: Snapshot): Data {
   return {
@@ -301,7 +301,7 @@ class Applier {
           // (docs/design.md#重复).
           if (op.done && t.due && repeat) {
             if (!op.today) throw new Rejected("invalid", "完成重复的事项需要给出今天的日期");
-            record = { task_id: t.id, due: t.due.date, done: op.today };
+            record = { task_id: t.id, due: t.due.date, done: op.today, again: this.nextAgain(t.id, t.due.date) };
             const date = nextDue(repeat, t.due.date, op.today);
             if (date) {
               // The start date keeps as far before it, at the same time (docs/design.md#开始时间).
@@ -643,10 +643,15 @@ class Applier {
     this.push({ kind: "dependency", before: dep, after: null });
   }
 
-  /** Records a time its task was done, in place of the record of the same time done before. */
+  /** The `again` of a new record of the time task `id` was due on `due`: after those it has. */
+  private nextAgain(id: TaskId, due: string) {
+    let next = 0;
+    for (const c of this.d.completions.values()) if (c.task_id === id && c.due === due) next = Math.max(next, c.again + 1);
+    return next;
+  }
+
+  /** Records a time its task was done. */
   private recordCompletion(c: Completion) {
-    const old = this.d.completions.get(completionKey(c));
-    if (old) this.deleteCompletion(old);
     this.push({ kind: "completion", before: null, after: c });
   }
 
@@ -724,6 +729,12 @@ class Applier {
       return inside.every((f) => only.has(f.id)) && ![...this.d.tasks.values(), ...this.d.jobs.values()].some((x) => x.folder_id !== null && ids.has(x.folder_id));
     };
     const made: FolderId[] = [];
+    // The tasks this brings back, or sets back to how often they were done: only their records come
+    // back, one back from elsewhere having those it came back with. A deletion took the records out
+    // before the task, so going backwards the task comes back first; a count is known up front, as a
+    // time done again before a time kept a record each had its earlier record taken out after the
+    // count went up.
+    const counted = new Set(effects.flatMap((e) => (e.kind === "task" && e.before && e.after && !same(e.before.completions, e.after.completions) ? [e.before.id] : [])));
     for (const [i, e] of [...effects.entries()].reverse()) {
       if (e.kind === "folder") {
         if (!e.before) {
@@ -754,6 +765,7 @@ class Applier {
           if (t.folder_id !== null && !this.d.folders.has(t.folder_id)) {
             throw new Rejected("not_found", `“${t.title}”原所在的文件夹已删除`);
           }
+          counted.add(t.id);
           this.createTask({ ...t, updated_at: now, updated_by: this.cx.me, updated_via: null });
         } else {
           const cur = this.d.tasks.get(e.before.id);
@@ -823,11 +835,10 @@ class Applier {
       } else if (e.kind === "person") {
         continue;
       } else if (e.kind === "completion") {
-        // A record goes with its task: with the task gone, there is nothing to put it back on.
         const cur = this.d.completions.get(completionKey((e.before ?? e.after)!));
         if (!e.before) {
           if (cur) this.deleteCompletion(cur);
-        } else if (!cur && this.d.tasks.has(e.before.task_id)) this.recordCompletion(e.before);
+        } else if (!cur && counted.has(e.before.task_id) && this.d.tasks.has(e.before.task_id)) this.recordCompletion(e.before);
       } else if (!e.before) {
         const dep = this.d.deps.get(depKey(e.after!.before, e.after!.after));
         if (dep) this.deleteDependency(dep);

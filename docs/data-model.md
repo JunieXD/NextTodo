@@ -103,9 +103,10 @@
 |---|---|---|
 | task_id | TEXT | 事项，删除事项时一起删除 |
 | due_date | TEXT | 完成的是截止在哪天的那一次 |
+| again | INTEGER | 这一次在这一回以前完成过几回：第一回是 0，同一次又完成一回是 1，依此类推 |
 | done_on | TEXT | 在哪天完成（完成那台设备上的当天） |
 
-`(task_id, due_date)` 是主键：同一次完成了两回只留后一回。
+`(task_id, due_date, again)` 是主键：同一次完成了几回就有几条。
 
 ### dependencies
 

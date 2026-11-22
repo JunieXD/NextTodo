@@ -129,7 +129,7 @@ fn dep_row(r: &Row) -> rusqlite::Result<Dependency> {
 }
 
 fn completion_row(r: &Row) -> rusqlite::Result<Completion> {
-    Ok(Completion { task_id: r.get(0)?, due: r.get(1)?, done: r.get(2)? })
+    Ok(Completion { task_id: r.get(0)?, due: r.get(1)?, done: r.get(2)?, again: r.get(3)? })
 }
 
 fn attachment_row(r: &Row) -> rusqlite::Result<Attachment> {
@@ -432,18 +432,25 @@ pub fn delete_dependency(c: &Connection, d: &Dependency) -> rusqlite::Result<()>
     Ok(())
 }
 
-/// The record of the time task `task` was due on `due`.
-pub fn load_completion(c: &Connection, task: TaskId, due: &Date) -> rusqlite::Result<Option<Completion>> {
+/// The record of the time task `task` was due on `due`, done that time for the `again`th time over.
+pub fn load_completion(c: &Connection, task: TaskId, due: &Date, again: u32) -> rusqlite::Result<Option<Completion>> {
     c.query_row(
-        "SELECT task_id, due_date, done_on FROM completions WHERE task_id = ?1 AND due_date = ?2",
-        params![task, due],
+        "SELECT task_id, due_date, done_on, again FROM completions WHERE task_id = ?1 AND due_date = ?2 AND again = ?3",
+        params![task, due, again],
         completion_row,
     )
     .optional()
 }
 
+/// The `again` of a new record of the time task `task` was due on `due`: after those it has.
+pub fn next_again(c: &Connection, task: TaskId, due: &Date) -> rusqlite::Result<u32> {
+    c.query_row("SELECT coalesce(max(again) + 1, 0) FROM completions WHERE task_id = ?1 AND due_date = ?2", params![task, due], |r| {
+        r.get(0)
+    })
+}
+
 pub fn task_completions(c: &Connection, task: TaskId) -> rusqlite::Result<Vec<Completion>> {
-    all(c, "SELECT task_id, due_date, done_on FROM completions WHERE task_id = ?1 ORDER BY due_date", [task], completion_row)
+    all(c, "SELECT task_id, due_date, done_on, again FROM completions WHERE task_id = ?1 ORDER BY due_date, again", [task], completion_row)
 }
 
 /// The records of the tasks in the subtree rooted at `id`.
@@ -451,8 +458,8 @@ pub fn subtree_completions(c: &Connection, id: FolderId) -> rusqlite::Result<Vec
     all(
         c,
         &format!(
-            "{SUBTREE} SELECT task_id, due_date, done_on FROM completions
-             WHERE task_id IN (SELECT id FROM tasks WHERE folder_id IN (SELECT id FROM sub)) ORDER BY task_id, due_date"
+            "{SUBTREE} SELECT task_id, due_date, done_on, again FROM completions
+             WHERE task_id IN (SELECT id FROM tasks WHERE folder_id IN (SELECT id FROM sub)) ORDER BY task_id, due_date, again"
         ),
         [id],
         completion_row,
@@ -460,12 +467,15 @@ pub fn subtree_completions(c: &Connection, id: FolderId) -> rusqlite::Result<Vec
 }
 
 pub fn insert_completion(c: &Connection, r: &Completion) -> rusqlite::Result<()> {
-    c.execute("INSERT INTO completions (task_id, due_date, done_on) VALUES (?1, ?2, ?3)", params![r.task_id, r.due, r.done])?;
+    c.execute(
+        "INSERT INTO completions (task_id, due_date, again, done_on) VALUES (?1, ?2, ?3, ?4)",
+        params![r.task_id, r.due, r.again, r.done],
+    )?;
     Ok(())
 }
 
 pub fn delete_completion(c: &Connection, r: &Completion) -> rusqlite::Result<()> {
-    c.execute("DELETE FROM completions WHERE task_id = ?1 AND due_date = ?2", params![r.task_id, r.due])?;
+    c.execute("DELETE FROM completions WHERE task_id = ?1 AND due_date = ?2 AND again = ?3", params![r.task_id, r.due, r.again])?;
     Ok(())
 }
 
@@ -758,8 +768,8 @@ pub fn snapshot(c: &Connection, user: &str) -> rusqlite::Result<Snapshot> {
         completions: all(
             c,
             &format!(
-                "{SHARED} SELECT task_id, due_date, done_on FROM completions
-                 WHERE task_id IN (SELECT id FROM tasks WHERE {visible}) ORDER BY task_id, due_date"
+                "{SHARED} SELECT task_id, due_date, done_on, again FROM completions
+                 WHERE task_id IN (SELECT id FROM tasks WHERE {visible}) ORDER BY task_id, due_date, again"
             ),
             [user],
             completion_row,

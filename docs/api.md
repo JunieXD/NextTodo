@@ -145,7 +145,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
   { "kind": "dependency", "before": null, "after": { "before": "…", "after": "…", "created_at": … } } ]
 ```
 
-`kind` 是 `folder`、`task`、`dependency`、`completion`、`attachment`、`ai_job`、`share` 或 `person`。`before` 为空表示新建，`after` 为空表示删除，都不为空表示修改。`completion` 是重复事项的一条[完成记录](design.md#重复) `{task_id, due, done}`，和 `dependency` 一样只有新建和删除，由完成重复的事项、删除事项和撤销带来，改动里不能直接写。客户端按顺序应用 `after` 就能得到最新状态。`share` 是一个文件夹的共享人和成员，有了成员是新建，最后一个成员离开是删除；`person` 是这个用户的数据里新出现的人（新建：加入了共享的文件夹，或者添加、修改过一个刚看得到的事项）或改了显示名的人（修改）。
+`kind` 是 `folder`、`task`、`dependency`、`completion`、`attachment`、`ai_job`、`share` 或 `person`。`before` 为空表示新建，`after` 为空表示删除，都不为空表示修改。`completion` 是重复事项的一条[完成记录](design.md#重复) `{task_id, due, done, again}`，`again` 是同一次（同一个 `due`）在这一回以前完成过几回，通常是 0；和 `dependency` 一样只有新建和删除，由完成重复的事项、删除事项和撤销带来，改动里不能直接写。客户端按顺序应用 `after` 就能得到最新状态。`share` 是一个文件夹的共享人和成员，有了成员是新建，最后一个成员离开是删除；`person` 是这个用户的数据里新出现的人（新建：加入了共享的文件夹，或者添加、修改过一个刚看得到的事项）或改了显示名的人（修改）。
 
 每个人收到的是自己看得到的那部分：事项移出共享的文件夹，留下的成员收到的是它被删除，移进来时是新建，它的附件、依赖也一样。`/changes` 和同步推送里的每条记录是 `{seq, id, user, actor, effects, created_at}`，`id` 是改动 ID，`user` 是提交改动的用户 ID，`actor` 是 API 令牌名（会话为空，AI 整理是“AI 整理”）。
 

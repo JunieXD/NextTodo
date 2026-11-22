@@ -17,9 +17,11 @@
 import { type IDBPDatabase, openDB } from "idb";
 import type { AiJob } from "../api/types/AiJob";
 import type { Change } from "../api/types/Change";
+import type { Completion } from "../api/types/Completion";
 import type { Due } from "../api/types/Due";
 import type { Effect } from "../api/types/Effect";
 import type { Folder } from "../api/types/Folder";
+import type { Link } from "../api/types/Link";
 import type { MutationId } from "../api/types/MutationId";
 import type { Suggestion } from "../api/types/Suggestion";
 import type { Task } from "../api/types/Task";
@@ -28,6 +30,11 @@ import type { Was } from "../api/types/Was";
 import { forgetAiConfig, forgetOtherAiConfigs } from "../ai";
 import { forgetDrafts, forgetOtherDrafts, withdrawn } from "./drafts";
 import type { Copy, Pending, Saved } from "./store";
+
+/** How copies are kept: one more each time a copy an earlier version kept may lack what that version
+ * could not read; such a copy is downloaded afresh (docs/web.md#同步). 2: a time of a repeating task
+ * done again on the same due date keeps a record each time, of which an earlier version kept one. */
+export const COPY_FORMAT = 2;
 
 let opened: Promise<IDBPDatabase> | undefined;
 export const db = () =>
@@ -80,12 +87,15 @@ export async function load(user: User, copyId: string): Promise<Saved | undefine
   const copies = tx.objectStore("copies");
   const found: SavedCopy[] = await copies.getAll(all(user.id));
   if (!found.length) return undefined;
-  const newest = current(found.reduce((a, b) => (b.seq > a.seq ? b : a)), user);
+  const saved = found.reduce((a, b) => (b.seq > a.seq ? b : a));
+  // Kept by an earlier version, it shows until the server sends everything afresh, which it does for a
+  // copy from before the first change.
+  const newest = { ...current(saved, user), ...(saved.format !== COPY_FORMAT && { seq: -1 }) };
   const outbox = tx.objectStore("outbox");
   for (const id of gone) await outbox.delete([user.id, id]);
   const pending: Pending[] = await outbox.getAll(all(user.id));
   await copies.delete(all(user.id));
-  await copies.put(newest, [user.id, copyId]);
+  await copies.put({ ...newest, format: COPY_FORMAT }, [user.id, copyId]);
   await tx.done;
   return { ...newest, outbox: pending.map(pendingOf) };
 }
@@ -123,12 +133,17 @@ const pendingOf = (p: Pending): Pending => ({
 });
 
 type SavedFolder = Omit<Folder, "color" | "icon"> & Partial<Pick<Folder, "color" | "icon">>;
-type SavedEffect = Exclude<Effect, { kind: "folder" }> | ({ kind: "folder" } & Change<SavedFolder>);
+type SavedCompletion = Omit<Completion, "again"> & Partial<Pick<Completion, "again">>;
+type SavedEffect =
+  | Exclude<Effect, { kind: "folder" | "completion" }>
+  | ({ kind: "folder" } & Change<SavedFolder>)
+  | ({ kind: "completion" } & Link<SavedCompletion>);
 type SavedBase = Omit<Copy["base"], "folders" | "attachments" | "completions" | "ai_jobs"> &
-  Partial<Pick<Copy["base"], "attachments" | "completions" | "ai_jobs">> & { folders: SavedFolder[] };
+  Partial<Pick<Copy["base"], "attachments" | "ai_jobs">> & { folders: SavedFolder[]; completions?: SavedCompletion[] };
 
 /** A copy as an earlier version may have saved it: without what came later. */
 type SavedCopy = Omit<Copy, "base" | "log"> & {
+  format?: number;
   base:
     | SavedBase
     | (Omit<SavedBase, "tasks" | "shares" | "people"> & {
@@ -143,14 +158,16 @@ type SavedCopy = Omit<Copy, "base" | "log"> & {
  * every task was the user's, and the user was the only one in it; its log of changes goes, being of
  * tasks as they were then. Before AI organizing there were no jobs, before attachments none, before
  * completion records none, and before folders had colours and icons, none of those: neither for
- * folders kept nor for those its log of changes brings back when one is undone. Due dates, of tasks
- * and AI's suggestions, in the log too, are as they are now. */
+ * folders kept nor for those its log of changes brings back when one is undone. A record kept while a
+ * time had only its latest is that time's first, in the log too. Due dates, of tasks and AI's
+ * suggestions, in the log too, are as they are now. */
 function current(saved: SavedCopy, { id, username, display_name }: User): Copy {
   const looked = (f: SavedFolder): Folder => ({ ...f, color: f.color ?? null, icon: f.icon ?? null });
+  const recorded = (c: SavedCompletion): Completion => ({ ...c, again: c.again ?? 0 });
   const kept = {
     folders: saved.base.folders.map(looked),
     attachments: saved.base.attachments ?? [],
-    completions: saved.base.completions ?? [],
+    completions: (saved.base.completions ?? []).map(recorded),
     ai_jobs: (saved.base.ai_jobs ?? []).map(jobOf),
   };
   if (!saved.base.people) {
@@ -166,7 +183,9 @@ function current(saved: SavedCopy, { id, username, display_name }: User): Copy {
           ? { ...e, before: e.before && taskOf(e.before), after: e.after && taskOf(e.after) }
           : e.kind === "ai_job"
             ? { ...e, before: e.before && jobOf(e.before), after: e.after && jobOf(e.after) }
-            : e,
+            : e.kind === "completion"
+              ? { ...e, before: e.before && recorded(e.before), after: e.after && recorded(e.after) }
+              : e,
     ),
   ]);
   return { ...saved, base: { ...saved.base, ...kept, tasks: saved.base.tasks.map(taskOf) }, log };
@@ -209,7 +228,7 @@ export function saver(userId: string, copyId: string, failed: (e: unknown) => vo
           const tx = (await db()).transaction(["copies", "outbox"], "readwrite");
           const outbox = tx.objectStore("outbox");
           await Promise.all([
-            tx.objectStore("copies").put(batch.copy, [userId, copyId]),
+            tx.objectStore("copies").put({ ...batch.copy, format: COPY_FORMAT }, [userId, copyId]),
             ...batch.queued.map((p) => outbox.put(p, [userId, p.mutation.id])),
             ...batch.settled.map((id) => outbox.delete([userId, id])),
             tx.done,

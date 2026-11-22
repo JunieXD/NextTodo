@@ -127,6 +127,17 @@ async fn bad_mutations_are_rejected_and_bad_connections_closed() {
 }
 
 #[tokio::test]
+async fn a_copy_from_before_the_first_change_is_told_to_resync() {
+    // As the web app keeps a copy an earlier version kept, to download everything afresh.
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let me = t.me(&s).await;
+    let addr = serve(&t).await;
+    let mut c = Client::connect(addr, Some(&s)).await;
+    assert_eq!(c.hello(&me, None, -1).await, json!({ "type": "resync" }));
+}
+
+#[tokio::test]
 async fn a_client_too_far_behind_is_told_to_resync() {
     let t = TestApp::new();
     let s = t.admin().await;

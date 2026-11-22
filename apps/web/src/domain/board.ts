@@ -111,7 +111,7 @@ export class Board {
     // Ids are UUIDv7: in the order they were made.
     for (const list of this.attached.values()) list.sort((a, b) => cmp(a.id, b.id));
     for (const c of snapshot.completions) push(this.records, c.task_id, c);
-    for (const list of this.records.values()) list.sort((a, b) => cmp(b.done, a.done) || cmp(b.due, a.due));
+    for (const list of this.records.values()) list.sort((a, b) => cmp(b.done, a.done) || cmp(b.due, a.due) || b.again - a.again);
   }
 
   task(id: TaskId): Task | undefined {

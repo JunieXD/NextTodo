@@ -4,6 +4,7 @@ import type { TaskId } from "./TaskId";
 
 /**
  * A time a repeating task was done (docs/design.md#重复): the time `due` on a day, `done` on a day, on
- * the device that did it. One per time due: done twice, the later stays.
+ * the device that did it. Each time it was done is kept: `again` is how often that time was done
+ * before, 0 the first time.
  */
-export type Completion = { task_id: TaskId, due: Date, done: Date, };
+export type Completion = { task_id: TaskId, due: Date, done: Date, again: number, };

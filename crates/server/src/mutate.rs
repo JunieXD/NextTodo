@@ -619,7 +619,8 @@ impl<'a> Cx<'a> {
                             let today = today
                                 .as_ref()
                                 .ok_or_else(|| ApiError::invalid("完成重复的事项需要给出今天的日期", Some("today".into())))?;
-                            record = Some(Completion { task_id: t.id, due: d.date.clone(), done: today.clone() });
+                            let again = store::next_again(self.c, t.id, &d.date)?;
+                            record = Some(Completion { task_id: t.id, due: d.date.clone(), done: today.clone(), again });
                             match r.next(&d.date, today) {
                                 Some(next) => {
                                     // The start date keeps as far before it, at the same time (docs/design.md#开始时间).
@@ -1175,13 +1176,10 @@ impl<'a> Cx<'a> {
         Ok(())
     }
 
-    /// Records a time its task was done, in place of the record of the same time done before.
+    /// Records a time its task was done.
     fn record_completion(&mut self, r: Completion) -> Result<(), ApiError> {
         let (t, owner) = self.task(r.task_id)?;
         let space = self.space(&owner, t.folder_id)?;
-        if let Some(old) = store::load_completion(self.c, r.task_id, &r.due)? {
-            self.delete_completion(old, &space)?;
-        }
         store::insert_completion(self.c, &r)?;
         self.push(Effect::Completion(Link::Added(r)), Side::default(), space.side(), false);
         Ok(())
@@ -1347,6 +1345,18 @@ impl<'a> Cx<'a> {
             })
             .collect();
         let mut made = Vec::new();
+        // The tasks this brings back, or sets back to how often they were done: only their records come
+        // back, one back from elsewhere having those it came back with. A deletion took the records out
+        // before the task, so going backwards the task comes back first; a count is known up front, as
+        // a time done again before a time kept a record each had its earlier record taken out after
+        // the count went up.
+        let mut counted: HashSet<TaskId> = seen
+            .iter()
+            .filter_map(|e| match e {
+                Effect::Task(Change::Updated { before, after }) if before.completions != after.completions => Some(before.id),
+                _ => None,
+            })
+            .collect();
         for (i, effect) in seen.iter().cloned().enumerate().rev() {
             match effect {
                 Effect::Folder(Change::Created(f)) => match self.visible_folder(f.id)? {
@@ -1388,6 +1398,7 @@ impl<'a> Cx<'a> {
                         let number = self.number(&owner, t.id, Some(t.number))?;
                         let restored =
                             Task { number, updated_at: self.now, updated_by: self.user.to_owned(), updated_via: self.via.clone(), ..*t };
+                        counted.insert(t.id);
                         self.create_task(restored, &owner)?;
                     }
                 }
@@ -1429,16 +1440,18 @@ impl<'a> Cx<'a> {
                     }
                 }
                 Effect::Completion(Link::Added(r)) => {
-                    if let Some(r) = store::load_completion(self.c, r.task_id, &r.due)?
+                    if let Some(r) = store::load_completion(self.c, r.task_id, &r.due, r.again)?
                         && let Some((t, owner)) = self.visible_task(r.task_id)?
                     {
                         let space = self.space(&owner, t.folder_id)?;
                         self.delete_completion(r, &space)?;
                     }
                 }
-                // A record goes with its task: with the task gone, there is nothing to put it back on.
                 Effect::Completion(Link::Removed(r)) => {
-                    if self.visible_task(r.task_id)?.is_some() && store::load_completion(self.c, r.task_id, &r.due)?.is_none() {
+                    if counted.contains(&r.task_id)
+                        && self.visible_task(r.task_id)?.is_some()
+                        && store::load_completion(self.c, r.task_id, &r.due, r.again)?.is_none()
+                    {
                         self.record_completion(r)?;
                     }
                 }

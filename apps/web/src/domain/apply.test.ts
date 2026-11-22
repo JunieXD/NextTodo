@@ -81,6 +81,68 @@ test("deleting a folder takes everything inside, and undo brings it back", () =>
   expect([d.folders.size, titles(d).sort(), d.deps.size]).toEqual([2, ["PPT", "外面"], 1]);
 });
 
+test("undoing a new folder leaves what was put in it since, and the folders it is in", () => {
+  const d = empty();
+  run(d, 401, [
+    { op: "folder.create", id: id(1), name: "模板 副本" },
+    { op: "folder.create", id: id(2), name: "出发前", parent_id: id(1) },
+    { op: "folder.create", id: id(3), name: "回来后", parent_id: id(1) },
+    { op: "task.create", id: id(4), title: "订机票", folder_id: id(2) },
+  ]);
+  run(d, 402, [{ op: "task.create", id: id(5), title: "后来加的", folder_id: id(2) }]);
+  run(d, 403, [{ op: "undo", mutation: id(401) }]);
+  expect([[...d.folders.values()].map((f) => f.name).sort(), titles(d)]).toEqual([["出发前", "模板 副本"], ["后来加的"]]);
+
+  // Moved into another it made meanwhile, empty, they all go.
+  run(d, 404, [{ op: "task.delete", id: id(5) }]);
+  run(d, 405, [
+    { op: "folder.create", id: id(6), name: "模板 副本 2" },
+    { op: "folder.create", id: id(7), name: "甲", parent_id: id(6) },
+    { op: "folder.create", id: id(8), name: "乙", parent_id: id(6) },
+  ]);
+  run(d, 406, [{ op: "folder.update", id: id(7), parent_id: id(8) }]);
+  run(d, 407, [{ op: "undo", mutation: id(405) }]);
+  expect([...d.folders.values()].map((f) => f.name).sort()).toEqual(["出发前", "模板 副本"]);
+
+  // Made in place of one deleted, it goes before that one is back, freeing the name.
+  run(d, 408, [{ op: "folder.create", id: id(9), name: "工作" }]);
+  run(d, 409, [
+    { op: "folder.delete", id: id(9) },
+    { op: "folder.create", id: id(10), name: "工作" },
+  ]);
+  run(d, 410, [{ op: "undo", mutation: id(409) }]);
+  expect([d.folders.has(id(9)), d.folders.has(id(10))]).toEqual([true, false]);
+
+  // Holding a task it made, moved in since, it waits for the task to go in turn, after what was done
+  // to the task is undone.
+  run(d, 411, [
+    { op: "task.create", id: id(11), title: "旧的" },
+    { op: "attachment.add", id: id(12), name: "发票.png", type: "image/png", size: 100, task_id: id(11) },
+  ]);
+  run(d, 412, [
+    { op: "task.create", id: id(13), title: "新的" },
+    { op: "attachment.update", id: id(12), task_id: id(13) },
+    { op: "dep.add", before: id(11), after: id(13) },
+    { op: "dep.remove", before: id(11), after: id(13) },
+    { op: "folder.create", id: id(14), name: "归档" },
+  ]);
+  run(d, 413, [{ op: "task.update", id: id(13), folder_id: id(14) }]);
+  run(d, 414, [{ op: "undo", mutation: id(412) }]);
+  expect([d.attachments.get(id(12))?.task_id, d.tasks.has(id(13)), d.folders.has(id(14)), d.deps.size]).toEqual([id(11), false, false, 0]);
+
+  // One it deleted, its ID taken again by one it made that holds what was put in it since, can't come
+  // back: nothing is undone.
+  run(d, 415, [{ op: "folder.create", id: id(15), name: "原文件夹" }]);
+  run(d, 416, [
+    { op: "task.create", id: id(16), title: "临时事项" },
+    { op: "folder.delete", id: id(15) },
+    { op: "folder.create", id: id(15), name: "替换文件夹" },
+  ]);
+  run(d, 417, [{ op: "task.update", id: id(16), folder_id: id(15) }]);
+  expect(() => apply(d, [{ op: "undo", mutation: id(416) }], cx)).toThrow(new Rejected("conflict", "文件夹“原文件夹”无法恢复：之后又往取代它的文件夹里放了东西，请先移走"));
+  expect([d.folders.get(id(15))?.name, d.tasks.get(id(16))?.folder_id]).toEqual(["替换文件夹", id(15)]);
+});
+
 test("attachments go with their task, folder or AI job, and come back with undo", () => {
   const d = empty();
   const add = (attachment: number, holder: { task_id: string } | { job_id: string }): Op => ({

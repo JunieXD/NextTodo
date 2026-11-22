@@ -1171,6 +1171,78 @@ async fn a_folder_copies_with_all_in_it_open_again() {
     assert_eq!(t.tool(&s, "copy", json!({ "folder": "/" })).await.status, StatusCode::BAD_REQUEST);
     t.ok(&s, "undo", json!({ "batch": again["data"]["batch"] })).await;
     assert!(t.ok(&s, "list", json!({ "folder": "/其他" })).await["data"]["folders"].as_array().unwrap().is_empty());
+
+    // Undone after something was added to it, the copy goes but what was added stays, with the
+    // folders it is in.
+    let copied = t.ok(&s, "copy", json!({ "folder": "/合同", "to": "/其他" })).await;
+    t.ok(&s, "add", json!({ "title": "复制后加的", "folder": "/其他/合同/盖章" })).await;
+    t.ok(&s, "undo", json!({ "batch": copied["data"]["batch"] })).await;
+    let tree = text(&t.ok(&s, "tree", json!({})).await).to_owned();
+    let kept = t.ok(&s, "list", json!({ "folder": "/其他/合同", "all": true })).await["data"].clone();
+    assert_eq!((kept["tasks"].as_array().unwrap().len(), kept["folders"][0]["name"].as_str()), (0, Some("盖章")), "{tree}");
+    let added = t.ok(&s, "list", json!({ "folder": "/其他/合同/盖章", "all": true })).await["data"]["tasks"].clone();
+    assert_eq!(added.as_array().unwrap().iter().map(|t| t["title"].as_str().unwrap()).collect::<Vec<_>>(), ["复制后加的"]);
+    // One moved into another it made meanwhile, empty, they all go.
+    for path in ["/流程/甲", "/流程/乙"] {
+        t.ok(&s, "mkdir", json!({ "path": path })).await;
+    }
+    let copied = t.ok(&s, "copy", json!({ "folder": "/流程" })).await;
+    t.ok(&s, "move", json!({ "folders": ["/流程 副本/甲"], "to": "/流程 副本/乙" })).await;
+    t.ok(&s, "undo", json!({ "batch": copied["data"]["batch"] })).await;
+    assert!(!text(&t.ok(&s, "tree", json!({})).await).contains("流程 副本"));
+    // Made in place of one deleted, it goes before that one is back, freeing the name.
+    let (old, new) = (common::id(), common::id());
+    t.mutate(&s, json!([{ "op": "folder.create", "id": old, "name": "工作" }])).await;
+    let swap = t.mutate(&s, json!([{ "op": "folder.delete", "id": old }, { "op": "folder.create", "id": new, "name": "工作" }])).await;
+    t.ok(&s, "undo", json!({ "batch": swap.body["seq"] })).await;
+    let ids = async || t.snapshot(&s).await["folders"].as_array().unwrap().iter().map(|f| f["id"].clone()).collect::<Vec<_>>();
+    let found = ids().await;
+    assert!(found.contains(&json!(old)) && !found.contains(&json!(new)));
+    // Holding a task it made, moved in since, it waits for the task to go in turn, after what was done
+    // to the task is undone.
+    let (old, new, folder) = (common::id(), common::id(), common::id());
+    t.mutate(&s, json!([{ "op": "task.create", "id": old, "title": "旧的" }])).await;
+    let file = t.attach(&s, &old, "发票.txt", b"abc").await;
+    let made = t
+        .mutate(
+            &s,
+            json!([
+                { "op": "task.create", "id": new, "title": "新的" },
+                { "op": "attachment.update", "id": file, "task_id": new },
+                { "op": "dep.add", "before": old, "after": new },
+                { "op": "dep.remove", "before": old, "after": new },
+                { "op": "folder.create", "id": folder, "name": "归档" },
+            ]),
+        )
+        .await;
+    t.mutate(&s, json!([{ "op": "task.update", "id": new, "folder_id": folder }])).await;
+    t.ok(&s, "undo", json!({ "batch": made.body["seq"] })).await;
+    let after = t.snapshot(&s).await;
+    let has = |kind: &str, id: &str| after[kind].as_array().unwrap().iter().any(|x| x["id"] == json!(id));
+    let on = after["attachments"].as_array().unwrap().iter().find(|a| a["id"] == json!(file)).map(|a| a["task_id"].clone());
+    let linked = after["dependencies"].as_array().unwrap().iter().any(|d| d["after"] == json!(new));
+    assert_eq!((on, has("tasks", &new), has("folders", &folder), linked), (Some(json!(old)), false, false, false));
+    // One it deleted, its ID taken again by one it made that holds what was put in it since, can't
+    // come back: nothing is undone.
+    let (folder, task) = (common::id(), common::id());
+    t.mutate(&s, json!([{ "op": "folder.create", "id": folder, "name": "原文件夹" }])).await;
+    let swap = t
+        .mutate(
+            &s,
+            json!([
+                { "op": "task.create", "id": task, "title": "临时事项" },
+                { "op": "folder.delete", "id": folder },
+                { "op": "folder.create", "id": folder, "name": "替换文件夹" },
+            ]),
+        )
+        .await;
+    t.mutate(&s, json!([{ "op": "task.update", "id": task, "folder_id": folder }])).await;
+    let r = t.tool(&s, "undo", json!({ "batch": swap.body["seq"] })).await;
+    assert_eq!(
+        (r.status, r.body["message"].as_str()),
+        (StatusCode::CONFLICT, Some("文件夹“原文件夹”无法恢复：之后又往取代它的文件夹里放了东西，请先移走"))
+    );
+    assert!(text(&t.ok(&s, "tree", json!({})).await).contains("替换文件夹"));
 }
 
 #[tokio::test]

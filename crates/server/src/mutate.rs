@@ -8,7 +8,7 @@
 //! something made or deleted.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::num::NonZeroU32;
 
 use nexttodo_core::dag::find_path;
@@ -1336,14 +1336,32 @@ impl<'a> Cx<'a> {
                 self.numbers.entry(before.id).or_insert(before.number);
             }
         }
+        // A folder it made goes empty, in turn, freeing its name for one it deleted. Holding what was put
+        // in it since, it waits for the end: what it made goes in turn before, what else stays, and the
+        // folder with that.
+        let ours: HashSet<FolderId> = seen
+            .iter()
+            .filter_map(|e| match e {
+                Effect::Folder(Change::Created(f)) => Some(f.id),
+                _ => None,
+            })
+            .collect();
+        let mut made = Vec::new();
         for (i, effect) in seen.iter().cloned().enumerate().rev() {
             match effect {
-                Effect::Folder(Change::Created(f)) => {
-                    if let Some((_, owner)) = self.visible_folder(f.id)? {
-                        self.delete_folder(f.id, &owner)?;
-                    }
-                }
+                Effect::Folder(Change::Created(f)) => match self.visible_folder(f.id)? {
+                    Some((_, owner)) if only_folders_of(self.c, f.id, &HashSet::from([f.id]))? => self.delete_folder(f.id, &owner)?,
+                    Some(_) => made.push(f.id),
+                    None => {}
+                },
                 Effect::Folder(Change::Deleted(f)) => {
+                    // Its ID taken again by one it made, which still holds what was put in it since.
+                    if made.contains(&f.id) {
+                        return Err(ApiError::conflict(format!(
+                            "文件夹“{}”无法恢复：之后又往取代它的文件夹里放了东西，请先移走",
+                            f.name.as_str()
+                        )));
+                    }
                     if store::load_folder(self.c, f.id)?.is_none() {
                         let owner = self
                             .owner_in(f.parent_id)
@@ -1490,6 +1508,13 @@ impl<'a> Cx<'a> {
                 }
             }
         }
+        for id in made {
+            if let Some((_, owner)) = self.visible_folder(id)?
+                && only_folders_of(self.c, id, &ours)?
+            {
+                self.delete_folder(id, &owner)?;
+            }
+        }
         self.numbers.clear();
         Ok(())
     }
@@ -1523,6 +1548,13 @@ impl<'a> Cx<'a> {
 /// Who sees a share: its owner and members.
 fn share_side(s: &Share) -> Side {
     Side::of(std::iter::once(&s.owner).chain(&s.members).cloned().collect())
+}
+
+/// Whether nothing is in a folder but folders in `only`, and in them the same: no task, no AI job.
+fn only_folders_of(c: &Connection, id: FolderId, only: &HashSet<FolderId>) -> rusqlite::Result<bool> {
+    Ok(store::subtree_tasks(c, id)?.is_empty()
+        && store::subtree_jobs(c, id)?.is_empty()
+        && store::subtree_folders(c, id)?.iter().all(|f| only.contains(&f.id)))
 }
 
 #[cfg(test)]

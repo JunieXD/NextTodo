@@ -713,12 +713,29 @@ class Applier {
     const effects = this.cx.effectsOf(id);
     if (!effects) throw new Rejected("not_found", "要撤销的改动不存在或已过期");
     const now = this.cx.now;
+    // A folder it made goes empty, in turn, freeing its name for one it deleted. Holding what was put
+    // in it since, it waits for the end: what it made goes in turn before, what else stays, and the
+    // folder with that.
+    const ours = new Set(effects.flatMap((e) => (e.kind === "folder" && !e.before ? [e.after!.id] : [])));
+    // Nothing in it but folders in `only`, and in them the same: no task, no AI job.
+    const onlyFoldersOf = (id: FolderId, only: Set<FolderId>) => {
+      const inside = this.subtree(id);
+      const ids = new Set(inside.map((f) => f.id));
+      return inside.every((f) => only.has(f.id)) && ![...this.d.tasks.values(), ...this.d.jobs.values()].some((x) => x.folder_id !== null && ids.has(x.folder_id));
+    };
+    const made: FolderId[] = [];
     for (const [i, e] of [...effects.entries()].reverse()) {
       if (e.kind === "folder") {
         if (!e.before) {
-          if (this.d.folders.has(e.after!.id)) this.deleteFolder(e.after!.id);
+          const id = e.after!.id;
+          if (this.d.folders.has(id)) {
+            if (onlyFoldersOf(id, new Set([id]))) this.deleteFolder(id);
+            else made.push(id);
+          }
         } else if (!e.after) {
           const f = e.before;
+          // Its ID taken again by one it made, which still holds what was put in it since.
+          if (made.includes(f.id)) throw new Rejected("conflict", `文件夹“${f.name}”无法恢复：之后又往取代它的文件夹里放了东西，请先移走`);
           if (this.d.folders.has(f.id)) continue;
           if (f.parent_id !== null && !this.d.folders.has(f.parent_id)) {
             throw new Rejected("not_found", `文件夹“${f.name}”原所在的文件夹已删除`);
@@ -823,6 +840,7 @@ class Applier {
         if (!this.d.deps.has(depKey(dep.before, dep.after)) && this.together(dep.before, dep.after)) this.createDependency(dep);
       }
     }
+    for (const id of made) if (this.d.folders.has(id) && onlyFoldersOf(id, ours)) this.deleteFolder(id);
   }
 }
 

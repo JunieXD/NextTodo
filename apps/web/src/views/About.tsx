@@ -26,10 +26,12 @@ export function About() {
   useEffect(() => {
     appVersion().then(setInstalled, (e) => snack(forUser("读取版本", e)));
   }, [snack]);
-  // However lately it was asked: an admin come to look may have just heard of a release.
+  // However lately it was asked: an admin come to look may have just heard of a release, and the server
+  // may have been upgraded since it was told to be older than the app.
+  const asks = admin || (!!app && !inLocalMode());
   useEffect(() => {
-    if (admin) void checkServer(true);
-  }, [admin]);
+    if (asks) void checkServer({ now: true, latest: admin });
+  }, [asks, admin]);
   const version = import.meta.env.WEB_VERSION;
   return (
     <>
@@ -53,6 +55,17 @@ export function About() {
           <Row label="网页版本" value={version} />
         )}
         {admin && server && <ServerVersion server={server} />}
+        {!admin && server && newer(version, server.server) && (
+          <div className="row">
+            <div className="row-inner">
+              <span className="folder-main">
+                <span>服务器版本</span>
+                <span className="folder-sub full">比 App 旧，请让管理员升级服务器</span>
+              </span>
+              <span className="row-value">{server.server}</span>
+            </div>
+          </div>
+        )}
         {pending && (
           <div className="row">
             <div className="row-inner">

@@ -52,14 +52,16 @@ async function serverVersion(): Promise<string> {
   }
 }
 
-/** Asks for both versions, unless it did lately and it is not `now`. A failure, offline say, is tried
- * again next time; it bothers no one: the row in the settings says the latest is not known. */
-export async function checkServer(now = false) {
+/** Asks for the server's version, and with `latest` the latest release's, unless it did lately and it is
+ * not `now`. Only its admin asks GitHub; others want the server's alone, to know whether it is older
+ * than the app (docs/design.md#app-更新). A failure, offline say, is tried again next time; it bothers
+ * no one: the row in the settings says the latest is not known. */
+export async function checkServer({ now = false, latest: withLatest = true } = {}) {
   const of = serverUrl();
-  if (!now && versions?.of === of && versions.latest !== null && Date.now() - versions.at < SERVER_EVERY_MS) return;
+  if (!now && versions?.of === of && (versions.latest !== null || !withLatest) && Date.now() - versions.at < SERVER_EVERY_MS) return;
   const [server, latest] = await Promise.allSettled([
     serverVersion(),
-    json<{ tag_name: string }>(fetch(LATEST)).then((r) => r.tag_name.replace(/^v/, "")),
+    withLatest ? json<{ tag_name: string }>(fetch(LATEST)).then((r) => r.tag_name.replace(/^v/, "")) : null,
   ]);
   for (const r of [server, latest]) if (r.status === "rejected") console.warn("查询服务器版本失败", r.reason);
   // A server without the apps' updates, a development one say, has no version to tell; one left

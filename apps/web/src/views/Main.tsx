@@ -57,7 +57,7 @@ export function Main({ session, onSignedOut }: { session: Session; onSignedOut(n
               <LocalRunner />
               <Updates />
               <WhatsNew outside={outside} />
-              {session.user.is_admin && !inLocalMode() && <ServerUpdates />}
+              {(session.user.is_admin || app) && !inLocalMode() && <ServerVersions admin={session.user.is_admin} />}
             </>
           )}
           <BatchProvider>{inPanel ? <Panel /> : wide ? <Desktop onSignOut={signOut} /> : <Phone onSignOut={signOut} />}</BatchProvider>
@@ -142,33 +142,41 @@ function Updates() {
   return null;
 }
 
-/** The latest version told about for each server, after this prefix and the server's address. */
+/** The latest version told about for each server, and the server's own version told to be older than
+ * the app, after these prefixes and the server's address. */
 const SERVER_TOLD = "nexttodo.serverUpdateTold:";
+const OLDER_TOLD = "nexttodo.olderServerTold:";
 
-/** For the admin: looks for a newer server when the app opens, comes back to the front, and while it
- * runs, and tells once about each (docs/design.md#部署). */
-function ServerUpdates() {
+/** Looks at the server's version when the app opens, comes back to the front, and while it runs. For
+ * its admin, beside the latest release, telling once about each newer (docs/design.md#部署); for
+ * others, in an app, telling once of each server version older than the app, which may turn down what
+ * the app sends (docs/design.md#app-更新). */
+function ServerVersions({ admin }: { admin: boolean }) {
   const { snack } = useFeedback();
   const [, navigate] = useLocation();
   const versions = useServerVersions();
   useEffect(() => {
-    const shown = () => document.visibilityState === "visible" && void checkServer();
-    void checkServer();
+    const ask = () => void checkServer({ latest: admin });
+    const shown = () => document.visibilityState === "visible" && ask();
+    ask();
     document.addEventListener("visibilitychange", shown);
-    const timer = setInterval(() => void checkServer(), SERVER_EVERY_MS);
+    const timer = setInterval(ask, SERVER_EVERY_MS);
     return () => {
       document.removeEventListener("visibilitychange", shown);
       clearInterval(timer);
     };
-  }, []);
+  }, [admin]);
   useEffect(() => {
-    const latest = versions?.latest;
-    if (!versions || !latest || !newer(latest, versions.server)) return;
-    const told = SERVER_TOLD + versions.of;
-    if (localStorage.getItem(told) === latest) return;
-    localStorage.setItem(told, latest);
-    snack({ text: `服务器可升级到 ${latest}`, action: "查看", onAction: () => navigate(settingsUrl("about")), ms: 8000 });
-  }, [versions, snack, navigate]);
+    if (!versions) return;
+    const tell = (key: string, version: string, text: string) => {
+      if (localStorage.getItem(key + versions.of) === version) return;
+      localStorage.setItem(key + versions.of, version);
+      snack(admin ? { text, action: "查看", onAction: () => navigate(settingsUrl("about")), ms: 8000 } : { text, ms: 8000 });
+    };
+    const latest = versions.latest;
+    if (admin && latest && newer(latest, versions.server)) tell(SERVER_TOLD, latest, `服务器可升级到 ${latest}`);
+    if (!admin && newer(import.meta.env.WEB_VERSION, versions.server)) tell(OLDER_TOLD, versions.server, "服务器的版本比 App 旧，有些改动可能保存不了，请让管理员升级服务器");
+  }, [versions, admin, snack, navigate]);
   return null;
 }
 

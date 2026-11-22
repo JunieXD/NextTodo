@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Checks a commit message against AGENTS.md#提交. Turned on by `git config core.hooksPath .githooks`.
+set -euo pipefail
+
+export LC_ALL=C.UTF-8
+# Without the diff `git commit -v` adds below the scissors line.
+message=$(sed '/^# -* >8 -*$/,$d' "$1" | git stripspace --strip-comments)
+subject=$(head -n 1 <<< "$message")
+fail() {
+  echo "提交信息：$1" >&2
+  exit 1
+}
+(( ${#subject} <= 50 )) || fail "标题有 ${#subject} 个字，不能超过 50 个"
+[[ ! $subject =~ ^[A-Za-z]+(\(.*\))?!?: ]] || fail "标题不加 feat: 这类前缀"
+[[ ! $subject =~ [。.]$ ]] || fail "标题结尾不加句号"
+[[ -z $(sed -n 2p <<< "$message") ]] || fail "标题和正文之间空一行"
+if grep -qiE '^(co-authored-by|signed-off-by):|generated with' <<< "$message"; then
+  fail "不加署名行，也不写用什么工具生成"
+fi

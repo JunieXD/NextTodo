@@ -1,36 +1,19 @@
-import { describe, expect, it } from "vitest";
-import { checkDescription, checkJobText, checkNoteText, checkTitle } from "./text";
+import { expect, test } from "vitest";
+import cases from "../../../../fixtures/text.json";
+import { type Checked, checkDescription, checkFileName, checkFolderName, checkJobText, checkNoteText, checkTitle } from "./text";
 
-// Some chat apps, QQ on Android among them, copy control characters in place of their emoji: no one
-// can see them in the box to take them out.
-const pasted = "#第二周党校培训#\n\u0014第一场：\r\n\u0014\u0001时间：11月14日\t15:00\u0085";
+const checks: Record<string, (s: string) => Checked> = {
+  title: checkTitle,
+  folder_name: checkFolderName,
+  description: checkDescription,
+  file_name: checkFileName,
+  job_text: checkJobText,
+  note_text: checkNoteText,
+};
 
-describe("text pasted with control characters", () => {
-  it("goes to AI organizing without them, its lines and tabs kept", () => {
-    expect(checkJobText(pasted)).toEqual({ ok: true, value: "#第二周党校培训#\n第一场：\r\n时间：11月14日\t15:00" });
-  });
-
-  it("is kept as a description without them", () => {
-    expect(checkDescription("清单\u0014\n- [ ] 签到\u007f")).toEqual({ ok: true, value: "清单\n- [ ] 签到" });
-  });
-
-  it("makes a title without them, a tab a space, as cells pasted from a spreadsheet", () => {
-    expect(checkTitle("\u0014交表\t周五\u001b")).toEqual({ ok: true, value: "交表 周五" });
-  });
-
-  it("is empty when it is nothing else", () => {
-    expect(checkJobText("\u0014\u0014\n")).toEqual({ ok: false, error: "内容不能为空" });
-    expect(checkTitle("\u0014")).toEqual({ ok: false, error: "标题不能为空" });
-  });
-});
-
-describe("a note for AI organizing", () => {
-  it("counts characters as the server does, not UTF-16 units: an emoji is one", () => {
-    expect(checkNoteText("😀".repeat(2000))).toEqual({ ok: true, value: "😀".repeat(2000) });
-    expect(checkNoteText("😀".repeat(2001))).toEqual({ ok: false, error: "说明不能超过 2000 个字" });
-  });
-
-  it("is empty, to clear it, when it is only spaces", () => {
-    expect(checkNoteText(" \n\u0014 ")).toEqual({ ok: true, value: "" });
-  });
+// The server takes what the app makes of the text as it is, and turns down the same; it turns down
+// what the app cleans, as `server_error` says (crates/core/tests/text.rs).
+test.each(cases)("text is checked as the fixtures say: $name", (c) => {
+  const input = c.input.repeat(c.times ?? 1);
+  expect(checks[c.kind](input)).toEqual("error" in c ? { ok: false, error: c.error } : { ok: true, value: c.value ?? input });
 });

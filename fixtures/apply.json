@@ -1,0 +1,260 @@
+[
+  {
+    "name": "私人的事项和共享的文件夹里的事项不能相连",
+    "folders": [["装修", null]],
+    "shares": [["装修", "alice", ["bob"]]],
+    "tasks": [["量尺寸", "装修"], ["日记", null]],
+    "ops": [{ "op": "dep.add", "before": "日记", "after": "量尺寸" }],
+    "error": { "code": "invalid", "message": "只能连同一处的事项：私人的事项之间，或同一个共享的文件夹里的事项之间" }
+  },
+  {
+    "name": "两个共享的文件夹里的事项不能相连",
+    "folders": [["装修", null], ["旅行", null]],
+    "shares": [["装修", "alice", ["bob"]], ["旅行", "alice", ["bob"]]],
+    "tasks": [["量尺寸", "装修"], ["订票", "旅行"]],
+    "ops": [{ "op": "dep.add", "before": "量尺寸", "after": "订票" }],
+    "error": { "code": "invalid", "message": "只能连同一处的事项：私人的事项之间，或同一个共享的文件夹里的事项之间" }
+  },
+  {
+    "name": "成员可以连共享的文件夹里的事项",
+    "me": "bob",
+    "folders": [["装修", null], ["水电", "装修"]],
+    "shares": [["装修", "alice", ["bob"]]],
+    "tasks": [["量尺寸", "装修"], ["布线", "水电"]],
+    "ops": [{ "op": "dep.add", "before": "量尺寸", "after": "布线" }],
+    "expect": { "deps": [["量尺寸", "布线"]] }
+  },
+  {
+    "name": "事项不能依赖自己",
+    "tasks": [["日记", null]],
+    "ops": [{ "op": "dep.add", "before": "日记", "after": "日记" }],
+    "error": { "code": "invalid", "message": "事项不能依赖自己" }
+  },
+  {
+    "name": "依赖不能成环",
+    "tasks": [["一", null], ["二", null], ["三", null]],
+    "deps": [["一", "二"], ["二", "三"]],
+    "ops": [{ "op": "dep.add", "before": "三", "after": "一" }],
+    "error": { "code": "cycle", "message": "添加该依赖将形成循环：“三” → “一” → “二” → “三”" }
+  },
+  {
+    "name": "已有的依赖不能再加",
+    "tasks": [["一", null], ["二", null]],
+    "deps": [["一", "二"]],
+    "ops": [{ "op": "dep.add", "before": "一", "after": "二" }],
+    "error": { "code": "conflict", "message": "该依赖已存在" }
+  },
+  {
+    "name": "私人文件夹里的事项不能设负责人",
+    "folders": [["私人", null]],
+    "tasks": [["日记", "私人"]],
+    "ops": [{ "op": "task.update", "id": "日记", "assign": ["alice"] }],
+    "error": { "code": "invalid", "message": "只有共享的文件夹里的事项能设负责人" }
+  },
+  {
+    "name": "负责人须是共享人或成员",
+    "folders": [["装修", null]],
+    "shares": [["装修", "alice", ["bob"]]],
+    "tasks": [["量尺寸", "装修"]],
+    "ops": [{ "op": "task.update", "id": "量尺寸", "assign": ["carol"] }],
+    "error": { "code": "invalid", "message": "负责人须是这个文件夹的共享人或成员" }
+  },
+  {
+    "name": "共享的文件夹里的事项可以交给共享人和成员",
+    "me": "bob",
+    "folders": [["装修", null]],
+    "shares": [["装修", "alice", ["bob"]]],
+    "tasks": [["量尺寸", "装修"]],
+    "ops": [{ "op": "task.update", "id": "量尺寸", "assign": ["bob", "alice"] }],
+    "expect": { "assignees": { "量尺寸": ["alice", "bob"] } }
+  },
+  {
+    "name": "事项移出共享的文件夹，和那里的事项的依赖剪掉，负责人清空",
+    "folders": [["装修", null], ["私人", null]],
+    "shares": [["装修", "alice", ["bob"]]],
+    "tasks": [["量尺寸", "装修", ["bob"]], ["买材料", "装修"]],
+    "deps": [["量尺寸", "买材料"]],
+    "ops": [{ "op": "task.update", "id": "量尺寸", "folder_id": "私人" }],
+    "expect": { "tasks": { "量尺寸": "私人", "买材料": "装修" }, "deps": [], "assignees": {} }
+  },
+  {
+    "name": "事项在共享的文件夹里换个子文件夹，依赖和负责人都留着",
+    "folders": [["装修", null], ["水电", "装修"]],
+    "shares": [["装修", "alice", ["bob"]]],
+    "tasks": [["量尺寸", "装修", ["bob"]], ["买材料", "装修"]],
+    "deps": [["量尺寸", "买材料"]],
+    "ops": [{ "op": "task.update", "id": "量尺寸", "folder_id": "水电" }],
+    "expect": { "tasks": { "量尺寸": "水电", "买材料": "装修" }, "deps": [["量尺寸", "买材料"]], "assignees": { "量尺寸": ["bob"] } }
+  },
+  {
+    "name": "文件夹移进共享的文件夹，里面的事项之间的依赖留着，和外面的剪掉",
+    "folders": [["装修", null], ["私人", null], ["家具", "私人"]],
+    "shares": [["装修", "alice", ["bob"]]],
+    "tasks": [["量客厅", "家具"], ["买沙发", "家具"], ["日记", "私人"]],
+    "deps": [["量客厅", "买沙发"], ["日记", "量客厅"]],
+    "ops": [{ "op": "folder.update", "id": "家具", "parent_id": "装修" }],
+    "expect": { "folders": { "装修": null, "私人": null, "家具": "装修" }, "deps": [["量客厅", "买沙发"]] }
+  },
+  {
+    "name": "文件夹移出共享的文件夹，里面的事项的负责人清空",
+    "folders": [["装修", null], ["水电", "装修"]],
+    "shares": [["装修", "alice", ["bob"]]],
+    "tasks": [["布线", "水电", ["alice", "bob"]], ["量尺寸", "装修", ["bob"]]],
+    "ops": [{ "op": "folder.update", "id": "水电", "parent_id": null }],
+    "expect": { "folders": { "装修": null, "水电": null }, "assignees": { "量尺寸": ["bob"] } }
+  },
+  {
+    "name": "成员把共享的文件夹里的子文件夹移到自己那里",
+    "me": "bob",
+    "folders": [["装修", null], ["水电", "装修"]],
+    "shares": [["装修", "alice", ["bob"]]],
+    "tasks": [["布线", "水电", ["bob"]], ["量尺寸", "装修"]],
+    "deps": [["量尺寸", "布线"]],
+    "ops": [{ "op": "folder.update", "id": "水电", "parent_id": null }],
+    "expect": { "folders": { "装修": null, "水电": null }, "tasks": { "布线": "水电", "量尺寸": "装修" }, "deps": [], "assignees": {} }
+  },
+  {
+    "name": "共享的文件夹不能放进另一个共享的文件夹",
+    "folders": [["装修", null], ["旅行", null]],
+    "shares": [["装修", "alice", ["bob"]], ["旅行", "alice", ["carol"]]],
+    "ops": [{ "op": "folder.update", "id": "旅行", "parent_id": "装修" }],
+    "error": { "code": "invalid", "message": "共享的文件夹不能放进另一个共享的文件夹" }
+  },
+  {
+    "name": "装着共享的文件夹的文件夹也不能放进共享的文件夹",
+    "folders": [["装修", null], ["生活", null], ["旅行", "生活"]],
+    "shares": [["装修", "alice", ["bob"]], ["旅行", "alice", ["carol"]]],
+    "ops": [{ "op": "folder.update", "id": "生活", "parent_id": "装修" }],
+    "error": { "code": "invalid", "message": "共享的文件夹不能放进另一个共享的文件夹" }
+  },
+  {
+    "name": "成员不能给共享的文件夹改名",
+    "me": "bob",
+    "folders": [["装修", null]],
+    "shares": [["装修", "alice", ["bob"]]],
+    "ops": [{ "op": "folder.update", "id": "装修", "name": "新家" }],
+    "error": { "code": "forbidden", "message": "只有共享人能改名、移动或删除共享的文件夹" }
+  },
+  {
+    "name": "成员不能删除共享的文件夹",
+    "me": "bob",
+    "folders": [["装修", null]],
+    "shares": [["装修", "alice", ["bob"]]],
+    "ops": [{ "op": "folder.delete", "id": "装修" }],
+    "error": { "code": "forbidden", "message": "只有共享人能改名、移动或删除共享的文件夹" }
+  },
+  {
+    "name": "同一层级不能有同名的文件夹",
+    "folders": [["装修", null]],
+    "ops": [{ "op": "folder.create", "id": "又一个", "name": "装修" }],
+    "error": { "code": "conflict", "message": "同一层级已有名为“装修”的文件夹" }
+  },
+  {
+    "name": "不能改名成同一层级已有的名字",
+    "folders": [["生活", null], ["杂事", "生活"], ["琐碎", "生活"]],
+    "ops": [{ "op": "folder.update", "id": "琐碎", "name": "杂事" }],
+    "error": { "code": "conflict", "message": "同一层级已有名为“杂事”的文件夹" }
+  },
+  {
+    "name": "不能移到已有同名文件夹的那一层，一批里前面做的也不算数",
+    "folders": [["生活", null], ["工作", null], ["杂事", "生活"]],
+    "ops": [
+      { "op": "folder.create", "id": "新", "name": "杂事", "parent_id": "工作" },
+      { "op": "folder.update", "id": "新", "parent_id": "生活" }
+    ],
+    "error": { "code": "conflict", "message": "同一层级已有名为“杂事”的文件夹" }
+  },
+  {
+    "name": "先删了文件夹，后面的操作被拒，删掉的文件夹也回来",
+    "folders": [["工作", null], ["生活", null]],
+    "tasks": [["周报", "工作"]],
+    "ops": [
+      { "op": "folder.delete", "id": "工作" },
+      { "op": "folder.create", "id": "新", "name": "生活" }
+    ],
+    "error": { "code": "conflict", "message": "同一层级已有名为“生活”的文件夹" }
+  },
+  {
+    "name": "不同层级可以同名",
+    "folders": [["生活", null], ["工作", null], ["杂事", "生活"]],
+    "ops": [{ "op": "folder.create", "id": "新", "name": "杂事", "parent_id": "工作" }],
+    "expect": { "folders": { "生活": null, "工作": null, "杂事": "生活", "新": "工作" } }
+  },
+  {
+    "name": "别人共享给我的文件夹不和我顶层的文件夹算重名",
+    "me": "bob",
+    "folders": [["装修", null]],
+    "shares": [["装修", "alice", ["bob"]]],
+    "ops": [{ "op": "folder.create", "id": "我的", "name": "装修" }],
+    "expect": { "folders": { "装修": null, "我的": null } }
+  },
+  {
+    "name": "文件夹不能移进自身",
+    "folders": [["生活", null]],
+    "ops": [{ "op": "folder.update", "id": "生活", "parent_id": "生活" }],
+    "error": { "code": "folder_cycle", "message": "文件夹不能移入自身或其子文件夹" }
+  },
+  {
+    "name": "文件夹不能移进自己的子文件夹",
+    "folders": [["生活", null], ["杂事", "生活"], ["琐碎", "杂事"]],
+    "ops": [{ "op": "folder.update", "id": "生活", "parent_id": "琐碎" }],
+    "error": { "code": "folder_cycle", "message": "文件夹不能移入自身或其子文件夹" }
+  },
+  {
+    "name": "删除事项连同它的附件",
+    "tasks": [["量尺寸", null]],
+    "attachments": [["图", "量尺寸"]],
+    "ops": [{ "op": "task.delete", "id": "量尺寸" }],
+    "expect": { "tasks": {}, "attachments": {} }
+  },
+  {
+    "name": "附件可以换到另一个事项",
+    "tasks": [["一", null], ["二", null]],
+    "attachments": [["图", "一"]],
+    "ops": [{ "op": "attachment.update", "id": "图", "task_id": "二" }],
+    "expect": { "attachments": { "图": "二" } }
+  },
+  {
+    "name": "事项移进共享的文件夹，附件仍属于它",
+    "folders": [["装修", null]],
+    "shares": [["装修", "alice", ["bob"]]],
+    "tasks": [["日记", null]],
+    "attachments": [["图", "日记"]],
+    "ops": [{ "op": "task.update", "id": "日记", "folder_id": "装修" }],
+    "expect": { "tasks": { "日记": "装修" }, "attachments": { "图": "日记" } }
+  },
+  {
+    "name": "删除文件夹连同里面的事项、附件和 AI 整理请求",
+    "folders": [["生活", null], ["杂事", "生活"]],
+    "tasks": [["日记", "杂事"], ["买菜", null]],
+    "attachments": [["图", "日记"]],
+    "jobs": [["请求", "杂事", "failed"]],
+    "ops": [{ "op": "folder.delete", "id": "生活" }],
+    "expect": { "folders": {}, "tasks": { "买菜": null }, "attachments": {}, "jobs": {} }
+  },
+  {
+    "name": "等待整理的请求不能重试",
+    "jobs": [["请求", null, "waiting"]],
+    "ops": [{ "op": "ai_job.retry", "id": "请求" }],
+    "error": { "code": "conflict", "message": "这条请求已在等待整理" }
+  },
+  {
+    "name": "正在整理的请求不能重试",
+    "jobs": [["请求", null, "running"]],
+    "ops": [{ "op": "ai_job.retry", "id": "请求" }],
+    "error": { "code": "conflict", "message": "正在整理，稍后再改" }
+  },
+  {
+    "name": "失败的请求重试后等待整理",
+    "jobs": [["请求", null, "failed"]],
+    "ops": [{ "op": "ai_job.retry", "id": "请求" }],
+    "expect": { "jobs": { "请求": "waiting" } }
+  },
+  {
+    "name": "删除请求连同它的附件",
+    "jobs": [["请求", null, "failed"]],
+    "attachments": [["图", "请求"]],
+    "ops": [{ "op": "ai_job.delete", "id": "请求" }],
+    "expect": { "jobs": {}, "attachments": {} }
+  }
+]

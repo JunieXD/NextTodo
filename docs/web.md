@@ -157,9 +157,41 @@ ESLint 拦下两种吞掉错误的写法：
 
 用 Vitest：
 
-- `board.ts` 用 `fixtures/board.json` 校验，和 Rust 版结果一致。
+- 和服务端各写一份的规则，用 `fixtures/` 里同一份数据校验两边，见下。
 - `apply.ts` 和 `store.ts`：本地应用、撤销、待发队列和基线的合并、拒绝、重连重发。
 - `reorder.ts`：随机生成的依赖和顺序键下，任意允许的拖动之后，排序结果正好是拖成的顺序。
+
+### 共用的测试数据
+
+两边各写一份的规则，用 `fixtures/` 里的同一份数据校验，改一边忘了另一边时测试失败。每个文件是一组用例，每条用例有中文的 `name`，其余是输入和期望的结果。
+
+| 文件 | 规则 | 网页端 | 服务端 |
+|---|---|---|---|
+| `board.json` | 依赖状态和排序 | `domain/board.ts` | `crates/core/src/board.rs` |
+| `repeat.json` | 重复的下一次 | `domain/repeat.ts` | `crates/core/src/repeat.rs` |
+| `lunar.json` | 农历 | `domain/lunar.ts` | `crates/core/src/lunar.rs` |
+| `undo-done.json` | 撤销完成时是否仍是最后一次 | `domain/apply.ts` | `crates/server/src/mutate.rs` |
+| `ai-pictures.json` | 发给模型的图片 | `attach.ts` | `crates/server/src/ai/organize.rs` |
+| `text.json` | 标题、名称、描述等文本的校验 | `domain/text.ts` | `crates/core/src/model.rs` |
+| `apply.json` | 应用改动：共享的文件夹里的连线和负责人、移进移出时剪掉的依赖、同级重名、文件夹和依赖成环、删除和移动时的附件、AI 整理请求的状态、被拒的一批什么也不留 | `domain/apply.ts` | `crates/server/src/mutate.rs` |
+
+`text.json` 的每条：`kind` 是哪种文本（`title`、`folder_name`、`description`、`file_name`、`job_text`、`note_text`），`input` 是输入，有 `times` 时重复这么多遍；结果是 `error`（错误信息），或者 `value`（网页端整理后的值，和输入一样时不写）。网页端先去掉控制字符、把标题里的制表符换成空格再交给服务端，所以服务端校验：`value` 原样通过；输入本身得到 `server_error`（网页端要整理、服务端直接收到时拒绝的输入才写），没写时得到 `error`。
+
+`apply.json` 的每条是一个用户（`me`，默认 `alice`；另有 `bob`、`carol`）的数据，加上这个用户的一批操作。名字就是 ID：文件夹的名称、事项的标题都是它的 ID；操作里的 ID 和用户也写名字，服务端的测试换成真的 ID。
+
+| 字段 | 内容 |
+|---|---|
+| `folders` | `[文件夹, 上级]`，上级在前 |
+| `shares` | `[文件夹, 共享人, [成员]]` |
+| `tasks` | `[事项, 文件夹]`，或加上 `[负责人]` |
+| `deps` | `[前置, 后续]` |
+| `attachments` | `[附件, 所属的事项或 AI 整理请求]` |
+| `jobs` | `[AI 整理请求, 文件夹, 状态]` |
+| `ops` | 这个用户的一批操作，格式同 [API](api.md#改动) |
+| `error` | 拒绝时的 `{code, message}`；这时还要求数据和操作前完全一样 |
+| `expect` | 做完后这个用户看到的，至少写一项，只比写了的几项：`folders`（文件夹 → 上级）、`tasks`（事项 → 文件夹）、`deps`、`assignees`（有负责人的事项 → 负责人）、`attachments`（附件 → 所属）、`jobs`（请求 → 状态） |
+
+服务端的测试按用例建出数据：共享的文件夹里的东西由共享人建，其余由 `me` 建，请求的状态由服务端的 AI 整理改。
 
 界面在浏览器里实际操作验证，不写冻结样式的测试。改了样式或用了较新的接口，在 Chromium 99 里也试一遍，见[浏览器](#浏览器)。
 

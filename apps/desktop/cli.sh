@@ -14,4 +14,4 @@ else
   ext=
 fi
 mkdir -p apps/desktop/src-tauri/binaries
-cp "target/$triple/release/nexttodo$ext" "apps/desktop/src-tauri/binaries/nexttodo-$triple$ext"
+cp "${CARGO_TARGET_DIR:-target}/$triple/release/nexttodo$ext" "apps/desktop/src-tauri/binaries/nexttodo-$triple$ext"

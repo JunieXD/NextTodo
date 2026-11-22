@@ -151,7 +151,7 @@ Tauri 构建前先运行 `apps/desktop/cli.sh`（`beforeBuildCommand`、`beforeD
 
 ## 测试
 
-提醒时间的计算和 Android 共用，已有 Vitest；交接时保留哪些提醒有 Rust 单元测试（`cd apps/desktop/src-tauri && cargo test`）。外壳在本机实际操作验证：登录、同步、关窗口后继续同步、提醒到点弹出、开机自启开关、退出登录后提醒清空、更新。
+提醒时间的计算和 Android 共用，已有 Vitest；交接时保留哪些提醒有 Rust 单元测试，由根目录的 `check.sh` 运行。外壳在本机实际操作验证：登录、同步、关窗口后继续同步、提醒到点弹出、开机自启开关、退出登录后提醒清空、更新。
 
 Windows 版在 Windows 11 虚拟机（ARM 版，x64 模拟运行）里验证过：登录、同步、关窗口后隐藏、托盘图标和菜单、提醒弹出和点击打开、开机自启开关、只运行一个实例、更新。调试时：
 

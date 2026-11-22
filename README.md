@@ -100,7 +100,7 @@ curl -fsSL https://juniexd.github.io/NextTodo/install.sh | sh
 
 | 做什么 | 命令 |
 |---|---|
-| 跑全部 Rust 检查 | `cargo fmt --check && cargo clippy --all-targets && cargo test` |
+| 跑全部检查（Rust、生成的类型、网页端、桌面 App 的外壳） | `pnpm install --frozen-lockfile && ./check.sh` |
 | 启动开发版服务端（`127.0.0.1:8080`） | `cargo run -p nexttodo-server -- --data .dev-data serve` |
 | 创建管理员 | `cargo run -p nexttodo-server -- --data .dev-data create-admin <用户名>` |
 | 网页端开发（`127.0.0.1:5173`，转发到开发版服务端） | `cd apps/web && pnpm install && pnpm dev` |

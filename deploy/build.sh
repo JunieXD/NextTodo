@@ -25,6 +25,9 @@ for key in NEXTTODO_KEYSTORE NEXTTODO_KEYSTORE_PASSWORD TAURI_SIGNING_PRIVATE_KE
     exit 1
   fi
 done
+pnpm install --frozen-lockfile
+# Before the flags below, which would have the checks build everything again.
+./check.sh
 version=0.1.$(git rev-list --count HEAD)
 # cargo-xwin builds the Windows app with clang-cl and llvm-rc, which Homebrew's llvm has but does not
 # put on the PATH.
@@ -37,7 +40,6 @@ export RUSTFLAGS="--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap
 # The command line, which says this version (`nexttodo --version`).
 export NEXTTODO_VERSION=$version
 
-pnpm install --frozen-lockfile
 (cd apps/web && pnpm exec tsc && pnpm exec vite build)
 # The apps carry this build of the web app, as it is before compressing it for the server.
 (cd apps/web && pnpm exec cap sync android)

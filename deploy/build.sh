@@ -43,7 +43,8 @@ export NEXTTODO_VERSION=$version
 (cd apps/web && pnpm exec tsc && pnpm exec vite build)
 # The apps carry this build of the web app, as it is before compressing it for the server.
 (cd apps/web && pnpm exec cap sync android)
-(cd apps/android && ./gradlew --quiet assembleRelease)
+# A release build keeps no Gradle daemon alive after it: left idling, one holds gigabytes for hours.
+(cd apps/android && ./gradlew --no-daemon --quiet assembleRelease)
 (cd apps/web && pnpm exec cap sync ios)
 apps/ios/build.sh
 # CI keeps the dmg script from laying out the window in Finder, which needs a desktop session.

@@ -102,6 +102,10 @@ enum Command {
     Log {
         #[arg(short = 'n', default_value_t = 10, help = "条数，最多 100")]
         limit: u32,
+        #[arg(long, help = "只列这个批次之前的，用来往前翻")]
+        before: Option<i64>,
+        #[arg(long, help = "只列删除了事项、文件夹或附件的批次")]
+        deleted: bool,
     },
     #[command(about = "AI 整理的请求：等待、正在整理和失败的")]
     Jobs,
@@ -898,7 +902,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Show { task } => read("show", json!({ "task": task }), j),
         Command::Search { query, limit } => read("search", json!({ "query": query.join(" "), "limit": limit }), j),
         Command::Graph { folder, all, mermaid } => read("graph", json!({ "folder": folder, "all": all, "mermaid": mermaid }), j),
-        Command::Log { limit } => read("log", json!({ "limit": limit }), j),
+        Command::Log { limit, before, deleted } => read("log", json!({ "limit": limit, "before": before, "deleted": deleted }), j),
         Command::Jobs => read("jobs", json!({}), j),
         Command::Add { title, folder, description, start, due, remind, repeat, repeat_from, repeat_until, assign, after, before } => write(
             "add",

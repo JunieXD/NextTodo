@@ -1,6 +1,6 @@
 // The settings: a home page that lists the sections, each a page of its own (docs/ui.md#设置).
 
-import { Bell, ChevronRight, Copy, HardDrive, Info, KeyRound, type LucideIcon, Mail, Monitor, Palette, Paperclip, Plus, Sparkles, SquareTerminal } from "lucide-react";
+import { Bell, ChevronRight, Copy, HardDrive, History, Info, KeyRound, type LucideIcon, Mail, Monitor, Palette, Paperclip, Plus, Sparkles, SquareTerminal } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { ApiError, api, app, desktopOs, phoneApp, serverUrl } from "../api/http";
@@ -33,6 +33,7 @@ import { DesktopBackground } from "./DesktopBackground";
 import { RemindSettings } from "./RemindSettings";
 import { DriveSyncDialog, syncLine, useDriveSync } from "./DriveSync";
 import { MAX_KEEP_DONE, setKeepDone, useKeepDone } from "./keep-done";
+import { LogPage } from "./Log";
 import { type SettingsSection, settingsUrl } from "./nav";
 
 /** The link that opens registration with an invite code: on the server, which in the app is not
@@ -42,6 +43,7 @@ const inviteLink = (code: string) => `${serverUrl() || location.origin}/?invite=
 const TITLES: Record<SettingsSection, string> = {
   account: "账号",
   local: "本机模式",
+  log: "改动记录",
   appearance: "外观",
   // iOS has nothing to allow for running in the background (docs/ios.md#设置), the web nothing to run.
   background: app === "ios" || !app ? "提醒" : "提醒和后台",
@@ -56,6 +58,7 @@ export const settingsTitle = (section: SettingsSection) => TITLES[section];
 
 const ICONS: Record<Exclude<SettingsSection, "account">, LucideIcon> = {
   local: HardDrive,
+  log: History,
   appearance: Palette,
   background: Bell,
   ai: Sparkles,
@@ -86,7 +89,7 @@ const ACCENTS: [Accent, string][] = [
 function useSections(): SettingsSection[][] {
   const { user } = useSession();
   const inLocal = local.inLocalMode();
-  const groups: SettingsSection[][] = [[inLocal ? "local" : "account"], ["appearance", "background"]];
+  const groups: SettingsSection[][] = [[inLocal ? "local" : "account", "log"], ["appearance", "background"]];
   groups.push(!inLocal || app === "desktop" ? ["ai", "agent"] : ["ai"]);
   // The server's own: its admin's, or in local mode the user's, who has it alone.
   const server: SettingsSection[] = [...(user.is_admin && !inLocal ? (["invites"] as const) : []), ...(user.is_admin || inLocal ? (["attachments"] as const) : [])];
@@ -175,6 +178,7 @@ export function SettingsPage({ section, onSignOut }: { section: SettingsSection;
   const pages: Record<SettingsSection, () => ReactNode> = {
     account: () => <Account onSignOut={onSignOut} />,
     local: () => <LocalMode />,
+    log: () => <LogPage />,
     appearance: () => <Appearance />,
     background: () => (
       <>

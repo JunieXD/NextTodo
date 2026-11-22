@@ -124,6 +124,11 @@ pub struct GraphArgs {
 pub struct LogArgs {
     #[schemars(description = "条数，默认 10，最多 100", range(min = 1, max = 100))]
     pub limit: Option<u32>,
+    #[schemars(description = "批次号：只列在它之前的，用来往前翻")]
+    pub before: Option<i64>,
+    #[schemars(description = "只列删除了事项、文件夹或附件的批次")]
+    #[serde(default)]
+    pub deleted: bool,
 }
 
 #[derive(Clone, Deserialize, JsonSchema)]

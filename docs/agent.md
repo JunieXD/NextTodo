@@ -37,7 +37,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `show` | `show <事项>` | `task` | 事项详情：负责人、开始、截止、提醒、完成次数和最近的完成记录（重复的事项）、前置、后续、附件（ID、名称、类型、大小）、来源、描述 |
 | `search` | `search <关键词> [--limit 条数]` | `query`、`limit?` | 标题和描述里包含关键词的事项（不区分大小写） |
 | `graph` | `graph [文件夹] [--all] [--mermaid]` | `folder?`、`all?`、`mermaid?` | 文件夹（含子文件夹）里的事项和依赖，按先后顺序；连到外面的事项也列出并注明文件夹 |
-| `log` | `log [-n 条数]` | `limit?` | 最近的改动批次，默认 10，最多 100；包括别的成员在共享的文件夹里做的，写明是谁 |
+| `log` | `log [-n 条数] [--before 批次] [--deleted]` | `limit?`、`before?`、`deleted?` | 最近的改动批次，默认 10，最多 100；包括别的成员在共享的文件夹里做的，写明是谁。`before` 只列这个批次之前的，用来往前翻；`deleted` 只列删除了事项、文件夹或附件的 |
 | `jobs` | `jobs` | | [AI 整理](ai.md)的请求：等待、整理中和失败的，失败的带原因，以及建议待用户确认的整理文件夹；整理完的请求已经变成事项，不在这里 |
 | `attachment` | `download <附件 ID> [-o 路径]` | `id` | 读一个[附件](design.md#附件)：PNG、JPEG、WebP、GIF 图片（5 MB 以内）在 MCP 里作为图片返回，agent 能直接看；UTF-8 的文本文件（`text/` 开头的和 JSON，1 MB 以内）返回内容；其他文件只给名称、类型和大小。命令行的 `download` 不经过这个工具，直接下载文件，存到 `-o` 给的文件或目录，不给时存到当前目录；存到目录时用附件的名称（按[桌面 App](desktop.md#附件)的规则改成能用的文件名）。已有同名文件时报错，不覆盖 |
 | `add` | `add <标题> [--folder] [-d 描述] [--start] [--due] [--remind] [--repeat [--repeat-from] [--repeat-until]] [--assign 用户名…] [--after 编号…] [--before 编号…]` | `title`、`folder?`、`description?`、`start?`、`due?`、`remind?`、`repeat?`、`repeat_from?`、`repeat_until?`、`assign?`、`after?`、`before?` | 添加一个事项；文件夹不存在时一起新建 |
@@ -165,7 +165,7 @@ $ nexttodo graph 工作
 | `show` | 事项加上 `created_at, updated_at`；`description`、`created_by`、`updated_by`（用户名，自己时没有）、`created_via`、`updated_via`（令牌名，没用令牌时没有）、`before: [事项]`、`after: [事项]` 有内容时才有 |
 | `search` | `{tasks: [事项], total}` |
 | `graph` | `{tasks: [事项], edges: [{before, after}]}`，边用编号，别人共享给我的文件夹里的事项写成 `"@alice#42"` |
-| `log` | `[{batch, user, actor, created_at, summary}]`，`user` 是做的人的用户名，自己为 `null`；`actor` 是令牌名，没用令牌为 `null` |
+| `log` | `[{batch, user, actor, source, created_at, summary, undone}]`，`user` 是做的人的用户名，自己为 `null`；`actor` 是令牌名，没用令牌为 `null`；`source` 是文字里写的来源，如“本人（iPhone）”；`undone` 是已经撤销了（撤销它的批次没再被撤销） |
 | `jobs` | `[{id, kind, start, folder, state, updated_at}]`，`kind` 是 `organize` 或 `tidy`，`start` 是原文开头，`state` 是 `waiting`、`running`、`failed`、`ready`，失败的另有 `error` |
 | 写操作 | `{batch, changes: [变化]}`，预览时 `batch` 为 `null`；完成事项后有事项因此可做时另有 `unlocked: [事项]` |
 | `attach`（命令行） | 每个文件一项写操作的数据，按给出的顺序组成一个数组；中途失败时只列已经加上的，再报错，退出码为 1 |
@@ -181,7 +181,7 @@ $ nexttodo graph 工作
 | `folder_moved` | `folder`：原路径；`to`：新路径 |
 | `task_created`、`task_done`、`task_reopened`、`task_deleted` | `task`：编号 |
 | `task_moved` | `task`；`to`：文件夹路径；换了编号时另有 `number`：新编号 |
-| `task_edited` | `task`；`fields`：改了的字段，`title`、`description`、`due`、`assignees`、`order`（在同一文件夹里的顺序） |
+| `task_edited` | `task`；`fields`：改了的字段，`title`、`description`、`start`（开始日期或时刻）、`due`、`assignees`、`order`（在同一文件夹里的顺序） |
 | `member_added`、`member_removed` | `folder`：路径；`user`：用户名 |
 | `person_renamed` | `user`：用户名；`name`：新的显示名 |
 | `dep_added`、`dep_removed` | `before`、`after`：编号 |

@@ -728,6 +728,69 @@ async fn lists_search_and_the_log() {
 }
 
 #[tokio::test]
+async fn the_log_pages_back_finds_deletions_and_says_what_is_undone() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    for title in ["甲", "乙"] {
+        t.ok(&s, "add", json!({ "title": title })).await;
+    }
+    t.ok(&s, "delete", json!({ "tasks": [2] })).await;
+    let log = |args: Value| {
+        let t = &t;
+        let s = s.clone();
+        async move {
+            t.ok(&s, "log", args).await["data"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|b| (b["batch"].as_i64().unwrap(), b["undone"].as_bool().unwrap()))
+                .collect::<Vec<_>>()
+        }
+    };
+    let all = log(json!({})).await;
+    let deleted = all[0].0;
+    t.ok(&s, "undo", json!({ "batch": deleted })).await;
+    let restored = log(json!({ "limit": 1 })).await[0].0;
+    // Undone, by a change not undone itself.
+    assert_eq!(log(json!({ "limit": 2 })).await, [(restored, false), (deleted, true)]);
+    // Undone again, it changes nothing and undoes nothing.
+    t.ok(&s, "undo", json!({ "batch": deleted })).await;
+    t.ok(&s, "undo", json!({ "batch": restored })).await;
+    let latest = log(json!({ "limit": 4 })).await;
+    assert_eq!(latest[2..], [(restored, true), (deleted, false)]);
+    // Those that delete something: the first deletion, and undoing its undoing.
+    assert_eq!(log(json!({ "deleted": true })).await, [latest[0], (deleted, false)]);
+    // Paging back: those before a batch.
+    assert_eq!(log(json!({ "before": deleted })).await, all[1..]);
+    assert!(text(&t.ok(&s, "log", json!({ "limit": 3 })).await).contains("已撤销"));
+
+    // Both undone by one batch.
+    let (first, second) = (common::id(), common::id());
+    for (title, id) in [("甲一", &first), ("甲二", &second)] {
+        t.ok(&s, "edit", json!({ "task": 1, "title": title, "request_id": id })).await;
+    }
+    let r = t.mutate(&s, json!([{ "op": "undo", "mutation": second }, { "op": "undo", "mutation": first }])).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    assert_eq!(log(json!({ "limit": 3 })).await.iter().map(|b| b.1).collect::<Vec<_>>(), [false, true, true]);
+}
+
+#[tokio::test]
+async fn a_start_set_or_undone_reads_as_an_edit() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "写周报" })).await;
+    let start = json!([{ "kind": "task_edited", "task": 1, "fields": ["start"] }]);
+    let mut batch = Value::Null;
+    // The day, then only the time on it.
+    for when in ["2026-12-04", "2026-12-04 09:30"] {
+        let r = t.ok(&s, "edit", json!({ "task": 1, "start": when })).await;
+        assert_eq!(r["data"]["changes"], start, "{when}");
+        batch = r["data"]["batch"].clone();
+    }
+    assert_eq!(t.ok(&s, "undo", json!({ "batch": batch })).await["data"]["changes"], start);
+}
+
+#[tokio::test]
 async fn permissions_idempotency_and_bad_arguments() {
     let t = TestApp::new();
     let s = t.admin().await;

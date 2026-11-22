@@ -515,6 +515,7 @@ fn edited(before: &Task, after: &Task) -> Vec<&'static str> {
     [
         ("title", before.title != after.title),
         ("description", before.description != after.description),
+        ("start", before.start != after.start || before.start_time != after.start_time),
         ("due", before.due != after.due && moved_on(before, after).is_none() && !ended(before, after)),
         ("assignees", before.assignees != after.assignees),
         ("order", before.sort_key != after.sort_key && before.folder_id == after.folder_id),

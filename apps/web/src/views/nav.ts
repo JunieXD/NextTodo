@@ -7,7 +7,7 @@ import type { TaskId } from "../api/types/TaskId";
 import { inPanel, openMain } from "../desktop";
 
 /** A section of the settings, a page of its own (views/Settings.tsx). */
-export type SettingsSection = "account" | "local" | "appearance" | "background" | "ai" | "agent" | "invites" | "attachments" | "about";
+export type SettingsSection = "account" | "local" | "log" | "appearance" | "background" | "ai" | "agent" | "invites" | "attachments" | "about";
 
 export const settingsUrl = (section?: SettingsSection) => (section ? `/settings/${section}` : "/settings");
 

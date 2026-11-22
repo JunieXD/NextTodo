@@ -270,6 +270,9 @@ svg { display: block; flex: none; }
 .note-above b { margin-right: 6px; font-weight: 600; }
 /* Unless it says what to do, to be read in full: why updates failed, say. */
 .folder-main > .folder-sub.full { white-space: normal; }
+/* What a batch of the change log did: two lines, then cut. */
+.folder-main > .log-what { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.log-more { margin: 4px 8px; }
 .chev { color: var(--outline); }
 .done-toggle .row-inner { color: var(--on-surface-variant); font-size: 15px; min-height: 48px; }
 .done-toggle .chev { transition: transform .2s; margin-left: auto; }

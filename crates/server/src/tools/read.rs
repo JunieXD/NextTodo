@@ -9,7 +9,9 @@ use nexttodo_core::calendar;
 use nexttodo_core::model::{Attachment, Completion, Effect, FolderId, Holder, JobState, Share, Task, TaskId};
 use nexttodo_core::ops::Op;
 use rusqlite::{Connection, OptionalExtension, params};
+use serde::Serialize;
 use serde_json::{Value, json};
+use ts_rs::TS;
 
 use super::args::{AgendaArgs, AttachmentArgs, GraphArgs, ListArgs, LogArgs, NextArgs, NoArgs, SearchArgs, ShowArgs};
 use super::text::{self, Names, ago, job_item, mention, status_tag, task_line, task_view, usernames};
@@ -496,11 +498,16 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
         return Err(ApiError::invalid("条数要在 1 到 100 之间", Some("limit".into())));
     }
     let mut stmt = c.prepare(
-        "SELECT m.seq, m.owner_id, m.actor, t.kind, t.name, m.ops, coalesce(d.effects, m.effects), m.created_at
+        "SELECT m.seq, m.owner_id, m.actor, t.kind, t.name, m.ops, coalesce(d.effects, m.effects), m.created_at, m.id
          FROM deliveries d JOIN mutations m ON m.seq = d.seq LEFT JOIN tokens t ON t.id = m.token_id
-         WHERE d.user_id = ?1 AND m.effects IS NOT NULL ORDER BY d.seq DESC LIMIT ?2",
+         WHERE d.user_id = ?1 AND m.effects IS NOT NULL AND d.seq < ?3
+           AND (NOT ?4 OR EXISTS (SELECT 1 FROM json_each(coalesce(d.effects, m.effects)) e
+             WHERE json_extract(e.value, '$.kind') IN ('task', 'folder', 'attachment')
+               AND json_type(e.value, '$.before') = 'object' AND json_type(e.value, '$.after') = 'null'))
+         ORDER BY d.seq DESC LIMIT ?2",
     )?;
     struct Row {
+        id: String,
         seq: i64,
         user: String,
         actor: Option<String>,
@@ -510,7 +517,7 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
         created_at: i64,
     }
     let mut rows = Vec::new();
-    for r in stmt.query_map(params![cx.user, limit], |r| {
+    for r in stmt.query_map(params![cx.user, limit, a.before.unwrap_or(i64::MAX), a.deleted], |r| {
         let kind: Option<String> = r.get(3)?;
         let name: Option<String> = r.get(4)?;
         Ok((
@@ -521,14 +528,25 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
             r.get::<_, String>(5)?,
             r.get::<_, String>(6)?,
             r.get(7)?,
+            r.get(8)?,
         ))
     })? {
-        let (seq, user, actor, device, ops, effects, created_at) = r?;
-        rows.push(Row { seq, user, actor, device, ops: serde_json::from_str(&ops)?, effects: serde_json::from_str(&effects)?, created_at });
+        let (seq, user, actor, device, ops, effects, created_at, id) = r?;
+        rows.push(Row {
+            id,
+            seq,
+            user,
+            actor,
+            device,
+            ops: serde_json::from_str(&ops)?,
+            effects: serde_json::from_str(&effects)?,
+            created_at,
+        });
     }
     if rows.is_empty() {
         return Ok(Output { text: "暂无改动记录。".into(), data: json!([]) });
     }
+    let is_undone = undone(c, cx.user, rows[rows.len() - 1].seq)?;
     let snap = store::snapshot(c, cx.user)?;
     let mut others = text::strangers(&snap, rows.iter().flat_map(|r| &r.effects));
     for r in &rows {
@@ -552,12 +570,54 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
             (_, true) => r.actor.clone().unwrap_or_else(|| "本人".into()),
             (_, false) => source(&names.person(&r.user), r.actor.as_deref()),
         };
-        lines.push(format!("批次 {} · {} · {source}", r.seq, ago(cx.now, r.created_at)));
+        let undone = is_undone(&r.id);
+        lines.push(format!("批次 {} · {} · {source}{}", r.seq, ago(cx.now, r.created_at), if undone { " · 已撤销" } else { "" }));
         lines.push(format!("  {summary}"));
-        let user = (r.user != cx.user).then(|| names.username(&r.user));
-        data.push(json!({ "batch": r.seq, "user": user, "actor": r.actor, "created_at": r.created_at, "summary": summary }));
+        data.push(LogBatch {
+            batch: r.seq,
+            user: (r.user != cx.user).then(|| names.username(&r.user)),
+            actor: r.actor.clone(),
+            source,
+            created_at: r.created_at,
+            summary,
+            undone,
+        });
     }
-    Ok(Output { text: lines.join("\n"), data: data.into() })
+    Ok(Output { text: lines.join("\n"), data: serde_json::to_value(data)? })
+}
+
+/// A batch as `log` gives it (docs/agent.md#输出).
+#[derive(Serialize, TS)]
+#[ts(export)]
+pub struct LogBatch {
+    batch: i64,
+    user: Option<String>,
+    actor: Option<String>,
+    source: String,
+    created_at: i64,
+    summary: String,
+    undone: bool,
+}
+
+/// Whether a change the user sees is undone: by a change that is not undone itself. Only changes
+/// from batch `from` on: what undoes a change comes after it.
+fn undone(c: &Connection, user: &str, from: i64) -> Result<impl Fn(&str) -> bool, ApiError> {
+    // An undo that changed nothing, of a change undone already, undoes nothing.
+    let mut stmt = c.prepare(
+        "SELECT json_extract(o.value, '$.mutation'), m.id
+         FROM deliveries d JOIN mutations m ON m.seq = d.seq, json_each(m.ops) o
+         WHERE d.user_id = ?1 AND d.seq >= ?2 AND json_array_length(m.effects) > 0
+           AND json_extract(o.value, '$.op') = 'undo'",
+    )?;
+    let mut by: HashMap<String, Vec<String>> = HashMap::new();
+    for r in stmt.query_map(params![user, from], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
+        let (undone, undoing) = r?;
+        by.entry(undone).or_default().push(undoing);
+    }
+    fn undone(by: &HashMap<String, Vec<String>>, id: &str) -> bool {
+        by.get(id).is_some_and(|undoing| undoing.iter().any(|u| !undone(by, u)))
+    }
+    Ok(move |id: &str| undone(&by, id))
 }
 
 /// Who made a change: `本人`, the token's name, or someone else by name, with their token's:

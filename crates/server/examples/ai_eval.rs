@@ -55,7 +55,7 @@ struct RawCase {
     id: String,
     /// What it tries, for people.
     #[serde(default)]
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "people read it, the eval does not")]
     note: String,
     /// What the server gives the model: for organizing, local_time, folder, open_tasks and text; for
     /// tidying, what `tidy::prompt` sends, with `request`.

@@ -1,7 +1,6 @@
 //! A test server over an in-memory database, with a clock the test controls.
 
-// Each test file uses a different part of this.
-#![allow(dead_code)]
+#![allow(dead_code, reason = "each test file uses a different part of this")]
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};

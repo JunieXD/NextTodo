@@ -45,8 +45,10 @@ export interface ReminderSettings {
  * (docs/ios.md#结构). */
 interface NextTodoPlugin {
   /** Hands the device the reminders and the daily digests, as JSON in the shapes `deviceReminders`
-   * and `deviceDigests` give; the first time there are some, asks for notifications. */
-  setReminders(o: { reminders: string; digest: string }): Promise<void>;
+   * and `deviceDigests` give, of the local copy as of change `seq`: the device leaves out the times
+   * done on it that the copy may not have yet (docs/android.md#截止提醒). The first time there are
+   * some, asks for notifications. */
+  setReminders(o: { reminders: string; digest: string; seq: number }): Promise<void>;
   /** Takes every reminder away, those put off and those shown too. */
   clearReminders(): Promise<void>;
   reminderSettings(): Promise<ReminderSettings>;
@@ -201,14 +203,14 @@ export function widgetAgenda(board: Board, folders: (FolderId | null)[]) {
   };
 }
 
-/** What the device reminds of (docs/android.md#截止提醒): every reminder, past ones too, with when its
- * time is due, whether the task waits for prerequisites as the reminder comes (a repeating one may
+/** What the device reminds of (docs/android.md#截止提醒): every reminder, past ones too, with its
+ * time should the task repeat, whether the task waits for prerequisites as the reminder comes (a repeating one may
  * hold it up again by then), and for its start, which the device reads by its own clock. */
 export const deviceReminders = (board: Board, hide: boolean, now = Date.now()) =>
   reminders(board, hide).map((r) => ({
     task: r.task.id,
     at: r.at.getTime(),
-    due: r.due.getTime(),
+    occurrence: r.occurrence,
     title: r.title,
     body: r.body,
     // By the clock, not the board's moment, which may lag behind it.
@@ -221,7 +223,7 @@ export const deviceReminders = (board: Board, hide: boolean, now = Date.now()) =
  * hide what they are of: the device says them, as `digestText` does, of what is left by then. */
 export const deviceDigests = (board: Board, { on, time }: Digest, hide: boolean) => ({
   hide,
-  list: on ? digests(board, time).map((d) => ({ at: d.at.getTime(), tasks: d.tasks.map((t) => ({ ...t, due: t.due.getTime() })) })) : [],
+  list: on ? digests(board, time).map((d) => ({ at: d.at.getTime(), tasks: d.tasks })) : [],
 });
 
 /** What the system calendar shows when it is written to: the open tasks with a deadline in `folders`
@@ -278,7 +280,7 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
       await NextTodo.updateAgenda({ agenda: JSON.stringify(widgetAgenda(board, listed)), seq });
     }
     const hide = hideReminders();
-    await NextTodo.setReminders({ reminders: JSON.stringify(deviceReminders(board, hide)), digest: JSON.stringify(deviceDigests(board, dailyDigest(), hide)) });
+    await NextTodo.setReminders({ reminders: JSON.stringify(deviceReminders(board, hide)), digest: JSON.stringify(deviceDigests(board, dailyDigest(), hide)), seq });
   };
   const calendar = () => NextTodo.updateCalendar({ events: JSON.stringify(calendarEvents(store.getView().board, calendarFolders(user))) });
   const takeOver = async () => {

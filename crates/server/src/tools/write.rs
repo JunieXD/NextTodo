@@ -396,6 +396,7 @@ pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
         sort_key: None,
         done: None,
         today: None,
+        occurrence: None,
         assign,
         unassign,
     };
@@ -550,6 +551,7 @@ fn set_done(b: &Board, tasks: Vec<TaskRef>, done: bool, today: Option<Date>, end
                 sort_key: None,
                 done: Some(done),
                 today: today.clone(),
+                occurrence: None,
                 assign: Vec::new(),
                 unassign: Vec::new(),
             });
@@ -599,6 +601,7 @@ pub fn skip(w: &WriteCx, a: TasksArgs) -> Result<Write, ApiError> {
             sort_key: None,
             done: None,
             today: None,
+            occurrence: None,
             assign: Vec::new(),
             unassign: Vec::new(),
         });
@@ -687,6 +690,7 @@ pub fn move_to(w: &WriteCx, a: MoveArgs) -> Result<Write, ApiError> {
             sort_key: None,
             done: None,
             today: None,
+            occurrence: None,
             assign: Vec::new(),
             unassign: Vec::new(),
         });

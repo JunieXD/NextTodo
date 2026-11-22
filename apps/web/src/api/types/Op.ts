@@ -15,6 +15,7 @@ import type { LocalTime } from "./LocalTime";
 import type { MediaType } from "./MediaType";
 import type { MutationId } from "./MutationId";
 import type { Name } from "./Name";
+import type { Occurrence } from "./Occurrence";
 import type { SortKey } from "./SortKey";
 import type { TaskId } from "./TaskId";
 import type { Time } from "./Time";
@@ -58,6 +59,11 @@ due?: Due | null, sort_key?: SortKey, done?: boolean,
  * from it, so it must be given for one.
  */
 today?: Date, 
+/**
+ * The time of a repeating task it marks done, as a list on a phone showed it: should that
+ * time be done already, or gone, it is not done again (docs/api.md#改动).
+ */
+occurrence?: Occurrence, 
 /**
  * User ids to add to its assignees and to take off them, those it has then: two people
  * assigning at once both count.

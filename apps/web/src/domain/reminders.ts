@@ -1,15 +1,18 @@
 // When to remind of deadlines (docs/design.md#提醒): each reminder of a task, at the time it says. The
 // phone apps hand these to the device; the desktop app shows them while it runs.
 
+import type { Occurrence } from "../api/types/Occurrence";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "./board";
-import { day, deadline, formatDue, isoDate, remindAt } from "./dates";
+import { day, formatDue, isoDate, remindAt } from "./dates";
+import { occurrence } from "./repeat";
 
 export interface Reminder {
   at: Date;
-  /** When the time reminded of is due: done from one reminder, the others of that time go too. */
-  due: Date;
+  /** The time reminded of, should the task repeat: done from one reminder, the others of that time
+   * go too, and a time done already is not done again (docs/api.md#改动). */
+  occurrence?: Occurrence;
   title: string;
   body: string;
   task: Task;
@@ -28,7 +31,7 @@ export function remindersOf(board: Board, t: Task, hide: boolean): Reminder[] {
   return [...new Set(due.reminders.map((r) => remindAt(due, r).getTime()))].map((ms) => {
     const at = new Date(ms);
     const says = hide ? { title: HIDDEN, body: "" } : { title: t.title, body: `${formatDue(due, at)}${due.time ? " " : ""}截止${where}${times}` };
-    return { at, due: deadline(due), task: t, ...says };
+    return { at, occurrence: occurrence(t), task: t, ...says };
   });
 }
 
@@ -37,11 +40,11 @@ export function reminders(board: Board, hide: boolean): Reminder[] {
   return board.snapshot.tasks.flatMap((t) => remindersOf(board, t, hide)).sort((a, b) => a.at.getTime() - b.at.getTime());
 }
 
-/** A daily digest (docs/design.md#提醒): of a day, the tasks left to do by its end, each with when its
- * time is due, as reminders have it, for the device to take out one done there. */
+/** A daily digest (docs/design.md#提醒): of a day, the tasks left to do by its end, each with its
+ * time, as reminders have it, for the device to take out one done there. */
 export interface DailyDigest {
   at: Date;
-  tasks: { task: TaskId; due: Date; title: string }[];
+  tasks: { task: TaskId; occurrence?: Occurrence; title: string }[];
 }
 
 /** How many days from today the digests are reckoned for: the app may not run in between. */
@@ -53,12 +56,12 @@ export const DIGEST_DAYS = 7;
 export function digests(board: Board, time: string): DailyDigest[] {
   const open = board
     .byDue(board.snapshot.tasks.filter((t) => t.done_at === null && board.mine(t)))
-    .flatMap((t) => (t.due ? [{ task: t.id, due: deadline(t.due), title: t.title, date: t.due.date }] : []));
+    .flatMap((t) => (t.due ? [{ task: t.id, occurrence: occurrence(t), title: t.title, date: t.due.date }] : []));
   const today = day(board.now.today);
   const [h, m] = time.split(":").map(Number);
   return Array.from({ length: DIGEST_DAYS + 1 }, (_, i) => new Date(today.getFullYear(), today.getMonth(), today.getDate() + i - 1, h, m)).flatMap((at) => {
     const left = open.filter((t) => t.date <= isoDate(at));
-    return left.length ? [{ at, tasks: left.map(({ task, due, title }) => ({ task, due, title })) }] : [];
+    return left.length ? [{ at, tasks: left.map(({ task, occurrence, title }) => ({ task, occurrence, title })) }] : [];
   });
 }
 

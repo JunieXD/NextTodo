@@ -17,8 +17,10 @@ import androidx.compose.ui.graphics.toArgb
 import cn.juniexd.nexttodo.Channels
 import cn.juniexd.nexttodo.Due
 import cn.juniexd.nexttodo.MainActivity
+import cn.juniexd.nexttodo.Occurrence
 import cn.juniexd.nexttodo.Palette
 import cn.juniexd.nexttodo.R
+import cn.juniexd.nexttodo.covers
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
@@ -26,13 +28,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** A task's reminder, as the app hands them over (`apps/web/src/mobile.ts`): at `at`, in
- * milliseconds; `due`, when the time it is of is due, the same for a task's reminders of one time;
- * `waiting`, how many of its prerequisites are not done; `start` and `startTime`, when it starts, at
- * the start of the day without a time. */
+ * milliseconds; `occurrence`, the time it is of should the task repeat, the same for a task's reminders
+ * of one time; `waiting`, how many of its prerequisites are not done; `start` and `startTime`, when it
+ * starts, at the start of the day without a time. */
 data class Reminder(
     val task: String,
     val at: Long,
-    val due: Long,
+    val occurrence: Occurrence?,
     val title: String,
     val body: String,
     val waiting: Int,
@@ -64,8 +66,7 @@ data class Reminder(
         fun from(o: JSONObject) = Reminder(
             o.getString("task"),
             o.getLong("at"),
-            // Kept by a version before several reminders a task, without it: each a time of its own.
-            o.optLong("due", o.getLong("at")),
+            Occurrence.from(o.optJSONObject("occurrence")),
             o.getString("title"),
             o.getString("body"),
             o.getInt("waiting"),
@@ -104,12 +105,17 @@ object Reminders {
      * before, in the notification and on the card. */
     private const val SHOWN = "shown"
 
-    /** The daily digests handed over, as JSON `{hide, list: [{at, tasks: [{task, due, title}]}]}`, less
+    /** The daily digests handed over, as JSON `{hide, list: [{at, tasks: [{task, occurrence, title}]}]}`, less
      * the tasks done here since (docs/android.md#截止提醒). */
     private const val DIGEST = "digest"
 
     /** The daily digest's notification: one at a time, the next day's in place of the one before. */
     private const val DIGEST_TAG = "digest"
+
+    /** The times of tasks done here, as JSON `[{id, task, occurrence, seq}]`: `id` the change, `seq`
+     * what it became, none while not sent. A list handed over behind one leaves it out
+     * (docs/android.md#截止提醒). */
+    private const val DONE = "done"
 
     /** Whether the app has asked for notifications, which it does once. */
     private const val ASKED = "asked"
@@ -118,15 +124,15 @@ object Reminders {
      * the task is due. */
     private const val TASK = "nexttodo.task"
     private const val AT = "nexttodo.at"
-    private const val DUE = "nexttodo.due"
+    private const val OCCURRENCE = "nexttodo.occurrence"
 
     /** And whether it has “完成”. */
     private const val READY = "nexttodo.ready"
 
-    /** A daily digest: at `at`, of `tasks`, each with when its time is due, as a reminder has it. */
+    /** A daily digest: at `at`, of `tasks`, each with its time, as a reminder has it. */
     private class Digest(val at: Long, val tasks: List<Left>)
 
-    private class Left(val task: String, val due: Long, val title: String)
+    private class Left(val task: String, val occurrence: Occurrence?, val title: String)
 
     private fun digest(context: Context) = JSONObject(prefs(context).getString(DIGEST, null) ?: """{"hide":false,"list":[]}""")
 
@@ -135,13 +141,13 @@ object Reminders {
         return (0 until list.length()).map { i ->
             val d = list.getJSONObject(i)
             val tasks = d.getJSONArray("tasks")
-            Digest(d.getLong("at"), (0 until tasks.length()).map { tasks.getJSONObject(it).run { Left(getString("task"), getLong("due"), getString("title")) } })
+            Digest(d.getLong("at"), (0 until tasks.length()).map { tasks.getJSONObject(it).run { Left(getString("task"), Occurrence.from(optJSONObject("occurrence")), getString("title")) } })
         }
     }
 
     private fun keepDigests(context: Context, list: List<Digest>) {
         val json = list.map { d ->
-            JSONObject().put("at", d.at).put("tasks", JSONArray(d.tasks.map { JSONObject().put("task", it.task).put("due", it.due).put("title", it.title) }))
+            JSONObject().put("at", d.at).put("tasks", JSONArray(d.tasks.map { JSONObject().put("task", it.task).put("occurrence", it.occurrence?.json()).put("title", it.title) }))
         }
         prefs(context).edit().putString(DIGEST, digest(context).put("list", JSONArray(json)).toString()).commit()
     }
@@ -164,10 +170,24 @@ object Reminders {
     fun notified(context: Context, task: String) = context.getSystemService(NotificationManager::class.java).activeNotifications
         .find { it.notification.extras.getString(TASK) == task }?.notification?.extras?.getLong(AT)
 
-    /** When the time `task`'s reminders, and the daily digests listing it, are of is due, to know them by
-     * once it is done. */
-    fun due(context: Context, task: String) =
-        list(context).find { it.task == task }?.due ?: digests(context).firstNotNullOfOrNull { d -> d.tasks.find { it.task == task }?.due }
+    private fun marks(context: Context) = JSONArray(prefs(context).getString(DONE, "[]")).let { a -> (0 until a.length()).map(a::getJSONObject) }
+
+    private fun mark(context: Context, marks: List<JSONObject>) {
+        prefs(context).edit().putString(DONE, JSONArray(marks).toString()).commit()
+    }
+
+    /** `task`'s time `occurrence`, every time of it without one, is being done here, by change `id`. */
+    @Synchronized
+    fun completing(context: Context, id: String, task: String, occurrence: Occurrence?) =
+        mark(context, marks(context) + JSONObject().put("id", id).put("task", task).put("occurrence", occurrence?.json()))
+
+    /** Change `id` became change `seq` on the server. */
+    @Synchronized
+    fun sent(context: Context, id: String, seq: Long) = mark(context, marks(context).onEach { if (it.getString("id") == id) it.put("seq", seq) })
+
+    /** Change `id` was turned down, or gone with the user's others: its time is to be done still. */
+    @Synchronized
+    fun unmark(context: Context, id: String) = mark(context, marks(context).filter { it.getString("id") != id })
 
     private fun snoozed(context: Context) = JSONObject(prefs(context).getString(SNOOZED, "{}"))
 
@@ -189,21 +209,29 @@ object Reminders {
 
     private fun JSONObject.entries() = keys().asSequence().toList().map { it to getJSONObject(it) }
 
-    /** Keeps `list` and `digest` from now on, as JSON, and shows what came due of what was scheduled
-     * already: the alarm may have come late, or been held back. One just set in the app, already past,
-     * is not shown. Returns the reminders for the card, as `show` does. */
+    /** Keeps `list` and `digest`, as JSON of the app's copy as of change `seq`, from now on, and shows
+     * what came due of what was scheduled already: the alarm may have come late, or been held back. One
+     * just set in the app, already past, is not shown. The times done here that the copy may not have
+     * yet, sent after `seq` or not sent, are left out. Returns the reminders for the card, as `show` does. */
     @Synchronized
-    fun update(context: Context, list: String, digest: String): List<Reminder> {
+    fun update(context: Context, list: String, digest: String, seq: Long?): List<Reminder> {
         val scheduled = times(context).map { (r, at) -> r.task to at }.toSet()
         val digested = digests(context).map { it.at }.toSet()
+        // Without `seq`, from a build of the web app before it, the copy may have any sent: only those
+        // not sent are left out, lest one reopened since stay hidden.
+        val ahead = marks(context).filter { !it.has("seq") || (seq != null && it.getLong("seq") > seq) }
+        mark(context, ahead)
+        val done = ahead.map { it.getString("task") to Occurrence.from(it.optJSONObject("occurrence")) }
+        val left = { task: String, o: Occurrence? -> done.none { (t, d) -> t == task && d.covers(o) } }
         prefs(context).edit().putString(DIGEST, digest).commit()
+        keepDigests(context, digests(context).map { d -> Digest(d.at, d.tasks.filter { left(it.task, it.occurrence) }) }.filter { it.tasks.isNotEmpty() })
         // Hidden since one was shown: it may list titles still.
         if (JSONObject(digest).getBoolean("hide")) {
             val manager = context.getSystemService(NotificationManager::class.java)
             val shown = manager.activeNotifications.find { it.tag == DIGEST_TAG }
             if (!shown?.notification?.extras?.getCharSequence(Notification.EXTRA_TEXT).isNullOrEmpty()) manager.cancel(DIGEST_TAG, 0)
         }
-        keep(context, list)
+        keep(context, JSONArray(JSONArray(list).let { a -> (0 until a.length()).map { Reminder.from(a.getJSONObject(it)) } }.filter { left(it.task, it.occurrence) }.map(::json)).toString())
         return show(context, { r, at -> (r.task to at) in scheduled }, { it.at in digested })
     }
 
@@ -227,7 +255,7 @@ object Reminders {
             val r = wanted[task to extras.getLong(AT)]
             // Of a time done since, should the next have a reminder at the same moment. Shown by an
             // earlier version, without it: of the time it is now.
-            if (r == null || extras.getLong(DUE, r.due) != r.due) {
+            if (r == null || !occurrence(extras).covers(r.occurrence)) {
                 manager.cancel(shown.tag, shown.id)
             } else if (shown.tag != task) {
                 // Shown by an earlier version, by the task's number: again by its id, without a sound.
@@ -303,22 +331,27 @@ object Reminders {
         schedule(context)
     }
 
-    /** `task` is done, its time due at `due`: those reminders go, shown or not, put off or not, and the
-     * daily digests to come no longer list it. Those the app has handed over since, of a repeating
-     * task's next time, stay. */
+    /** `task` is done, its time `occurrence`, every time of it without one: those reminders go, shown or
+     * not, put off or not, and the daily digests to come no longer list it. Those the app has handed
+     * over since, of a repeating task's next time, stay. */
     @Synchronized
-    fun completed(context: Context, task: String, due: Long) {
-        keepDigests(context, digests(context).map { d -> Digest(d.at, d.tasks.filter { it.task != task || it.due != due }) }.filter { it.tasks.isNotEmpty() })
-        keep(context, JSONArray(list(context).filter { it.task != task || it.due != due }.map(::json)).toString())
+    fun completed(context: Context, task: String, occurrence: Occurrence?) {
+        val left = { t: String, o: Occurrence? -> t != task || !occurrence.covers(o) }
+        keepDigests(context, digests(context).map { d -> Digest(d.at, d.tasks.filter { left(it.task, it.occurrence) }) }.filter { it.tasks.isNotEmpty() })
+        keep(context, JSONArray(list(context).filter { left(it.task, it.occurrence) }.map(::json)).toString())
     }
 
-    private fun json(r: Reminder) = JSONObject().put("task", r.task).put("at", r.at).put("due", r.due).put("title", r.title)
+    /** The time a reminder's notification is of; none shown by an earlier version, nor of a task that
+     * does not repeat. */
+    private fun occurrence(extras: Bundle) = extras.getString(OCCURRENCE)?.let { Occurrence.from(JSONObject(it)) }
+
+    private fun json(r: Reminder) = JSONObject().put("task", r.task).put("at", r.at).put("occurrence", r.occurrence?.json()).put("title", r.title)
         .put("body", r.body).put("waiting", r.waiting).put("start", r.start?.toString()).put("start_time", r.startTime?.toString())
 
     /** Signed out, or the data is gone: no reminders, none put off, none shown. */
     @Synchronized
     fun clear(context: Context) {
-        prefs(context).edit().remove(LIST).remove(SNOOZED).remove(LOCKED).remove(SHOWN).remove(DIGEST).commit()
+        prefs(context).edit().remove(LIST).remove(SNOOZED).remove(LOCKED).remove(SHOWN).remove(DIGEST).remove(DONE).commit()
         schedule(context)
         withdraw(context) { true }
         context.getSystemService(NotificationManager::class.java).cancel(DIGEST_TAG, 0)
@@ -426,10 +459,10 @@ object Reminders {
             .setAutoCancel(true)
             .setOnlyAlertOnce(again)
         val ready = r.ready(LocalDateTime.now())
-        builder.addExtras(Bundle().apply { putString(TASK, r.task); putLong(AT, r.at); putLong(DUE, r.due); putBoolean(READY, ready) })
+        builder.addExtras(Bundle().apply { putString(TASK, r.task); putLong(AT, r.at); putString(OCCURRENCE, r.occurrence?.json()?.toString()); putBoolean(READY, ready) })
         if (ready) {
             val done = Intent(context, ReminderReceiver::class.java).setAction(ReminderReceiver.DONE).setData(uri)
-                .putExtra(ReminderReceiver.TITLE, r.title)
+                .putExtra(ReminderReceiver.TITLE, r.title).putExtra(ReminderReceiver.OCCURRENCE, r.occurrence?.json()?.toString())
             builder.addAction(Notification.Action.Builder(null, "完成", PendingIntent.getBroadcast(context, 0, done, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)).build())
         }
         val snooze = Intent(context, SnoozeActivity::class.java).setData(uri)

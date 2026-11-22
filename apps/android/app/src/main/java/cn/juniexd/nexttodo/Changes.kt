@@ -63,29 +63,33 @@ object Changes {
     private fun JSONArray.objects() = (0 until length()).map(::getJSONObject)
 
     /** Marks `task`, titled `title`, done; a repeating one moves on from today here. Done or kept, its
-     * reminders of this time go, and the widget stops showing it. */
-    suspend fun complete(context: Context, task: String, title: String): Outcome {
+     * reminders of this time go, and the widget stops showing it. A repeating one's time is
+     * `occurrence`, as where it was done showed it: should that be behind, the time done already, the
+     * server does not do the next (docs/android.md#原生发出的改动). */
+    suspend fun complete(context: Context, task: String, title: String, occurrence: Occurrence?): Outcome {
         val token = Server.token(context)
-        // This time's: the app may hand over the next time's by the time the server answers.
-        val due = Reminders.due(context, task)
         val op = JSONObject().put("op", "task.update").put("id", task).put("done", true).put("today", LocalDate.now().toString())
-        val outcome = submit(context, op, "完成“$title”")
+            .put("occurrence", occurrence?.json())
+        // Before it may be sent: a list handed over behind it leaves that time out.
+        val outcome = submit(context, op, "完成“$title”") { id -> Reminders.completing(context, id, task, occurrence) }
         // Signed in again meanwhile, maybe as someone else, whose reminders these are.
         if (outcome is Outcome.Refused || token == null || Server.token(context) != token) return outcome
-        if (due != null) Reminders.completed(context, task, due)
+        Reminders.completed(context, task, occurrence)
         return outcome
     }
 
-    /** Submits `op` as a change, after those kept from before. */
-    private suspend fun submit(context: Context, op: JSONObject, what: String): Outcome = sending.withLock {
+    /** Submits `op` as a change, after those kept from before; `noted` is told its id once it is kept,
+     * before it is sent. */
+    private suspend fun submit(context: Context, op: JSONObject, what: String, noted: (id: String) -> Unit): Outcome = sending.withLock {
         val token = Server.token(context)
         val id = Server.uuid7()
         val change = JSONObject().put("id", id).put("ops", JSONArray().put(op)).put("what", what).put("user", prefs(context).getString(USER, null))
         keep(context, kept(context).objects() + change)
+        noted(id)
         val (outcome, offline) = send(context, id)
         // A task it marks done goes from the widget until it is sent; hidden here, in turn, so that
         // the change it becomes, once sent from elsewhere, comes after.
-        if (outcome is Outcome.Kept && token != null) for (task in completed(change)) Widget.hide(context, task, token, null)
+        if (outcome is Outcome.Kept && token != null) for ((task, occurrence) in completed(change)) Widget.hide(context, task, occurrence, token, null)
         if (offline) retry(context)
         outcome
     }
@@ -101,7 +105,8 @@ object Changes {
                 val seq = Server.mutate(context, token, id, change.getJSONArray("ops"))
                 // Before it goes from the queue: stopped in between, it is sent again, and the
                 // server gives the same `seq`.
-                for (task in completed(change)) Widget.hide(context, task, token, seq)
+                for ((task, occurrence) in completed(change)) Widget.hide(context, task, occurrence, token, seq)
+                Reminders.sent(context, id, seq)
                 keep(context, kept(context).objects().filter { it.getString("id") != id })
                 if (id == mine) outcome = Outcome.Sent(seq)
             } catch (e: HttpError) {
@@ -112,6 +117,8 @@ object Changes {
                 }
                 // What may pass: sent again later.
                 if (e.status == 408 || e.status == 429 || e.status >= 500) return outcome to true
+                // Before it goes from the queue: stopped in between, nothing is left out that is not sent.
+                Reminders.unmark(context, id)
                 keep(context, kept(context).objects().filter { it.getString("id") != id })
                 val message = forUser(change.getString("what"), e)
                 if (id == mine) outcome = Outcome.Refused(message) else refused(context, change, message)
@@ -122,14 +129,14 @@ object Changes {
         return outcome to false
     }
 
-    /** The tasks a change marks done. */
-    private fun completed(change: JSONObject) =
-        change.getJSONArray("ops").objects().filter { it.getString("op") == "task.update" && it.optBoolean("done") }.map { it.getString("id") }
+    /** The tasks a change marks done, each with the time it does should the task repeat. */
+    private fun completed(change: JSONObject) = change.getJSONArray("ops").objects().filter { it.getString("op") == "task.update" && it.optBoolean("done") }
+        .map { it.getString("id") to Occurrence.from(it.optJSONObject("occurrence")) }
 
     /** The server turned down a change kept from before: it goes, and a notification says which and
      * why. A task it marked done shows again. */
     private suspend fun refused(context: Context, change: JSONObject, message: String) {
-        for (task in completed(change)) Widget.unhide(context, task)
+        for ((task, _) in completed(change)) Widget.unhide(context, task)
         val open = PendingIntent.getActivity(context, 0, Intent(Intent.ACTION_VIEW, Uri.parse("nexttodo://home"), context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val notification = Notification.Builder(context, Channels.REFUSED)
             .setSmallIcon(R.drawable.ic_stat_nexttodo)

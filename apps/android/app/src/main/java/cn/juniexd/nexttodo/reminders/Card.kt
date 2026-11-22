@@ -169,7 +169,7 @@ object Card {
         now = LocalDateTime.now()
         for (i in queue.indices.reversed()) {
             // Of the same time: the next may have a reminder at the same moment.
-            val r = Reminders.shown(context, queue[i].task, queue[i].at)?.takeIf { it.due == queue[i].due }
+            val r = Reminders.shown(context, queue[i].task, queue[i].at)?.takeIf { it.occurrence == queue[i].occurrence }
             if (r != null) queue[i] = r else if (queue[i].task != completing) queue.removeAt(i)
         }
         if (queue.isEmpty()) close()
@@ -190,7 +190,7 @@ object Card {
     fun complete(context: Context, r: Reminder) {
         Reminders.withdraw(context, r.task)
         background.launch {
-            val outcome = Changes.complete(context, r.task, r.title)
+            val outcome = Changes.complete(context, r.task, r.title, r.occurrence)
             if (outcome is Changes.Outcome.Refused) withContext(Dispatchers.Main) { Toast.makeText(context, outcome.message, Toast.LENGTH_LONG).show() }
         }
     }
@@ -234,7 +234,7 @@ class SnoozeActivity : ComponentActivity() {
         // shown as it is now otherwise.
         unwatch = Reminders.watch(this) {
             now = LocalDateTime.now()
-            val current = Reminders.shown(this, r.task, r.at)?.takeIf { it.due == r.due }
+            val current = Reminders.shown(this, r.task, r.at)?.takeIf { it.occurrence == r.occurrence }
             if (current != null) r = current else if (!completing) finish()
         }
         setContent {

@@ -77,7 +77,8 @@ class NextTodoPlugin : Plugin() {
     fun setReminders(call: PluginCall) {
         val reminders = call.getString("reminders")!!
         val digest = call.getString("digest")!!
-        val card = Reminders.update(context, reminders, digest)
+        // None from a build of the web app before it, which an older server has.
+        val card = Reminders.update(context, reminders, digest, call.data.takeIf { it.has("seq") }?.getLong("seq"))
         Handler(Looper.getMainLooper()).post { Card.show(context, card) }
         if ((reminders != "[]" || JSONObject(digest).getJSONArray("list").length() > 0) && mayAsk() && Reminders.ask(context)) requestPermissionForAlias("notifications", call, "asked") else call.resolve()
     }

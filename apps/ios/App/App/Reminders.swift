@@ -1,5 +1,20 @@
 import UserNotifications
 
+/// A time of a repeating task, as `Occurrence` in `apps/web/src/api/types`: the one due on `due` after
+/// it was done `completions` times (docs/api.md#改动).
+struct Occurrence: Codable, Equatable {
+    let due: String
+    let completions: Int
+
+    /// As JSON has it, in a change or a notification.
+    var json: [String: Any] { ["due": due, "completions": completions] }
+}
+
+extension Optional where Wrapped == Occurrence {
+    /// Whether a time marked `self`, every time of the task without one, is time `o`.
+    func covers(_ o: Occurrence?) -> Bool { self == nil || self == o }
+}
+
 /// Deadline reminders (docs/ios.md#截止提醒): the list the page hands over, scheduled with the system,
 /// which shows each when due, the app running or not. One thing at a time, on `queue`.
 enum Reminders {
@@ -13,6 +28,8 @@ enum Reminders {
     private static let SNOOZED = "reminders.snoozed"
     /// The daily digests last handed over, less the tasks done here since, as JSON.
     private static let DIGESTS = "reminders.digests"
+    /// The times of tasks done here, as JSON of `[Done]`. A list handed over behind one leaves it out.
+    private static let DONE_HERE = "reminders.done"
     /// The most the system keeps scheduled for an app.
     private static let MOST = 64
 
@@ -25,13 +42,13 @@ enum Reminders {
     /// How long a reminder can be put off by: the presets of Android's.
     static let SNOOZES = [(15, "15 分钟后提醒"), (60, "1 小时后提醒"), (180, "3 小时后提醒")]
 
-    /// A reminder as `apps/web/src/mobile.ts` gives it: `at` in ms; `due`, when the time it is of is
-    /// due, the same for a task's reminders of one time; `waiting`, how many of its prerequisites are
-    /// not done.
+    /// A reminder as `apps/web/src/mobile.ts` gives it: `at` in ms; `occurrence`, the time it is of
+    /// should the task repeat, the same for a task's reminders of one time; `waiting`, how many of its
+    /// prerequisites are not done.
     private struct Reminder: Codable {
         let task: String
         let at: Int64
-        let due: Int64
+        let occurrence: Occurrence?
         let title: String
         let body: String
         let waiting: Int
@@ -45,16 +62,52 @@ enum Reminders {
         var list: [Digest]
     }
 
-    /// A daily digest: at `at`, in ms, of `tasks`, each with when its time is due, as a reminder has it.
+    /// A daily digest: at `at`, in ms, of `tasks`, each with its time, as a reminder has it.
     private struct Digest: Codable {
         struct Left: Codable {
             let task: String
-            let due: Int64
+            let occurrence: Occurrence?
             let title: String
         }
 
         let at: Int64
         var tasks: [Left]
+    }
+
+    /// `task`'s time `occurrence`, every time of it without one, done here by change `id`, which became
+    /// change `seq` on the server; none while not sent (docs/android.md#截止提醒).
+    private struct Done: Codable {
+        let id: String
+        let task: String
+        let occurrence: Occurrence?
+        var seq: Int64?
+    }
+
+    private static var doneHere: [Done] {
+        get { UserDefaults.standard.data(forKey: DONE_HERE).map { try! JSONDecoder().decode([Done].self, from: $0) } ?? [] }
+        set { UserDefaults.standard.set(try! JSONEncoder().encode(newValue), forKey: DONE_HERE) }
+    }
+
+    /// `task`'s time `occurrence` is being done here, by change `id`.
+    static func completing(id: String, task: String, occurrence: Occurrence?) {
+        dispatchPrecondition(condition: .onQueue(queue))
+        doneHere.append(Done(id: id, task: task, occurrence: occurrence))
+    }
+
+    /// Change `id` became change `seq` on the server.
+    static func sent(id: String, seq: Int64) {
+        dispatchPrecondition(condition: .onQueue(queue))
+        doneHere = doneHere.map { d in
+            var d = d
+            if d.id == id { d.seq = seq }
+            return d
+        }
+    }
+
+    /// Change `id` was turned down: its time is to be done still.
+    static func unmark(id: String) {
+        dispatchPrecondition(condition: .onQueue(queue))
+        doneHere.removeAll { $0.id == id }
     }
 
     /// Put off: until when, the reminder at `at`.
@@ -78,11 +131,20 @@ enum Reminders {
     }
 
     /// Takes `json`, the reminders as the page reckons them, past ones too, and `digest`, the daily
-    /// digests. The first time there are some, asks for notifications.
-    static func set(_ json: String, digest: String) throws {
+    /// digests, of its copy as of change `seq`. The times done here that the copy may not have yet, sent
+    /// after `seq` or not sent, are left out. The first time there are some, asks for notifications.
+    static func set(_ json: String, digest: String, seq: Int64) throws {
         dispatchPrecondition(condition: .onQueue(queue))
-        let list = try JSONDecoder().decode([Reminder].self, from: Data(json.utf8))
-        let digests = try JSONDecoder().decode(Digests.self, from: Data(digest.utf8))
+        let ahead = doneHere.filter { $0.seq.map { $0 > seq } ?? true }
+        doneHere = ahead
+        let done = { (task: String, o: Occurrence?) in ahead.contains { $0.task == task && $0.occurrence.covers(o) } }
+        let list = try JSONDecoder().decode([Reminder].self, from: Data(json.utf8)).filter { !done($0.task, $0.occurrence) }
+        var digests = try JSONDecoder().decode(Digests.self, from: Data(digest.utf8))
+        digests.list = digests.list.map { d in
+            var d = d
+            d.tasks.removeAll { done($0.task, $0.occurrence) }
+            return d
+        }.filter { !$0.tasks.isEmpty }
         if !list.isEmpty || !digests.list.isEmpty, settings().authorizationStatus == .notDetermined {
             _ = wait { done in center.requestAuthorization(options: [.alert, .sound, .badge]) { allowed, _ in done(allowed) } }
         }
@@ -90,13 +152,13 @@ enum Reminders {
         storedDigests = digests
         schedule()
         // Shown already: those no longer in the list go, and those that say otherwise than they would
-        // now, the content hidden since say, or are of a deadline moved since. The system can't change
-        // one shown.
+        // now, the content hidden since say, or are of a time done since. The system can't change one
+        // shown.
         let wanted = Dictionary(list.map { (id(task: $0.task, at: $0.at), $0) }) { first, _ in first }
         let shown = wait { center.getDeliveredNotifications(completionHandler: $0) }.filter { isReminder($0.request.content) }
         let stale = shown.filter { n in
             let c = n.request.content
-            return wanted[n.request.identifier].map { $0.title != c.title || $0.body != c.body || $0.due != due(of: c) } ?? true
+            return wanted[n.request.identifier].map { $0.title != c.title || $0.body != c.body || !occurrence(of: c).covers($0.occurrence) } ?? true
         }
         center.removeDeliveredNotifications(withIdentifiers: stale.map(\.request.identifier))
         // Hidden since one was shown, a digest may list titles still.
@@ -117,11 +179,11 @@ enum Reminders {
         wait { center.getDeliveredNotifications(completionHandler: $0) }.filter { $0.request.content.categoryIdentifier == category }
     }
 
-    /// Whether `task`'s time due at `due` is still to be done: neither done since from one of its
-    /// reminders, nor done, moved or deleted elsewhere since the last list.
-    static func listed(task: String, due: Int64) -> Bool {
+    /// Whether `task`'s time `occurrence`, any without one, is still to be done: neither done since from
+    /// one of its reminders, nor done or deleted elsewhere since the last list.
+    static func listed(task: String, occurrence: Occurrence?) -> Bool {
         dispatchPrecondition(condition: .onQueue(queue))
-        return stored.contains { $0.task == task && $0.due == due }
+        return stored.contains { $0.task == task && occurrence.covers($0.occurrence) }
     }
 
     /// The list last handed over, less the times done since from a reminder.
@@ -158,26 +220,28 @@ enum Reminders {
         UserDefaults.standard.removeObject(forKey: LIST)
         UserDefaults.standard.removeObject(forKey: DIGESTS)
         UserDefaults.standard.removeObject(forKey: SNOOZED)
+        UserDefaults.standard.removeObject(forKey: DONE_HERE)
         center.removeAllPendingNotificationRequests()
         let shown = wait { center.getDeliveredNotifications(completionHandler: $0) }.filter { isReminder($0.request.content) || $0.request.content.categoryIdentifier == DIGEST }
         center.removeDeliveredNotifications(withIdentifiers: shown.map(\.request.identifier))
     }
 
-    /// `task` was marked done, its time due at `due`: shown or put off, those reminders go. A repeating
-    /// task's next time's, which the page may have handed over by the time the server answered, stay.
-    static func completed(task: String, due: Int64) {
+    /// `task` was marked done, its time `occurrence`, every time of it without one: shown or put off,
+    /// those reminders go. A repeating task's next time's, which the page may have handed over by the
+    /// time the server answered, stay.
+    static func completed(task: String, occurrence: Occurrence?) {
         dispatchPrecondition(condition: .onQueue(queue))
-        stored = stored.filter { $0.task != task || $0.due != due }
+        stored = stored.filter { $0.task != task || !occurrence.covers($0.occurrence) }
         var digests = storedDigests
         digests.list = digests.list.map { d in
             var d = d
-            d.tasks.removeAll { $0.task == task && $0.due == due }
+            d.tasks.removeAll { $0.task == task && occurrence.covers($0.occurrence) }
             return d
         }.filter { !$0.tasks.isEmpty }
         storedDigests = digests
         schedule()
         let shown = wait { center.getDeliveredNotifications(completionHandler: $0) }
-            .filter { isReminder($0.request.content) && Reminders.task(of: $0.request.content) == task && Reminders.due(of: $0.request.content) == due }
+            .filter { isReminder($0.request.content) && Reminders.task(of: $0.request.content) == task && occurrence.covers(Reminders.occurrence(of: $0.request.content)) }
         center.removeDeliveredNotifications(withIdentifiers: shown.map(\.request.identifier))
     }
 
@@ -216,7 +280,8 @@ enum Reminders {
         // A task's together.
         content.threadIdentifier = r.task
         // The reminder's own time, which one put off keeps.
-        content.userInfo = ["task": r.task, "at": r.at, "due": r.due]
+        content.userInfo = ["task": r.task, "at": r.at]
+        content.userInfo["occurrence"] = r.occurrence?.json
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: Double(at - now) / 1000, repeats: false)
         return UNNotificationRequest(identifier: id(task: r.task, at: r.at), content: content, trigger: trigger)
     }
@@ -252,8 +317,11 @@ enum Reminders {
     /// The time of the reminder `content` shows, which one put off keeps.
     static func at(of content: UNNotificationContent) -> Int64 { (content.userInfo["at"] as! NSNumber).int64Value }
 
-    /// When the time the reminder `content` shows is of is due.
-    static func due(of content: UNNotificationContent) -> Int64 { (content.userInfo["due"] as! NSNumber).int64Value }
+    /// The time the reminder `content` shows is of; none of a task that does not repeat, nor shown by an
+    /// earlier version.
+    static func occurrence(of content: UNNotificationContent) -> Occurrence? {
+        (content.userInfo["occurrence"] as? [String: Any]).map { Occurrence(due: $0["due"] as! String, completions: ($0["completions"] as! NSNumber).intValue) }
+    }
 
     /// The task the reminder `content` shows is of.
     static func task(of content: UNNotificationContent) -> String { content.userInfo["task"] as! String }
@@ -298,7 +366,7 @@ final class NotificationActions: NSObject, UNUserNotificationCenterDelegate {
                     if Local.running { _ = Local.resume() } else { _ = try? Local.open() }
                 }
                 Changes.queue.async {
-                    if case let .refused(message)? = Changes.complete(task: task, title: request.content.title, due: Reminders.due(of: request.content)) {
+                    if case let .refused(message)? = Changes.complete(task: task, title: request.content.title, occurrence: Reminders.occurrence(of: request.content)) {
                         Reminders.queue.sync { Reminders.refused(id: Server.uuid7(), what: "完成“\(request.content.title)”", message: message) }
                     }
                     DispatchQueue.main.async(execute: done)

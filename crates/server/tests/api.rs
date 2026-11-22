@@ -444,6 +444,34 @@ async fn done_moves_a_repeating_task_on_by_the_day_on_the_device() {
 }
 
 #[tokio::test]
+async fn done_from_a_list_behind_does_not_do_the_next_time_too() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let task = id();
+    let daily = json!({ "date": "2026-11-20", "repeat": { "every": 1, "unit": "day", "from": "due" } });
+    t.mutate(&s, json!([{ "op": "task.create", "id": task, "title": "浇花", "due": daily }])).await;
+    // Done on the computer; then from the phone's notification of the same time.
+    let done = |due: &str, completions: u32| json!([{ "op": "task.update", "id": task, "done": true, "today": "2026-11-20", "occurrence": { "due": due, "completions": completions } }]);
+    t.mutate(&s, done("2026-11-20", 0)).await;
+    let r = t.mutate(&s, done("2026-11-20", 0)).await;
+    assert_eq!((r.status, r.body["effects"].clone()), (StatusCode::OK, json!([])), "{}", r.body);
+    let r = t.mutate(&s, done("2026-11-21", 1)).await;
+    assert_eq!(r.body["effects"][0]["after"]["due"]["date"], "2026-11-22", "{}", r.body);
+
+    // From the day it is done, done a day early: the next time is due on the same day.
+    let early = id();
+    let daily = json!({ "date": "2026-11-21", "repeat": { "every": 1, "unit": "day", "from": "done" } });
+    t.mutate(&s, json!([{ "op": "task.create", "id": early, "title": "吃药", "due": daily }])).await;
+    let done = |completions: u32| json!([{ "op": "task.update", "id": early, "done": true, "today": "2026-11-20", "occurrence": { "due": "2026-11-21", "completions": completions } }]);
+    let r = t.mutate(&s, done(0)).await;
+    assert_eq!(r.body["effects"][0]["after"]["due"]["date"], "2026-11-21", "{}", r.body);
+    let r = t.mutate(&s, done(0)).await;
+    assert_eq!(r.body["effects"], json!([]), "{}", r.body);
+    let r = t.mutate(&s, done(1)).await;
+    assert_eq!(r.body["effects"][0]["after"]["completions"]["count"], 2, "{}", r.body);
+}
+
+#[tokio::test]
 async fn bad_input_names_the_field() {
     let t = TestApp::new();
     let s = t.admin().await;
@@ -510,23 +538,6 @@ async fn changing_the_password_signs_out_other_devices() {
 }
 
 #[tokio::test]
-async fn resetting_a_forgotten_password_signs_out_every_device() {
-    let t = TestApp::new();
-    let here = t.admin().await;
-    let token = t.call("POST", "/tokens", Some(&here), Some(json!({ "name": "Claude Code", "scope": "write" }))).await.body;
-    let agent = token["secret"].as_str().unwrap();
-
-    assert_eq!(auth::user_named(&t.state, "nobody".into()).await.unwrap_err().code(), "not_found");
-    let alice = auth::user_named(&t.state, "ALICE".into()).await.unwrap();
-    assert_eq!(auth::reset_password(&t.state, alice.clone(), "short".into()).await.unwrap_err().code(), "invalid");
-    assert_eq!(t.login("alice", "correct horse").await.status, StatusCode::OK, "nothing changed");
-    auth::reset_password(&t.state, alice, "new password".into()).await.unwrap();
-
-    assert_eq!(t.call("GET", "/me", Some(&here), None).await.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(t.call("GET", "/me", Some(agent), None).await.status, StatusCode::OK, "API tokens keep working");
-    assert_eq!(t.login("alice", "correct horse").await.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(t.login("alice", "new password").await.status, StatusCode::OK);
-#[tokio::test]
 async fn a_device_checks_the_password_without_signing_in_again() {
     let t = TestApp::new();
     let here = t.admin().await;
@@ -543,4 +554,21 @@ async fn a_device_checks_the_password_without_signing_in_again() {
     assert_eq!(devices.as_array().unwrap().iter().filter(|d| d["kind"] == "session").count(), 1, "{devices}");
 }
 
+#[tokio::test]
+async fn resetting_a_forgotten_password_signs_out_every_device() {
+    let t = TestApp::new();
+    let here = t.admin().await;
+    let token = t.call("POST", "/tokens", Some(&here), Some(json!({ "name": "Claude Code", "scope": "write" }))).await.body;
+    let agent = token["secret"].as_str().unwrap();
+
+    assert_eq!(auth::user_named(&t.state, "nobody".into()).await.unwrap_err().code(), "not_found");
+    let alice = auth::user_named(&t.state, "ALICE".into()).await.unwrap();
+    assert_eq!(auth::reset_password(&t.state, alice.clone(), "short".into()).await.unwrap_err().code(), "invalid");
+    assert_eq!(t.login("alice", "correct horse").await.status, StatusCode::OK, "nothing changed");
+    auth::reset_password(&t.state, alice, "new password".into()).await.unwrap();
+
+    assert_eq!(t.call("GET", "/me", Some(&here), None).await.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(t.call("GET", "/me", Some(agent), None).await.status, StatusCode::OK, "API tokens keep working");
+    assert_eq!(t.login("alice", "correct horse").await.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(t.login("alice", "new password").await.status, StatusCode::OK);
 }

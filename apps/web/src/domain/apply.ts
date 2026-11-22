@@ -24,7 +24,7 @@ import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import { cmp } from "./board";
 import { lunarDate } from "./lunar";
-import { nextDue, shifted } from "./repeat";
+import { nextDue, occurrence, shifted } from "./repeat";
 
 /** A user's data, keyed for changes. */
 export interface Data {
@@ -291,7 +291,11 @@ class Applier {
           t.assignees = [...new Set([...t.assignees, ...(op.assign ?? [])])].filter((u) => !op.unassign?.includes(u)).sort();
         }
         let record: Completion | undefined;
-        if (op.done !== undefined && op.done !== (t.done_at !== null)) {
+        // Done from a list behind the task: that time of a repeating one is done already, or gone
+        // (docs/api.md#改动).
+        const time = occurrence(t);
+        const behind = !!op.occurrence && !!time && (op.occurrence.due !== time.due || op.occurrence.completions !== time.completions);
+        if (op.done !== undefined && op.done !== (t.done_at !== null) && !(op.done && behind)) {
           const repeat = t.due?.repeat;
           // Done, a repeating task stays open, due next time; done the last time, it is done
           // (docs/design.md#重复).

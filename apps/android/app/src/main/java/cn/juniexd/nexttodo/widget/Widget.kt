@@ -20,7 +20,9 @@ import androidx.work.WorkerParameters
 import cn.juniexd.nexttodo.Due
 import cn.juniexd.nexttodo.HttpError
 import cn.juniexd.nexttodo.Local
+import cn.juniexd.nexttodo.Occurrence
 import cn.juniexd.nexttodo.Server
+import cn.juniexd.nexttodo.covers
 import cn.juniexd.nexttodo.reminders.Reminders
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -42,9 +44,9 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** A task as the widget shows it. `lastDone` is the last day a repeating one was done; `step`, which
- * step it is along its dependencies, such as `2/5`. */
-data class Item(val id: String, val title: String, val folder: String, val due: Due?, val lastDone: LocalDate?, val step: String?)
+/** A task as the widget shows it. `lastDone` is the last day a repeating one was done, and
+ * `occurrence` the time shown; `step`, which step it is along its dependencies, such as `2/5`. */
+data class Item(val id: String, val title: String, val folder: String, val due: Due?, val lastDone: LocalDate?, val occurrence: Occurrence?, val step: String?)
 
 /** What the widget shows: the list with the tasks just ticked off in it, and how many `more` there are
  * past it; or that the app is signed out. Its text `scale`d as the user chose. As of `now`, to the
@@ -183,7 +185,7 @@ object Widget {
             // `/学习/毕业论文` reads `学习 / 毕业论文`; the root shows nothing.
             val lastDone = t.optJSONObject("completions")?.let { LocalDate.parse(it.getString("last")) }
             val step = t.optJSONArray("step")?.let { "${it.getInt(0)}/${it.getInt(1)}" }
-            Item(t.getString("id"), t.getString("title"), t.getString("folder").removePrefix("/").replace("/", " / "), due, lastDone, step)
+            Item(t.getString("id"), t.getString("title"), t.getString("folder").removePrefix("/").replace("/", " / "), due, lastDone, Occurrence.of(t), step)
         }
     }
 
@@ -203,12 +205,19 @@ object Widget {
         return Shown(token != null, items, more, ticked.keys, scale(context), LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES))
     }
 
-    /** Hides a task done in session `token` by the change `seq`, or by one not sent yet without it,
-     * while the list kept is from before it, unless signed in again since. */
-    suspend fun hide(context: Context, task: String, token: String, seq: Long?) = update(context) { prefs ->
+    /** Hides a task done in session `token`, its time `occurrence` should it repeat, by the change
+     * `seq`, or by one not sent yet without it, while the list kept is from before it, unless signed in
+     * again since. One listed at another time, the list being ahead of where it was done, stays; and
+     * once sent, it is no longer hidden as done by a change not sent. */
+    suspend fun hide(context: Context, task: String, occurrence: Occurrence?, token: String, seq: Long?) = update(context) { prefs ->
         if (Server.token(context) != token) return@update false
+        val tasks = JSONArray(prefs.getString("tasks", "[]"))
+        val listed = (0 until tasks.length()).map(tasks::getJSONObject).find { it.getString("id") == task }
         val done = done(prefs)
-        when {
+        if (listed != null && !occurrence.covers(Occurrence.of(listed))) {
+            if (seq == null || !done.has(task) || !done.isNull(task)) return@update false
+            done.remove(task)
+        } else when {
             seq == null -> done.put(task, JSONObject.NULL)
             prefs.contains(SEQ) && prefs.getLong(SEQ, 0) >= seq -> done.remove(task)
             // The latest of its completions, should it be completed twice, from two widgets say.

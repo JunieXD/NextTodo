@@ -176,6 +176,26 @@ test("a repeating task moves on rather than being done, and is never done while 
   expect(() => apply(d, [doneRepeating], cx)).toThrow("“交房租”已完成，不能设置重复，请先重新打开");
 });
 
+test("done from a list behind, a repeating task's time done already is not done again", () => {
+  const d = empty();
+  run(d, 130, [{ op: "task.create", id: id(1), title: "浇花", due: { date: "2026-11-20", repeat: { every: 1, unit: "day", from: "due" } } }]);
+  const done: Op = { op: "task.update", id: id(1), done: true, today: "2026-11-20", occurrence: { due: "2026-11-20", completions: 0 } };
+  run(d, 131, [done]);
+  run(d, 132, [done]);
+  expect(d.tasks.get(id(1))).toMatchObject({ due: { date: "2026-11-21" }, completions: { count: 1 } });
+  run(d, 133, [{ ...done, occurrence: { due: "2026-11-21", completions: 1 } }]);
+  expect(d.tasks.get(id(1))).toMatchObject({ due: { date: "2026-11-22" }, completions: { count: 2 } });
+
+  // From the day it is done, done a day early: the next time is due on the same day.
+  run(d, 134, [{ op: "task.create", id: id(2), title: "吃药", due: { date: "2026-11-21", repeat: { every: 1, unit: "day", from: "done" } } }]);
+  const early: Op = { op: "task.update", id: id(2), done: true, today: "2026-11-20", occurrence: { due: "2026-11-21", completions: 0 } };
+  run(d, 135, [early]);
+  run(d, 136, [early]);
+  expect(d.tasks.get(id(2))).toMatchObject({ due: { date: "2026-11-21" }, completions: { count: 1 } });
+  run(d, 137, [{ ...early, occurrence: { due: "2026-11-21", completions: 1 } }]);
+  expect(d.tasks.get(id(2))).toMatchObject({ completions: { count: 2 } });
+});
+
 test("each time a repeating task is done is recorded, the later of the same time kept, until undone or deleted", () => {
   const d = empty();
   const daily = { every: 1, unit: "day", from: "due" } as const;

@@ -21,17 +21,24 @@ enum Changes {
         case refused(String)
     }
 
-    /// A change kept to send: `task` done on `today`, the user's day there. `what` names it for the
-    /// user, as in `完成“交房租”`, and `user` is who was signed in, once the page has said.
+    /// A change kept to send: `task` done on `today`, the user's day there, its time `occurrence` should
+    /// it repeat (none in one kept by an earlier version). `what` names it for the user, as in
+    /// `完成“交房租”`, and `user` is who was signed in, once the page has said.
     private struct Change: Codable {
         let id: String
         let task: String
         let today: String
+        let occurrence: Occurrence?
         let what: String
         var user: String?
 
-        /// As the server and the page take it.
-        var ops: [[String: Any]] { [["op": "task.update", "id": task, "done": true, "today": today]] }
+        /// As the server and the page take it: should the list it was done from be behind, that time
+        /// done already, the server does not do the next (docs/api.md#改动).
+        var ops: [[String: Any]] {
+            var op: [String: Any] = ["op": "task.update", "id": task, "done": true, "today": today]
+            op["occurrence"] = occurrence?.json
+            return [op]
+        }
     }
 
     /// What `KEPT` holds, oldest first: in a format of its own, which later versions read in. One not
@@ -52,22 +59,25 @@ enum Changes {
 
     private static var user: String? { UserDefaults.standard.string(forKey: USER) }
 
-    /// Marks `task`, titled `title`, done from a reminder of its time due at `due`; a repeating one
-    /// moves on from today here. Done or kept, those reminders go. Nothing, should that time be done
-    /// already, from another of its reminders still shown say: a repeating task would move on twice.
-    static func complete(task: String, title: String, due: Int64) -> Outcome? {
+    /// Marks `task`, titled `title`, done from a reminder of its time `occurrence`, should it repeat; a
+    /// repeating one moves on from today here. Done or kept, those reminders go. Nothing, should that
+    /// time be done already, from another of its reminders still shown say: a repeating task would move
+    /// on twice.
+    static func complete(task: String, title: String, occurrence: Occurrence?) -> Outcome? {
         dispatchPrecondition(condition: .onQueue(queue))
-        guard Reminders.queue.sync(execute: { Reminders.listed(task: task, due: due) }) else { return nil }
+        guard Reminders.queue.sync(execute: { Reminders.listed(task: task, occurrence: occurrence) }) else { return nil }
         let token = Server.token
         let day = DateFormatter()
         day.locale = Locale(identifier: "en_US_POSIX")
         day.dateFormat = "yyyy-MM-dd"
-        let change = Change(id: Server.uuid7(), task: task, today: day.string(from: Date()), what: "完成“\(title)”", user: user)
+        let change = Change(id: Server.uuid7(), task: task, today: day.string(from: Date()), occurrence: occurrence, what: "完成“\(title)”", user: user)
         kept.append(change)
+        // Once kept, before it may be sent: a list handed over behind it leaves that time out.
+        Reminders.queue.sync { Reminders.completing(id: change.id, task: task, occurrence: occurrence) }
         let outcome = send(mine: change.id)
         if case .refused = outcome { return outcome }
         // Unless signed in again meanwhile, maybe as someone else, whose reminders these are.
-        if token != nil, Server.token == token { Reminders.queue.sync { Reminders.completed(task: task, due: due) } }
+        if token != nil, Server.token == token { Reminders.queue.sync { Reminders.completed(task: task, occurrence: occurrence) } }
         return outcome
     }
 
@@ -82,7 +92,8 @@ enum Changes {
         for change in kept {
             let id = change.id
             do {
-                _ = try Server.mutate(url: url, token: token, id: id, ops: change.ops)
+                let seq = try Server.mutate(url: url, token: token, id: id, ops: change.ops)
+                Reminders.queue.sync { Reminders.sent(id: id, seq: seq) }
                 kept.removeAll { $0.id == id }
                 if id == mine { outcome = .sent }
             } catch let e as HttpError where e.status == 401 || e.status == 408 || e.status == 429 || e.status >= 500 {
@@ -90,6 +101,8 @@ enum Changes {
                 // past what may pass.
                 return outcome
             } catch let e as HttpError {
+                // Before it goes from the queue: stopped in between, nothing is left out that is not sent.
+                Reminders.queue.sync { Reminders.unmark(id: id) }
                 kept.removeAll { $0.id == id }
                 if id == mine {
                     outcome = .refused(e.message)

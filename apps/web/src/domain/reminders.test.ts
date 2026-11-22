@@ -74,8 +74,8 @@ test("reminders come at the times set, for the user's pending tasks, earliest fi
     [7, 5, 9, 0, "今天 09:00 截止 · Alice 的装修"],
     [9, 5, 9, 0, "今天 09:00 截止"],
   ]);
-  // Those of one time go together, done from one of them.
-  expect(new Set(reminders(board, false).filter((r) => r.task.number === 1).map((r) => r.due.getTime())).size).toBe(1);
+  // A repeating task's are of its time now; a task that does not repeat has only the one.
+  expect(reminders(board, false).flatMap((r) => (r.occurrence ? [[r.task.number, r.occurrence]] : []))).toEqual([[2, { due: "2026-11-03", completions: 12 }]]);
   // Hidden, they say only that something is due.
   expect(new Set(reminders(board, true).map((r) => `${r.title}|${r.body}`))).toEqual(new Set(["有事项到期|"]));
 });
@@ -98,10 +98,12 @@ test("a daily digest each day from yesterday to a week on lists the open tasks d
     [4, 23, 30, left(["还花呗", "交房租"])],
     ...[5, 6, 7, 8, 9].map((date) => [date, 23, 30, left(["还花呗", "交房租", "写周报"])]),
   ]);
-  // Each task with when its time is due, as its reminders have it.
-  expect(digests(board(tasks), "23:30")[1].tasks.map((t) => [t.task, t.due.getDate(), t.due.getHours()])).toEqual([
-    [tasks[1].id, 2, 0],
-    [tasks[0].id, 3, 18],
+  // Each task with its time, as its reminders have it.
+  const daily = { every: 1, unit: "day", from: "due" } as const;
+  expect(digests(board([...tasks, task(6, { due: { date: "2026-11-03", repeat: daily } })]), "23:30")[1].tasks.map((t) => [t.task, t.occurrence])).toEqual([
+    [tasks[1].id, undefined],
+    [tasks[0].id, undefined],
+    [task(6, {}).id, { due: "2026-11-03", completions: 0 }],
   ]);
   // Hidden, only how many.
   expect(digestText(["还花呗", "交房租"], true)).toEqual({ title: "今天还有 2 项没做完", body: "" });

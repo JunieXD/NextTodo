@@ -515,6 +515,16 @@ pub struct Completions {
     pub last: Date,
 }
 
+/// A time of a repeating task: the one due on `due` after it was done `completions` times. The date
+/// alone does not tell: done early, from the day it is done, the next can be due on the same day.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export)]
+pub struct Occurrence {
+    pub due: Date,
+    pub completions: u32,
+}
+
 /// A time a repeating task was done (docs/design.md#重复): the time `due` on a day, `done` on a day, on
 /// the device that did it. One per time due: done twice, the later stays.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -935,6 +945,14 @@ pub struct Task {
     /// Name of the API token that created the task; `None` when created by the user on a device.
     pub created_via: Option<String>,
     pub updated_via: Option<String>,
+}
+
+impl Task {
+    /// The time it is due now, should it repeat.
+    pub fn occurrence(&self) -> Option<Occurrence> {
+        let due = self.due.as_ref().filter(|d| d.repeat.is_some())?;
+        Some(Occurrence { due: due.date.clone(), completions: self.completions.as_ref().map_or(0, |c| c.count.get()) })
+    }
 }
 
 /// Someone the user shares folders with, or the user.

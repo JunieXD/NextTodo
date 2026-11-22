@@ -42,3 +42,20 @@ data class Due(val date: LocalDate, val time: LocalTime?) {
         )
     }
 }
+
+/** A time of a repeating task, as `Occurrence` in `apps/web/src/api/types`: the one due on `due` after
+ * it was done `completions` times (docs/api.md#改动). */
+data class Occurrence(val due: String, val completions: Int) {
+    fun json(): JSONObject = JSONObject().put("due", due).put("completions", completions)
+
+    companion object {
+        fun from(o: JSONObject?) = o?.let { Occurrence(it.getString("due"), it.getInt("completions")) }
+
+        /** The time `task`, as JSON in the shape of `Task`, is due now, should it repeat. */
+        fun of(task: JSONObject) = task.optJSONObject("due")?.takeIf { it.optJSONObject("repeat") != null }
+            ?.let { Occurrence(it.getString("date"), task.optJSONObject("completions")?.getInt("count") ?: 0) }
+    }
+}
+
+/** Whether a time marked `this`, every time of the task without one, is time `o`. */
+fun Occurrence?.covers(o: Occurrence?) = this == null || this == o

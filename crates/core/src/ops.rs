@@ -5,7 +5,7 @@ use ts_rs::TS;
 
 use crate::model::{
     AiJobId, AttachmentId, Date, Description, Due, FileName, FileSize, FolderColor, FolderIcon, FolderId, JobKind, JobText, LocalTime,
-    MediaType, MutationId, Name, SortKey, TaskId, Time, Title, nullable,
+    MediaType, MutationId, Name, Occurrence, SortKey, TaskId, Time, Title, nullable,
 };
 
 pub const MAX_OPS: usize = 1000;
@@ -149,6 +149,11 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         today: Option<Date>,
+        /// The time of a repeating task it marks done, as a list on a phone showed it: should that
+        /// time be done already, or gone, it is not done again (docs/api.md#改动).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        occurrence: Option<Occurrence>,
         /// User ids to add to its assignees and to take off them, those it has then: two people
         /// assigning at once both count.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]

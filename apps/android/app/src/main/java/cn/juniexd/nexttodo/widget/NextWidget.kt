@@ -52,12 +52,14 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import cn.juniexd.nexttodo.Changes
 import cn.juniexd.nexttodo.MainActivity
+import cn.juniexd.nexttodo.Occurrence
 import cn.juniexd.nexttodo.Palette
 import cn.juniexd.nexttodo.Server
 import cn.juniexd.nexttodo.R
 import cn.juniexd.nexttodo.forUser
 import java.time.LocalDateTime
 import kotlinx.coroutines.delay
+import org.json.JSONObject
 
 /** The palette's colours, light and dark. */
 internal object Colors {
@@ -76,6 +78,9 @@ internal object Colors {
 
 private val TaskKey = ActionParameters.Key<String>("task")
 private val TitleKey = ActionParameters.Key<String>("title")
+
+/** The time the widget shows, as JSON, should the task repeat. */
+private val OccurrenceKey = ActionParameters.Key<String>("occurrence")
 
 /** Opens the app at `nexttodo://…`, which the web app reads (`apps/web/src/mobile.ts`). */
 internal fun open(context: Context, url: String) =
@@ -199,10 +204,11 @@ private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boole
                 Image(ImageProvider(R.drawable.ic_widget_tick), null, GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(Colors.onPrimary))
             }
         } else {
+            val complete = listOfNotNull(TaskKey to item.id, TitleKey to item.title, item.occurrence?.let { OccurrenceKey to it.json().toString() })
             // Larger than the circle, from the widget's side up to where the title starts, to be easy to
             // hit; round at the ends, for its ripple.
             Box(
-                GlanceModifier.width(EDGE + CIRCLE).height(CIRCLE).padding(start = EDGE).cornerRadius(CIRCLE / 2).clickable(actionRunCallback<CompleteAction>(actionParametersOf(TaskKey to item.id, TitleKey to item.title))),
+                GlanceModifier.width(EDGE + CIRCLE).height(CIRCLE).padding(start = EDGE).cornerRadius(CIRCLE / 2).clickable(actionRunCallback<CompleteAction>(actionParametersOf(*complete.toTypedArray()))),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 Image(ImageProvider(R.drawable.ic_widget_check), "标为完成", GlanceModifier.size(26.dp).padding(2.dp), colorFilter = ColorFilter.tint(Colors.primary))
@@ -250,7 +256,7 @@ class CompleteAction : ActionCallback {
         val start = SystemClock.elapsedRealtime()
         Widget.tick(context, task, token)
         val outcome = try {
-            Changes.complete(context, task, parameters[TitleKey]!!).also {
+            Changes.complete(context, task, parameters[TitleKey]!!, parameters[OccurrenceKey]?.let { Occurrence.from(JSONObject(it)) }).also {
                 if (it !is Changes.Outcome.Refused) delay(LINGER_MS - (SystemClock.elapsedRealtime() - start))
             }
         } finally {

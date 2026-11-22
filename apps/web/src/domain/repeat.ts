@@ -1,6 +1,7 @@
 // A twin of `crates/core/src/repeat.rs`; both are checked against `fixtures/repeat.json`.
 
 import type { Due } from "../api/types/Due";
+import type { Occurrence } from "../api/types/Occurrence";
 import type { Repeat } from "../api/types/Repeat";
 import type { Task } from "../api/types/Task";
 import { formatDue } from "./dates";
@@ -95,6 +96,9 @@ export const skipTo = (due: Due, today: string) => (due.repeat ? nextDue(due.rep
 
 /** Whether a task can skip to its next time `today`: it repeats, is to do, and this isn't the last time. */
 export const skippable = (t: Task, today: string) => t.done_at === null && t.due !== null && skipTo(t.due, today) !== null;
+
+/** The time a task is due now, should it repeat, as `Task::occurrence` in Rust has it. */
+export const occurrence = (t: Task): Occurrence | undefined => (t.due?.repeat ? { due: t.due.date, completions: t.completions?.count ?? 0 } : undefined);
 
 /** `date` moved as many days as `from` moved to `to`: a start date kept as far before its due date. */
 export function shifted(date: string, from: string, to: string): string {

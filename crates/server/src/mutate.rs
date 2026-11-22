@@ -557,7 +557,21 @@ impl<'a> Cx<'a> {
                 };
                 self.create_task(task, &owner)
             }
-            Op::TaskUpdate { id, folder_id, title, description, start, start_time, due, sort_key, done, today, assign, unassign } => {
+            Op::TaskUpdate {
+                id,
+                folder_id,
+                title,
+                description,
+                start,
+                start_time,
+                due,
+                sort_key,
+                done,
+                today,
+                occurrence,
+                assign,
+                unassign,
+            } => {
                 let (before, owner) = self.task(*id)?;
                 let mut t = before.clone();
                 if let Some(folder_id) = folder_id {
@@ -591,8 +605,12 @@ impl<'a> Cx<'a> {
                     t.assignees = people.into_iter().collect();
                 }
                 let mut record = None;
+                // Done from a list behind the task: that time of a repeating one is done already, or
+                // gone (docs/api.md#改动).
+                let behind = occurrence.as_ref().is_some_and(|o| t.occurrence().is_some_and(|now| now != *o));
                 if let Some(done) = done
                     && *done != t.done_at.is_some()
+                    && !(*done && behind)
                 {
                     match t.due.as_mut().map(|d| (d.repeat.clone(), d)) {
                         // Done, a repeating task stays open, due next time; done the last time, it is

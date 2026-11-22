@@ -59,3 +59,7 @@ unsafe_code = "forbid"
 [lints.clippy]
 all = { level = "warn", priority = -1 }
 allow_attributes_without_reason = "warn"
+
+# As in the main workspace: only files and lines in debug builds.
+[profile.dev]
+debug = "line-tables-only"

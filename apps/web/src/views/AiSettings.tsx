@@ -12,7 +12,7 @@ import type { AiSettings } from "../api/types/AiSettings";
 import type { AiSettingsInput } from "../api/types/AiSettingsInput";
 import type { AiTestResult } from "../api/types/AiTestResult";
 import type { AiThinking } from "../api/types/AiThinking";
-import { keepAiConfig, localAiConfig } from "../ai";
+import { keepAiConfig, keepServerAiModel, localAiConfig, serverAiModel } from "../ai";
 import { inLocalMode } from "../local";
 import { useSession } from "../session";
 import { useBack } from "../ui/back";
@@ -29,14 +29,30 @@ type Busy = "models" | "test" | "save" | "clear";
 /** What the settings row shows: the model and where its settings are, or that there are none. */
 export function useAiSummary(): string {
   const { user } = useSession();
-  const [server, setServer] = useState<AiSettings | null | undefined>(undefined);
+  const [server, setServer] = useState(() => serverAiModel(user.id));
   const local = localAiConfig(user.id);
   const here = local !== null;
   useEffect(() => {
-    if (!here) api<AiSettings | null>("GET", "/ai/settings").then(setServer, () => setServer(undefined));
-  }, [here]);
+    if (here) return;
+    // Heard after the page has gone, signed out say, it is not kept.
+    let live = true;
+    // Offline, the model last heard stays.
+    api<AiSettings | null>("GET", "/ai/settings").then(
+      (s) => {
+        if (!live) return;
+        keepServerAiModel(user.id, s?.model ?? null);
+        setServer(s?.model ?? null);
+      },
+      (e) => {
+        if (!(e instanceof ApiError)) throw e;
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [here, user.id]);
   if (local) return `${local.model} · 仅本机`;
-  if (server) return `${server.model} · 已同步`;
+  if (server) return `${server} · 已同步`;
   return server === null ? "未配置" : "";
 }
 
@@ -143,8 +159,11 @@ export function AiPage() {
         keepAiConfig(user.id, config);
         if (kept) await api("DELETE", "/ai/settings");
         setKept(null);
+        keepServerAiModel(user.id, null);
       } else {
-        setKept(await api<AiSettings>("PUT", "/ai/settings", input));
+        const saved = await api<AiSettings>("PUT", "/ai/settings", input);
+        setKept(saved);
+        keepServerAiModel(user.id, saved.model);
         keepAiConfig(user.id, null);
       }
       snack(place === "local" ? "已保存在本机" : "已同步到服务器");
@@ -156,6 +175,7 @@ export function AiPage() {
     await run("clear", async () => {
       keepAiConfig(user.id, null);
       if (kept) await api("DELETE", "/ai/settings");
+      keepServerAiModel(user.id, null);
       history.back();
     });
   };

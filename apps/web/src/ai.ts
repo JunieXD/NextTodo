@@ -40,11 +40,27 @@ function onConfig(userId: string, f: () => void): () => void {
   };
 }
 
-export const forgetAiConfig = (userId: string) => localStorage.removeItem(PREFIX + userId);
+const SERVER = "ai-server:";
+
+/** The model of the user's settings on the server as last heard, for the settings row to show at
+ * once: null for none, undefined before it was ever heard. */
+export function serverAiModel(userId: string): string | null | undefined {
+  const kept = localStorage.getItem(SERVER + userId);
+  return kept === null ? undefined : JSON.parse(kept);
+}
+
+export const keepServerAiModel = (userId: string, model: string | null) => localStorage.setItem(SERVER + userId, JSON.stringify(model));
+
+export function forgetAiConfig(userId: string) {
+  localStorage.removeItem(PREFIX + userId);
+  localStorage.removeItem(SERVER + userId);
+}
 
 export function forgetOtherAiConfigs(userId: string) {
   const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)!);
-  for (const key of keys) if (key.startsWith(PREFIX) && key !== PREFIX + userId) localStorage.removeItem(key);
+  for (const key of keys) {
+    if ((key.startsWith(PREFIX) && key !== PREFIX + userId) || (key.startsWith(SERVER) && key !== SERVER + userId)) localStorage.removeItem(key);
+  }
 }
 
 const AI_MODE = "aiMode";

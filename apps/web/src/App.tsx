@@ -4,10 +4,12 @@ import { Session } from "./session";
 import { Root } from "./ui/Root";
 import { forUser } from "./ui/feedback";
 import { inPanel } from "./desktop";
+import { unlock, useLocked, usePrivacyLock } from "./lock";
 import { started } from "./updates";
+import { LockScreen } from "./views/Lock";
 import { Login, StartFailedPage } from "./views/Login";
 import { Main } from "./views/Main";
-import { PanelOut } from "./views/Panel";
+import { PanelLocked, PanelOut } from "./views/Panel";
 
 type State =
   | { kind: "loading" }
@@ -35,6 +37,8 @@ let resuming: Promise<Session | null> | undefined;
 
 export function App() {
   const [state, setState] = useState<State>({ kind: "loading" });
+  const lock = usePrivacyLock();
+  const locked = useLocked();
   // The first page has rendered, the sign-in page or the app: a build being tried works. Should it
   // fail to render, the error boundary takes its place, and this never runs.
   const shown = state.kind !== "loading";
@@ -65,10 +69,24 @@ export function App() {
       <Root className="app">
         <Login
           notice={state.notice}
-          onSignIn={async (request) => setState({ kind: "in", session: await Session.open(request) })}
-          onLocal={(session) => setState({ kind: "in", session })}
+          // Who signed in has shown who they are: no PIN after that.
+          onSignIn={async (request) => {
+            const session = await Session.open(request);
+            unlock();
+            setState({ kind: "in", session });
+          }}
+          onLocal={(session) => {
+            unlock();
+            setState({ kind: "in", session });
+          }}
         />
       </Root>
+    );
+  }
+  // The session goes on underneath, syncing and handing over reminders.
+  if (lock && locked) {
+    return (
+      <Root className={inPanel ? "app phone panel" : "app"}>{inPanel ? <PanelLocked lock={lock} /> : <LockScreen lock={lock} />}</Root>
     );
   }
   const { session } = state;

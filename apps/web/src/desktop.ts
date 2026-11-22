@@ -8,6 +8,7 @@ import { navigate } from "wouter/use-browser-location";
 import { app } from "./api/http";
 import type { Attachment } from "./api/types/Attachment";
 import { digestText, digests, reminders } from "./domain/reminders";
+import { isLocked, lockNow, onLock, privacyLock } from "./lock";
 import { dailyDigest, hideReminders, onRemindSettings } from "./remind-settings";
 import type { Store } from "./sync/store";
 
@@ -33,7 +34,8 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
     const after = since < now ? since : now;
     since = now;
     const { board } = store.getView();
-    const hide = hideReminders();
+    // Locked, they say no more than that something is due (docs/design.md#隐私锁).
+    const hide = hideReminders() || isLocked();
     const { on, time } = dailyDigest();
     const list = [
       ...reminders(board, hide).map((r) => ({ title: r.title, body: r.body, at: r.at, task: r.task.id })),
@@ -50,11 +52,14 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
   const shown = () => document.visibilityState === "visible" && changed();
   const unsubscribe = store.subscribe(changed);
   const unset = onRemindSettings(changed);
+  // At once: a reminder due in the meantime would say what it is of.
+  const unwatch = onLock(() => void update().catch(failed));
   document.addEventListener("visibilitychange", shown);
   update().catch(failed);
   return async () => {
     unsubscribe();
     unset();
+    unwatch();
     document.removeEventListener("visibilitychange", shown);
     clearTimeout(timer);
     // Those due but not shown yet go too.
@@ -83,10 +88,12 @@ export const openAttachment = (a: Attachment, file: Blob) => handOver<void>("ope
 export const saveAttachment = (a: Attachment, file: Blob) => handOver<string | null>("save_attachment", a, file);
 
 /** Listens in the panel for being opened, to quick add; in the main window for what to show, from
- * the panel or a click on a reminder. */
+ * the panel or a click on a reminder, and for the menu's 锁定, which with no lock set opens its
+ * settings. */
 export async function listen() {
-  if (inPanel) await on("shown", () => navigate(`${location.pathname}?add`, { replace: true }));
-  else await on<string>("open", (e) => navigate(e.payload));
+  if (inPanel) return void (await on("shown", () => navigate(`${location.pathname}?add`, { replace: true })));
+  await on<string>("open", (e) => navigate(e.payload));
+  await on("lock", () => (privacyLock() ? lockNow() : void openMain("/settings/lock")));
 }
 
 /** Where the command line the app carries stands: on macOS its place may hold another one, `by` says

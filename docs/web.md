@@ -110,6 +110,7 @@
   - 附件可能被几个标签页各传一遍，服务端按 ID 去重，不会多出来。
 - **剪贴板**：复制文字改用 `document.execCommand("copy")`；拷贝图片没有，见[界面](ui.md)。
 - **Service Worker**：没有，所以断网时打不开页面，已经打开的照常离线使用。
+- **Web Crypto**：没有 `crypto.subtle`，所以没有[隐私锁](design.md#隐私锁)：PIN 要用它算 PBKDF2。
 
 用到新的浏览器接口时，先查它是不是只在安全上下文里有（MDN 上标着 Secure context）。随机 ID 用 `uuid` 库生成，不用 `crypto.randomUUID()`。
 

@@ -7,6 +7,7 @@ import { app, desktopOs, loadServer, native, phoneApp } from "./api/http";
 import * as mobile from "./mobile";
 import * as desktop from "./desktop";
 import { loadMode } from "./local";
+import { startLock } from "./lock";
 import { onSignInElsewhere } from "./session";
 import { ErrorBoundary } from "./ui/ErrorBoundary";
 import { preloadMarkdown } from "./ui/lazy-markdown";
@@ -32,6 +33,8 @@ if (desktop.inPanel) {
 if (!native) registerSW({ immediate: true });
 await Promise.all([loadServer(), loadMode(), loadAiMode()]);
 if (app) await (phoneApp ? mobile : desktop).listen();
+// Locked by now if left long enough, for nothing of the app to show (docs/design.md#隐私锁).
+if (!phoneApp) startLock();
 createRoot(document.getElementById("app")!).render(
   <StrictMode>
     <ErrorBoundary>

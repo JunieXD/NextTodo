@@ -1,8 +1,9 @@
-import { Check as CheckIcon, ChevronsUpDown, type LucideIcon, Minus, Plus } from "lucide-react";
+import { Check as CheckIcon, ChevronsUpDown, Copy, type LucideIcon, Minus, Plus } from "lucide-react";
 import { Select as Choice, DropdownMenu, RadioGroup, Switch as Toggle } from "radix-ui";
-import { useContext, useState } from "react";
+import { type ReactNode, useContext, useState } from "react";
 import type { Status } from "../domain/board";
 import { useBack } from "./back";
+import { useCopy } from "./clipboard";
 import { RootContext, Tip } from "./feedback";
 import { Icon } from "./icons";
 
@@ -249,5 +250,29 @@ export function Stepper({ label, value, min, max, onChange }: { label: string; v
         </button>
       </Tip>
     </span>
+  );
+}
+
+/** Text to copy, such as a token or a command, with the button that copies it; `children` go next to
+ * the label. */
+export function Copyable({ label, hint, text, children }: { label: string; hint?: string; text: string; children?: ReactNode }) {
+  const copy = useCopy();
+  return (
+    <div className="field">
+      <div className="copy-head">
+        <span>
+          {label} {hint && <span className="hint">{hint}</span>}
+        </span>
+        {children}
+      </div>
+      <div className="secret">
+        <span>{text}</span>
+        <Tip label={`复制${label}`}>
+          <button className="icon-btn sm" onClick={() => copy(text, label)}>
+            <Icon of={Copy} size={18} />
+          </button>
+        </Tip>
+      </div>
+    </div>
   );
 }

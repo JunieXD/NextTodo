@@ -69,8 +69,9 @@ fn open_main(app: AppHandle, path: String) {
 fn tray(app: &AppHandle) -> tauri::Result<()> {
     let add = MenuItem::with_id(app, "add", "快速添加", true, None::<&str>)?;
     let open = MenuItem::with_id(app, "open", "打开 NextTodo", true, None::<&str>)?;
+    let lock = MenuItem::with_id(app, "lock", "锁定", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&add, &open, &PredefinedMenuItem::separator(app)?, &quit])?;
+    let menu = Menu::with_items(app, &[&add, &open, &lock, &PredefinedMenuItem::separator(app)?, &quit])?;
     // macOS tints a one-colour image to suit the menu bar; the Windows tray shows the app icon.
     #[cfg(target_os = "macos")]
     let icon = tauri::include_image!("icons/tray.png");
@@ -85,6 +86,10 @@ fn tray(app: &AppHandle) -> tauri::Result<()> {
         .on_menu_event(|app, event| match event.id.as_ref() {
             "add" => panel::open(app),
             "open" => show(app),
+            // The page locks, or opens the privacy lock's settings when there is none.
+            "lock" => {
+                let _ = app.emit_to("main", "lock", ());
+            }
             "quit" => app.exit(0),
             _ => {}
         })

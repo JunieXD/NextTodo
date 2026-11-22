@@ -1,11 +1,12 @@
 // The desktop layout: folders on the left, which can be folded away, the list in the middle, and the
 // open task's details on the right.
 
-import { CalendarDays, ChevronLeft, ChevronRight, CircleCheck, FolderRoot, History, ListChecks, PanelLeft, Search } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, CircleCheck, FolderRoot, History, ListChecks, Lock, PanelLeft, Search } from "lucide-react";
 import { type CSSProperties, Fragment, type ReactNode, useRef, useState } from "react";
 import { Link, Redirect, useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
 import { formatToday } from "../domain/dates";
+import { lockNow, usePrivacyLock } from "../lock";
 import { useConnection, useSession, useView } from "../session";
 import { useBack } from "../ui/back";
 import { Tip } from "../ui/feedback";
@@ -232,6 +233,7 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ca
   const listed = useNextFolders(board);
   const { user } = useSession();
   const connection = useConnection();
+  const lock = usePrivacyLock();
   const [, navigate] = useLocation();
   const [collapsed, setCollapsed] = useState(() => new Set<FolderId | null>());
   const go = (to: string) => {
@@ -344,6 +346,13 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ca
               <span className="folder-sub">{connection === "offline" ? (pending ? `离线，${pending} 项改动待同步` : "离线") : "设置和令牌"}</span>
             </span>
           </button>
+          {lock && (
+            <Tip label="锁定">
+              <button className="icon-btn" onClick={lockNow}>
+                <Icon of={Lock} size={18} />
+              </button>
+            </Tip>
+          )}
         </div>
       </div>
     </nav>

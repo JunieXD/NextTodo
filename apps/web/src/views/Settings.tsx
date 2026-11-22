@@ -1,6 +1,6 @@
 // The settings: a home page that lists the sections, each a page of its own (docs/ui.md#设置).
 
-import { Bell, ChevronRight, Copy, HardDrive, History, Info, KeyRound, type LucideIcon, Mail, Monitor, Palette, Paperclip, Plus, Sparkles, SquareTerminal } from "lucide-react";
+import { Bell, ChevronRight, Copy, HardDrive, History, Info, KeyRound, Lock, type LucideIcon, Mail, Monitor, Palette, Paperclip, Plus, Sparkles, SquareTerminal } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { ApiError, api, app, desktopOs, phoneApp, serverUrl } from "../api/http";
@@ -16,12 +16,13 @@ import { type CliStatus, cli } from "../desktop";
 import { checkDisplayName, checkTokenName } from "../domain/text";
 import { NextTodo, type WidgetTextSize } from "../mobile";
 import * as local from "../local";
+import { usePrivacyLock } from "../lock";
 import { newer, useServerVersions } from "../server-update";
 import { useSession } from "../session";
 import { type Accent, type Theme, setAccent, setTheme, useAccent, useTheme } from "../theme";
 import { type Zoom, type Zoomed, setZoom, useZoom } from "../zoom";
 import { copyText, useCopy } from "../ui/clipboard";
-import { Seg, Stepper, Swatch, Switch } from "../ui/controls";
+import { Copyable, Seg, Stepper, Swatch, Switch } from "../ui/controls";
 import { Modal, Tip, forUser, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
 import { Icon } from "../ui/icons";
@@ -33,6 +34,7 @@ import { DesktopBackground } from "./DesktopBackground";
 import { RemindSettings } from "./RemindSettings";
 import { DriveSyncDialog, syncLine, useDriveSync } from "./DriveSync";
 import { MAX_KEEP_DONE, setKeepDone, useKeepDone } from "./keep-done";
+import { LockPage } from "./Lock";
 import { LogPage } from "./Log";
 import { type SettingsSection, settingsUrl } from "./nav";
 
@@ -44,6 +46,7 @@ const TITLES: Record<SettingsSection, string> = {
   account: "账号",
   local: "本机模式",
   log: "改动记录",
+  lock: "隐私锁",
   appearance: "外观",
   // iOS has nothing to allow for running in the background (docs/ios.md#设置), the web nothing to run.
   background: app === "ios" || !app ? "提醒" : "提醒和后台",
@@ -59,6 +62,7 @@ export const settingsTitle = (section: SettingsSection) => TITLES[section];
 const ICONS: Record<Exclude<SettingsSection, "account">, LucideIcon> = {
   local: HardDrive,
   log: History,
+  lock: Lock,
   appearance: Palette,
   background: Bell,
   ai: Sparkles,
@@ -89,7 +93,8 @@ const ACCENTS: [Accent, string][] = [
 function useSections(): SettingsSection[][] {
   const { user } = useSession();
   const inLocal = local.inLocalMode();
-  const groups: SettingsSection[][] = [[inLocal ? "local" : "account", "log"], ["appearance", "background"]];
+  // Phones have a lock screen of their own (docs/design.md#隐私锁).
+  const groups: SettingsSection[][] = [[inLocal ? "local" : "account", "log", ...(phoneApp ? [] : (["lock"] as const))], ["appearance", "background"]];
   groups.push(!inLocal || app === "desktop" ? ["ai", "agent"] : ["ai"]);
   // The server's own: its admin's, or in local mode the user's, who has it alone.
   const server: SettingsSection[] = [...(user.is_admin && !inLocal ? (["invites"] as const) : []), ...(user.is_admin || inLocal ? (["attachments"] as const) : [])];
@@ -112,9 +117,11 @@ export function SettingsHome() {
   const ai = useAiSummary();
   const pending = usePending();
   const server = useServerVersions();
+  const lock = usePrivacyLock();
   const upgradable = user.is_admin && !local.inLocalMode() && server?.latest && newer(server.latest, server.server);
   const values: Partial<Record<SettingsSection, string>> = {
     appearance: THEMES.find(([t]) => t === theme)![1],
+    lock: lock ? `闲置 ${lock.idle} 分钟后` : "关闭",
     ai,
     attachments: serverSettings().compress_images ? "压缩图片" : "上传原图",
     about: pending ? "有新版本" : upgradable ? "服务器可升级" : undefined,
@@ -179,6 +186,7 @@ export function SettingsPage({ section, onSignOut }: { section: SettingsSection;
     account: () => <Account onSignOut={onSignOut} />,
     local: () => <LocalMode />,
     log: () => <LogPage />,
+    lock: () => <LockPage />,
     appearance: () => <Appearance />,
     background: () => (
       <>
@@ -798,29 +806,5 @@ function EnvVars({ url, secret }: { url: string; secret: string }) {
         onChange={setOs}
       />
     </Copyable>
-  );
-}
-
-/** Text to copy, such as a token or a command, with the button that copies it; `children` go next to
- * the label. */
-function Copyable({ label, hint, text, children }: { label: string; hint?: string; text: string; children?: ReactNode }) {
-  const copy = useCopy();
-  return (
-    <div className="field">
-      <div className="copy-head">
-        <span>
-          {label} {hint && <span className="hint">{hint}</span>}
-        </span>
-        {children}
-      </div>
-      <div className="secret">
-        <span>{text}</span>
-        <Tip label={`复制${label}`}>
-          <button className="icon-btn sm" onClick={() => copy(text, label)}>
-            <Icon of={Copy} size={18} />
-          </button>
-        </Tip>
-      </div>
-    </div>
   );
 }

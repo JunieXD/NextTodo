@@ -137,6 +137,7 @@ pub fn app(state: AppState) -> Router {
         .route("/auth/logout", post(auth::logout))
         .route("/me", get(auth::me).patch(auth::update_me))
         .route("/auth/password", post(auth::change_password))
+        .route("/auth/verify", post(auth::verify))
         .route("/tokens", get(auth::list_tokens).post(auth::create_token))
         .route("/tokens/{id}", delete(auth::delete_token))
         .route("/invites", get(auth::list_invites).post(auth::create_invite))

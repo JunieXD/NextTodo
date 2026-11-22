@@ -526,4 +526,21 @@ async fn resetting_a_forgotten_password_signs_out_every_device() {
     assert_eq!(t.call("GET", "/me", Some(agent), None).await.status, StatusCode::OK, "API tokens keep working");
     assert_eq!(t.login("alice", "correct horse").await.status, StatusCode::UNAUTHORIZED);
     assert_eq!(t.login("alice", "new password").await.status, StatusCode::OK);
+#[tokio::test]
+async fn a_device_checks_the_password_without_signing_in_again() {
+    let t = TestApp::new();
+    let here = t.admin().await;
+    let token = t.call("POST", "/tokens", Some(&here), Some(json!({ "name": "Claude Code", "scope": "write" }))).await.body;
+    let agent = token["secret"].as_str().unwrap();
+
+    let right = t.call("POST", "/auth/verify", Some(&here), Some(json!({ "password": "correct horse" }))).await;
+    assert_eq!(right.status, StatusCode::NO_CONTENT);
+    let wrong = t.call("POST", "/auth/verify", Some(&here), Some(json!({ "password": "nope" }))).await;
+    assert_eq!((wrong.status, wrong.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("password")));
+    let by_agent = t.call("POST", "/auth/verify", Some(agent), Some(json!({ "password": "correct horse" }))).await;
+    assert_eq!(by_agent.status, StatusCode::FORBIDDEN);
+    let devices = t.call("GET", "/tokens", Some(&here), None).await.body;
+    assert_eq!(devices.as_array().unwrap().iter().filter(|d| d["kind"] == "session").count(), 1, "{devices}");
+}
+
 }

@@ -23,6 +23,7 @@
 | GET | `/me` | 当前用户 |
 | PATCH | `/me` | 改显示名：`{display_name}` → 用户 |
 | POST | `/auth/password` | 改密码：`{old_password, new_password}`；只能用会话，成功后注销这个用户的其他会话 |
+| POST | `/auth/verify` | 核对密码：`{password}`，对了返回 204，不对返回 400；只能用会话。[隐私锁](design.md#隐私锁)用账号密码解锁时用 |
 | GET | `/tokens` | 当前用户的会话和 API 令牌（不含明文）。令牌、邀请码和升级只能用会话管理，API 令牌调用返回 403 |
 | POST | `/tokens` | 生成 API 令牌：`{name, scope}` → `{token, secret}` |
 | DELETE | `/tokens/{id}` | 注销会话或删除令牌 |

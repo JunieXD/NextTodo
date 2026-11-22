@@ -454,6 +454,24 @@ pub struct NewPassword {
     new_password: Password,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PasswordCheck {
+    password: String,
+}
+
+/// Says whether `password` is the user's: the privacy lock unlocks with it (docs/design.md#隐私锁).
+pub async fn verify(State(st): State<AppState>, auth: Auth, Json(req): Json<PasswordCheck>) -> Result<StatusCode, ApiError> {
+    auth.require_device()?;
+    let user_id = auth.user_id;
+    let stored: String =
+        st.db.call(move |c| Ok(c.query_row("SELECT password_hash FROM users WHERE id = ?1", [user_id], |r| r.get(0))?)).await?;
+    if !hashing(move || verify_password(&req.password, &stored)).await {
+        return Err(ApiError::invalid("密码不对", Some("password".into())));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// Changes the password and signs out the user's other devices; API tokens keep working.
 pub async fn change_password(State(st): State<AppState>, auth: Auth, Json(req): Json<NewPassword>) -> Result<StatusCode, ApiError> {
     auth.require_session()?;

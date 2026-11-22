@@ -7,7 +7,9 @@ import { type ReactNode, useContext, useEffect } from "react";
 import { Redirect, useLocation } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
 import { hidePanel, openMain } from "../desktop";
+import type { PrivacyLock } from "../lock";
 import { useConnection, useView } from "../session";
+import { LockScreen } from "./Lock";
 import { RootContext, Tip } from "../ui/feedback";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
@@ -124,6 +126,12 @@ function Pages({ folder }: { folder?: FolderId | null }) {
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   );
+}
+
+/** Locked (docs/design.md#隐私锁): unlocked here as in the main window, closed as the panel is. */
+export function PanelLocked({ lock }: { lock: PrivacyLock }) {
+  useEscape(() => void hidePanel());
+  return <LockScreen lock={lock} />;
 }
 
 /** Signed out, or local mode would not start: the main window is where to see to it, and a sign-in

@@ -184,11 +184,14 @@ pub fn line(s: String, what: &str, max: usize) -> Result<String, String> {
     Ok(s)
 }
 
+/// The longest a folder name may be, in characters.
+pub const MAX_NAME: usize = 100;
+
 text_type!(
     /// Folder name. Without `/`, so that paths name folders.
     Name,
     |s| {
-        let s = line(s, "名称", 100)?;
+        let s = line(s, "名称", MAX_NAME)?;
         if s.contains('/') { Err("文件夹名称不能包含 /".into()) } else { Ok(s) }
     }
 );

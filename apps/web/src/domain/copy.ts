@@ -8,13 +8,15 @@ import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "./board";
+import { MAX_NAME } from "./text";
 
 /** What a copy of a folder named `name` is called where `taken` says which names are in use: its own
  * name, else "名字 副本", "名字 副本 2" and on. As `copy_name` in crates/server/src/tools/write.rs. */
 export function copyName(name: string, taken: (n: string) => boolean): string {
-  const copy = `${name} 副本`;
+  // A long name is cut short to leave room for what tells the copy apart.
+  const copy = (mark: string) => [...name].slice(0, MAX_NAME - [...mark].length).join("") + mark;
   for (let n = 0; ; n++) {
-    const candidate = n === 0 ? name : n === 1 ? copy : `${copy} ${n}`;
+    const candidate = n === 0 ? name : copy(n === 1 ? " 副本" : ` 副本 ${n}`);
     if (!taken(candidate)) return candidate;
   }
 }

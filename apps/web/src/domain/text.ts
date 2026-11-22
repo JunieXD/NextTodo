@@ -20,8 +20,11 @@ function line(s: string, what: string, max: number): Checked {
 
 export const checkTitle = (s: string) => line(s, "标题", 200);
 
+/** The longest a folder name may be, in characters. */
+export const MAX_NAME = 100;
+
 export function checkFolderName(s: string): Checked {
-  const c = line(s, "名称", 100);
+  const c = line(s, "名称", MAX_NAME);
   return c.ok && c.value.includes("/") ? { ok: false, error: "文件夹名称不能包含 /" } : c;
 }
 

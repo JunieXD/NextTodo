@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import { type Data, apply, fromSnapshot, toSnapshot } from "./apply";
 import { Board } from "./board";
 import { copyFolder, copyName } from "./copy";
+import { checkFolderName } from "./text";
 
 const ME = "019a4b2c-0000-7000-8000-0000000000ee";
 const id = (n: number) => `019a4b2c-0000-7000-8000-${String(n).padStart(12, "0")}`;
@@ -13,6 +14,10 @@ test("a copy is named after the folder, or as a copy of it when that is taken", 
   expect(copyName("合同", taken([]))).toBe("合同");
   expect(copyName("合同", taken(["合同"]))).toBe("合同 副本");
   expect(copyName("合同", taken(["合同", "合同 副本", "合同 副本 2"]))).toBe("合同 副本 3");
+  // As long as a name may be, it is cut short to leave room for the rest.
+  const long = "長".repeat(100);
+  expect([...copyName(long, taken([long]))]).toEqual([..."長".repeat(97), ..." 副本"]);
+  expect(checkFolderName(copyName(long, taken([long, `${"長".repeat(97)} 副本`]))).ok).toBe(true);
 });
 
 test("a folder copies with all in it, open again, and its attachments referred to anew", () => {

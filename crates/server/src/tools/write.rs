@@ -8,8 +8,8 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use nexttodo_core::board::{Board, Now, Status};
 use nexttodo_core::model::{
-    Attachment, AttachmentId, Change, Date, Description, Due, Effect, FileName, FileSize, FolderId, MediaType, Misfit, MutationId, Name,
-    Remind, Repeat, RepeatFrom, Task, TaskId, Title,
+    Attachment, AttachmentId, Change, Date, Description, Due, Effect, FileName, FileSize, FolderId, MAX_NAME, MediaType, Misfit,
+    MutationId, Name, Remind, Repeat, RepeatFrom, Task, TaskId, Title,
 };
 use nexttodo_core::ops::{MAX_OPS, Op};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -720,8 +720,13 @@ pub fn style(w: &WriteCx, a: StyleArgs) -> Result<Write, ApiError> {
 /// own name, else "名字 副本", "名字 副本 2" and on (docs/design.md#文件夹). As `copyName` in
 /// apps/web/src/domain/copy.ts.
 fn copy_name(name: &str, taken: impl Fn(&str) -> bool) -> String {
-    let copy = format!("{name} 副本");
-    [name.to_owned(), copy.clone()].into_iter().chain((2..).map(|n| format!("{copy} {n}"))).find(|n| !taken(n)).expect("endless")
+    // A long name is cut short to leave room for what tells the copy apart.
+    let copy = |mark: String| name.chars().take(MAX_NAME - mark.chars().count()).chain(mark.chars()).collect::<String>();
+    [name.to_owned(), copy(" 副本".into())]
+        .into_iter()
+        .chain((2..).map(|n| copy(format!(" 副本 {n}"))))
+        .find(|n| !taken(n))
+        .expect("endless")
 }
 
 /// Copies a folder with all in it: subfolders, tasks open again, the dependencies between them, and

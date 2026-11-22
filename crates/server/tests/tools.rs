@@ -1243,6 +1243,13 @@ async fn a_folder_copies_with_all_in_it_open_again() {
         (StatusCode::CONFLICT, Some("文件夹“原文件夹”无法恢复：之后又往取代它的文件夹里放了东西，请先移走"))
     );
     assert!(text(&t.ok(&s, "tree", json!({})).await).contains("替换文件夹"));
+
+    // As long as a name may be, it is cut short to leave room for the rest.
+    let long = "長".repeat(100);
+    t.ok(&s, "mkdir", json!({ "path": format!("/{long}") })).await;
+    t.ok(&s, "copy", json!({ "folder": format!("/{long}") })).await;
+    let copy = format!("{} 副本", "長".repeat(97));
+    assert!(text(&t.ok(&s, "tree", json!({})).await).lines().any(|l| l.trim_start().starts_with(&copy)));
 }
 
 #[tokio::test]

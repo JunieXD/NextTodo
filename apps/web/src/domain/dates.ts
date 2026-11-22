@@ -150,6 +150,9 @@ export function remindAt(due: Due, r: Remind): Date {
 /** The furthest ahead a reminder may be, as the server has it: 30 days. */
 export const MAX_REMIND = 30 * 1440;
 
+/** How many reminders a due date may have, as the server has it. */
+export const MAX_REMINDERS = 100;
+
 export type RemindUnit = "minute" | "hour" | "day";
 
 export const REMIND_UNITS: Record<RemindUnit, { minutes: number; name: string }> = {
@@ -171,5 +174,9 @@ export function remindLabel(r: Remind): string {
   return `提前 ${n} ${REMIND_UNITS[unit].name}`;
 }
 
-/** All of a due date's reminders, in the order they come: `前一天 20:00、当天 09:00`; `不提醒` for none. */
-export const remindersLabel = (reminders: Remind[] | undefined) => (reminders?.length ? reminders.map(remindLabel).join("、") : "不提醒");
+/** A due date's reminders on a row, in the order they come: up to two, all of them, `前一天 20:00、当天 09:00`;
+ *  more, the first and how many, `提前 7 天 09:00 等 5 个`; `不提醒` for none. */
+export function remindersLabel(reminders: Remind[] | undefined): string {
+  if (!reminders?.length) return "不提醒";
+  return reminders.length > 2 ? `${remindLabel(reminders[0])} 等 ${reminders.length} 个` : reminders.map(remindLabel).join("、");
+}

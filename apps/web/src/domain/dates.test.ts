@@ -23,10 +23,11 @@ test("a date alone is due at the end of that day", () => {
 
 test("reminders", () => {
   expect(remindersLabel(undefined)).toBe("不提醒");
-  expect(remindersLabel([0, 30, 120, 2880].map((before) => ({ before })))).toBe("截止时、提前 30 分钟、提前 2 小时、提前 2 天");
+  expect(remindersLabel([2880, 120].map((before) => ({ before })))).toBe("提前 2 天、提前 2 小时");
   // Not a whole number of a larger unit, as an agent may set it.
   expect(remindersLabel([{ before: 90 }, { before: 1500 }])).toBe("提前 90 分钟、提前 25 小时");
-  expect(remindersLabel([0, 1, 3].map((days) => ({ days, time: "09:00" })))).toBe("当天 09:00、前一天 09:00、提前 3 天 09:00");
+  // More than two, the first and how many, kept to a row.
+  expect(remindersLabel([3, 1, 0].map((days) => ({ days, time: "09:00" })))).toBe("提前 3 天 09:00 等 3 个");
   // As the server keeps them: the first to come first, each once, none before a time there isn't.
   const all = [{ before: 0 }, { days: 0, time: "08:00" }, { before: 1440 }, { days: 1, time: "20:00" }, { before: 0 }];
   expect(inOrder(all, "09:00")).toEqual([{ before: 1440 }, { days: 1, time: "20:00" }, { days: 0, time: "08:00" }, { before: 0 }]);

@@ -123,7 +123,7 @@ export function Select<T extends string>({
           <div className="row-inner">
             {/* Its name already: what is read out after it is the value. */}
             <span className="row-name" aria-hidden>{label}</span>
-            <span className="row-value">{text}</span>
+            <span className="row-value long">{text}</span>
             {chevron}
           </div>
         </Choice.Trigger>
@@ -186,7 +186,7 @@ export function MultiSelect<T extends string>({
           <span className="row-name" aria-hidden>
             {label}
           </span>
-          <span className="row-value">{text}</span>
+          <span className="row-value long">{text}</span>
           <Icon of={ChevronsUpDown} size={16} />
         </div>
       </DropdownMenu.Trigger>

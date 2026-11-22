@@ -12,6 +12,7 @@ import type { RepeatUnit } from "../api/types/RepeatUnit";
 import {
   DAY_REMINDERS,
   MAX_REMIND,
+  MAX_REMINDERS,
   MAX_REMIND_DAYS,
   REMINDERS,
   REMIND_UNITS,
@@ -123,8 +124,9 @@ export function DueEditor({
   const ended = Boolean(repeat?.until && repeat.until < date);
   // By the lunar calendar, outside its table.
   const unlisted = lunar && !lunarDay;
+  const tooMany = reminders.length > MAX_REMINDERS;
   const save = () => {
-    if (early || ended || unlisted) return setTried(true);
+    if (early || ended || unlisted || tooMany) return setTried(true);
     onSave({ date, ...(time && { time }), ...(reminders.length && { reminders }), ...(repeat && { repeat }) });
     onClose();
   };
@@ -265,9 +267,15 @@ export function DueEditor({
         )}
         {repeat && <UntilRow value={until} min={date} onChange={setUntil} />}
       </div>
-      {tried && (early || ended || unlisted) && (
+      {tried && (early || ended || unlisted || tooMany) && (
         <p className="form-error" role="alert">
-          {early ? "截止不能早于开始" : ended ? "重复到不能早于截止" : "按农历重复的截止日期应在 1900 年 1 月 31 日到 2101 年 1 月 28 日之间"}
+          {early
+            ? "截止不能早于开始"
+            : ended
+              ? "重复到不能早于截止"
+              : unlisted
+                ? "按农历重复的截止日期应在 1900 年 1 月 31 日到 2101 年 1 月 28 日之间"
+                : `提醒最多 ${MAX_REMINDERS} 个`}
         </p>
       )}
       <div className="actions">

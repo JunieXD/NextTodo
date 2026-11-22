@@ -605,6 +605,56 @@ async fn next_says_which_step_a_task_is() {
 }
 
 #[tokio::test]
+async fn a_repeating_task_done_moves_on_wherever_its_next_time_falls() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    // Counted from the day done and done early: to the same day, or to one before its due date.
+    for (task, due, next) in [(1, "2026-11-21", "2026-11-21"), (2, "2026-11-22", "2026-11-21")] {
+        t.ok(&s, "add", json!({ "title": "吃药", "due": due, "repeat": "1d", "repeat_from": "done" })).await;
+        let done = t.ok(&s, "done", json!({ "tasks": [task], "today": "2026-11-20" })).await;
+        assert_eq!(done["data"]["changes"], json!([{ "kind": "task_repeated", "task": task, "due": next }]));
+        let undone = t.ok(&s, "undo", json!({ "batch": done["data"]["batch"] })).await;
+        let fields = if due == next { json!(["completions"]) } else { json!(["due", "completions"]) };
+        assert_eq!(undone["data"]["changes"], json!([{ "kind": "task_edited", "task": task, "fields": fields }]));
+    }
+    let log = t.ok(&s, "log", json!({ "limit": 2 })).await["data"].clone();
+    assert_eq!(
+        (log[0]["summary"].as_str(), log[1]["summary"].as_str()),
+        (Some("撤销批次 5：修改 #2 吃药"), Some("顺延 #2 吃药 → 2026-11-21"))
+    );
+
+    // Its start date moves along with it, which is no edit; a reminder changed as it is done is.
+    t.ok(
+        &s,
+        "add",
+        json!({ "title": "复诊", "start": "2026-11-19", "due": "2026-11-21", "remind": "08:00", "repeat": "1d", "repeat_from": "done" }),
+    )
+    .await;
+    let id = t.snapshot(&s).await["tasks"].as_array().unwrap().iter().find(|t| t["number"] == 3).unwrap()["id"].clone();
+    let due = json!({ "date": "2026-11-21", "reminders": [{ "days": 0, "time": "09:00" }], "repeat": { "every": 1, "unit": "day", "from": "done" } });
+    t.mutate(&s, json!([{ "op": "task.update", "id": id, "due": due, "done": true, "today": "2026-11-20" }])).await;
+    let log = t.ok(&s, "log", json!({ "limit": 1 })).await["data"].clone();
+    assert_eq!(log[0]["summary"], "顺延 #3 复诊 → 2026-11-21；修改 #3 复诊");
+    let done = t.ok(&s, "done", json!({ "tasks": [3], "today": "2026-11-21" })).await;
+    assert_eq!(done["data"]["changes"], json!([{ "kind": "task_repeated", "task": 3, "due": "2026-11-22" }]));
+
+    // Made to repeat as it is done, it moves on too; its start cleared as it does, at the first of
+    // all dates, it reads all the same.
+    let id = async |n: i64| t.snapshot(&s).await["tasks"].as_array().unwrap().iter().find(|t| t["number"] == n).unwrap()["id"].clone();
+    let daily = |date: &str| json!({ "date": date, "repeat": { "every": 1, "unit": "day", "from": "done" } });
+    t.ok(&s, "add", json!({ "title": "换药", "due": "2026-11-21" })).await;
+    t.mutate(&s, json!([{ "op": "task.update", "id": id(4).await, "due": daily("2026-11-21"), "done": true, "today": "2026-11-20" }]))
+        .await;
+    t.ok(&s, "add", json!({ "title": "很早", "start": "0000-01-01", "due": "0000-01-03", "repeat": "1d", "repeat_from": "done" })).await;
+    t.mutate(&s, json!([{ "op": "task.update", "id": id(5).await, "start": null, "done": true, "today": "0000-01-01" }])).await;
+    let log = t.ok(&s, "log", json!({ "limit": 3 })).await["data"].clone();
+    assert_eq!(
+        [&log[0]["summary"], &log[2]["summary"]],
+        ["顺延 #5 很早 → 0000-01-02；修改 #5 很早", "顺延 #4 换药 → 2026-11-21；修改 #4 换药"]
+    );
+}
+
+#[tokio::test]
 async fn a_repeating_task_moves_on_when_done() {
     let t = TestApp::new();
     let s = t.admin().await;

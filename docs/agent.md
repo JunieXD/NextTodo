@@ -181,7 +181,11 @@ $ nexttodo graph 工作
 | `folder_moved` | `folder`：原路径；`to`：新路径 |
 | `task_created`、`task_done`、`task_reopened`、`task_deleted` | `task`：编号 |
 | `task_moved` | `task`；`to`：文件夹路径；换了编号时另有 `number`：新编号 |
-| `task_edited` | `task`；`fields`：改了的字段，`title`、`description`、`start`（开始日期或时刻）、`due`、`assignees`、`order`（在同一文件夹里的顺序） |
+| `task_repeated` | `task`；`due`：重复事项完成或跳过后顺延到的截止日期；按完成日算的提前完成时，可能和原来同一天或更早 |
+| `task_edited` | `task`；`fields`：改了的字段，`title`、`description`、`start`（开始日期或时刻）、`due`、`completions`（重复事项完成的次数，撤销一次完成时会变）、`assignees`、`order`（在同一文件夹里的顺序） |
+| `attachment_added`、`attachment_deleted` | `attachment`：附件 ID；`name`：名称；`task`：所属事项的编号，属于 AI 整理请求的是 `null` |
+| `attachment_renamed` | `attachment`；`name`：新名称 |
+| `attachment_moved` | `attachment`；`task`：移到的事项编号，移回 AI 整理请求的是 `null` |
 | `member_added`、`member_removed` | `folder`：路径；`user`：用户名 |
 | `person_renamed` | `user`：用户名；`name`：新的显示名 |
 | `dep_added`、`dep_removed` | `before`、`after`：编号 |

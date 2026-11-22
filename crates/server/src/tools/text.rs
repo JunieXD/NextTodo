@@ -492,12 +492,20 @@ pub fn job_item(j: &AiJob) -> String {
     format!("“{}”", excerpt(j.text.as_str(), 20))
 }
 
-/// The due date a repeating task moved on to, done: only its date changed, and to a later one.
+/// The due date a repeating task moved on to: done, counted once more, wherever its next time falls,
+/// also when it was made to repeat as it was done; or skipped, only its date changed, and to a later
+/// one, as a date moved on by hand reads too.
 fn moved_on<'a>(before: &Task, after: &'a Task) -> Option<&'a Date> {
-    match (&before.due, &after.due) {
-        (Some(b), Some(a)) if b.repeat.is_some() && a.repeat == b.repeat && a.at == b.at && a.date > b.date => Some(&a.date),
-        _ => None,
-    }
+    let count = |t: &Task| t.completions.as_ref().map_or(0, |c| c.count.get());
+    let a = after.due.as_ref()?;
+    let done = count(after) > count(before) && a.repeat.is_some();
+    let skipped =
+        before.due.as_ref().is_some_and(|b| b.repeat.is_some() && count(after) == count(before) && a.date > b.date && only_date(b, a));
+    (done || skipped).then_some(&a.date)
+}
+
+fn only_date(before: &Due, after: &Due) -> bool {
+    *after == Due { date: after.date.clone(), ..before.clone() }
 }
 
 /// Whether a repeating task was done for good, the repeat ending with it: the last time, or ended.
@@ -508,15 +516,26 @@ fn ended(before: &Task, after: &Task) -> bool {
     }
 }
 
-/// What changed in a task besides whether it is done, which folder it is in, and a repeating one's
-/// due date moving on or its repeat ending as it is done; its place in a folder only within the same
-/// folder, as a move puts it somewhere in the new one anyway.
+/// What changed in a task besides whether it is done, which folder it is in, and a repeating one
+/// moving on, its start date along with it, or its repeat ending as it is done; its place in a folder
+/// only within the same folder, as a move puts it somewhere in the new one anyway.
 fn edited(before: &Task, after: &Task) -> Vec<&'static str> {
+    let moved = moved_on(before, after);
+    let ended = ended(before, after);
+    let start = match (moved, &before.due, &before.start, &after.start) {
+        (Some(to), Some(from), Some(b), Some(a)) => a.days_after(b) != to.days_after(&from.date),
+        _ => before.start != after.start,
+    };
+    let due = match (moved, &before.due, &after.due) {
+        (Some(_), Some(b), Some(a)) => !only_date(b, a),
+        _ => before.due != after.due && !ended,
+    };
     [
         ("title", before.title != after.title),
         ("description", before.description != after.description),
-        ("start", before.start != after.start || before.start_time != after.start_time),
-        ("due", before.due != after.due && moved_on(before, after).is_none() && !ended(before, after)),
+        ("start", start || before.start_time != after.start_time),
+        ("due", due),
+        ("completions", before.completions != after.completions && moved.is_none() && !ended),
         ("assignees", before.assignees != after.assignees),
         ("order", before.sort_key != after.sort_key && before.folder_id == after.folder_id),
     ]

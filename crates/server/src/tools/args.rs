@@ -129,6 +129,8 @@ pub struct LogArgs {
     #[schemars(description = "只列删除了事项、文件夹或附件的批次")]
     #[serde(default)]
     pub deleted: bool,
+    #[schemars(description = "批次号：只看这一个批次，每类变化列出全部事项；给了它其他参数不起作用")]
+    pub batch: Option<i64>,
 }
 
 #[derive(Clone, Deserialize, JsonSchema)]

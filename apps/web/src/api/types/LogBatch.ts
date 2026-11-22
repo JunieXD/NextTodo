@@ -3,4 +3,4 @@
 /**
  * A batch as `log` gives it (docs/agent.md#输出).
  */
-export type LogBatch = { batch: number, user: string | null, actor: string | null, source: string, created_at: number, summary: string, undone: boolean, };
+export type LogBatch = { batch: number, user: string | null, actor: string | null, source: string, created_at: number, summary: string, changes: Array<string>, undoes: number | null, undone: boolean, };

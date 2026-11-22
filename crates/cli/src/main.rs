@@ -98,8 +98,10 @@ enum Command {
         #[arg(long, help = "输出 Mermaid 流程图")]
         mermaid: bool,
     },
-    #[command(about = "最近的改动批次")]
+    #[command(about = "最近的改动批次，或一个批次的全部改动")]
     Log {
+        #[arg(help = "只看这一个批次，每类变化列出全部事项")]
+        batch: Option<i64>,
         #[arg(short = 'n', default_value_t = 10, help = "条数，最多 100")]
         limit: u32,
         #[arg(long, help = "只列这个批次之前的，用来往前翻")]
@@ -902,7 +904,14 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Show { task } => read("show", json!({ "task": task }), j),
         Command::Search { query, limit } => read("search", json!({ "query": query.join(" "), "limit": limit }), j),
         Command::Graph { folder, all, mermaid } => read("graph", json!({ "folder": folder, "all": all, "mermaid": mermaid }), j),
-        Command::Log { limit, before, deleted } => read("log", json!({ "limit": limit, "before": before, "deleted": deleted }), j),
+        Command::Log { batch, limit, before, deleted } => {
+            let mut args = json!({ "limit": limit, "before": before, "deleted": deleted });
+            // Only for one batch: servers before it turn down arguments they don't know.
+            if let Some(batch) = batch {
+                args["batch"] = batch.into();
+            }
+            read("log", args, j)
+        }
         Command::Jobs => read("jobs", json!({}), j),
         Command::Add { title, folder, description, start, due, remind, repeat, repeat_from, repeat_until, assign, after, before } => write(
             "add",

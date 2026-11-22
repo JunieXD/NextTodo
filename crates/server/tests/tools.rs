@@ -778,6 +778,25 @@ async fn lists_search_and_the_log() {
 }
 
 #[tokio::test]
+async fn the_log_gives_one_batch_in_full() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    for title in ["一", "二", "三", "四"] {
+        t.ok(&s, "add", json!({ "title": title })).await;
+    }
+    let done = t.ok(&s, "done", json!({ "tasks": [1, 2, 3, 4] })).await["data"]["batch"].clone();
+    assert_eq!(t.ok(&s, "log", json!({ "limit": 1 })).await["data"][0]["changes"], json!(["完成 4 项：#1 一、#2 二、#3 三 等"]));
+    // Whatever else is asked.
+    let one = t.ok(&s, "log", json!({ "batch": done, "limit": 0, "deleted": true })).await["data"].clone();
+    assert_eq!((&one[0]["changes"], &one[0]["undoes"]), (&json!(["完成 4 项：#1 一、#2 二、#3 三、#4 四"]), &Value::Null));
+    let undo = t.ok(&s, "undo", json!({ "batch": done })).await["data"]["batch"].clone();
+    let one = t.ok(&s, "log", json!({ "batch": undo })).await;
+    assert_eq!((&one["data"][0]["undoes"], one["data"][0]["changes"].as_array().unwrap().len()), (&done, 1));
+    assert!(text(&one).ends_with("\n  撤销批次 5\n  重新打开 4 项：#1 一、#2 二、#3 三、#4 四"), "{}", text(&one));
+    assert_eq!(t.ok(&s, "log", json!({ "batch": 999 })).await["data"], json!([]));
+}
+
+#[tokio::test]
 async fn the_log_pages_back_finds_deletions_and_says_what_is_undone() {
     let t = TestApp::new();
     let s = t.admin().await;

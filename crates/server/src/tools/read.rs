@@ -493,14 +493,18 @@ pub fn jobs(c: &Connection, cx: &Cx, _: NoArgs) -> Result<Output, ApiError> {
 }
 
 pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
-    let limit = a.limit.unwrap_or(10);
+    // One batch in full, or a page of them, each kind of change listing a few items.
+    let (limit, before, deleted, items) = match a.batch {
+        Some(_) => (1, i64::MAX, false, usize::MAX),
+        None => (a.limit.unwrap_or(10), a.before.unwrap_or(i64::MAX), a.deleted, 3),
+    };
     if !(1..=100).contains(&limit) {
         return Err(ApiError::invalid("条数要在 1 到 100 之间", Some("limit".into())));
     }
     let mut stmt = c.prepare(
         "SELECT m.seq, m.owner_id, m.actor, t.kind, t.name, m.ops, coalesce(d.effects, m.effects), m.created_at, m.id
          FROM deliveries d JOIN mutations m ON m.seq = d.seq LEFT JOIN tokens t ON t.id = m.token_id
-         WHERE d.user_id = ?1 AND m.effects IS NOT NULL AND d.seq < ?3
+         WHERE d.user_id = ?1 AND m.effects IS NOT NULL AND d.seq < ?3 AND (?5 IS NULL OR d.seq = ?5)
            AND (NOT ?4 OR EXISTS (SELECT 1 FROM json_each(coalesce(d.effects, m.effects)) e
              WHERE json_extract(e.value, '$.kind') IN ('task', 'folder', 'attachment')
                AND json_type(e.value, '$.before') = 'object' AND json_type(e.value, '$.after') = 'null'))
@@ -517,7 +521,7 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
         created_at: i64,
     }
     let mut rows = Vec::new();
-    for r in stmt.query_map(params![cx.user, limit, a.before.unwrap_or(i64::MAX), a.deleted], |r| {
+    for r in stmt.query_map(params![cx.user, limit, before, deleted, a.batch], |r| {
         let kind: Option<String> = r.get(3)?;
         let name: Option<String> = r.get(4)?;
         Ok((
@@ -557,14 +561,17 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
     let mut names = Names::new(&snap, cx.user, store::people(c, &others)?);
     let (mut lines, mut data) = (Vec::new(), Vec::new());
     for r in &rows {
-        let mut summary = text::changes(&r.effects, &mut names, 3).0.join("；");
-        if summary.is_empty() {
-            summary = "没有变化".into();
-        }
-        if let Some(Op::Undo { mutation }) = r.ops.first() {
-            let undone: Option<i64> = c.query_row("SELECT seq FROM mutations WHERE id = ?1", [mutation], |r| r.get(0)).optional()?;
-            summary = format!("撤销{}：{summary}", undone.map_or(String::new(), |s| format!("批次 {s}")));
-        }
+        let changes = text::changes(&r.effects, &mut names, items).0;
+        let mut summary = if changes.is_empty() { "没有变化".into() } else { changes.join("；") };
+        // As the apps undo: one batch, alone. Several, or along with other changes, read as changes.
+        let undoes = match r.ops.as_slice() {
+            [Op::Undo { mutation }] => {
+                let undoes: Option<i64> = c.query_row("SELECT seq FROM mutations WHERE id = ?1", [mutation], |r| r.get(0)).optional()?;
+                summary = format!("撤销{}：{summary}", undoes.map_or(String::new(), |s| format!("批次 {s}")));
+                undoes
+            }
+            _ => None,
+        };
         let source = match (&r.device, r.user == cx.user) {
             (Some(device), true) if r.actor.is_none() => format!("本人（{device}）"),
             (_, true) => r.actor.clone().unwrap_or_else(|| "本人".into()),
@@ -572,7 +579,16 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
         };
         let undone = is_undone(&r.id);
         lines.push(format!("批次 {} · {} · {source}{}", r.seq, ago(cx.now, r.created_at), if undone { " · 已撤销" } else { "" }));
-        lines.push(format!("  {summary}"));
+        if a.batch.is_some() {
+            lines.extend(undoes.map(|s| format!("  撤销批次 {s}")));
+            lines.extend(if changes.is_empty() {
+                vec!["  没有变化".into()]
+            } else {
+                changes.iter().map(|c| format!("  {c}")).collect()
+            });
+        } else {
+            lines.push(format!("  {summary}"));
+        }
         data.push(LogBatch {
             batch: r.seq,
             user: (r.user != cx.user).then(|| names.username(&r.user)),
@@ -580,6 +596,8 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
             source,
             created_at: r.created_at,
             summary,
+            changes,
+            undoes,
             undone,
         });
     }
@@ -596,6 +614,8 @@ pub struct LogBatch {
     source: String,
     created_at: i64,
     summary: String,
+    changes: Vec<String>,
+    undoes: Option<i64>,
     undone: bool,
 }
 

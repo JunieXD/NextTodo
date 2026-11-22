@@ -271,6 +271,10 @@ svg { display: block; flex: none; }
 /* Unless it says what to do, to be read in full: why updates failed, say. */
 .folder-main > .folder-sub.full { white-space: normal; }
 .log-more { margin: 4px 8px; }
+/* Short of room, who made it gives way: the batch number is what an undo of it names. */
+.folder-main > .log-sub { display: flex; }
+.log-sub > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.log-sub > :last-child { flex: none; white-space: pre; }
 .chev { color: var(--outline); }
 .done-toggle .row-inner { color: var(--on-surface-variant); font-size: 15px; min-height: 48px; }
 .done-toggle .chev { transition: transform .2s; margin-left: auto; }

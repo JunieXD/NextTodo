@@ -152,8 +152,9 @@ export function LogPage() {
                 <div className="row-inner">
                   <button className="folder-main" onClick={() => setOpen(b)}>
                     <span>{b.summary}</span>
-                    <span className="folder-sub">
-                      {b.source} · {isoTime(new Date(b.created_at))}
+                    <span className="folder-sub log-sub">
+                      <span>{b.source}</span>
+                      <span>{` · ${isoTime(new Date(b.created_at))} · 批次 ${b.batch}`}</span>
                     </span>
                   </button>
                   {b.undone ? (

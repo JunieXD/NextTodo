@@ -2,14 +2,17 @@
 // undone; or only those that delete something. As the `log` tool gives them, fetched from the top
 // again as changes come in, and undone by the `undo` tool: the local log has only the latest.
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api } from "../api/http";
+import type { ChangedField } from "../api/types/ChangedField";
 import type { LogBatch } from "../api/types/LogBatch";
+import type { LogItem } from "../api/types/LogItem";
 import { formatDay, formatMoment, isoTime } from "../domain/dates";
 import { useSession } from "../session";
 import { Seg } from "../ui/controls";
 import { Modal, forUser, useFeedback } from "../ui/feedback";
 import { useNow } from "../ui/hooks";
+import { LookValue } from "./folder-look";
 
 const PAGE = 50;
 
@@ -213,6 +216,8 @@ function LogDetail({ listed, undoing, undo, onClose }: { listed: LogBatch; undoi
     };
   }, [listed.batch, seq, tries]);
   const b = full ?? listed;
+  // A server older than the app gives a line for each kind of change only.
+  const items = full && (full.items ?? full.changes.map((text): LogItem => ({ text, change: "updated", fields: [] })));
   const fact = (name: string, value: string) => (
     <div className="row prop">
       <div className="row-inner controls">
@@ -238,14 +243,16 @@ function LogDetail({ listed, undoing, undo, onClose }: { listed: LogBatch; undoi
         {full?.undoes != null && fact("撤销的批次", String(full.undoes))}
       </div>
       <h2 className="group-title">改动</h2>
-      {full ? (
-        <div className="group">
-          {(full.changes.length ? full.changes : ["没有变化"]).map((line, i) => (
-            <div key={i} className="row prop">
-              <div className="row-inner">{line}</div>
+      {items ? (
+        items.length ? (
+          items.map((item, i) => <Changed key={i} item={item} />)
+        ) : (
+          <div className="group">
+            <div className="row prop">
+              <div className="row-inner">没有变化</div>
             </div>
-          ))}
-        </div>
+          </div>
+        )
       ) : gone ? (
         <p className="empty">这个批次已不在改动记录里</p>
       ) : failed ? (
@@ -260,5 +267,73 @@ function LogDetail({ listed, undoing, undo, onClose }: { listed: LogBatch; undoi
         <p className="empty">正在读取…</p>
       )}
     </Modal>
+  );
+}
+
+/** What a change did to one thing: its line, then each field, as it was, struck through, and as it became;
+ * of one added or deleted, as it was added or deleted. */
+function Changed({ item }: { item: LogItem }) {
+  return (
+    <div className="group log-item">
+      <div className="row prop">
+        <div className="row-inner">{item.text}</div>
+      </div>
+      {item.fields.map((f) => (
+        <div key={f.field} className="row prop">
+          {f.field === "order" ? (
+            <div className="row-inner">调整了顺序</div>
+          ) : (
+            <div className="row-inner log-field">
+              <span className="log-name">{f.name}</span>
+              {item.change !== "created" && <FieldValue field={f.field} value={f.before} was={item.change === "updated"} />}
+              {item.change !== "deleted" && <FieldValue field={f.field} value={f.after} />}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FieldValue({ field, value, was = false }: { field: ChangedField; value: string | null; was?: boolean }) {
+  const className = `log-value${was ? " was" : ""}`;
+  if (value === null) return <span className={className}>无</span>;
+  if (field === "color" || field === "icon") {
+    return (
+      <span className={className}>
+        <LookValue field={field} code={value} />
+      </span>
+    );
+  }
+  if (field === "description") return <Clamped text={value} className={className} />;
+  return <span className={className}>{value}</span>;
+}
+
+/** A description as it was or became: 4 lines, the rest a tap away. */
+function Clamped({ text, className }: { text: string; className: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [long, setLong] = useState(false);
+  const [open, setOpen] = useState(false);
+  // Measured cut short, as wide as it is now: a narrower dialog wraps it to more lines.
+  useLayoutEffect(() => {
+    if (open) return;
+    const el = ref.current!;
+    const measure = () => setLong(el.scrollHeight > el.clientHeight);
+    measure();
+    const resized = new ResizeObserver(measure);
+    resized.observe(el);
+    return () => resized.disconnect();
+  }, [text, open]);
+  return (
+    <>
+      <span ref={ref} className={`${className}${open ? "" : " clamped"}`}>
+        {text}
+      </span>
+      {long && (
+        <button type="button" className="text-btn log-open" onClick={() => setOpen(!open)}>
+          {open ? "收起" : "展开"}
+        </button>
+      )}
+    </>
   );
 }

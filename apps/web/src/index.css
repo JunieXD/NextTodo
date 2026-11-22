@@ -275,6 +275,19 @@ svg { display: block; flex: none; }
 .folder-main > .log-sub { display: flex; }
 .log-sub > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .log-sub > :last-child { flex: none; white-space: pre; }
+/* The change detail: a block for each thing changed, a field's name above what it was, struck through,
+   and what it became. */
+.log-item + .log-item { margin-top: 12px; }
+.log-field { flex-direction: column; align-items: stretch; gap: 2px; }
+.log-name { font-size: 13px; color: var(--on-surface-variant); }
+.log-value { white-space: pre-wrap; overflow-wrap: anywhere; }
+.log-value.was { color: var(--on-surface-variant); text-decoration: line-through; }
+/* A line through doesn't reach into an inline flex box by itself. */
+.log-value.was .look-value { text-decoration: line-through; }
+.log-value.clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
+.log-open { align-self: flex-start; }
+.look-value { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; }
+.look-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--fc-accent); }
 .chev { color: var(--outline); }
 .done-toggle .row-inner { color: var(--on-surface-variant); font-size: 15px; min-height: 48px; }
 .done-toggle .chev { transition: transform .2s; margin-left: auto; }

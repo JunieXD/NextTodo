@@ -156,6 +156,27 @@ export function FolderGlyph({ board, id, size = 18 }: { board: Board; id: Folder
   );
 }
 
+/** A colour or an icon a folder had, by its code, drawn and named, as the change log shows it. A newer
+ * server's that this version doesn't know shows by its code. */
+export function LookValue({ field, code }: { field: "color" | "icon"; code: string }) {
+  if (field === "color") {
+    const name = COLORS.find(([key]) => key === code)?.[1];
+    return (
+      <span className="look-value">
+        {name && <span className={`look-dot fc-${code}`} />}
+        {name ?? code}
+      </span>
+    );
+  }
+  const found = ICONS.find(([key]) => key === code);
+  return (
+    <span className="look-value">
+      {found && <Icon of={found[1]} size={16} />}
+      {found?.[2] ?? code}
+    </span>
+  );
+}
+
 /** The dialog choosing folder `f`'s colour and icon: one change, which can be undone. */
 export function FolderLookDialog({ board, folder: f, onClose }: { board: Board; folder: Folder; onClose(): void }) {
   const commit = useCommit();

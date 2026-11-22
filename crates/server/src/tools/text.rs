@@ -1,14 +1,16 @@
 //! Text output: short Chinese lines meant for people and agents alike. See `docs/agent.md`.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use nexttodo_core::board::{Board, Snapshot, Status};
 use nexttodo_core::lunar;
 use nexttodo_core::model::{
-    AiJob, Change, Date, Due, Effect, FolderId, Holder, JobState, Link, Period, Person, Remind, RemindBefore, RemindOn, Repeat, RepeatFrom,
-    Task, TaskId, Time, Weekdays,
+    AiJob, Change, Date, Due, Effect, Folder, FolderId, Holder, JobState, Link, Period, Person, Remind, RemindBefore, RemindOn, Repeat,
+    RepeatFrom, Task, TaskId, Time, Weekdays,
 };
+use serde::Serialize;
 use serde_json::{Value, json};
+use ts_rs::TS;
 
 /// How much of a title is shown where a task is only mentioned, not listed.
 const SHORT: usize = 30;
@@ -219,6 +221,7 @@ pub fn ago(now: i64, then: i64) -> String {
 
 /// Folder paths, task numbers and people as they were at one point in the change log, for the user
 /// `me`.
+#[derive(Clone)]
 pub struct Names {
     me: String,
     people: HashMap<String, Person>,
@@ -228,6 +231,8 @@ pub struct Names {
     /// A task's number changes only as it moves into or out of a folder someone else shares, so
     /// this keeps every task it has seen, by its latest number and whose it was then.
     tasks: HashMap<TaskId, (i64, Option<String>)>,
+    /// The start of each such task's title, as it was then.
+    titles: HashMap<TaskId, String>,
 }
 
 impl Names {
@@ -240,6 +245,7 @@ impl Names {
             folders: snap.folders.iter().map(|f| (f.id, (f.parent_id, f.name.as_str().to_owned()))).collect(),
             shares: snap.shares.iter().map(|sh| (sh.folder_id, sh.owner.clone())).collect(),
             tasks: HashMap::new(),
+            titles: HashMap::new(),
         };
         for t in &snap.tasks {
             names.seen(t);
@@ -250,18 +256,20 @@ impl Names {
     fn seen(&mut self, t: &Task) {
         let owner = self.foreign(t.folder_id);
         self.tasks.insert(t.id, (t.number, owner));
+        self.titles.insert(t.id, excerpt(t.title.as_str(), SHORT));
     }
 
     /// The username of whose what is in folder `f` is, when that is someone else.
     fn foreign(&self, f: Option<FolderId>) -> Option<String> {
-        let mut cur = f;
-        while let Some(id) = cur {
-            if let Some(owner) = self.shares.get(&id) {
-                return (*owner != self.me).then(|| self.username(owner));
-            }
-            cur = self.folders.get(&id).and_then(|(parent, _)| *parent);
-        }
-        None
+        let owner = self.up(f, HashSet::new()).find_map(|id| self.shares.get(&id))?;
+        (*owner != self.me).then(|| self.username(owner))
+    }
+
+    /// Folder `from` and those it is in, as far as known, past those `seen`. Gone back over a time the
+    /// user didn't see a folder, as a member taken off a share and added again, the folders can be
+    /// inside one of their own: going up stops before it comes round again.
+    fn up(&self, from: Option<FolderId>, mut seen: HashSet<FolderId>) -> impl Iterator<Item = FolderId> + '_ {
+        std::iter::successors(from, |id| self.folders.get(id).and_then(|(parent, _)| *parent)).take_while(move |id| seen.insert(*id))
     }
 
     pub fn username(&self, id: &str) -> String {
@@ -281,18 +289,30 @@ impl Names {
         }
     }
 
-    /// `#12 出设计稿`, or `@alice#12 出设计稿`.
-    fn item(&self, t: &Task) -> String {
-        let label = match self.foreign(t.folder_id) {
+    /// `#12`, or `@alice#12`.
+    fn label(&self, t: &Task) -> String {
+        match self.foreign(t.folder_id) {
             Some(owner) => format!("@{owner}#{}", t.number),
             None => format!("#{}", t.number),
-        };
-        format!("{label} {}", excerpt(t.title.as_str(), SHORT))
+        }
+    }
+
+    /// `#12 出设计稿`, or `@alice#12 出设计稿`.
+    fn item(&self, t: &Task) -> String {
+        format!("{} {}", self.label(t), excerpt(t.title.as_str(), SHORT))
+    }
+
+    /// A task by its number and title as last seen: `#12 出设计稿`.
+    fn mention(&self, id: TaskId) -> String {
+        match self.titles.get(&id) {
+            Some(title) => format!("{} {title}", self.number(id)),
+            None => self.number(id),
+        }
     }
 
     /// Steps back over one change, to the names from before it. Sharing is stepped over a change at a
     /// time, by `changes`.
-    fn undo(&mut self, e: &Effect) {
+    pub fn undo(&mut self, e: &Effect) {
         match e {
             Effect::Folder(Change::Created(f)) => {
                 self.folders.remove(&f.id);
@@ -311,21 +331,19 @@ impl Names {
     }
 
     fn path(&self, f: Option<FolderId>) -> String {
-        match f.and_then(|id| self.folders.get(&id)) {
-            Some((parent, name)) => self.path_of(f.expect("a folder"), *parent, name),
-            None => "/".into(),
+        let Some(id) = f else { return "/".into() };
+        match self.folders.get(&id) {
+            Some((parent, name)) => self.path_of(id, *parent, name),
+            None => "已删除的文件夹".into(),
         }
     }
 
     /// The path folder `id` had under `parent` with `name`: `/工作/网站改版`, or `@alice/装修/水电`.
     fn path_of(&self, id: FolderId, parent: Option<FolderId>, name: &str) -> String {
-        let mut parts = vec![name];
-        let mut cur = parent;
-        while let Some((up, name)) = cur.and_then(|id| self.folders.get(&id)) {
-            parts.push(name.as_str());
-            cur = *up;
-        }
+        let mut parts: Vec<&str> =
+            self.up(parent, HashSet::from([id])).map_while(|up| self.folders.get(&up).map(|(_, name)| name.as_str())).collect();
         parts.reverse();
+        parts.push(name);
         let owner = if self.shares.contains_key(&id) { self.foreign(Some(id)) } else { self.foreign(parent) };
         match owner {
             Some(owner) => format!("@{owner}/{}", parts.join("/")),
@@ -433,6 +451,37 @@ impl Kind {
             Kind::MemberAdded => ("添加成员", "添加成员", "人"),
             Kind::MemberRemoved => ("移除成员", "移除成员", "人"),
             Kind::PersonRenamed => ("用户改名", "改名", "人"),
+        }
+    }
+
+    /// Whether it adds what it is about, deletes it or changes it.
+    fn change(self) -> LogChange {
+        match self {
+            Kind::FolderCreated | Kind::TaskCreated | Kind::DepAdded | Kind::AttachmentAdded | Kind::JobCreated | Kind::MemberAdded => {
+                LogChange::Created
+            }
+            Kind::FolderDeleted
+            | Kind::TaskDeleted
+            | Kind::DepRemoved
+            | Kind::AttachmentDeleted
+            | Kind::JobDeleted
+            | Kind::MemberRemoved => LogChange::Deleted,
+            Kind::FolderRenamed
+            | Kind::FolderMoved
+            | Kind::FolderSorted
+            | Kind::FolderStyled
+            | Kind::TaskDone
+            | Kind::TaskReopened
+            | Kind::TaskRepeated
+            | Kind::TaskMoved
+            | Kind::TaskEdited
+            | Kind::AttachmentRenamed
+            | Kind::AttachmentMoved
+            | Kind::JobStarted
+            | Kind::JobFailed
+            | Kind::JobReady
+            | Kind::JobRetried
+            | Kind::PersonRenamed => LogChange::Updated,
         }
     }
 
@@ -695,11 +744,10 @@ fn number(e: &Effect, n: &Names) -> Option<i64> {
     }
 }
 
-/// What a batch changed: one line per kind of change, listing at most `limit` items per line, and
-/// each change as data, in order. `names` are those from after the batch; this steps them back over
-/// it, one change at a time, so that every change reads with the folders as they were right after
-/// it, also in the middle of a batch and going through the log newest first.
-pub fn changes(effects: &[Effect], names: &mut Names, limit: usize) -> (Vec<String>, Vec<Value>) {
+/// What `look` makes of each change of a batch, in order. `names` are those from after the batch; this
+/// steps them back over it, one change at a time, so that every change reads with the folders as they
+/// were right after it, also in the middle of a batch and going through the log newest first.
+fn step<T>(effects: &[Effect], names: &mut Names, mut look: impl FnMut(&Effect, &Names) -> T) -> Vec<T> {
     // Sharing changes nothing of whose what is: what a change that stops sharing a folder did in it
     // is its owner's, as before it.
     for e in effects {
@@ -707,9 +755,9 @@ pub fn changes(effects: &[Effect], names: &mut Names, limit: usize) -> (Vec<Stri
             names.shares.insert(sh.folder_id, sh.owner.clone());
         }
     }
-    let mut described = Vec::with_capacity(effects.len());
+    let mut seen = Vec::with_capacity(effects.len());
     for e in effects.iter().rev() {
-        described.push((number(e, names), describe(e, names)));
+        seen.push(look(e, names));
         names.undo(e);
     }
     for e in effects {
@@ -717,7 +765,14 @@ pub fn changes(effects: &[Effect], names: &mut Names, limit: usize) -> (Vec<Stri
             names.shares.remove(&sh.folder_id);
         }
     }
-    described.reverse();
+    seen.reverse();
+    seen
+}
+
+/// What a batch changed: one line per kind of change, listing at most `limit` items per line, and
+/// each change as data, in order, with the names as `step` has them.
+pub fn changes(effects: &[Effect], names: &mut Names, limit: usize) -> (Vec<String>, Vec<Value>) {
+    let described = step(effects, names, |e, n| (number(e, n), describe(e, n)));
     let mut groups: BTreeMap<Kind, Vec<(Option<i64>, String)>> = BTreeMap::new();
     let mut data = Vec::with_capacity(described.len());
     for (number, found) in described {
@@ -743,4 +798,217 @@ pub fn changes(effects: &[Effect], names: &mut Names, limit: usize) -> (Vec<Stri
         })
         .collect();
     (lines, data)
+}
+
+/// One thing a batch changed, in full (docs/agent.md#输出): what was done to it, and each field it
+/// changed; of one added or deleted, each it had.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct LogItem {
+    pub text: String,
+    pub change: LogChange,
+    pub fields: Vec<LogField>,
+}
+
+/// Whether a thing was added, changed or deleted: of the first and last, a field has only the value
+/// it was added with or deleted with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum LogChange {
+    Created,
+    Updated,
+    Deleted,
+}
+
+impl LogItem {
+    /// Its line, then a line for each field, indented under it.
+    pub fn lines(&self) -> impl Iterator<Item = String> + '_ {
+        std::iter::once(self.text.clone()).chain(self.fields.iter().map(|f| format!("  {}", f.line(self.change))))
+    }
+}
+
+/// A field as it was and as it became, written as the text has it, colours and icons by their code;
+/// `None` for no value, and for the other side of one added or deleted.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct LogField {
+    pub field: ChangedField,
+    pub name: String,
+    pub before: Option<String>,
+    pub after: Option<String>,
+}
+
+impl LogField {
+    /// `截止：2026-11-20 18:00 → 2026-11-22`, or of one added or deleted `截止：2026-11-20`, or `调整了顺序`;
+    /// a description by its start.
+    fn line(&self, change: LogChange) -> String {
+        let value = |v: &Option<String>| match (v, self.field) {
+            (None, _) => "无".into(),
+            (Some(v), ChangedField::Description) => excerpt(&v.split_whitespace().collect::<Vec<_>>().join(" "), SHORT),
+            (Some(v), _) => v.clone(),
+        };
+        match change {
+            _ if self.field == ChangedField::Order => "调整了顺序".into(),
+            LogChange::Created => format!("{}：{}", self.name, value(&self.after)),
+            LogChange::Deleted => format!("{}：{}", self.name, value(&self.before)),
+            LogChange::Updated => format!("{}：{} → {}", self.name, value(&self.before), value(&self.after)),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum ChangedField {
+    Title,
+    Description,
+    Folder,
+    Number,
+    Start,
+    Due,
+    Reminders,
+    Repeat,
+    Assignees,
+    Completions,
+    Order,
+    Name,
+    Parent,
+    Color,
+    Icon,
+    Holder,
+}
+
+impl ChangedField {
+    fn name(self) -> &'static str {
+        match self {
+            ChangedField::Title => "标题",
+            ChangedField::Description => "描述",
+            ChangedField::Folder => "所在文件夹",
+            ChangedField::Number => "编号",
+            ChangedField::Start => "开始",
+            ChangedField::Due => "截止",
+            ChangedField::Reminders => "提醒",
+            ChangedField::Repeat => "重复",
+            ChangedField::Assignees => "负责人",
+            ChangedField::Completions => "完成次数",
+            ChangedField::Order => "顺序",
+            ChangedField::Name => "名称",
+            ChangedField::Parent => "位置",
+            ChangedField::Color => "颜色",
+            ChangedField::Icon => "图标",
+            ChangedField::Holder => "所属",
+        }
+    }
+}
+
+/// Each thing a batch changed, in order, with the names as `step` has them.
+pub fn items(effects: &[Effect], names: &mut Names) -> Vec<LogItem> {
+    step(effects, names, detail).into_iter().flatten().collect()
+}
+
+fn detail(e: &Effect, n: &Names) -> Vec<LogItem> {
+    let found = describe(e, n);
+    let subject = match e {
+        Effect::Folder(Change::Created(f) | Change::Updated { after: f, .. } | Change::Deleted(f)) => {
+            n.path_of(f.id, f.parent_id, f.name.as_str())
+        }
+        // Its whole title: the fields of one added or deleted leave it out.
+        Effect::Task(Change::Created(t) | Change::Updated { after: t, .. } | Change::Deleted(t)) => {
+            format!("{} {}", n.label(t), t.title.as_str())
+        }
+        Effect::Attachment(Change::Created(a) | Change::Updated { after: a, .. } | Change::Deleted(a)) => {
+            format!("{}（{}）", a.name.as_str(), n.holder(a.holder).0)
+        }
+        Effect::Dependency(Link::Added(d) | Link::Removed(d)) => format!("{} → {}", n.mention(d.before), n.mention(d.after)),
+        // What their lines say is all there is to them.
+        Effect::AiJob(_) | Effect::Share(_) | Effect::Person(_) | Effect::Completion(_) => {
+            return found
+                .into_iter()
+                .map(|(kind, text, _)| LogItem { text: format!("{} {text}", kind.words().0), change: kind.change(), fields: Vec::new() })
+                .collect();
+        }
+    };
+    // What one change does to one thing is all of a kind: adding it, deleting it, or changing it.
+    let Some(&(kind, ..)) = found.first() else { return Vec::new() };
+    let verbs: Vec<&str> = found.iter().map(|(kind, ..)| kind.words().0).collect();
+    vec![LogItem { text: format!("{} {subject}", verbs.join("、")), change: kind.change(), fields: fields(e, n) }]
+}
+
+/// The fields a change changed; of what it added or deleted, those it had, its name aside, which the
+/// line has.
+fn fields(e: &Effect, n: &Names) -> Vec<LogField> {
+    let field =
+        |field: ChangedField, before: Option<String>, after: Option<String>| LogField { field, name: field.name().into(), before, after };
+    let had = |values: Vec<(ChangedField, Option<String>)>, added: bool| {
+        values
+            .into_iter()
+            .filter(|(f, _)| !matches!(f, ChangedField::Title | ChangedField::Number | ChangedField::Name | ChangedField::Parent))
+            .filter_map(|(f, v)| v.map(|v| if added { field(f, None, Some(v)) } else { field(f, Some(v), None) }))
+            .collect()
+    };
+    let changed = |before: Vec<(ChangedField, Option<String>)>, after: Vec<(ChangedField, Option<String>)>| {
+        before.into_iter().zip(after).filter(|((_, b), (_, a))| b != a).map(|((f, b), (_, a))| field(f, b, a)).collect::<Vec<_>>()
+    };
+    match e {
+        Effect::Task(Change::Created(t)) => had(task_values(t, n), true),
+        Effect::Task(Change::Deleted(t)) => had(task_values(t, n), false),
+        Effect::Task(Change::Updated { before, after }) => {
+            let mut found = changed(task_values(before, n), task_values(after, n));
+            // Its place among the same tasks; a move puts it somewhere in the new folder anyway.
+            if before.folder_id == after.folder_id && before.sort_key != after.sort_key {
+                found.push(field(ChangedField::Order, None, None));
+            }
+            found
+        }
+        Effect::Folder(Change::Created(f)) => had(folder_values(f, n), true),
+        Effect::Folder(Change::Deleted(f)) => had(folder_values(f, n), false),
+        Effect::Folder(Change::Updated { before, after }) => {
+            let mut found = changed(folder_values(before, n), folder_values(after, n));
+            if before.parent_id == after.parent_id && before.sort_key != after.sort_key {
+                found.push(field(ChangedField::Order, None, None));
+            }
+            found
+        }
+        Effect::Attachment(Change::Updated { before, after }) => {
+            let holder = |h: Holder| match h {
+                Holder::Task(t) => n.mention(t),
+                Holder::Job(_) => n.holder(h).0,
+            };
+            changed(
+                vec![(ChangedField::Name, Some(before.name.as_str().to_owned())), (ChangedField::Holder, Some(holder(before.holder)))],
+                vec![(ChangedField::Name, Some(after.name.as_str().to_owned())), (ChangedField::Holder, Some(holder(after.holder)))],
+            )
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// A task's fields as a change shows them, in order.
+fn task_values(t: &Task, n: &Names) -> Vec<(ChangedField, Option<String>)> {
+    let due = t.due.as_ref();
+    let reminders: Vec<String> = due.map(|d| d.reminders().iter().map(remind).collect()).unwrap_or_default();
+    let people: Vec<String> = t.assignees.iter().map(|u| n.person(u)).collect();
+    vec![
+        (ChangedField::Title, Some(t.title.as_str().to_owned())),
+        (ChangedField::Description, (!t.description.as_str().is_empty()).then(|| t.description.as_str().to_owned())),
+        (ChangedField::Folder, Some(n.path(t.folder_id))),
+        (ChangedField::Number, Some(n.label(t))),
+        (ChangedField::Start, start(t)),
+        (ChangedField::Due, due.map(|d| moment(&d.date, d.at.as_ref().map(|at| &at.time)))),
+        (ChangedField::Reminders, (!reminders.is_empty()).then(|| reminders.join("、"))),
+        (ChangedField::Repeat, due.and_then(|d| d.repeat.as_ref().map(|r| repeat(r, &d.date)))),
+        (ChangedField::Assignees, (!people.is_empty()).then(|| people.join("、"))),
+        (ChangedField::Completions, t.completions.as_ref().map(|c| format!("{} 次", c.count))),
+    ]
+}
+
+/// A folder's fields as a change shows them, in order.
+fn folder_values(f: &Folder, n: &Names) -> Vec<(ChangedField, Option<String>)> {
+    vec![
+        (ChangedField::Name, Some(f.name.as_str().to_owned())),
+        (ChangedField::Parent, Some(n.path(f.parent_id))),
+        (ChangedField::Color, f.color.map(|c| c.as_str().to_owned())),
+        (ChangedField::Icon, f.icon.map(|i| i.as_str().to_owned())),
+    ]
 }

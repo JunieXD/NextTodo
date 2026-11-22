@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use ts_rs::TS;
 
 use super::args::{AgendaArgs, AttachmentArgs, GraphArgs, ListArgs, LogArgs, NextArgs, NoArgs, SearchArgs, ShowArgs};
-use super::text::{self, Names, ago, job_item, mention, status_tag, task_line, task_view, usernames};
+use super::text::{self, LogItem, Names, ago, job_item, mention, status_tag, task_line, task_view, usernames};
 use super::{Cx, Output, find_folder, find_task};
 use crate::attachments::showable_image;
 use crate::error::ApiError;
@@ -559,8 +559,19 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
         }
     }
     let mut names = Names::new(&snap, cx.user, store::people(c, &others)?);
+    // The folders as they were at each batch: the folder changes of those not read, after it, are
+    // stepped back over too, which a later page, the deleted ones and one batch leave out.
+    let read: HashSet<i64> = rows.iter().map(|r| r.seq).collect();
+    let mut since = folder_changes(c, cx.user, rows[rows.len() - 1].seq)?.into_iter().peekable();
     let (mut lines, mut data) = (Vec::new(), Vec::new());
     for r in &rows {
+        while let Some((seq, e)) = since.next_if(|(seq, _)| *seq > r.seq) {
+            if !read.contains(&seq) {
+                names.undo(&e);
+            }
+        }
+        // In full only for the one batch asked for; the names are stepped back over it once, below.
+        let detail = a.batch.is_some().then(|| text::items(&r.effects, &mut names.clone()));
         let changes = text::changes(&r.effects, &mut names, items).0;
         let mut summary = if changes.is_empty() { "没有变化".into() } else { changes.join("；") };
         // As the apps undo: one batch, alone. Several, or along with other changes, read as changes.
@@ -579,15 +590,15 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
         };
         let undone = is_undone(&r.id);
         lines.push(format!("批次 {} · {} · {source}{}", r.seq, ago(cx.now, r.created_at), if undone { " · 已撤销" } else { "" }));
-        if a.batch.is_some() {
-            lines.extend(undoes.map(|s| format!("  撤销批次 {s}")));
-            lines.extend(if changes.is_empty() {
-                vec!["  没有变化".into()]
-            } else {
-                changes.iter().map(|c| format!("  {c}")).collect()
-            });
-        } else {
-            lines.push(format!("  {summary}"));
+        match &detail {
+            Some(detail) => {
+                lines.extend(undoes.map(|s| format!("  撤销批次 {s}")));
+                if detail.is_empty() {
+                    lines.push("  没有变化".into());
+                }
+                lines.extend(detail.iter().flat_map(|item| item.lines()).map(|l| format!("  {l}")));
+            }
+            None => lines.push(format!("  {summary}")),
         }
         data.push(LogBatch {
             batch: r.seq,
@@ -599,6 +610,7 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
             changes,
             undoes,
             undone,
+            items: detail,
         });
     }
     Ok(Output { text: lines.join("\n"), data: serde_json::to_value(data)? })
@@ -617,9 +629,29 @@ pub struct LogBatch {
     changes: Vec<String>,
     undoes: Option<i64>,
     undone: bool,
+    /// Each thing it changed, in full, of the one batch asked for.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    items: Option<Vec<LogItem>>,
 }
 
 /// Whether a change the user sees is undone: what it did is not there now, as far as undoing goes.
+/// The changes to folders user `user` was told of after batch `seq`, by batch, to be stepped back over:
+/// the latest first.
+fn folder_changes(c: &Connection, user: &str, seq: i64) -> Result<Vec<(i64, Effect)>, ApiError> {
+    let mut stmt = c.prepare(
+        "SELECT d.seq, e.value FROM deliveries d JOIN mutations m ON m.seq = d.seq, json_each(coalesce(d.effects, m.effects)) e
+         WHERE d.user_id = ?1 AND d.seq > ?2 AND json_extract(e.value, '$.kind') = 'folder'
+         ORDER BY d.seq DESC, e.key DESC",
+    )?;
+    let mut found = Vec::new();
+    for r in stmt.query_map(params![user, seq], |r| Ok((r.get(0)?, r.get::<_, String>(1)?)))? {
+        let (seq, e) = r?;
+        found.push((seq, serde_json::from_str(&e)?));
+    }
+    Ok(found)
+}
+
 /// A change and the undos of it, each a batch undoing that one change alone, make a line, each
 /// turning it over: a change is undone when it goes the other way from the latest in its line, so
 /// undoing a change again after its undo was undone turns that undo of the undo back too. A batch

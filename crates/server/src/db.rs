@@ -294,7 +294,7 @@ fn replaced_seq(db: &Path) -> anyhow::Result<i64> {
     match read {
         Ok((seq, 0)) => Ok(seq),
         // A reader in another program: its -wal would go with frames not taken in.
-        Ok(_) => bail!("现在的数据库正被别的程序使用"),
+        Ok(_) => bail!("数据库正被其他程序使用"),
         // Unknown is SQLITE_ERROR: here, no table to read.
         Err(e) if matches!(e.sqlite_error_code(), Some(ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase | ErrorCode::Unknown)) => {
             tracing::warn!(error = %e, "database replaced damaged, numbered on from the time");

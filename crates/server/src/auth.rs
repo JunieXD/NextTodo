@@ -467,7 +467,7 @@ pub async fn verify(State(st): State<AppState>, auth: Auth, Json(req): Json<Pass
     let stored: String =
         st.db.call(move |c| Ok(c.query_row("SELECT password_hash FROM users WHERE id = ?1", [user_id], |r| r.get(0))?)).await?;
     if !hashing(move || verify_password(&req.password, &stored)).await {
-        return Err(ApiError::invalid("密码不对", Some("password".into())));
+        return Err(ApiError::invalid("密码错误", Some("password".into())));
     }
     Ok(StatusCode::NO_CONTENT)
 }

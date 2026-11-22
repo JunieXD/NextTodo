@@ -1114,7 +1114,7 @@ fn syncing_is_turned_on_in_an_empty_folder_or_one_of_nexttodos_own_only() {
         let view = View::new(Arc::new(Store::default()));
         view.create(other, b"x").unwrap();
         let Err(e) = setup::probe(&view) else { panic!("turned on in a folder with {other}") };
-        assert_eq!(e.to_string(), "这个文件夹里有别的文件，请换一个空文件夹或新的文件夹名");
+        assert_eq!(e.to_string(), "这个文件夹里有其他文件，请换一个空文件夹或新的文件夹名");
     }
 }
 

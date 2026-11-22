@@ -146,7 +146,7 @@ class NextTodoPlugin : Plugin() {
     @PluginMethod
     fun signIn(call: PluginCall) {
         val user = call.getString("user")!!
-        work(call, "删除小组件和提醒里别的账号的改动") {
+        work(call, "删除小组件和提醒里其他账号的改动") {
             Changes.signIn(context, user)
             JSObject()
         }

@@ -55,7 +55,7 @@ pub struct Uploaded {
 fn uploaded_before(c: &Connection, user: &str, id: AttachmentId) -> Result<Option<Uploaded>, ApiError> {
     match store::load_file(c, id)? {
         Some(f) if f.owner == user => Ok(Some(Uploaded { id, size: f.size.get() })),
-        Some(_) => Err(ApiError::conflict("附件 ID 已被别人用过")),
+        Some(_) => Err(ApiError::conflict("附件 ID 已被占用")),
         // Used again, its file could still go from the drive, deleted late by the device that cleared it
         // (docs/local.md#附件).
         None if store::file_purged(c, id)? => Err(ApiError::conflict("附件 ID 已被用过")),

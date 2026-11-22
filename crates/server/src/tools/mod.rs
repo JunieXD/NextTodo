@@ -107,14 +107,14 @@ macro_rules! tools {
 }
 
 tools! {
-    Read "tree"(NoArgs) => read::tree, "文件夹树，每个文件夹里（含子文件夹）的待办数和可做数；共享的文件夹注明共享人和成员，别人共享给我的列在后面。";
+    Read "tree"(NoArgs) => read::tree, "文件夹树，每个文件夹里（含子文件夹）的待办数和可做数；共享的文件夹注明共享人和成员，他人共享给我的列在后面。";
     Read "list"(ListArgs) => read::list, "列出一个文件夹的子文件夹和事项，事项按先后顺序；默认不含已完成的，最多 50 项。文件夹里有 AI 整理请求时开头注明；在共享的文件夹里时开头写共享人和成员。";
     Read "next"(NextArgs) => read::next, "接下来：当前可做的事项（前置均已完成），有截止时间的排在前面，最多 50 项；共享的文件夹里只列交给我的和没指定负责人的。回答“现在该做什么”时使用。";
     Read "agenda"(AgendaArgs) => read::agenda, "日程：今天起几天（默认 7 天，最多 31 天）每天截止的事项，重复事项以后的每一次也列在那天并注明；前面另列已逾期的。共享的文件夹里只列交给我的和没指定负责人的。回答“这周有什么要做”“哪天有什么截止”时使用。";
     Read "show"(ShowArgs) => read::show, "事项详情：状态、文件夹、负责人、截止时间和提醒、前置、后续、附件、来源和描述。";
     Read "search"(SearchArgs) => read::search, "按关键词搜索事项的标题和描述，不区分大小写，最多列出 50 项。";
     Read "graph"(GraphArgs) => read::graph, "文件夹（含子文件夹）里的事项和依赖，按先后顺序列出，每项后面是它的前置；连到文件夹外的事项也列出。";
-    Read "log"(LogArgs) => read::log, "最近的改动批次，新的在前，包括别的成员在共享的文件夹里做的。撤销时要用批次号。";
+    Read "log"(LogArgs) => read::log, "最近的改动批次，新的在前，包括其他成员在共享的文件夹里做的。撤销时要用批次号。";
     Read "jobs"(NoArgs) => read::jobs, "用户提交的 AI 整理请求：等待、正在整理和失败的，失败的带原因。整理好的已经变成事项，不在这里。";
     Read "attachment"(AttachmentArgs) => read::attachment, "读一个附件（ID 见 show）：PNG、JPEG、WebP、GIF 图片（5 MB 以内）返回图片，UTF-8 文本文件（1 MB 以内）返回内容，其他文件只给名称、类型和大小。";
     Write "add"(AddArgs) => write::add, "添加一个事项；文件夹不存在时一起新建。一次加多个、带依赖的事项时用 apply。";
@@ -124,7 +124,7 @@ tools! {
     Write "skip"(TasksArgs) => write::skip, "跳过重复事项的这一次：截止时间顺延到下一次，但不算完成，要给 today。已是最后一次的不能跳过，不再做了用 done 的 end_repeat。";
     Write "mkdir"(MkdirArgs) => write::mkdir, "新建文件夹，路径上缺的层级一起建。";
     Write "rename"(RenameArgs) => write::rename, "给文件夹或附件改名。";
-    Write "move"(MoveArgs) => write::move_to, "把事项或文件夹移到一个已有的文件夹，/ 是根目录。移进、移出共享的文件夹时去掉连到外面的依赖和看不到的负责人，并换成新主人的编号。";
+    Write "move"(MoveArgs) => write::move_to, "把事项或文件夹移到一个已有的文件夹，/ 是根目录。移进、移出共享的文件夹时去掉连到外面的依赖和无法查看新位置的负责人，并换成新主人的编号。";
     Write "style"(StyleArgs) => write::style, "设文件夹的颜色和图标，只用在文件夹的图标上；给 null 改回默认，不给的不改。";
     Write "copy"(CopyArgs) => write::copy, "复制文件夹，连同其中的子文件夹、事项、附件和它们之间的依赖，副本里的事项都是待办，开始、截止、提醒和重复不变。用来把一套流程当模板反复用。";
     Destructive "delete"(DeleteArgs) => write::delete, "删除事项或文件夹；文件夹连同其中的子文件夹和事项一并删除。可用 undo 撤销。";

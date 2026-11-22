@@ -46,7 +46,7 @@ object Local {
     class StartFailed(message: String, val locked: Boolean) : Exception(message)
 
     /** The system keeps the app off the network, its own server included (docs/android.md#澎湃-os). */
-    class Blocked : Exception("系统禁止了 NextTodo 联网，连 App 内置的服务端也连不上。请前往设置，在“应用联网”里允许 WLAN 和移动数据，再点“重试”")
+    class Blocked : Exception("系统禁止了 NextTodo 联网，App 内置的服务端也无法连接。请前往设置，在“应用联网”中允许 WLAN 和移动数据，然后点“重试”")
 
     /** Throws `Blocked` when the system refuses the app a connection to its server at `url`. The
      * system says nothing of it elsewhere. Other failures are the page's to find, as it connects. */

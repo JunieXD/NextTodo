@@ -372,7 +372,7 @@ function Prop({ icon, label, value, cls = "", onClick }: { icon: LucideIcon; lab
 
 /** `共 12 次，上次是昨天`, `共 12 次，今天已完成`. */
 function completionsLabel(t: Task, now: Date): string {
-  if (!t.completions) return "还没有完成过";
+  if (!t.completions) return "暂无完成记录";
   const { count, last } = t.completions;
   return `共 ${count} 次，${doneToday(t, isoDate(now)) ? "今天已完成" : `上次是${formatDay(day(last).getTime(), now)}`}`;
 }

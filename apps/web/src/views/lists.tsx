@@ -126,7 +126,7 @@ export function NextFilter() {
         </button>
       </Tip>
       {/* Without those deleted or no longer shared meanwhile. */}
-      {picking && <FolderChecks title="只看这些文件夹" chosen={picking.filter((f) => board.hasFolder(f))} onChange={pick} onClose={close} />}
+      {picking && <FolderChecks title="筛选文件夹" chosen={picking.filter((f) => board.hasFolder(f))} onChange={pick} onClose={close} />}
     </>
   );
 }
@@ -371,7 +371,7 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
   /** Whether the files staged can go; one the server turned down has to be taken out first. */
   const canSend = () => {
     const refused = staged.find((f) => f.error);
-    if (refused) snack(`“${refused.name}”传不上去，去掉后再提交`);
+    if (refused) snack(`“${refused.name}”上传失败，去掉后再提交`);
     return !refused;
   };
   // The device remembers the mode last used.

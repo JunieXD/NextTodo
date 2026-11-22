@@ -91,7 +91,7 @@ test("a daily digest each day from yesterday to a week on lists the open tasks d
     task(5, { title: "没截止" }),
   ];
   const said = digests(board(tasks), "23:30").map((d) => [d.at.getDate(), d.at.getHours(), d.at.getMinutes(), digestText(d.tasks.map((t) => t.title), false)]);
-  const left = (titles: string[]) => ({ title: `今天还有 ${titles.length} 项没做完`, body: titles.join("、") });
+  const left = (titles: string[]) => ({ title: `今天还有 ${titles.length} 项未完成`, body: titles.join("、") });
   expect(said).toEqual([
     [2, 23, 30, left(["还花呗"])],
     [3, 23, 30, left(["还花呗", "交房租"])],
@@ -106,7 +106,7 @@ test("a daily digest each day from yesterday to a week on lists the open tasks d
     [task(6, {}).id, { due: "2026-11-03", completions: 0 }],
   ]);
   // Hidden, only how many.
-  expect(digestText(["还花呗", "交房租"], true)).toEqual({ title: "今天还有 2 项没做完", body: "" });
+  expect(digestText(["还花呗", "交房租"], true)).toEqual({ title: "今天还有 2 项未完成", body: "" });
   // Nothing due until the 5th: no digest before.
   expect(digests(board([tasks[2], tasks[3], tasks[4]]), "21:00").map((d) => d.at.getDate())).toEqual([5, 6, 7, 8, 9]);
 });

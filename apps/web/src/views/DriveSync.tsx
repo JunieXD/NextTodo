@@ -38,7 +38,7 @@ export function syncLine(sync: DriveSync, now: Date): string {
   const { enabling, problem, synced_at } = sync.status;
   if (problem) return `同步受阻：${problem}`;
   if (enabling) return `正在把数据传上网盘 ${where(sync.drive)}`;
-  return `借网盘同步到 ${where(sync.drive)}，${synced_at === null ? "还没同步过" : `${ago(synced_at, now)}同步`}`;
+  return `借网盘同步到 ${where(sync.drive)}，${synced_at === null ? "尚未同步" : `${ago(synced_at, now)}同步`}`;
 }
 
 /** Turning syncing on, or how it goes and stopping it while it is on. */
@@ -130,7 +130,7 @@ function TurnOn({ stopped, onDone }: { stopped: string | null; onDone(): void })
   return (
     <form onSubmit={submit}>
       <p className="empty">
-        几台设备的本机模式通过网盘同步，不用服务器。改动几十秒内到别的设备。<Help to="local#drive">如何设置</Help>
+        几台设备的本机模式通过网盘同步，无需服务器，改动几十秒内同步到其他设备。<Help to="local#drive">如何设置</Help>
       </p>
       <div style={{ margin: "0 16px 14px" }}>
         <Seg<Kind>

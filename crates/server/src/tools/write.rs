@@ -795,7 +795,7 @@ pub fn copy(w: &WriteCx, a: CopyArgs) -> Result<Write, ApiError> {
     ops.extend(deps);
     // Counted before copying any file: too many, there would be nothing to copy them for.
     if ops.len() + attachments.len() > MAX_OPS {
-        return Err(ApiError::invalid(format!("文件夹里的东西太多，一次最多复制 {MAX_OPS} 项（文件夹、事项、依赖和附件合计）"), None));
+        return Err(ApiError::invalid(format!("文件夹内容过多，一次最多复制 {MAX_OPS} 项（文件夹、事项、依赖和附件合计）"), None));
     }
     for (a, id, task) in attachments {
         // As `attach` does: rolled back with the rest when syncing through a drive, and left for the

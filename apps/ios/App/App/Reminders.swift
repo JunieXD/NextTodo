@@ -289,7 +289,7 @@ enum Reminders {
     /// `d`, as `digestText` in apps/web/src/domain/reminders.ts says it; `hide`, without the titles.
     private static func request(_ d: Digest, hide: Bool, now: Int64) -> UNNotificationRequest {
         let content = UNMutableNotificationContent()
-        content.title = "今天还有 \(d.tasks.count) 项没做完"
+        content.title = "今天还有 \(d.tasks.count) 项未完成"
         content.body = hide ? "" : d.tasks.map(\.title).joined(separator: "、")
         content.sound = .default
         content.categoryIdentifier = DIGEST

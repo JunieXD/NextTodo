@@ -338,7 +338,7 @@ async fn start_synced(st: &AppState, drive: Arc<Drive>, turn: Turn, job: AiJobId
     });
     match tokio::time::timeout(drive::WAIT, told).await {
         Ok(started) => started.expect("the task tells"),
-        Err(_) => Err(ApiError::unavailable("暂时连不上网盘，连上后开始整理")),
+        Err(_) => Err(ApiError::unavailable("暂时无法连接网盘，连接后开始整理")),
     }
 }
 

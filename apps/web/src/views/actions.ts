@@ -42,7 +42,7 @@ export function useTaskActions(): RowActions & {
       const waits = [on > 0 && `还有 ${on} 项前置未完成`, board().notStarted(t) && `要到${formatDue({ date: t.start!, time: t.start_time }, new Date())}${t.start_time ? " " : ""}才开始`,
       ];
       const ok = await confirm({
-        title: on > 0 ? "前置尚未完成" : "还没到开始时间",
+        title: on > 0 ? "前置尚未完成" : "未到开始时间",
         body: `“${t.title}”${waits.filter(Boolean).join("，")}，仍要标为完成吗？`,
         ok: "标为完成",
       });

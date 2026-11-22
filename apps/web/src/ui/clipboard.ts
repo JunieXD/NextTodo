@@ -23,6 +23,6 @@ export function useCopy() {
   return (text: string, what: string) =>
     copyText(text).then(
       () => snack(`已复制${what}`),
-      () => snack(`无法复制${what}，请再试一次`),
+      () => snack(`无法复制${what}，请重试`),
     );
 }

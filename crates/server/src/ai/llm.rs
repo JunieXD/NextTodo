@@ -342,7 +342,7 @@ fn transport(e: ureq::Error) -> Failure {
         ureq::Error::BodyExceedsLimit(_) => "接口的回复过长",
         ureq::Error::Io(e) if e.kind() == ErrorKind::PermissionDenied => NOT_PUBLIC,
         ureq::Error::RequireHttpsOnly(_) => NOT_HTTPS,
-        ureq::Error::HostNotFound => "找不到接口地址的域名，请检查接口地址",
+        ureq::Error::HostNotFound => "无法解析接口地址的域名，请检查接口地址",
         ureq::Error::Tls(_) | ureq::Error::Rustls(_) => "接口的 HTTPS 证书无效，请检查接口地址",
         e => {
             tracing::warn!("无法连接模型接口：{e}");

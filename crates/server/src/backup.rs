@@ -68,7 +68,7 @@ fn pack(data: &Path, files: &Files, copy: &Path, to: &Path) -> anyhow::Result<()
     tar.append_data(&mut header, MANIFEST, manifest.as_slice())?;
     for (id, size, unused) in listed {
         // Syncing through a drive, another device's may not be here yet.
-        files.fetch(id, size).context("有附件的文件还没有从网盘下载下来，请稍后重试")?;
+        files.fetch(id, size).context("部分附件的文件尚未从网盘下载，请稍后重试")?;
         match tar.append_path_with_name(data.join(files::DIR).join(id.to_string()), format!("{}/{id}", files::DIR)) {
             // Deleted by the daily clearing since the copy was taken: no one used it then already.
             Err(e) if unused && e.kind() == ErrorKind::NotFound => {}

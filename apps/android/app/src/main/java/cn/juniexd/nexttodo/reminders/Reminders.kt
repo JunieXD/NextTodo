@@ -427,7 +427,7 @@ object Reminders {
     /** Shows daily digest `d`, in place of the one before, as `digestText` in apps/web/src/domain/reminders.ts
      * says it; `hide`, without the titles. Tapping it opens 接下来. */
     private fun post(context: Context, d: Digest, hide: Boolean) {
-        val title = "今天还有 ${d.tasks.size} 项没做完"
+        val title = "今天还有 ${d.tasks.size} 项未完成"
         val body = if (hide) "" else d.tasks.joinToString("、") { it.title }
         val home = Intent(Intent.ACTION_VIEW, Uri.parse("nexttodo://home"), context, MainActivity::class.java)
         val notification = Notification.Builder(context, Channels.DIGEST)

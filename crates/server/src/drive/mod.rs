@@ -55,7 +55,7 @@ const BACKOFF_MAX: Duration = Duration::from_secs(60);
 const SNAPSHOT_EVERY: i64 = 200;
 const DAY_MS: i64 = 24 * 3600 * 1000;
 
-const NOT_MADE: &str = "暂时连不上网盘，改动没有生效";
+const NOT_MADE: &str = "暂时无法连接网盘，改动未生效";
 
 /// Whether local mode syncs through a drive now, and through which: turned on and off while the server
 /// runs. A change made directly holds `Route::Direct` as it is made, so that a drive turned on waits
@@ -495,7 +495,7 @@ impl Trouble {
             Trouble::NewerVersion => "网盘里有更新版本的 NextTodo 写的数据，请先更新 App".into(),
             Trouble::Unreadable(why) => format!("网盘里的数据无法读取：{why}"),
             Trouble::Replaced => "网盘里的文件夹换过了，请重新开启同步".into(),
-            Trouble::Taken => "别的设备刚刚开启了同步，请重新开启：会用网盘里的数据替换这台设备上的全部数据".into(),
+            Trouble::Taken => "其他设备刚刚开启了同步，请重新开启：会用网盘里的数据替换这台设备上的全部数据".into(),
         }
     }
 }

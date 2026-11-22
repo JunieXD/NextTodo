@@ -67,4 +67,4 @@ export function digests(board: Board, time: string): DailyDigest[] {
 
 /** What a digest of the tasks titled `titles` says: how many, and unless `hide`, which. The phone apps say it
  * alike of what is left once some are done there. */
-export const digestText = (titles: string[], hide: boolean) => ({ title: `今天还有 ${titles.length} 项没做完`, body: hide ? "" : titles.join("、") });
+export const digestText = (titles: string[], hide: boolean) => ({ title: `今天还有 ${titles.length} 项未完成`, body: hide ? "" : titles.join("、") });

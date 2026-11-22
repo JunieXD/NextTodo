@@ -70,7 +70,7 @@ export function Login({
     setError(null);
     try {
       const session = await local.enter((unsent) =>
-        confirm({ title: "在本机使用？", body: `这台设备上有 ${unsent} 项改动还没发到服务器，在本机使用后会丢失。`, ok: "仍然使用", danger: true }),
+        confirm({ title: "在本机使用？", body: `这台设备上有 ${unsent} 项改动尚未发到服务器，在本机使用后将丢失。`, ok: "仍然使用", danger: true }),
       );
       if (session) return onLocal(session);
     } catch (e) {

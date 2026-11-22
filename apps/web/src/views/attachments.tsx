@@ -625,8 +625,8 @@ function StagedFile({ f, unseen, onRemove }: { f: Staged; unseen?: string; onRem
   const picture = isPicture(f.type);
   const { snack } = useFeedback();
   const tapped = () => {
-    if (f.error) snack(`“${f.name}”传不上去：${f.error}`);
-    else if (unseen) snack(`AI 看不到“${f.name}”：${unseen}，只会把名称发给它`);
+    if (f.error) snack(`“${f.name}”上传失败：${f.error}`);
+    else if (unseen) snack(`AI 无法查看“${f.name}”：${unseen}，仅发送名称和类型`);
   };
   return (
     <div className={`staged${picture ? " picture" : ""}${f.error ? " refused" : ""}`} title={f.name}>
@@ -639,7 +639,7 @@ function StagedFile({ f, unseen, onRemove }: { f: Staged; unseen?: string; onRem
             <span>{f.name}</span>
           </>
         )}
-        {unseen && <span className="staged-unseen">AI 看不到</span>}
+        {unseen && <span className="staged-unseen">AI 无法查看</span>}
       </button>
       {f.error && (
         <span className="staged-error">

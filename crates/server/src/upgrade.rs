@@ -51,7 +51,7 @@ impl std::str::FromStr for Version {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, String> {
-        let bad = || format!("版本号不对：{s}");
+        let bad = || format!("版本号格式错误：{s}");
         let number = |p: &str| {
             if p.len() > 1 && p.starts_with('0') { None } else { p.parse().ok().filter(|_| p.bytes().all(|b| b.is_ascii_digit())) }
         };
@@ -133,7 +133,7 @@ pub enum Status {
 /// What the settings say of a switch to `version` that did not get to listening, the server still on
 /// `now`: gone back from it, or stopped before it.
 fn not_switched(version: impl std::fmt::Display, now: impl std::fmt::Display) -> String {
-    format!("升级到 {version} 失败：没能换上新版本，服务器仍是 {now}，原因见服务器的日志（docker compose logs）")
+    format!("升级到 {version} 失败：新版本未能启用，服务器仍是 {now}，原因见服务器的日志（docker compose logs）")
 }
 
 /// Why a download failed: what the network, the image or the disk did, for the log.

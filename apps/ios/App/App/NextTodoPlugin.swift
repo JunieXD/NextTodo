@@ -84,7 +84,7 @@ public class NextTodoPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDelega
 
     /// Signing in as `user`, before the token is written: the changes made natively for anyone else go.
     @objc func signIn(_ call: CAPPluginCall) {
-        work(call, "删除提醒里别的账号的改动", on: Changes.queue) {
+        work(call, "删除提醒里其他账号的改动", on: Changes.queue) {
             Changes.signIn(user: call.getString("user")!)
             return [:]
         }

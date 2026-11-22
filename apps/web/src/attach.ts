@@ -154,8 +154,8 @@ export function unseen(files: Staged[], vision: boolean): Map<string, string> {
   // In the order the server takes them: by id, which is when each was added.
   for (const f of [...files].sort((a, b) => (a.id < b.id ? -1 : 1))) {
     if (!isPicture(f.type)) continue;
-    if (!vision) why.set(f.id, "没有打开“识别图片”");
-    else if (!SENT_PICTURES.has(f.type)) why.set(f.id, "只发 PNG、JPEG、WebP 和 GIF 图片");
+    if (!vision) why.set(f.id, "未打开“识别图片”");
+    else if (!SENT_PICTURES.has(f.type)) why.set(f.id, "仅支持 PNG、JPEG、WebP 和 GIF 图片");
     else if (f.size > MAX_SENT_SIZE) why.set(f.id, "图片超过 5 MB");
     else if (sent === MAX_SENT) why.set(f.id, "一次最多发 10 张图片");
     else sent++;

@@ -211,7 +211,7 @@ export async function syncThrough(config: DriveConfig, confirm: (body: string) =
     if (!(e instanceof ApiError && e.code === "has_data")) throw e;
   }
   const body = [
-    "网盘的这个文件夹里已经有别的设备同步的数据，开启后这台设备上的数据全部换成它，不合并。",
+    "网盘的这个文件夹里已有其他设备同步的数据，开启后这台设备上的数据全部换成它，不合并。",
     "现在的数据会留在数据目录的旧数据文件夹里。",
     app === "desktop" ? "agent 用的令牌要重新生成。" : "",
     "NextTodo 会重新启动。",
@@ -251,7 +251,7 @@ export async function restore(confirm: (body: string) => Promise<boolean>, sessi
   if (!(await shell.prepareRestore())) return;
   const lost = session ? session.store.getView().pending : await unsent();
   const body = [
-    lost ? `还没发出的 ${lost} 项改动会丢弃，找不回来。` : "",
+    lost ? `尚未发出的 ${lost} 项改动将丢弃，无法找回。` : "",
     `现在的数据会留在数据目录的旧数据文件夹里；从现在到 NextTodo 重新启动之间，${app === "android" ? "小组件和 " : app === "desktop" ? "agent 和 " : ""}AI 整理写入的改动也只在那里。`,
   ].join("");
   if (!(await confirm(body))) return;

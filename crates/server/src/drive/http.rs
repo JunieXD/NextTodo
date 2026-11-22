@@ -30,9 +30,9 @@ pub(crate) fn agent() -> ureq::Agent {
 pub(crate) fn transport(e: ureq::Error) -> Failed {
     tracing::warn!("drive request failed: {e}");
     match e {
-        ureq::Error::HostNotFound => Failed::Unsent("找不到网盘的地址，请检查地址".into()),
+        ureq::Error::HostNotFound => Failed::Unsent("无法解析网盘的地址，请检查地址".into()),
         ureq::Error::ConnectionFailed | ureq::Error::ConnectProxyFailed(_) | ureq::Error::Timeout(Timeout::Resolve | Timeout::Connect) => {
-            Failed::Unsent("连不上网盘".into())
+            Failed::Unsent("无法连接网盘".into())
         }
         ureq::Error::Tls(_) | ureq::Error::Rustls(_) => Failed::Unsent("网盘的 HTTPS 证书无效，请检查地址".into()),
         ureq::Error::BadUri(_) | ureq::Error::Http(_) | ureq::Error::RequireHttpsOnly(_) => Failed::Unsent("网盘的地址无效".into()),
@@ -44,7 +44,7 @@ pub(crate) fn transport(e: ureq::Error) -> Failed {
 /// done, or failed on the drive's side, and maybe done.
 pub(crate) fn refused(status: u16) -> Failed {
     match status {
-        401 | 403 => Failed::Unsent("网盘的账号或密码不对，或者没有权限".into()),
+        401 | 403 => Failed::Unsent("网盘账号或密码错误，或无权限".into()),
         429 | 503 => Failed::Unsent("网盘暂时限制了请求".into()),
         500.. => Failed::Unknown(format!("网盘出错（HTTP {status}）")),
         _ => Failed::Unsent(format!("网盘拒绝了请求（HTTP {status}）")),

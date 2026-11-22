@@ -128,7 +128,7 @@ function PanelShortcut() {
       ? `要带上 ${windows ? "Ctrl、Alt 或 Win" : "⌘、⌃ 或 ⌥"}`
       : "按 Esc 取消"
     : saved?.taken
-      ? "没有生效，可能已被别的应用占用"
+      ? "未生效，可能已被其他应用占用"
       : "在任何应用里按下，弹出或收起小窗";
   return (
     <div className="row">

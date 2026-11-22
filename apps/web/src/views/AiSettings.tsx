@@ -180,7 +180,7 @@ export function AiPage() {
     });
   };
   const keyHint =
-    place === "server" && kept ? (kept.key_end ? `已保存，末 4 位 ${kept.key_end}；不改就留空` : "服务器解不开保存的密钥，请重新填写") : "只发给所选的服务商";
+    place === "server" && kept ? (kept.key_end ? `已保存，末 4 位 ${kept.key_end}；不修改请留空` : "服务器无法解密已保存的密钥，请重新填写") : "只发给所选的服务商";
 
   return (
     <>

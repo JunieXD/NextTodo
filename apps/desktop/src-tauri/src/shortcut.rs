@@ -63,7 +63,7 @@ pub fn set_shortcut(app: AppHandle, keys: Option<String>) -> Result<(), String> 
     };
     let shortcut: Shortcut = keys.parse().map_err(|_| "不支持这个按键".to_owned())?;
     shortcuts.unregister_all().map_err(|e| for_user("停用小窗快捷键", &e))?;
-    shortcuts.register(shortcut).map_err(|_| "这个快捷键用不了，可能已被别的应用占用，换一个试试".to_owned())?;
+    shortcuts.register(shortcut).map_err(|_| "该快捷键无法使用，可能已被其他应用占用，请换一个".to_owned())?;
     std::fs::create_dir_all(file.parent().expect("in the config directory"))
         .and_then(|()| std::fs::write(&file, shortcut.to_string()))
         .map_err(|e| {

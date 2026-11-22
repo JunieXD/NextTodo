@@ -49,7 +49,7 @@ export function RemindSettings() {
           <div className="group settings">
             <Switch
               label="每日汇总"
-              sub="每天到点通知一次今天截止和逾期、还没完成的事项"
+              sub="每天定时通知今天截止和已逾期的未完成事项"
               on={digest.on}
               onChange={(on) => setDailyDigest({ ...digest, on })}
             />

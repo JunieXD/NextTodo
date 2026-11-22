@@ -359,7 +359,7 @@ function LocalMode() {
   return (
     <>
       <p className="empty">
-        {sync?.drive ? "数据存在这台设备上，借网盘和别的设备同步。" : "数据只存在这台设备上。可以借网盘和别的设备同步。"}定期备份，换设备时用备份恢复。
+        {sync?.drive ? "数据存在这台设备上，借网盘和其他设备同步。" : "数据只存在这台设备上。可以借网盘和其他设备同步。"}定期备份，换设备时用备份恢复。
         <Help to="local">说明</Help>
       </p>
       <div className="group">
@@ -759,7 +759,7 @@ function TokenCreated({ name, secret, onDone }: { name: string; secret: string; 
   return (
     <Modal title="令牌已生成" onClose={onDone} onBack={onDone}>
       <p className="empty">
-        “{name}”的令牌只显示这一次。下面的写法已经填好{inLocal ? "令牌，都要先装命令行" : "服务器地址和令牌"}，复制即可。
+        “{name}”的令牌只显示这一次。下面的写法已填好{inLocal ? "令牌，须先安装命令行" : "服务器地址和令牌"}，复制即可。
         {app === "desktop" ? "命令行在本页下方的“命令行”一组安装。" : <Help to="agent#cli">如何安装命令行</Help>}
       </p>
       <Copyable label="令牌" text={secret} />

@@ -305,7 +305,7 @@ async fn undo_takes_a_whole_batch_seen_by_someone_allowed_to_make_it() {
         .as_i64()
         .unwrap();
     let r = t.tool(&s.alice, "undo", json!({ "batch": both })).await;
-    assert_eq!((r.status, r.body["message"].as_str()), (StatusCode::FORBIDDEN, Some("这个批次里有看不到的改动，无法撤销")));
+    assert_eq!((r.status, r.body["message"].as_str()), (StatusCode::FORBIDDEN, Some("这个批次里有无权查看的改动，无法撤销")));
 
     let paint = t.ok(&s.bob, "add", json!({ "title": "刷墙", "folder": "@alice/装修" })).await;
     t.ok(&s.alice, "undo", json!({ "batch": batch(&paint) })).await;

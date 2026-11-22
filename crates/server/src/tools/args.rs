@@ -52,7 +52,7 @@ pub struct TaskRef {
 
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(untagged)]
-#[schemars(description = "事项编号：42 或 \"#42\"；别人共享给我的文件夹里的事项写成 \"@alice#42\"")]
+#[schemars(description = "事项编号：42 或 \"#42\"；他人共享给我的文件夹里的事项写成 \"@alice#42\"")]
 enum TaskRefArg {
     Number(i64),
     Text(String),
@@ -188,7 +188,7 @@ pub struct EditArgs {
     pub description: Option<Description>,
     #[serde(default)]
     #[schemars(
-        description = "在服务端当时的描述上依次替换：old 必须恰好出现一次，找不到说明已被改过，先 show 再改。别处同时改的内容不受影响"
+        description = "在服务端当时的描述上依次替换：old 必须恰好出现一次，找不到时返回冲突，可能已被改过，先 show 再改。别处同时改的内容不受影响"
     )]
     pub replace: Vec<Replace>,
     #[schemars(description = "在描述末尾另起一行追加，在 replace 之后")]
@@ -341,7 +341,7 @@ pub struct StyleArgs {
 pub struct CopyArgs {
     #[schemars(description = "要复制的文件夹路径")]
     pub folder: String,
-    #[schemars(description = "副本放进哪个已有的文件夹，/ 是根目录；不给就在原文件夹的同一层（别人共享给我的文件夹在根目录）")]
+    #[schemars(description = "副本放进哪个已有的文件夹，/ 是根目录；不给就在原文件夹的同一层（他人共享给我的文件夹在根目录）")]
     pub to: Option<String>,
     #[schemars(description = "副本的名字；不给时用原名，那里已有同名的就叫“原名 副本”“原名 副本 2”……")]
     pub name: Option<String>,

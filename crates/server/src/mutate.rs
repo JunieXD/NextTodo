@@ -385,7 +385,7 @@ fn check_task(t: &Task) -> Result<(), ApiError> {
     }
     let Some(start) = &t.start else {
         return match t.start_time {
-            Some(_) => Err(ApiError::invalid("设置开始的几点需要先有开始日期", Some("start_time".into()))),
+            Some(_) => Err(ApiError::invalid("设置开始时刻须先有开始日期", Some("start_time".into()))),
             None => Ok(()),
         };
     };
@@ -1328,7 +1328,7 @@ impl<'a> Cx<'a> {
                 .collect()
         };
         if shared(&all) != shared(&seen) {
-            return Err(ApiError::forbidden("这个批次里有看不到的改动，无法撤销"));
+            return Err(ApiError::forbidden("这个批次里有无权查看的改动，无法撤销"));
         }
         // For the tasks carried back with a folder, the numbers they had: while undoing this only.
         for e in &seen {

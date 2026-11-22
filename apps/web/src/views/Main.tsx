@@ -175,7 +175,7 @@ function ServerVersions({ admin }: { admin: boolean }) {
     };
     const latest = versions.latest;
     if (admin && latest && newer(latest, versions.server)) tell(SERVER_TOLD, latest, `服务器可升级到 ${latest}`);
-    if (!admin && newer(import.meta.env.WEB_VERSION, versions.server)) tell(OLDER_TOLD, versions.server, "服务器的版本比 App 旧，有些改动可能保存不了，请让管理员升级服务器");
+    if (!admin && newer(import.meta.env.WEB_VERSION, versions.server)) tell(OLDER_TOLD, versions.server, "服务器的版本比 App 旧，部分改动可能无法保存，请联系管理员升级服务器");
   }, [versions, admin, snack, navigate]);
   return null;
 }

@@ -65,7 +65,7 @@ enum Command {
     },
     #[command(about = "接下来：现在就能做的事项")]
     Next {
-        #[arg(long = "folder", num_args = 1.., value_name = "路径", help = "只看这些文件夹（含子文件夹）里的")]
+        #[arg(long = "folder", num_args = 1.., value_name = "路径", help = "只列出这些文件夹（含子文件夹）里的事项")]
         folders: Option<Vec<String>>,
         #[arg(long, help = "最多列出多少项，默认 50，最多 500")]
         limit: Option<u32>,
@@ -74,7 +74,7 @@ enum Command {
     Agenda {
         #[arg(long, help = "列今天起几天，默认 7，最多 31")]
         days: Option<u32>,
-        #[arg(long = "folder", num_args = 1.., value_name = "路径", help = "只看这些文件夹（含子文件夹）里的")]
+        #[arg(long = "folder", num_args = 1.., value_name = "路径", help = "只列出这些文件夹（含子文件夹）里的事项")]
         folders: Option<Vec<String>>,
     },
     #[command(about = "事项详情")]
@@ -290,7 +290,7 @@ enum Command {
         #[arg(long, help = "只预览，不保存")]
         dry_run: bool,
     },
-    #[command(about = "把自己的文件夹共享给别人，或添加成员")]
+    #[command(about = "把自己的文件夹共享给他人，或添加成员")]
     Share {
         folder: String,
         #[arg(required = true, value_name = "用户名")]
@@ -340,7 +340,7 @@ enum Dep {
     },
 }
 
-const TASK: &str = "事项编号：12 或 #12；别人共享的文件夹里的写成 @alice#42";
+const TASK: &str = "事项编号：12 或 #12；他人共享的文件夹里的写成 @alice#42";
 
 /// A task by number: `12`, `#12`, or `@alice#42` in a folder someone else shares.
 fn task(s: &str) -> Result<String, String> {

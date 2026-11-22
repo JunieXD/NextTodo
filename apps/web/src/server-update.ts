@@ -142,7 +142,7 @@ async function poll(of: string) {
           if (app) await check(true);
           else setTimeout(() => location.reload(), 2000);
         } else if (server !== null) {
-          setUpgrading({ of, state: "failed", version: before.version, message: `升级到 ${before.version} 失败：没能换上新版本，服务器仍是 ${server}，原因见服务器的日志（docker compose logs）` });
+          setUpgrading({ of, state: "failed", version: before.version, message: `升级到 ${before.version} 失败：新版本未能启用，服务器仍是 ${server}，原因见服务器的日志（docker compose logs）` });
         } else setUpgrading({ of, ...status });
       } catch {
         if (!ours()) break;

@@ -178,7 +178,7 @@ export function SharePanel({ folder, onClose }: { folder: FolderId; onClose(): v
       snack(forUser("移除", e)),
     );
   const stop = async () => {
-    const ok = await confirm({ title: `停止共享“${f.name}”？`, body: "所有成员将看不到这个文件夹，事项的负责人一并去掉。", ok: "停止共享", danger: true });
+    const ok = await confirm({ title: `停止共享“${f.name}”？`, body: "所有成员将无法查看这个文件夹，事项的负责人一并去掉。", ok: "停止共享", danger: true });
     if (!ok) return;
     const ops = members.map((user): Op => ({ op: "share.remove", folder_id: folder, user_id: user }));
     try {
@@ -189,7 +189,7 @@ export function SharePanel({ folder, onClose }: { folder: FolderId; onClose(): v
     }
   };
   const leave = async () => {
-    const body = `退出后将看不到这个文件夹，须 ${board.name(owner)} 重新添加才能回来。`;
+    const body = `退出后将无法查看这个文件夹，须 ${board.name(owner)} 重新添加才能回来。`;
     if (!(await confirm({ title: `退出共享“${f.name}”？`, body, ok: "退出", danger: true }))) return;
     try {
       await change([{ op: "share.remove", folder_id: folder, user_id: board.me }], () => `已退出共享“${f.name}”`, false);

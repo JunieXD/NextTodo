@@ -70,7 +70,7 @@ function useCopyFolder() {
     const keys = rekey(wanted, id);
     const copied = copyFolder(board, f.id, place, { id, name, sort_key: keys.find((k) => k.id === id)!.sort_key });
     const ops: Op[] = [...keys.filter((k) => k.id !== id).map((k): Op => ({ op: "folder.update", ...k })), ...copied.ops];
-    if (ops.length > MAX_OPS) return snack(`文件夹里的东西太多，一次最多复制 ${MAX_OPS} 项（文件夹、事项、依赖和附件合计）`);
+    if (ops.length > MAX_OPS) return snack(`文件夹内容过多，一次最多复制 ${MAX_OPS} 项（文件夹、事项、依赖和附件合计）`);
     const copies = copied.files.map(([copy, a]): [string, string, MutationId | undefined] => [copy, a.id, store.madeBy(a.id)]);
     try {
       // Noted first: the change waits for them as soon as it is made.

@@ -101,7 +101,7 @@ impl ApiError {
     /// Files of attachments in use are in the drive only, and can't be downloaded now: stopping
     /// syncing anyway leaves them unreadable here, which is asked first (docs/local.md#停止).
     pub fn files_not_here() -> Self {
-        Self::new(StatusCode::CONFLICT, "files_not_here", "有附件的文件还没有从网盘下载下来，现在停止同步，这些附件就打不开了")
+        Self::new(StatusCode::CONFLICT, "files_not_here", "部分附件的文件尚未从网盘下载，现在停止同步将无法打开这些附件")
     }
 
     /// What was asked could not be done for now, and nothing came of it: the drive local mode syncs
@@ -148,7 +148,7 @@ fn meaning(e: &(dyn std::error::Error + 'static)) -> Option<&'static str> {
         return match e.kind() {
             ErrorKind::PermissionDenied | ErrorKind::ReadOnlyFilesystem => Some("没有权限访问这个位置"),
             ErrorKind::StorageFull | ErrorKind::QuotaExceeded => Some("存储空间不足"),
-            ErrorKind::NotFound => Some("找不到文件"),
+            ErrorKind::NotFound => Some("文件不存在"),
             _ => None,
         };
     }

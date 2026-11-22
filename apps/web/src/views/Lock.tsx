@@ -91,12 +91,12 @@ function PinEntry({ lock, onForgot }: { lock: PrivacyLock; onForgot(): void }) {
       </label>
       {wrong && (
         <p className="form-error" role="alert">
-          PIN 不对，还可以试 {MAX_TRIES - tries} 次
+          PIN 错误，还可尝试 {MAX_TRIES - tries} 次
         </p>
       )}
       <div className="login-local">
         <button type="button" className="text-btn" onClick={onForgot}>
-          忘了 PIN？
+          忘记 PIN？
         </button>
       </div>
     </form>
@@ -117,11 +117,11 @@ function Recover({ lock, onBack, onRecovered }: { lock: PrivacyLock; onBack?: ()
     if (!typed) return setError(`请填写${what}`);
     setBusy(true);
     try {
-      if (by === "code") return (await isCode(lock, typed)) ? onRecovered() : setError("恢复码不对");
+      if (by === "code") return (await isCode(lock, typed)) ? onRecovered() : setError("恢复码错误");
       await api("POST", "/auth/verify", { password: typed });
       onRecovered();
     } catch (e) {
-      setError(e instanceof ApiError && e.status === 400 ? "密码不对" : forUser("核对密码", e));
+      setError(e instanceof ApiError && e.status === 400 ? "密码错误" : forUser("核对密码", e));
     } finally {
       setBusy(false);
     }
@@ -133,7 +133,7 @@ function Recover({ lock, onBack, onRecovered }: { lock: PrivacyLock; onBack?: ()
   };
   return (
     <form onSubmit={submit}>
-      {!onBack && <p className="form-error">PIN 错了 {MAX_TRIES} 次，请用恢复码{withPassword && "或账号密码"}解锁</p>}
+      {!onBack && <p className="form-error">PIN 已连续错误 {MAX_TRIES} 次，请用恢复码{withPassword && "或账号密码"}解锁</p>}
       <label className={`field${error ? " error" : ""}`}>
         {what}
         <input
@@ -233,7 +233,7 @@ function NewCode({ code, onSaved }: { code: string; onSaved(): Promise<void> }) 
   return (
     <>
       <Copyable label="恢复码" text={code} />
-      <p className="group-note">忘了 PIN 时用它解锁。只显示这一次，请存进密码管理器或记在别处</p>
+      <p className="group-note">忘记 PIN 时用它解锁。仅显示这一次，请存入密码管理器或另行记录</p>
       <div className="actions">
         <button className="filled-btn" disabled={busy} onClick={saved}>
           我已存好
@@ -249,11 +249,11 @@ export function LockPage() {
   const lock = usePrivacyLock();
   const [open, setOpen] = useState<"on" | "pin" | "code" | null>(null);
   const close = () => setOpen(null);
-  if (!canLock()) return <p className="group-note">经 HTTP 打开时用不了隐私锁，请用 HTTPS 打开</p>;
+  if (!canLock()) return <p className="group-note">经 HTTP 打开时无法使用隐私锁，请改用 HTTPS</p>;
   return (
     <>
       <div className="group">
-        <Switch label="隐私锁" sub="离开一会儿就锁住 NextTodo，用 PIN 解锁。只防别人看见，不加密数据" on={lock !== null} onChange={(on) => (on ? setOpen("on") : turnOff())} />
+        <Switch label="隐私锁" sub="闲置一段时间后锁定 NextTodo，用 PIN 解锁。仅防他人查看，不加密数据" on={lock !== null} onChange={(on) => (on ? setOpen("on") : turnOff())} />
       </div>
       {lock && (
         <>

@@ -148,7 +148,7 @@ async fn a_restore_takes_in_the_wal_of_the_database_replaced_or_stops() {
     reader.execute_batch("BEGIN").unwrap();
     reader.query_row("SELECT count(*) FROM tasks", [], |r| r.get::<_, i64>(0)).unwrap();
     let wal = std::fs::read(file.with_extension("db-wal")).unwrap();
-    assert_eq!(db::restore(&file, &snapshot, 2_000).unwrap_err().to_string(), "现在的数据库正被别的程序使用");
+    assert_eq!(db::restore(&file, &snapshot, 2_000).unwrap_err().to_string(), "数据库正被其他程序使用");
     assert_eq!(std::fs::read(file.with_extension("db-wal")).unwrap(), wal);
     drop(reader);
 

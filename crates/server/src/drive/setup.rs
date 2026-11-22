@@ -338,7 +338,7 @@ pub(super) fn probe(r: &dyn Remote) -> Result<Option<Pointer>, ApiError> {
     let Some(bytes) = r.get(POINTER).map_err(failed)? else {
         // What NextTodo leaves in a folder of its own: `tmp/`, and generations made halfway.
         if r.list("").map_err(failed)?.iter().any(|name| name != "tmp" && !super::generation(name)) {
-            return Err(ApiError::invalid("这个文件夹里有别的文件，请换一个空文件夹或新的文件夹名", Some("folder".into())));
+            return Err(ApiError::invalid("这个文件夹里有其他文件，请换一个空文件夹或新的文件夹名", Some("folder".into())));
         }
         return Ok(None);
     };

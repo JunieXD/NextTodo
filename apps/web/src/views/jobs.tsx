@@ -158,7 +158,7 @@ function JobDetails({ job: j, board, onClose }: { job: AiJob; board: Board; onCl
         {tidy ? "要求" : "原文"}
         <textarea className="job-text" value={text} readOnly={!failed} onChange={(e) => setText(e.target.value)} rows={8} />
       </label>
-      {!failed && <p className="empty">{j.state === "running" ? "正在整理，整理完再改。" : `等待整理；整理失败后可以修改${tidy ? "要求" : "原文"}再试。`}</p>}
+      {!failed && <p className="empty">{j.state === "running" ? "正在整理，完成后可修改。" : `等待整理；整理失败后可修改${tidy ? "要求" : "原文"}并重试。`}</p>}
       <div className="actions">
         <button className="text-btn danger-text" onClick={() => (actions.remove(j), onClose())}>
           删除

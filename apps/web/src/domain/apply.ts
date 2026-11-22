@@ -912,7 +912,7 @@ function checkTask(t: Task) {
   if (t.done_at !== null && t.due?.repeat) throw new Rejected("invalid", `“${t.title}”已完成，不能设置重复，请先重新打开`);
   checkRepeat(t.title, t.due);
   if (!t.start) {
-    if (t.start_time) throw new Rejected("invalid", "设置开始的几点需要先有开始日期");
+    if (t.start_time) throw new Rejected("invalid", "设置开始时刻须先有开始日期");
     return;
   }
   if (t.due && t.start > t.due.date) throw new Rejected("invalid", `“${t.title}”的开始日期不能晚于截止日期`);

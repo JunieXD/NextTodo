@@ -314,7 +314,7 @@ test("a start keeps its time with a new date, loses it with the date, and is not
   run(d, 132, [{ op: "task.update", id: id(1), done: true, today: "2026-11-13" }]);
   expect(d.tasks.get(id(1))).toMatchObject({ start: "2026-11-14", start_time: "20:00", due: { date: "2026-11-14" } });
   expect(() => apply(d, [{ op: "task.update", id: id(1), due: { date: "2026-11-14", time: "19:00" } }], cx)).toThrow("“抢票”的开始时间不能晚于截止时间");
-  expect(() => apply(d, [{ op: "task.update", id: id(1), start: null, start_time: "08:00" }], cx)).toThrow("设置开始的几点需要先有开始日期");
+  expect(() => apply(d, [{ op: "task.update", id: id(1), start: null, start_time: "08:00" }], cx)).toThrow("设置开始时刻须先有开始日期");
   // Cleared, the time goes with the date, and comes back with it.
   run(d, 133, [{ op: "task.update", id: id(1), start: null }]);
   expect(d.tasks.get(id(1))!.start_time).toBeUndefined();

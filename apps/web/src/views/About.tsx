@@ -60,7 +60,7 @@ export function About() {
             <div className="row-inner">
               <span className="folder-main">
                 <span>服务器版本</span>
-                <span className="folder-sub full">比 App 旧，请让管理员升级服务器</span>
+                <span className="folder-sub full">比 App 旧，请联系管理员升级服务器</span>
               </span>
               <span className="row-value">{server.server}</span>
             </div>
@@ -122,7 +122,7 @@ export function About() {
           <div className="row-inner">
             <span className="folder-main">
               <span>GitHub</span>
-              <span className="folder-sub">开源项目，点个 Star 支持一下～</span>
+              <span className="folder-sub">开源项目，欢迎加 Star 支持</span>
             </span>
             <a className="text-btn" href={REPOSITORY} target="_blank" rel="noreferrer">
               打开

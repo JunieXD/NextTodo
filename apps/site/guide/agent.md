@@ -70,6 +70,6 @@ App 在本机运行时，每次启动的地址都不同，所以 agent 要经过
 
 agent 改完后，App 的提示条会写明它做了什么，比如“Claude Code 在‘求职’中添加了 4 项”，点“撤销”即可撤回。
 
-每次改动都有记录。错过了提示条，可以让 agent 运行 `nexttodo log` 查看最近的改动，再用 `nexttodo undo <批次>` 撤销其中一次。
+每次改动都有记录。错过了提示条，可以在“设置 → 改动记录”里找到这一次，点“撤销”，见[改动记录](./basics#log)；也可以让 agent 运行 `nexttodo log` 查看最近的改动，再用 `nexttodo undo <批次>` 撤销其中一次。
 
 更完整的说明（工具列表、计划的格式）见开发文档 [agent 接入](https://github.com/JunieXD/NextTodo/blob/main/docs/agent.md)。

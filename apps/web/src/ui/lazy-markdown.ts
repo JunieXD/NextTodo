@@ -7,5 +7,11 @@ const load = () => import("./Markdown");
 
 export const Description = lazy(() => load().then((m) => ({ default: m.Description })));
 
-/** Loads it once the app has had its start. */
-export const preloadMarkdown = () => void setTimeout(load, 2000);
+/** Loads it once the app has had its start. Failing, offline say, it is no news: a description
+ * opened loads it again, and tells of a failure then. */
+export const preloadMarkdown = () =>
+  void setTimeout(
+    // eslint-disable-next-line no-restricted-syntax -- a description opened tells of a failure
+    () => load().catch((e) => console.warn("预加载 Markdown 失败", e)),
+    2000,
+  );

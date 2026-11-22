@@ -1,5 +1,6 @@
 // Copying text.
 
+import { useCallback } from "react";
 import { useFeedback } from "./feedback";
 
 /** Puts `text` on the clipboard. A page on plain HTTP has no clipboard API, which browsers give
@@ -20,9 +21,12 @@ export async function copyText(text: string) {
 /** Copies `text`, a `what` such as “令牌”, and says whether it did. */
 export function useCopy() {
   const { snack } = useFeedback();
-  return (text: string, what: string) =>
-    copyText(text).then(
-      () => snack(`已复制${what}`),
-      () => snack(`无法复制${what}，请重试`),
-    );
+  return useCallback(
+    (text: string, what: string) =>
+      copyText(text).then(
+        () => snack(`已复制${what}`),
+        () => snack(`无法复制${what}，请重试`),
+      ),
+    [snack],
+  );
 }

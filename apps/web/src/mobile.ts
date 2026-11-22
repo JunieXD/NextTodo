@@ -157,6 +157,7 @@ export function writeAttachment(a: Attachment, file: Blob): Promise<void> {
       await NextTodo.writeAttachment({ id: a.id, name: a.name, data, first: at === 0, last: at + PIECE >= file.size });
     }
   });
+  // eslint-disable-next-line no-restricted-syntax -- the caller hears of the failure from `done`; the next goes on
   handing = done.catch(() => {});
   return done;
 }
@@ -171,6 +172,7 @@ const SETTLE_MS = 2000;
 let queue = Promise.resolve();
 function inTurn(f: () => Promise<void>) {
   const done = queue.then(f);
+  // eslint-disable-next-line no-restricted-syntax -- the caller hears of the failure from `done`; the next goes on
   queue = done.catch(() => {});
   return done;
 }

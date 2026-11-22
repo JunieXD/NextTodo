@@ -1,9 +1,9 @@
 import { Component, type ReactNode } from "react";
 
-/** Instead of a blank page when something breaks: what happened, and a way to start over. Local
- * data is kept, so nothing made here is lost by reloading. */
-export class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null; details: boolean }> {
-  state = { error: null as Error | null, details: false };
+/** Instead of a blank page when something breaks, or `error` kept the app from starting: what
+ * happened, and a way to start over. Local data is kept, so nothing made here is lost by reloading. */
+export class ErrorBoundary extends Component<{ error?: Error; children?: ReactNode }, { error: Error | null; details: boolean }> {
+  state = { error: this.props.error ?? null, details: false };
 
   static getDerivedStateFromError(error: Error) {
     return { error };

@@ -18,10 +18,16 @@ export const RootContext = createContext<HTMLElement | null>(null);
  * they mean little. */
 export function forUser(what: string, e: unknown): string {
   if (e instanceof ApiError) return `${what}失败：${e.message}`;
-  const message = typeof e === "string" ? e : (e as { message?: unknown } | null)?.message;
-  if (typeof message === "string" && /[\u4e00-\u9fff]/.test(message)) return message;
+  const said = saidToUser(e);
+  if (said) return said;
   console.warn(what, e);
   return `${what}失败，请稍后重试`;
+}
+
+/** The message of `e` if it was written for the user, in Chinese. */
+export function saidToUser(e: unknown): string | null {
+  const message = typeof e === "string" ? e : (e as { message?: unknown } | null)?.message;
+  return typeof message === "string" && /[\u4e00-\u9fff]/.test(message) ? message : null;
 }
 
 interface Snack {

@@ -81,7 +81,7 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
   useEffect(() => {
     let current = true;
     const [ids, edges, node] = JSON.parse(shape) as [TaskId[], Edge[], Size];
-    layout(ids, edges, node, across).then((l) => {
+    void layout(ids, edges, node, across).then((l) => {
       if (!current) return;
       if (!placed.current && ids.length) {
         // Start at full size, or a little smaller if then it all fits; centred if it fits, from the
@@ -89,7 +89,7 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
         placed.current = true;
         const { clientWidth: w, clientHeight: h } = wrap.current!;
         const zoom = Math.max(MIN_START_ZOOM, Math.min(1, w / l.width, h / l.height));
-        flow.setViewport({ x: Math.max(0, (w - l.width * zoom) / 2), y: Math.max(0, (h - l.height * zoom) / 2), zoom });
+        void flow.setViewport({ x: Math.max(0, (w - l.width * zoom) / 2), y: Math.max(0, (h - l.height * zoom) / 2), zoom });
       }
       setLaid(l);
     });

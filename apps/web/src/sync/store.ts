@@ -271,7 +271,7 @@ export class Store {
       return;
     }
     this.outbox = this.outbox.filter((p) => p !== pending);
-    this.changed([], [id]);
+    void this.changed([], [id]);
     this.hooks.rejected(pending.mutation, error);
     this.flush();
   }
@@ -296,7 +296,7 @@ export class Store {
     Object.assign(this.base, fromSnapshot(snapshot));
     this.seq = snapshot.seq;
     this.log.clear();
-    this.changed();
+    void this.changed();
   }
 
   private context(now: number) {

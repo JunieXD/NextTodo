@@ -10,6 +10,7 @@ import { loadMode } from "./local";
 import { startLock } from "./lock";
 import { onSignInElsewhere } from "./session";
 import { ErrorBoundary } from "./ui/ErrorBoundary";
+import { listenForFailures } from "./ui/failures";
 import { preloadMarkdown } from "./ui/lazy-markdown";
 import { limitBrowserMenu } from "./ui/menu";
 import { restorePage } from "./views/Panel";
@@ -17,6 +18,7 @@ import "./index.css";
 import { applyTheme } from "./theme";
 import { applyZoom } from "./zoom";
 
+listenForFailures();
 applyTheme();
 limitBrowserMenu();
 // The macOS app draws under the title bar, around the window's buttons.
@@ -31,15 +33,30 @@ if (desktop.inPanel) {
 }
 // The app carries its files in the package; only the web app needs a service worker for offline use.
 if (!native) registerSW({ immediate: true });
-await Promise.all([loadServer(), loadMode(), loadAiMode()]);
-if (app) await (phoneApp ? mobile : desktop).listen();
-// Locked by now if left long enough, for nothing of the app to show (docs/design.md#隐私锁).
-if (!phoneApp) startLock();
-createRoot(document.getElementById("app")!).render(
-  <StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
-  </StrictMode>,
+
+/** What the app needs before it shows. */
+async function start() {
+  await Promise.all([loadServer(), loadMode(), loadAiMode()]);
+  if (app) await (phoneApp ? mobile : desktop).listen();
+  // Locked by now if left long enough, for nothing of the app to show (docs/design.md#隐私锁).
+  if (!phoneApp) startLock();
+}
+
+const root = createRoot(document.getElementById("app")!);
+start().then(
+  () => {
+    root.render(
+      <StrictMode>
+        <ErrorBoundary>
+          <App />
+        </ErrorBoundary>
+      </StrictMode>,
+    );
+    preloadMarkdown();
+  },
+  // Not started, it shows the page a crash does, rather than nothing.
+  (e: unknown) => {
+    console.error(e);
+    root.render(<ErrorBoundary error={e instanceof Error ? e : new Error(String(e))} />);
+  },
 );
-preloadMarkdown();

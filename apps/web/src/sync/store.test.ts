@@ -130,10 +130,10 @@ test("a rejected change leaves the view and is reported", async () => {
   expect(rejected.map(([, e]) => e.message)).toEqual(["事项 ID 已存在"]);
 });
 
-test("a change another tab heard turned down leaves the view without being reported again", () => {
+test("a change another tab heard turned down leaves the view without being reported again", async () => {
   const { store, rejected, titles, saved } = setup();
   const { id: change } = store.commit([{ op: "task.create", id: id(1), title: "一", sort_key: "a1" }]);
-  store.drop(change);
+  await store.drop(change);
   expect([titles(), saved().outbox, rejected]).toEqual([[], [], []]);
 });
 

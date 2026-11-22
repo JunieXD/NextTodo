@@ -22,7 +22,7 @@ export function useLeave(refs: RefObject<HTMLElement | null>[], replaced = () =>
           parent.append(el);
         }
         for (const [e, top] of scrolled) e.scrollTop = top;
-        Promise.allSettled(els.flatMap((el) => el.getAnimations()).map((a) => a.finished)).then(() => els.forEach((el) => el.remove()));
+        void Promise.allSettled(els.flatMap((el) => el.getAnimations()).map((a) => a.finished)).then(() => els.forEach((el) => el.remove()));
       });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the elements mounted, which stay

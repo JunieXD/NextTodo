@@ -9,6 +9,7 @@ export function exclusive<T>(name: string, f: () => Promise<T>): Promise<T> {
   if ("locks" in navigator) return navigator.locks.request(name, f);
   const done = (held.get(name) ?? Promise.resolve()).then(f);
   // The next waits for this one, however it ends; its caller hears how.
+  // eslint-disable-next-line no-restricted-syntax -- the caller hears of the failure from `done`
   held.set(name, done.then(() => undefined, () => undefined));
   return done;
 }

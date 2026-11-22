@@ -1,5 +1,6 @@
 import { Tooltip } from "radix-ui";
 import { type ReactNode, useState } from "react";
+import { Failures } from "./failures";
 import { FeedbackProvider, RootContext } from "./feedback";
 
 /** The app's outer element, which panels and dialogs open inside so that its layout styles apply.
@@ -10,7 +11,10 @@ export function Root({ className, outside = false, children }: { className: stri
     <div ref={setEl} className={className}>
       <RootContext value={el}>
         <Tooltip.Provider delayDuration={500}>
-          <FeedbackProvider outside={outside}>{children}</FeedbackProvider>
+          <FeedbackProvider outside={outside}>
+            <Failures />
+            {children}
+          </FeedbackProvider>
         </Tooltip.Provider>
       </RootContext>
     </div>

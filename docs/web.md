@@ -12,7 +12,7 @@
 | `src/attach.ts` | 添加附件：起名字、压缩图片、引用的写法 |
 | `src/session.tsx` | 登录状态：启动时先用本机数据，再向服务端确认；本地副本和连接的创建 |
 | `src/local.ts` | 两个 App 的[本机模式](local.md)：打开 App 里的服务端，进入和离开，备份和恢复 |
-| `src/ui/` | 通用组件：图标、勾选圈、分段控件、底部面板、弹窗和对话框、提示条、Markdown 描述 |
+| `src/ui/` | 通用组件：图标、勾选圈、分段控件、底部面板、弹窗和对话框、提示条、没人处理的错误的提示（`failures.tsx`）、Markdown 描述 |
 | `src/views/` | 页面：登录、手机和电脑两种布局、接下来、文件夹、关系图（`Graph.tsx`，布局在 `graph-layout.ts`）、搜索、详情、设置、各种选择面板 |
 | `src/index.css` | 样式：原型的样式原样放在 `components` 层，Tailwind 提供基础样式和颜色工具类 |
 
@@ -113,6 +113,24 @@
 - **Web Crypto**：没有 `crypto.subtle`，所以没有[隐私锁](design.md#隐私锁)：PIN 要用它算 PBKDF2。
 
 用到新的浏览器接口时，先查它是不是只在安全上下文里有（MDN 上标着 Secure context）。随机 ID 用 `uuid` 库生成，不用 `crypto.randomUUID()`。
+
+## 出错
+
+出错就往上抛，只在真能处理的地方接住：
+
+| 出了什么错 | 谁接住 | 用户看到什么 |
+|---|---|---|
+| 接口出错、连不上服务器 | `api/http.ts` 换成 `ApiError`（连不上的 `code` 是 `offline`），由发起操作的地方用 `forUser` 换成提示 | 提示条或表单下的“{操作}失败：{原因}” |
+| 输入不合要求 | `domain/text.ts` 等的校验，结果紧挨着输入框 | 原因，如“标题不能为空” |
+| 渲染时出错，或启动时读设置、连原生部分失败 | `ui/ErrorBoundary.tsx`；启动的失败由 `main.tsx` 交给它 | 整页的“页面出错”和“重新加载” |
+| 其余没人接住的：事件处理、计时器、effect 和异步代码里抛出的错误，没有处理的 Promise 失败 | `ui/failures.tsx` 监听 `unhandledrejection` 和 `error` | 提示条“页面出错，操作可能未完成”，点“错误详情”看原文和调用栈，可以复制；错误本身是给用户写的中文提示的，直接显示；没接住的 `ApiError` 显示“操作失败：{原因}” |
+
+后台做的、失败了下次再来或用到时再做的（检查更新、服务器版本、同步重连、预先加载 Markdown），失败时记进控制台，不打扰用户。
+
+ESLint 拦下两种吞掉错误的写法：
+
+- `@typescript-eslint/no-floating-promises`（按类型检查）：Promise 要么 `await`，要么处理失败，要么写 `void` 交给统一出口。
+- `no-restricted-syntax`：按语法拦常见的写法：`catch` 里，以及 `.catch`、`.then` 的失败回调里，什么也不做、只打日志、只 `return` 或返回 `undefined` 的，选择器在 `eslint.config.js`。它不看类型，普通对象上同名的 `catch`、`then` 方法也会拦下。确实不该管的（只要等前一个做完、不管它成没成的队列，用到时会再做的预先加载），就地写 `eslint-disable` 和理由。
 
 ## 浏览器
 

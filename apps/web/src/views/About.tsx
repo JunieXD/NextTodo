@@ -2,7 +2,7 @@
 
 import { ChevronRight, Copy, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { app } from "../api/http";
+import { ApiError, app } from "../api/http";
 import { inLocalMode } from "../local";
 import { type ServerVersions, checkServer, followUpgrade, newer, upgrade, useServerVersions, useUpgrading } from "../server-update";
 import { useSession } from "../session";
@@ -142,7 +142,11 @@ function ServerVersion({ server }: { server: ServerVersions }) {
   const { confirm, snack } = useFeedback();
   const upgrading = useUpgrading();
   useEffect(() => {
-    followUpgrade().catch((e) => console.warn("查询服务器升级失败", e));
+    followUpgrade().catch((e: unknown) => {
+      // Not reached or turned down, it shows no upgrade under way, as before.
+      if (!(e instanceof ApiError)) throw e;
+      console.warn("查询服务器升级失败", e);
+    });
   }, []);
   const latest = server.latest !== null && newer(server.latest, server.server) ? server.latest : null;
   const howTo = <Help to="server#升级">查看升级方法</Help>;

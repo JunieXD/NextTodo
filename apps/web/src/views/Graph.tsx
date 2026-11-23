@@ -18,7 +18,7 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import "./graph.css";
-import { CalendarClock, Check as CheckIcon, Clock, Folder as FolderIcon, Link, X } from "lucide-react";
+import { CalendarClock, Check as CheckIcon, Clock, Folder as FolderIcon, Link } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { FolderId } from "../api/types/FolderId";
 import type { Task } from "../api/types/Task";
@@ -68,6 +68,14 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
   const [picked, setPicked] = useState<TaskId | null>(null);
   const [connect, setConnect] = useState<{ from: TaskId | null } | null>(null);
   useBack("panel", connect ? () => setConnect(null) : null);
+  // Esc too, on desktops, once no dialog or menu takes it, nor a field such as the title being edited.
+  const linking = connect !== null;
+  useEffect(() => {
+    if (!linking) return;
+    const key = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && !(e.target as Element).closest("input, textarea") && setConnect(null);
+    addEventListener("keydown", key);
+    return () => removeEventListener("keydown", key);
+  }, [linking]);
 
   const s = useMemo(() => scene(board, folder, { done, sub }), [board, folder, done, sub]);
   const ids = s.tasks.map((t) => t.id).sort();
@@ -113,9 +121,10 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
       actions.open(t);
     } else if (!source) {
       setConnect({ from: t.id });
-    } else if (source !== t.id) {
-      actions.link(source, t.id);
-      setConnect(null);
+    } else {
+      // Linking goes on with the next pair, until 完成; the first picked again was a slip.
+      if (source !== t.id) actions.link(source, t.id);
+      setConnect({ from: null });
     }
   };
   const unlink = async (before: TaskId, after: TaskId) => {
@@ -197,8 +206,8 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
             <>
               <span className="spacer" />
               <button className={`chip${connect ? " on" : ""}`} onClick={toggleConnect}>
-                <Icon of={connect ? X : Link} size={16} />
-                {connect ? "取消连线" : "连线"}
+                <Icon of={connect ? CheckIcon : Link} size={16} />
+                {connect ? "完成" : "连线"}
               </button>
             </>
           )}
@@ -246,8 +255,8 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
       </div>
       {!across && (
         <button className={`fab${connect ? " on" : ""}`} onClick={toggleConnect}>
-          <Icon of={connect ? X : Link} />
-          {connect ? "取消连线" : "连线"}
+          <Icon of={connect ? CheckIcon : Link} />
+          {connect ? "完成" : "连线"}
         </button>
       )}
     </>

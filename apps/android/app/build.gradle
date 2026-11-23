@@ -3,8 +3,8 @@ apply plugin: 'org.jetbrains.kotlin.android'
 apply plugin: 'org.jetbrains.kotlin.plugin.compose'
 
 // Versions from the commits (docs/android.md#更新): all of them for the version code, which only
-// grows, and the version; those that changed the native part, plus 2, for the native version, which
-// a web app built since needs at least.
+// grows, and the version, by which local mode offers new APKs; those that changed the native part,
+// plus 2, for the native version, which a web app built since needs at least.
 def count = { List<String> paths ->
     providers.exec {
         workingDir rootProject.file('../..')

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { newer } from "./server-update";
+import { newer } from "./updates";
 
 test("versions compare by their numbers", () => {
   expect(newer("0.1.150", "0.1.145")).toBe(true);

@@ -99,16 +99,18 @@ export async function check(now = false) {
   }
 }
 
-/** Offers the APK `of` gives when its native version is newer; nothing, should the app have moved
- * elsewhere meanwhile. A server gives it relative to its address. */
+/** Offers the APK `of` gives when it is newer: by its native version, the web app updating by itself;
+ * in local mode by its version, the APK carrying the web app and the server too. Nothing, should the
+ * app have moved elsewhere meanwhile. A server gives it relative to its address. */
 async function checkApk(of: string) {
   const url = manifest(of, "android.json");
   const res = await fetch(url).catch((e) => Promise.reject(new Failed("offline", `${url}：${e}`)));
   if (!res.ok) throw new Failed("unavailable", `${url}：${res.status}`);
   const apk: { native: number; versionName: string; url: string } = await res.json();
-  const newer = apk.native > (await NextTodo.appInfo()).native;
+  const installed = await NextTodo.appInfo();
+  const offered = of === GITHUB ? newer(apk.versionName, installed.version) : apk.native > installed.native;
   if (of !== source()) return;
-  set(newer ? { kind: "apk", version: apk.versionName, url: new URL(apk.url, `${of}/`).href } : null);
+  set(offered ? { kind: "apk", version: apk.versionName, url: new URL(apk.url, `${of}/`).href } : null);
 }
 
 /** Tells of the version SideStore's source on GitHub lists when it is newer: its only one. */
@@ -152,6 +154,13 @@ export function failureText(doing: string, f: Failure) {
     install: "新版本无法安装，请从官网下载最新版本",
   };
   return `${doing}失败：${why[f]}`;
+}
+
+/** Whether version `a` (`0.1.150`) is newer than `b`. */
+export function newer(a: string, b: string): boolean {
+  const [x, y] = [a, b].map((v) => v.split(".").map(Number));
+  const i = x.findIndex((n, i) => n !== y[i]);
+  return i >= 0 && x[i] > (y[i] ?? -1);
 }
 
 /** Tells the listeners about a new update, or none any more; the same found again is not news. */

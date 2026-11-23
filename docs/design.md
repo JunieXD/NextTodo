@@ -471,7 +471,7 @@ React 单页应用，可以安装成 PWA。第一版网页不做截止提醒。
 | 桌面 | 网页打包在 App 里，随整包更新 | Tauri 官方更新插件：后台下载整个新版本、校验签名，重启生效 |
 | iOS | 网页打包在 App 里，随整包更新 | App 不能自己安装：提示有新版本，在 SideStore 里更新 |
 
-- 平时的改动几乎都在网页部分，Android 只在原生部分（`apps/android`、Capacitor 配置和插件）改了时才要装新 APK；桌面 App 每次发布都是整包，几 MB。
+- 平时的改动几乎都在网页部分，连服务器的 Android 只在原生部分（`apps/android`、Capacitor 配置和插件）改了时才要装新 APK；本机模式的网页部分和服务端都在安装包里，每次发布都要装，见[本机模式](local.md#更新)。桌面 App 每次发布都是整包，几 MB。
 - 只从登录的服务器下载（[直接用 HTTP](#直接用-http) 时经 HTTP），和网页端一样信任这台服务器。APK 由系统校验签名，必须和已装的一致；桌面更新包用单独的更新密钥签名，App 里带着公钥校验。
 - 每次构建除了服务端，还构建 Android 正式包和桌面更新包，连同版本说明一起放进镜像的 `/app/`。细节见 [Android](android.md#更新) 和[桌面 App](desktop.md#更新)。
 - 本机模式没有服务器，从 GitHub Releases 取更新，见[本机模式](local.md#更新)。iOS 总是从 GitHub 取：服务器上没有 iOS 的安装包，见 [iOS](ios.md#更新)。

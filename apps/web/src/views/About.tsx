@@ -4,14 +4,14 @@ import { ChevronRight, Copy, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError, app } from "../api/http";
 import { inLocalMode } from "../local";
-import { type ServerVersions, checkServer, followUpgrade, newer, upgrade, useServerVersions, useUpgrading } from "../server-update";
+import { type ServerVersions, checkServer, followUpgrade, upgrade, useServerVersions, useUpgrading } from "../server-update";
 import { useSession } from "../session";
 import { ago } from "../domain/dates";
 import { useCopy } from "../ui/clipboard";
 import { Tip, forUser, useFeedback } from "../ui/feedback";
 import { Help, QQ_GROUP, REPOSITORY } from "../ui/help";
 import { Icon } from "../ui/icons";
-import { appVersion, check, failureText, install, restart, useChecked, useChecking, usePending } from "../updates";
+import { appVersion, check, failureText, install, newer, restart, useChecked, useChecking, usePending } from "../updates";
 import { Changelog } from "./Changelog";
 
 export function About() {

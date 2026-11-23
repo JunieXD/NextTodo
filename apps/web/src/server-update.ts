@@ -26,13 +26,6 @@ const subscribe = (f: () => void) => {
 
 export const useServerVersions = () => useSyncExternalStore(subscribe, () => (versions?.of === serverUrl() ? versions : null));
 
-/** Whether version `a` (`0.1.150`) is newer than `b`. */
-export function newer(a: string, b: string): boolean {
-  const [x, y] = [a, b].map((v) => v.split(".").map(Number));
-  const i = x.findIndex((n, i) => n !== y[i]);
-  return i >= 0 && x[i] > (y[i] ?? -1);
-}
-
 async function json<T>(res: Promise<Response>): Promise<T> {
   const r = await res;
   if (!r.ok) throw new Error(`${r.url}：${r.status}`);

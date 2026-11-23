@@ -2,7 +2,7 @@
 // (docs/design.md#更新日志).
 
 import source from "../../../CHANGELOG.md?raw";
-import { newer } from "./server-update";
+import { newer } from "./updates";
 import { signedInBefore } from "./session";
 
 /** A release: its version, the day it came out, and what it changed. */

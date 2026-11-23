@@ -289,7 +289,7 @@ local/
 - 本机模式没有服务器可以取更新，改从 GitHub Releases 取：用固定地址 `https://github.com/JunieXD/NextTodo/releases/latest/download/<清单>` 取 `android.json`、`desktop.json`。GitHub 会转到最新 Release 里的同名文件，不调 GitHub API。
 - `deploy/build.sh` 构建时，Release 的文件里加上更新要用的全部文件：两份清单，以及 macOS 的更新包 `NextTodo.app.tar.gz` 和 `NextTodo-x64.app.tar.gz`（APK 和 Windows 安装程序本来就在）。清单里的下载地址写成这个 Release 的完整地址（`…/releases/download/v<版本>/<文件>`），不依赖跳转后的相对路径，所以清单和安装包不会对错版本。
 - 只有发布 Release 才有新版本，平时部署到自己服务器的不算。
-- 比较版本的规则和连服务器时一样：Android 看原生版本，桌面看版本号。iOS 不管连不连服务器都从 GitHub 取，见 [iOS](ios.md#更新)。
+- 比较版本号，Release 的比已装的新就提示。Android 也是，不像连服务器时只看原生版本：本机模式的网页部分不热更新，服务端也在安装包里，只改了它们的版本同样要装新 APK。iOS 不管连不连服务器都从 GitHub 取，见 [iOS](ios.md#更新)。
 - 校验照旧：APK 由系统校验签名，桌面更新包用更新密钥校验。信任的是 GitHub 的 HTTPS 和这两种签名。
 - 检查失败（比如连不上 GitHub）时不打扰，下次照常再查；设置页“关于”里显示上次检查的时间和结果，连不上时写“无法连接 GitHub”，点按“App 版本”可以立即再查，见[总体设计](design.md#app-更新)。
 - Android 的网页部分不热更新，随 APK 更新（见[网页版本](#android)）。

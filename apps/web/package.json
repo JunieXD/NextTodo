@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build && node scripts/compress.js",
     "check": "tsc && eslint . && vitest run",
-    "android:build": "tsc && vite build && cap sync android && cd ../android && ./gradlew assembleRelease",
+    "android:build": "tsc && vite build && cap sync android && cd ../android && ./gradlew --no-daemon assembleRelease",
     "ios:build": "tsc && vite build && cap sync ios && ../ios/build.sh",
     "test": "vitest",
     "gen": "cd ../.. && cargo test -q export_bindings"

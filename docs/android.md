@@ -160,7 +160,11 @@ App 的页面来自 `https://localhost`，和服务器不同源，所以不用 C
 
 总体见[总体设计](design.md#app-更新)。
 
-**版本**：原生版本是改过原生部分的提交数（`apps/android`、`apps/web/capacitor.config.ts`、`apps/web/package.json`，后者里有 Capacitor 插件的版本），写进 APK（`BuildConfig`）。`versionCode` 仍是全部提交数，只增不减；`versionName` 是 `0.1.<全部提交数>`，和同一次构建的桌面 App 一样。
+**版本**：原生版本是改过原生部分的提交数（`apps/android`、`apps/web/capacitor.config.ts`）加 2，写进 APK（`BuildConfig`）。`versionCode` 仍是全部提交数，只增不减；`versionName` 是 `0.1.<全部提交数>`，和同一次构建的桌面 App 一样。
+
+- `apps/web/package.json` 不计入：只改网页依赖或脚本的提交，不必让 Android 用户重装 APK。Capacitor 插件的增删和升级由 `cap sync android` 写进 `apps/android/capacitor.settings.gradle`：模块路径带着插件和 `@capacitor/core` 的版本号。
+- 发版构建在 `cap sync android` 之后，发现 `apps/android` 下有没提交的改动就停下，免得插件变了却没算进原生版本。直接用 `pnpm android:build` 打的包不检查。
+- 加 2 是接续：原来的算法还计入 `apps/web/package.json`，加 2 让换算法前后的原生版本相同（58），不倒退，也不用为换算法重装 APK。
 
 **网页热更新**：
 

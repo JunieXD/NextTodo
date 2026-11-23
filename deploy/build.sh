@@ -43,6 +43,14 @@ export NEXTTODO_VERSION=$version
 (cd apps/web && pnpm exec tsc && pnpm exec vite build)
 # The apps carry this build of the web app, as it is before compressing it for the server.
 (cd apps/web && pnpm exec cap sync android)
+# A plugin change counts towards the native version only once its sync is committed
+# (docs/android.md#更新); otherwise old apps would load web builds that need it.
+synced=$(git status --porcelain -- apps/android)
+if [[ -n $synced ]]; then
+  echo "cap sync android 改了 apps/android 下的文件，先提交再构建，原生版本才算得对：" >&2
+  echo "$synced" >&2
+  exit 1
+fi
 # A release build keeps no Gradle daemon alive after it: left idling, one holds gigabytes for hours.
 (cd apps/android && ./gradlew --no-daemon --quiet assembleRelease)
 (cd apps/web && pnpm exec cap sync ios)

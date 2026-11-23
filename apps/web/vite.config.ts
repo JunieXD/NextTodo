@@ -17,8 +17,8 @@ const commit = git("rev-parse", "--short", "HEAD");
  * is package.json's. */
 const version = process.env.NEXTTODO_VERSION ?? pkg.version;
 /** The native version of the Android app this build needs, as apps/android/app/build.gradle counts
- * it: the commits that changed the native part. */
-const native = Number(git("rev-list", "--count", "HEAD", "--", "apps/android", "apps/web/capacitor.config.ts", "apps/web/package.json"));
+ * it: the commits that changed the native part, plus 2 (docs/android.md#更新). */
+const native = Number(git("rev-list", "--count", "HEAD", "--", "apps/android", "apps/web/capacitor.config.ts")) + 2;
 
 /** Writes `app/web.json`, from which the Android app downloads newer builds (docs/android.md#更新):
  * the version, the native version needed, and the files. */

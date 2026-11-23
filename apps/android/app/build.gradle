@@ -3,8 +3,8 @@ apply plugin: 'org.jetbrains.kotlin.android'
 apply plugin: 'org.jetbrains.kotlin.plugin.compose'
 
 // Versions from the commits (docs/android.md#更新): all of them for the version code, which only
-// grows, and the version; those that changed the native part for the native version, which a web
-// app built since needs at least.
+// grows, and the version; those that changed the native part, plus 2, for the native version, which
+// a web app built since needs at least.
 def count = { List<String> paths ->
     providers.exec {
         workingDir rootProject.file('../..')
@@ -13,7 +13,7 @@ def count = { List<String> paths ->
 }
 def commits = count([])
 def rustLibs = layout.buildDirectory.dir('rust')
-def nativeVersion = count(['apps/android', 'apps/web/capacitor.config.ts', 'apps/web/package.json'])
+def nativeVersion = count(['apps/android', 'apps/web/capacitor.config.ts']) + 2
 
 android {
     namespace = "cn.juniexd.nexttodo"

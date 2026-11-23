@@ -1,7 +1,7 @@
 // Notes for AI organizing: what it keeps to, folder by folder from the root down (docs/ai.md#说明).
 
 import { ChevronRight, Plus } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { api } from "../api/http";
 import type { AiNote } from "../api/types/AiNote";
 import type { FolderId } from "../api/types/FolderId";
@@ -64,8 +64,25 @@ function NoteEditor({ folder, notes, onSaved, onClose }: { folder: FolderId | nu
       snack(forUser(c.value ? "保存 AI 说明" : "清除 AI 说明", e));
     }
   };
+  const form = useId();
   return (
-    <Modal title="AI 说明" onClose={onClose} focus={area}>
+    <Modal
+      title="AI 说明"
+      onClose={onClose}
+      focus={area}
+      footer={
+        <>
+          {was !== undefined && (
+            <button type="button" className="text-btn danger-text" onClick={() => void save("")}>
+              清除说明
+            </button>
+          )}
+          <button className="filled-btn" form={form}>
+            保存
+          </button>
+        </>
+      }
+    >
       <p className="note-place">{place(board, folder)}</p>
       {inherited.length > 0 && (
         <div className="note-above">
@@ -78,7 +95,7 @@ function NoteEditor({ folder, notes, onSaved, onClose }: { folder: FolderId | nu
           ))}
         </div>
       )}
-      <form onSubmit={(e) => (e.preventDefault(), void save(text))}>
+      <form id={form} onSubmit={(e) => (e.preventDefault(), void save(text))}>
         <label className={`field${error ? " error" : ""}`}>
           <textarea
             ref={area}
@@ -95,14 +112,6 @@ function NoteEditor({ folder, notes, onSaved, onClose }: { folder: FolderId | nu
             </span>
           )}
         </label>
-        <div className="actions">
-          {was !== undefined && (
-            <button type="button" className="text-btn danger-text" onClick={() => void save("")}>
-              清除说明
-            </button>
-          )}
-          <button className="filled-btn">保存</button>
-        </div>
       </form>
     </Modal>
   );

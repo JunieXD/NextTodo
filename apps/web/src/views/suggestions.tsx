@@ -35,7 +35,23 @@ export function Suggestions({ job: j, board, onRetry, onClose }: { job: AiJob; b
   };
 
   return (
-    <Modal title="整理建议" onClose={onClose}>
+    <Modal
+      title="整理建议"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="text-btn danger-text" onClick={discard}>
+            放弃
+          </button>
+          <button className="tonal-btn" onClick={() => (onRetry(), onClose())}>
+            重新整理
+          </button>
+          <button className="filled-btn" disabled={!taken.length} onClick={apply}>
+            应用 {taken.length} 处
+          </button>
+        </>
+      }
+    >
       <p className="empty">
         {shown.length ? "勾选要采纳的修改，一起应用；应用后可以撤销。" : "暂无可采纳的修改：AI 认为不需要改，或涉及的事项已完成、已删除。"}
       </p>
@@ -59,17 +75,6 @@ export function Suggestions({ job: j, board, onRetry, onClose }: { job: AiJob; b
           </div>
         </section>
       ))}
-      <div className="actions">
-        <button className="text-btn danger-text" onClick={discard}>
-          放弃
-        </button>
-        <button className="tonal-btn" onClick={() => (onRetry(), onClose())}>
-          重新整理
-        </button>
-        <button className="filled-btn" disabled={!taken.length} onClick={apply}>
-          应用 {taken.length} 处
-        </button>
-      </div>
     </Modal>
   );
 }

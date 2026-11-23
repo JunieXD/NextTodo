@@ -205,7 +205,18 @@ export function SharePanel({ folder, onClose }: { folder: FolderId; onClose(): v
 
   const crossed = share ? 0 : crossing(board, folder);
   return (
-    <Modal title={`共享“${f.name}”`} onClose={onClose} focus={mine ? input : undefined}>
+    <Modal
+      title={`共享“${f.name}”`}
+      onClose={onClose}
+      focus={mine ? input : undefined}
+      footer={
+        (!mine || members.length > 0) && (
+          <button className="text-btn danger-text" disabled={busy} onClick={() => void (mine ? stop() : leave())}>
+            {mine ? "停止共享" : "退出共享"}
+          </button>
+        )
+      }
+    >
       {mine && (
         <form className={`field${error ? " error" : ""}`} onSubmit={add}>
           <span className="share-add">
@@ -254,13 +265,6 @@ export function SharePanel({ folder, onClose }: { folder: FolderId; onClose(): v
           </div>
         ))}
       </div>
-      {(!mine || members.length > 0) && (
-        <div className="actions">
-          <button className="text-btn danger-text" disabled={busy} onClick={() => void (mine ? stop() : leave())}>
-            {mine ? "停止共享" : "退出共享"}
-          </button>
-        </div>
-      )}
     </Modal>
   );
 }
@@ -308,7 +312,22 @@ export function AssigneePicker({
   // No longer shared with the user, or not at all.
   if (!board.share(folder)) return null;
   return (
-    <Modal title="负责人" onClose={onClose}>
+    <Modal
+      title="负责人"
+      onClose={onClose}
+      footer={
+        onDone && (
+          <>
+            <button className="text-btn" onClick={onClose}>
+              取消
+            </button>
+            <button className="filled-btn" onClick={() => (onDone(picked), onClose())}>
+              确定
+            </button>
+          </>
+        )
+      }
+    >
       <div className="group share-people">
         {sharers(board, folder).map((id) => (
           <button key={id} className="row" role="checkbox" aria-checked={now.includes(id)} onClick={() => tap(id)}>
@@ -318,16 +337,6 @@ export function AssigneePicker({
           </button>
         ))}
       </div>
-      {onDone && (
-        <div className="actions">
-          <button className="text-btn" onClick={onClose}>
-            取消
-          </button>
-          <button className="filled-btn" onClick={() => (onDone(picked), onClose())}>
-            确定
-          </button>
-        </div>
-      )}
     </Modal>
   );
 }

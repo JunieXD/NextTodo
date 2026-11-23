@@ -578,7 +578,9 @@ label.row { cursor: pointer; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 12px 10px 16px; }
 .modal-head h3 { margin: 0; font-size: 18px; font-weight: 600; }
 .modal-body { overflow-y: auto; padding-bottom: 8px; }
-.actions.modal-foot { margin: 0; padding: 12px 16px 0; border-top: .5px solid var(--outline-variant); }
+.actions.modal-foot { flex-wrap: wrap; margin: 0; padding: 12px 16px 0; border-top: .5px solid var(--outline-variant); }
+/* What went wrong as a button below was pressed: in the footer, as the content may have scrolled it out of sight. */
+.modal-foot .form-error { flex-basis: 100%; margin: 0; }
 .search { margin: 0 16px 12px; height: 40px; border-radius: 12px; background: var(--surface-container); display: flex; align-items: center; gap: 8px; padding: 0 12px; color: var(--on-surface-variant); }
 .search input { flex: 1; border: 0; background: none; outline: none; font-size: 16px; color: var(--on-surface); min-width: 0; }
 .picker .row:disabled { opacity: .45; }
@@ -679,7 +681,7 @@ a.text-btn { display: inline-flex; align-items: center; }
 .pane-inner { width: var(--pane); height: 100%; overflow-y: auto; padding: 20px 0 32px; transition: width .32s var(--ease); }
 .pane-closed .detail-pane { border-left-color: transparent; }
 .detail-empty { height: 100%; display: grid; place-items: center; color: var(--outline); font-size: 14px; text-align: center; padding: 32px; }
-.desk .modal { left: 0; right: 0; margin: 0 auto; bottom: auto; top: 12vh; width: 440px; border-radius: 28px; max-height: 76vh; padding-bottom: 12px; }
+.desk .modal { left: 0; right: 0; margin: 0 auto; bottom: auto; top: 12vh; width: 440px; border-radius: 28px; max-height: calc(88vh - 24px); padding-bottom: 12px; }
 .desk .modal.wide { width: clamp(440px, 56%, 640px); }
 .desk .modal.enter { animation: dialog-in .25s var(--ease); }
 .desk .modal-scrim.leave { animation-duration: .16s; }

@@ -1,7 +1,7 @@
 // The settings: a home page that lists the sections, each a page of its own (docs/ui.md#设置).
 
 import { Bell, ChevronRight, Copy, HardDrive, History, Info, KeyRound, Lock, type LucideIcon, Mail, Monitor, Palette, Paperclip, Plus, Sparkles, SquareTerminal } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 import { useLocation } from "wouter";
 import { ApiError, api, app, desktopOs, phoneApp, serverUrl } from "../api/http";
 import type { CreatedToken } from "../api/types/CreatedToken";
@@ -660,9 +660,28 @@ function PasswordDialog({ onClose }: { onClose(): void }) {
     }
   };
   const wrong = (field: string) => error?.field === field;
+  const form = useId();
   return (
-    <Modal title="修改密码" onClose={onClose}>
-      <form onSubmit={submit}>
+    <Modal
+      title="修改密码"
+      onClose={onClose}
+      footer={
+        <>
+          {error && (
+            <p className="form-error" role="alert">
+              {error.message}
+            </p>
+          )}
+          <button type="button" className="text-btn" onClick={onClose}>
+            取消
+          </button>
+          <button className="filled-btn" form={form}>
+            修改
+          </button>
+        </>
+      }
+    >
+      <form id={form} onSubmit={submit}>
         <label className={`field${wrong("old_password") ? " error" : ""}`}>
           当前密码
           <input
@@ -685,17 +704,6 @@ function PasswordDialog({ onClose }: { onClose(): void }) {
             aria-invalid={wrong("new_password")}
           />
         </label>
-        {error && (
-          <p className="form-error" role="alert">
-            {error.message}
-          </p>
-        )}
-        <div className="actions">
-          <button type="button" className="text-btn" onClick={onClose}>
-            取消
-          </button>
-          <button className="filled-btn">修改</button>
-        </div>
       </form>
     </Modal>
   );
@@ -716,9 +724,24 @@ function TokenPage({ onCreated, onClose }: { onCreated(c: CreatedToken): void; o
       setError(e.message);
     }
   };
+  const form = useId();
   return (
-    <Modal title="生成令牌" onClose={onClose}>
-      <form onSubmit={submit}>
+    <Modal
+      title="生成令牌"
+      onClose={onClose}
+      footer={
+        <>
+          {error && <p className="form-error">{error}</p>}
+          <button type="button" className="text-btn" onClick={onClose}>
+            取消
+          </button>
+          <button className="filled-btn" form={form}>
+            生成
+          </button>
+        </>
+      }
+    >
+      <form id={form} onSubmit={submit}>
         <label className="field">
           <span>
             名称 <span className="hint">显示在它所做的改动旁，如 Claude Code</span>
@@ -736,13 +759,6 @@ function TokenPage({ onCreated, onClose }: { onCreated(c: CreatedToken): void; o
             onChange={setScope}
           />
         </div>
-        {error && <p className="form-error">{error}</p>}
-        <div className="actions">
-          <button type="button" className="text-btn" onClick={onClose}>
-            取消
-          </button>
-          <button className="filled-btn">生成</button>
-        </div>
       </form>
     </Modal>
   );
@@ -757,7 +773,16 @@ function TokenCreated({ name, secret, onDone }: { name: string; secret: string; 
   const url = inLocal ? "local" : serverUrl() || location.origin;
   const viaCli = (agent: string) => `${agent} mcp add nexttodo --env NEXTTODO_URL=local --env NEXTTODO_TOKEN=${secret} -- nexttodo mcp`;
   return (
-    <Modal title="令牌已生成" onClose={onDone} onBack={onDone}>
+    <Modal
+      title="令牌已生成"
+      onClose={onDone}
+      onBack={onDone}
+      footer={
+        <button className="filled-btn" onClick={onDone}>
+          完成
+        </button>
+      }
+    >
       <p className="empty">
         “{name}”的令牌只显示这一次。下面的写法已填好{inLocal ? "令牌，须先安装命令行" : "服务器地址和令牌"}，复制即可。
         {app === "desktop" ? "命令行在本页下方的“命令行”一组安装。" : <Help to="agent#cli">如何安装命令行</Help>}
@@ -775,11 +800,6 @@ function TokenCreated({ name, secret, onDone }: { name: string; secret: string; 
         <Copyable label="Codex" hint="~/.codex/config.toml" text={`[mcp_servers.nexttodo]\nurl = "${url}/mcp"\nbearer_token_env_var = "NEXTTODO_TOKEN"`} />
       )}
       <Copyable label="把 skill 装给 agent" text="nexttodo skill install" />
-      <div className="actions">
-        <button className="filled-btn" onClick={onDone}>
-          完成
-        </button>
-      </div>
     </Modal>
   );
 }

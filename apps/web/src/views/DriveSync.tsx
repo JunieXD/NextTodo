@@ -1,6 +1,6 @@
 // Syncing local mode's data with other devices through a cloud drive (docs/local.md#借网盘同步).
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import { ApiError, api } from "../api/http";
 import type { DriveConfig } from "../api/types/DriveConfig";
 import type { DriveConfigView } from "../api/types/DriveConfigView";
@@ -45,14 +45,11 @@ export function syncLine(sync: DriveSync, now: Date): string {
 export function DriveSyncDialog({ onClose }: { onClose(): void }) {
   const [sync, load] = useDriveSync(true);
   if (!sync) return null;
-  return (
-    <Modal title="借网盘同步" onClose={onClose}>
-      {sync.drive ? <Syncing sync={sync} onStopped={() => void load()} /> : <TurnOn stopped={sync.stopped} onDone={onClose} />}
-    </Modal>
-  );
+  // Each a panel of its own, its buttons in the footer.
+  return sync.drive ? <Syncing sync={sync} onStopped={() => void load()} onClose={onClose} /> : <TurnOn stopped={sync.stopped} onDone={onClose} />;
 }
 
-function Syncing({ sync, onStopped }: { sync: DriveSync; onStopped(): void }) {
+function Syncing({ sync, onStopped, onClose }: { sync: DriveSync; onStopped(): void; onClose(): void }) {
   const { confirm, snack } = useFeedback();
   const [busy, setBusy] = useState(false);
   const stop = async () => {
@@ -69,14 +66,17 @@ function Syncing({ sync, onStopped }: { sync: DriveSync; onStopped(): void }) {
     }
   };
   return (
-    <>
-      <p className={sync.status?.problem ? "form-error" : "empty"}>{syncLine(sync, new Date())}</p>
-      <div className="actions">
+    <Modal
+      title="借网盘同步"
+      onClose={onClose}
+      footer={
         <button className="text-btn danger-text" onClick={stop} disabled={busy}>
           {busy ? "正在停止…" : "停止同步"}
         </button>
-      </div>
-    </>
+      }
+    >
+      <p className={sync.status?.problem ? "form-error" : "empty"}>{syncLine(sync, new Date())}</p>
+    </Modal>
   );
 }
 
@@ -127,65 +127,73 @@ function TurnOn({ stopped, onDone }: { stopped: string | null; onDone(): void })
       />
     </label>
   );
+  const form = useId();
   return (
-    <form onSubmit={submit}>
-      <p className="empty">
-        几台设备的本机模式通过网盘同步，无需服务器，改动几十秒内同步到其他设备。<Help to="local#drive">如何设置</Help>
-      </p>
-      <div style={{ margin: "0 16px 14px" }}>
-        <Seg<Kind>
-          label="网盘"
-          items={[
-            ["webdav", "WebDAV"],
-            ["s3", "S3"],
-          ]}
-          value={kind}
-          onChange={setKind}
-        />
-      </div>
-      {kind === "webdav" ? (
+    <Modal
+      title="借网盘同步"
+      onClose={onDone}
+      footer={
         <>
-          {field("url", "地址", dav.url, (url) => setDav({ ...dav, url }), "坚果云不用改")}
-          {field("user", "用户名", dav.user, (user) => setDav({ ...dav, user }))}
-          {field("password", "密码", dav.password, (password) => setDav({ ...dav, password }), "坚果云要用应用密码", true)}
+          {error && (
+            <p className="form-error" role="alert">
+              {error.message}
+            </p>
+          )}
+          <button type="button" className="text-btn" onClick={onDone}>
+            取消
+          </button>
+          <button className="filled-btn" form={form} disabled={busy}>
+            {busy ? "正在连接网盘…" : "开启"}
+          </button>
         </>
-      ) : (
-        <>
-          {field("endpoint", "接口地址", s3.endpoint, (endpoint) => setS3({ ...s3, endpoint }), "如 https://s3.example.com")}
-          {field("region", "区域", s3.region, (region) => setS3({ ...s3, region }), "不填为 us-east-1")}
-          {field("bucket", "存储桶", s3.bucket, (bucket) => setS3({ ...s3, bucket }))}
-          {field("access_key", "Access Key ID", s3.access_key, (access_key) => setS3({ ...s3, access_key }))}
-          {field("secret_key", "Secret Access Key", s3.secret_key, (secret_key) => setS3({ ...s3, secret_key }), undefined, true)}
-          <div className="field">
-            <span>
-              地址风格 <span className="hint">MinIO 这类自建的选路径</span>
-            </span>
-            <Seg<"host" | "path">
-              label="地址风格"
-              items={[
-                ["host", "虚拟主机"],
-                ["path", "路径"],
-              ]}
-              value={s3.path_style ? "path" : "host"}
-              onChange={(style) => setS3({ ...s3, path_style: style === "path" })}
-            />
-          </div>
-        </>
-      )}
-      {field("folder", "文件夹", folder, setFolder, "不存在就新建")}
-      {error && (
-        <p className="form-error" role="alert">
-          {error.message}
+      }
+    >
+      <form id={form} onSubmit={submit}>
+        <p className="empty">
+          几台设备的本机模式通过网盘同步，无需服务器，改动几十秒内同步到其他设备。<Help to="local#drive">如何设置</Help>
         </p>
-      )}
-      <div className="actions">
-        <button type="button" className="text-btn" onClick={onDone}>
-          取消
-        </button>
-        <button className="filled-btn" disabled={busy}>
-          {busy ? "正在连接网盘…" : "开启"}
-        </button>
-      </div>
-    </form>
+        <div style={{ margin: "0 16px 14px" }}>
+          <Seg<Kind>
+            label="网盘"
+            items={[
+              ["webdav", "WebDAV"],
+              ["s3", "S3"],
+            ]}
+            value={kind}
+            onChange={setKind}
+          />
+        </div>
+        {kind === "webdav" ? (
+          <>
+            {field("url", "地址", dav.url, (url) => setDav({ ...dav, url }), "坚果云不用改")}
+            {field("user", "用户名", dav.user, (user) => setDav({ ...dav, user }))}
+            {field("password", "密码", dav.password, (password) => setDav({ ...dav, password }), "坚果云要用应用密码", true)}
+          </>
+        ) : (
+          <>
+            {field("endpoint", "接口地址", s3.endpoint, (endpoint) => setS3({ ...s3, endpoint }), "如 https://s3.example.com")}
+            {field("region", "区域", s3.region, (region) => setS3({ ...s3, region }), "不填为 us-east-1")}
+            {field("bucket", "存储桶", s3.bucket, (bucket) => setS3({ ...s3, bucket }))}
+            {field("access_key", "Access Key ID", s3.access_key, (access_key) => setS3({ ...s3, access_key }))}
+            {field("secret_key", "Secret Access Key", s3.secret_key, (secret_key) => setS3({ ...s3, secret_key }), undefined, true)}
+            <div className="field">
+              <span>
+                地址风格 <span className="hint">MinIO 这类自建的选路径</span>
+              </span>
+              <Seg<"host" | "path">
+                label="地址风格"
+                items={[
+                  ["host", "虚拟主机"],
+                  ["path", "路径"],
+                ]}
+                value={s3.path_style ? "path" : "host"}
+                onChange={(style) => setS3({ ...s3, path_style: style === "path" })}
+              />
+            </div>
+          </>
+        )}
+        {field("folder", "文件夹", folder, setFolder, "不存在就新建")}
+      </form>
+    </Modal>
   );
 }

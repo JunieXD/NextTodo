@@ -131,7 +131,33 @@ export function DueEditor({
     onClose();
   };
   return (
-    <Modal title="截止时间" onClose={onClose}>
+    <Modal
+      title="截止时间"
+      onClose={onClose}
+      footer={
+        <>
+          {tried && (early || ended || unlisted || tooMany) && (
+            <p className="form-error" role="alert">
+              {early
+                ? "截止不能早于开始"
+                : ended
+                  ? "重复到不能早于截止"
+                  : unlisted
+                    ? "按农历重复的截止日期应在 1900 年 1 月 31 日到 2101 年 1 月 28 日之间"
+                    : `提醒最多 ${MAX_REMINDERS} 个`}
+            </p>
+          )}
+          {due && (
+            <button className="text-btn danger-text" onClick={() => (onSave(null), onClose())}>
+              清除截止时间
+            </button>
+          )}
+          <button className="filled-btn" onClick={save}>
+            保存
+          </button>
+        </>
+      }
+    >
       <Calendar value={date} min={start ?? undefined} onChange={setDate} />
       <div className="group settings">
         <TimeRow value={time} extra={due?.time} onChange={setTime} optional />
@@ -267,27 +293,6 @@ export function DueEditor({
         )}
         {repeat && <UntilRow value={until} min={date} onChange={setUntil} />}
       </div>
-      {tried && (early || ended || unlisted || tooMany) && (
-        <p className="form-error" role="alert">
-          {early
-            ? "截止不能早于开始"
-            : ended
-              ? "重复到不能早于截止"
-              : unlisted
-                ? "按农历重复的截止日期应在 1900 年 1 月 31 日到 2101 年 1 月 28 日之间"
-                : `提醒最多 ${MAX_REMINDERS} 个`}
-        </p>
-      )}
-      <div className="actions">
-        {due && (
-          <button className="text-btn danger-text" onClick={() => (onSave(null), onClose())}>
-            清除截止时间
-          </button>
-        )}
-        <button className="filled-btn" onClick={save}>
-          保存
-        </button>
-      </div>
     </Modal>
   );
 }
@@ -330,25 +335,30 @@ export function StartEditor({
     onClose();
   };
   return (
-    <Modal title="开始时间" onClose={onClose}>
+    <Modal
+      title="开始时间"
+      onClose={onClose}
+      footer={
+        <>
+          {tried && late && (
+            <p className="form-error" role="alert">
+              开始不能晚于截止
+            </p>
+          )}
+          {start && (
+            <button className="text-btn danger-text" onClick={() => (onSave(null), onClose())}>
+              清除开始时间
+            </button>
+          )}
+          <button className="filled-btn" onClick={save}>
+            保存
+          </button>
+        </>
+      }
+    >
       <Calendar value={date} max={due?.date} onChange={setDate} />
       <div className="group settings">
         <TimeRow value={time} extra={was} onChange={setTime} optional />
-      </div>
-      {tried && late && (
-        <p className="form-error" role="alert">
-          开始不能晚于截止
-        </p>
-      )}
-      <div className="actions">
-        {start && (
-          <button className="text-btn danger-text" onClick={() => (onSave(null), onClose())}>
-            清除开始时间
-          </button>
-        )}
-        <button className="filled-btn" onClick={save}>
-          保存
-        </button>
       </div>
     </Modal>
   );

@@ -2,7 +2,7 @@
 // its "…" button, or by right-clicking it on a computer.
 
 import { Copy, FolderInput, FolderPlus, ListChecks, NotebookPen, Palette, Pencil, Sparkles, Trash2, Users } from "lucide-react";
-import { type ReactElement, type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactElement, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation } from "wouter";
 import type { Folder } from "../api/types/Folder";
@@ -152,9 +152,24 @@ function TidyRequest({ onSubmit, onClose }: { onSubmit(text: string): void; onCl
     onSubmit(c.value);
     onClose();
   };
+  const form = useId();
   return (
-    <Modal title="AI 整理事项" onClose={onClose} focus={area}>
-      <form onSubmit={submit}>
+    <Modal
+      title="AI 整理事项"
+      onClose={onClose}
+      focus={area}
+      footer={
+        <>
+          <button type="button" className="text-btn" onClick={onClose}>
+            取消
+          </button>
+          <button className="filled-btn" form={form}>
+            开始整理
+          </button>
+        </>
+      }
+    >
+      <form id={form} onSubmit={submit}>
         <label className={`field${error ? " error" : ""}`}>
           要求
           <textarea
@@ -179,12 +194,6 @@ function TidyRequest({ onSubmit, onClose }: { onSubmit(text: string): void; onCl
             <span className="hint">新建、修改、完成、删除、移动事项，调整先后和顺序都可以，执行前由你逐条确认</span>
           )}
         </label>
-        <div className="actions">
-          <button type="button" className="text-btn" onClick={onClose}>
-            取消
-          </button>
-          <button className="filled-btn">开始整理</button>
-        </div>
       </form>
     </Modal>
   );

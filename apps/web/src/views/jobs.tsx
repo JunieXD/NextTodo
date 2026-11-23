@@ -152,30 +152,35 @@ function JobDetails({ job: j, board, onClose }: { job: AiJob; board: Board; onCl
     onClose();
   };
   return (
-    <Modal title="AI 整理" onClose={onClose}>
+    <Modal
+      title="AI 整理"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="text-btn danger-text" onClick={() => (actions.remove(j), onClose())}>
+            删除
+          </button>
+          {failed && (
+            <>
+              {!tidy && (
+                <button className="tonal-btn" onClick={withText((text) => actions.addAsIs({ ...j, text }, board))}>
+                  按原文添加
+                </button>
+              )}
+              <button className="filled-btn" onClick={withText((text) => actions.retry(j, text))}>
+                重试
+              </button>
+            </>
+          )}
+        </>
+      }
+    >
       <p className={`job-detail-status ${j.state}`}>{status(j)}</p>
       <label className="field">
         {tidy ? "要求" : "原文"}
         <textarea className="job-text" value={text} readOnly={!failed} onChange={(e) => setText(e.target.value)} rows={8} />
       </label>
       {!failed && <p className="empty">{j.state === "running" ? "正在整理，完成后可修改。" : `等待整理；整理失败后可修改${tidy ? "要求" : "原文"}并重试。`}</p>}
-      <div className="actions">
-        <button className="text-btn danger-text" onClick={() => (actions.remove(j), onClose())}>
-          删除
-        </button>
-        {failed && (
-          <>
-            {!tidy && (
-              <button className="tonal-btn" onClick={withText((text) => actions.addAsIs({ ...j, text }, board))}>
-                按原文添加
-              </button>
-            )}
-            <button className="filled-btn" onClick={withText((text) => actions.retry(j, text))}>
-              重试
-            </button>
-          </>
-        )}
-      </div>
     </Modal>
   );
 }

@@ -68,6 +68,7 @@ export function BackgroundSettings() {
     <>
       <div className="group">
         {notify}
+        <Row title="铃声和振动" sub="提醒响什么铃声、振不振动，在系统设置里选" action={["打开设置", () => NextTodo.openReminderSound()]} />
         <Row title="准时提醒" sub={state.exact ? "已允许" : "未允许时提醒可能延迟几分钟"} action={state.exact ? undefined : ["前往设置", () => NextTodo.openExactAlarmSettings()]} />
         <Switch label="弹窗提醒" sub="到点在屏幕底部弹出卡片，不点不收起" on={state.card} onChange={card} />
         {state.card && !state.overlay && <Row title="显示在其他应用上层" sub="未允许时弹窗提醒改用顶部横幅" action={["前往设置", () => NextTodo.openOverlaySettings()]} />}

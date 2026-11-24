@@ -128,6 +128,21 @@ class NextTodoPlugin : Plugin() {
         call.resolve()
     }
 
+    /** Where reminders' sound and vibration are chosen (docs/android.md#通知): the reminders' channel; the
+     * app's page, listing them all, with the card on, which posts through a channel of its own too, or
+     * with notifications off, when a channel's page hides its sound. */
+    @PluginMethod
+    fun openReminderSound(call: PluginCall) {
+        val intent =
+            if (Reminders.cardOn(context) || !context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            } else {
+                Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_CHANNEL_ID, Channels.DUE)
+            }
+        context.startActivity(intent.putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        call.resolve()
+    }
+
     /** Turns the reminder card on or off. */
     @PluginMethod
     fun setCard(call: PluginCall) {

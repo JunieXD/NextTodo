@@ -28,6 +28,18 @@ docker compose up -d
 
 这几行依次：建一个目录，下载配置文件，建好存放数据的 `data` 目录（NextTodo 在容器里以 65534 号用户运行，目录要归它），启动 NextTodo。数据库和每日快照都在 `data` 里。
 
+最后一步拉取镜像很慢或者超时的，多半是服务器连不上镜像所在的 GHCR（`ghcr.io`），在中国大陆很常见。可以改从国内的 GHCR 镜像站拉取：按 Ctrl+C 停下，打开 `nexttodo` 目录里的 `.env` 文件（没有就新建一个，比如运行 `nano .env`），另起一行写上下面这行，保存后再运行 `docker compose up -d`。
+
+```sh
+NEXTTODO_IMAGE=ghcr.nju.edu.cn/juniexd/nexttodo:latest
+```
+
+- `.env` 里已经有 `NEXTTODO_IMAGE` 的（比如固定了版本），不要另加一行，只把镜像地址里的域名换成 `ghcr.nju.edu.cn`，镜像名和冒号后的版本号不变。
+- 这是南京大学的镜像站，它拉不下来时换成毫秒镜像的 `ghcr.1ms.run`。镜像站是第三方提供的，以后可能失效。
+- 服务器能用代理的，也可以[给 Docker 配上代理](https://docs.docker.com/engine/daemon/proxy/)，直接从 `ghcr.io` 拉取。这样 `.env` 里不用写这一行，已经写了的把域名改回 `ghcr.io`。
+- 镜像站上的 `latest` 可能过一阵才换成新版本。[用命令升级](#用命令升级)时拉到的还是旧版本，就把这一行末尾的 `latest` 换成新的版本号。这样就固定在这个版本了，以后每次升级都要改版本号。
+- NextTodo 的镜像不在 Docker Hub 上。Docker 设置里的 `registry-mirrors` 只加速 Docker Hub，对 `ghcr.io` 不起作用；把域名换成 `docker.1ms.run` 这类只加速 Docker Hub 的地址，会报 `manifest unknown`。
+
 检查它是否在运行：
 
 ```sh
@@ -38,7 +50,7 @@ curl http://127.0.0.1:8080/api/v1/me
 
 NextTodo 默认只在这台机器内部的 `127.0.0.1:8080` 上运行，外面访问不到，由同一台机器上的反向代理转给它：
 
-- **换端口**：8080 被占用时，在 `nexttodo` 目录里建一个 `.env` 文件，写上 `NEXTTODO_PORT=8790`，再运行 `docker compose up -d`。下面的 8080 都换成新端口。
+- **换端口**：8080 被占用时，在 `nexttodo` 目录里的 `.env` 文件（没有就新建）里另起一行写上 `NEXTTODO_PORT=8790`，再运行 `docker compose up -d`。下面的 8080 都换成新端口。
 - **反向代理连不到 `127.0.0.1`**：反向代理在另一台机器上，或者它自己也跑在 Docker 容器里（且不是 host 网络）时，它那边的 `127.0.0.1` 指的不是这台机器。这时把 `compose.yaml` 里 `ports` 一行开头的 `127.0.0.1` 换成反向代理能访问到的地址（比如这台机器的局域网 IP），再运行 `docker compose up -d`。这个端口是不加密的 HTTP，不要对公网开放。
 
 ## 2. 配置反向代理和 HTTPS {#proxy}
@@ -199,7 +211,7 @@ NextTodo 在容器里，`127.0.0.1` 指的是容器自己。同一台机器上�
 
 在“设置 → 关于”的“服务器版本”一行点 **升级**，确认后，服务器自己下载新版本并换上，这一行显示下载的进度。换上时各设备会断开几秒，随后自动重连，网页会自动刷新。新版本起不来时，服务器自动退回原来的版本，数据不受影响。
 
-- 服务器要能连上 GHCR（`ghcr.io`），连不上时用命令升级。
+- 服务器要能连上 GHCR（`ghcr.io`），连不上时用命令升级。设置里的升级不看 `.env` 里的 `NEXTTODO_IMAGE`，总是从 GHCR 下载，改从[镜像站](#start)拉取的也一样。
 - 这一行没有 **升级** 按钮的，是服务器的版本太旧：用命令升级一次，以后就能在设置里升级了。
 - 在 `.env` 里用 `NEXTTODO_IMAGE` 固定了版本的，在设置里升级以后，服务器用的是新版本。要换回旧版本，见[部署文档](https://github.com/JunieXD/NextTodo/blob/main/docs/deploy.md#在设置里升级)。
 
@@ -223,6 +235,8 @@ docker compose pull && docker compose up -d
 
 | 现象 | 多半是 | 检查 |
 |---|---|---|
+| 拉取镜像很慢或者超时 | 连不上 GHCR（`ghcr.io`） | 改从 GHCR 的镜像站拉取，见[第 1 步](#start) |
+| 拉取镜像时报 `manifest unknown` | 那个地址上没有这个镜像：用了只加速 Docker Hub 的地址，或者镜像站上还没有这个版本 | 核对 `.env` 里的 `NEXTTODO_IMAGE`，见[第 1 步](#start) |
 | 网页打不开 | 域名、端口或反向代理 | 域名是否指向这台服务器，端口是否放行，反向代理是否在运行，它的错误日志 |
 | 502 Bad Gateway | 反向代理连不到 NextTodo | NextTodo 是否在运行（[第 1 步](#start)的 `curl`），反向代理转发的地址和端口对不对；反向代理在容器里时见第 1 步最后一条 |
 | 浏览器提示证书不安全，App 连接失败 | 证书不受信任或过期 | 换成受信任的证书，比如 Let's Encrypt；只能用 IP 访问的见[只用 IP 地址](#ip) |

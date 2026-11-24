@@ -1,8 +1,8 @@
 //! Tool arguments. Descriptions are written for the agents that read the tool list.
 
 use nexttodo_core::model::{
-    AttachmentId, Date, Description, Every, FileName, FolderColor, FolderIcon, MediaType, Monthdays, Period, Remind, RemindBefore,
-    RemindOn, RepeatFrom, Time, Title, Weekdays,
+    AttachmentId, Date, Description, DueAfter, Every, FileName, FolderColor, FolderIcon, MediaType, Monthdays, Period, Remind,
+    RemindBefore, RemindOn, RepeatFrom, Time, Title, Weekdays,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer};
@@ -150,6 +150,11 @@ pub struct AddArgs {
     #[schemars(with = "Option<String>", description = "截止时间：2026-11-20 或 2026-11-20 18:00")]
     pub due: Option<WhenText>,
     #[schemars(
+        with = "Option<String>",
+        description = "代替 due：前置（after）都完成后多久以内截止，30d（天）、2w（周）或 3d 18:00，从前置都完成的那天起算，0d 是当天。用在期限从另一件事做完时算的事项上，如拿到发票后 30 天内报销；没有前置时就从今天算。remind 照样给，不能和 repeat 一起用"
+    )]
+    pub due_after: Option<DueAfterText>,
+    #[schemars(
         with = "Option<RemindInput>",
         description = "提醒，一个或几个（列表）：数字是提前多少分钟，0 是截止时，要有带具体时间的截止；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设。如 [60, \"1d 20:00\"]"
     )]
@@ -205,6 +210,12 @@ pub struct EditArgs {
         description = "截止时间：2026-11-20 或 2026-11-20 18:00；null 清除。不给 remind 时保留原来的提醒，新时间不带具体时间的去掉提前多少分钟的"
     )]
     pub due: Option<Option<WhenText>>,
+    #[serde(default, deserialize_with = "nullable")]
+    #[schemars(
+        with = "Option<String>",
+        description = "代替 due：前置都完成后多久以内截止，30d（天）、2w（周）或 3d 18:00，从前置都完成的那天起算，0d 是当天；前置已经都完成或没有前置的，从今天算；null 清除。提醒同 due 的规则保留，不能和 repeat 一起用"
+    )]
+    pub due_after: Option<Option<DueAfterText>>,
     #[serde(default, deserialize_with = "nullable")]
     #[schemars(
         with = "Option<RemindInput>",
@@ -424,6 +435,11 @@ pub struct PlanTask {
     #[schemars(with = "Option<String>", description = "截止时间：2026-11-20 或 2026-11-20 18:00")]
     pub due: Option<WhenText>,
     #[schemars(
+        with = "Option<String>",
+        description = "代替 due：前置（after）都完成后多久以内截止，30d（天）、2w（周）或 3d 18:00，从前置都完成的那天起算，0d 是当天。用在期限从另一件事做完时算的事项上，如拿到发票后 30 天内报销；没有前置时就从今天算。remind 照样给，不能和 repeat 一起用"
+    )]
+    pub due_after: Option<DueAfterText>,
+    #[schemars(
         with = "Option<RemindInput>",
         description = "提醒，一个或几个（列表）：数字是提前多少分钟，0 是截止时，要有带具体时间的截止；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设。如 [60, \"1d 20:00\"]"
     )]
@@ -482,6 +498,35 @@ impl TryFrom<String> for WhenText {
         let s = s.trim();
         let (date, time) = s.split_once(' ').map_or((s, None), |(d, t)| (d, Some(t.trim())));
         Ok(WhenText { date: date.to_owned().try_into()?, time: time.map(|t| t.to_owned().try_into()).transpose()? })
+    }
+}
+
+/// A due date some days after the prerequisites are done, as typed: `30d`, by the week `2w`, or with a
+/// time, `3d 18:00`.
+#[derive(Clone, Deserialize)]
+#[serde(try_from = "String")]
+pub struct DueAfterText {
+    pub days: u16,
+    pub time: Option<Time>,
+}
+
+impl TryFrom<String> for DueAfterText {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, String> {
+        let s = s.trim();
+        let (days, time) = s.split_once(' ').map_or((s, None), |(d, t)| (d, Some(t.trim())));
+        let count = |unit: char| days.strip_suffix(unit).and_then(|n| n.parse::<u16>().ok());
+        let days = count('d').or_else(|| count('w').and_then(|w| w.checked_mul(7))).ok_or("前置完成后多久以内写成 30d、2w 或 3d 18:00")?;
+        Ok(DueAfterText { days, time: time.map(|t| t.to_owned().try_into()).transpose()? })
+    }
+}
+
+/// `a` as it is typed: the other way round from `DueAfterText`.
+pub fn due_after_text(a: &DueAfter) -> String {
+    match &a.at {
+        Some(at) => format!("{}d {}", a.days, at.time.as_str()),
+        None => format!("{}d", a.days),
     }
 }
 

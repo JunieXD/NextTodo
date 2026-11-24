@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::model::{
-    AiJobId, AttachmentId, Date, DefaultReminders, Description, Due, FileName, FileSize, FolderColor, FolderIcon, FolderId, JobKind,
-    JobText, LocalTime, MediaType, MutationId, Name, Occurrence, SortKey, TaskId, Time, Title, nullable,
+    AiJobId, AttachmentId, Date, DefaultReminders, Description, Due, DueAfter, FileName, FileSize, FolderColor, FolderIcon, FolderId,
+    JobKind, JobText, LocalTime, MediaType, MutationId, Name, Occurrence, SortKey, TaskId, Time, Title, nullable,
 };
 
 pub const MAX_OPS: usize = 1000;
@@ -17,6 +17,14 @@ pub const MAX_OPS: usize = 1000;
 pub struct Mutation {
     pub id: MutationId,
     pub ops: Vec<Op>,
+    /// The day and time on the device that made it, which a due date some days after a task's
+    /// prerequisites are done counts from (docs/api.md#改动).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub today: Option<Date>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub time: Option<Time>,
 }
 
 #[derive(Deserialize)]
@@ -24,6 +32,10 @@ pub struct Mutation {
 struct MutationFields {
     id: MutationId,
     ops: Vec<Op>,
+    #[serde(default)]
+    today: Option<Date>,
+    #[serde(default)]
+    time: Option<Time>,
 }
 
 impl TryFrom<MutationFields> for Mutation {
@@ -33,7 +45,8 @@ impl TryFrom<MutationFields> for Mutation {
         match f.ops.len() {
             0 => Err("改动至少包含一个操作".into()),
             n if n > MAX_OPS => Err(format!("每个改动最多 {MAX_OPS} 个操作")),
-            _ => Ok(Mutation { id: f.id, ops: f.ops }),
+            _ if f.time.is_some() && f.today.is_none() => Err("给了 time 也要给 today".into()),
+            _ => Ok(Mutation { id: f.id, ops: f.ops, today: f.today, time: f.time }),
         }
     }
 }
@@ -102,6 +115,10 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         due: Option<Due>,
+        /// In place of `due` (docs/design.md#前置完成后的截止).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        due_after: Option<DueAfter>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         sort_key: Option<SortKey>,
@@ -134,10 +151,15 @@ pub enum Op {
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         start_time: Option<Option<Time>>,
-        /// `null` clears the due date.
+        /// `null` clears the due date, and with it `due_after`.
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         due: Option<Option<Due>>,
+        /// In place of `due` (docs/design.md#前置完成后的截止); `null` clears it and the due date it
+        /// gave.
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        due_after: Option<Option<DueAfter>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         sort_key: Option<SortKey>,

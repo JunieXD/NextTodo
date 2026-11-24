@@ -5,6 +5,7 @@ import type { Date } from "./Date";
 import type { DefaultReminders } from "./DefaultReminders";
 import type { Description } from "./Description";
 import type { Due } from "./Due";
+import type { DueAfter } from "./DueAfter";
 import type { FileName } from "./FileName";
 import type { FileSize } from "./FileSize";
 import type { FolderColor } from "./FolderColor";
@@ -34,7 +35,11 @@ color?: FolderColor | null,
 /**
  * `null` goes back to the default.
  */
-icon?: FolderIcon | null, } | { "op": "folder.delete", id: FolderId, } | { "op": "task.create", id: TaskId, title: Title, folder_id?: FolderId, description?: Description, start?: Date, start_time?: Time, due?: Due, sort_key?: SortKey, done?: boolean, 
+icon?: FolderIcon | null, } | { "op": "folder.delete", id: FolderId, } | { "op": "task.create", id: TaskId, title: Title, folder_id?: FolderId, description?: Description, start?: Date, start_time?: Time, due?: Due, 
+/**
+ * In place of `due` (docs/design.md#前置完成后的截止).
+ */
+due_after?: DueAfter, sort_key?: SortKey, done?: boolean, 
 /**
  * User ids, in a shared folder only.
  */
@@ -52,9 +57,14 @@ start?: Date | null,
  */
 start_time?: Time | null, 
 /**
- * `null` clears the due date.
+ * `null` clears the due date, and with it `due_after`.
  */
-due?: Due | null, sort_key?: SortKey, done?: boolean, 
+due?: Due | null, 
+/**
+ * In place of `due` (docs/design.md#前置完成后的截止); `null` clears it and the due date it
+ * gave.
+ */
+due_after?: DueAfter | null, sort_key?: SortKey, done?: boolean, 
 /**
  * The day on the device that marks a task done: a repeating task's next due date counts
  * from it, so it must be given for one.

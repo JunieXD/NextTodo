@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use nexttodo_core::board::{Board, Snapshot, Status};
 use nexttodo_core::lunar;
 use nexttodo_core::model::{
-    AiJob, Change, Date, Due, Effect, Folder, FolderId, Holder, JobState, Link, Period, Person, Remind, RemindBefore, RemindOn, Repeat,
-    RepeatFrom, Task, TaskId, Time, Weekdays,
+    AiJob, Change, Date, Due, DueAfter, Effect, Folder, FolderId, Holder, JobState, Link, Period, Person, Remind, RemindBefore, RemindOn,
+    Repeat, RepeatFrom, Task, TaskId, Time, Weekdays,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -65,6 +65,23 @@ pub fn due(d: &Due) -> String {
         s += &format!("，{}", repeat(r, &d.date));
     }
     s
+}
+
+/// `前置完成后 3 天内`, `前置完成当天 18:00`.
+pub fn due_after(a: &DueAfter) -> String {
+    let days = if a.days == 0 { "前置完成当天".to_owned() } else { format!("前置完成后 {} 天内", a.days) };
+    a.at.as_ref().map_or(days.clone(), |at| format!("{days} {}", at.time.as_str()))
+}
+
+/// When a task is due: `2026-11-20 18:00`, as `due` writes it, `2026-12-24（前置完成后 30 天内）` once its
+/// prerequisites gave it the date, `前置完成后 30 天内` before.
+pub fn deadline(t: &Task) -> Option<String> {
+    match (&t.due, &t.due_after) {
+        (Some(d), Some(a)) => Some(format!("{}（{}）", due(d), due_after(a))),
+        (Some(d), None) => Some(due(d)),
+        (None, Some(a)) => Some(due_after(a)),
+        (None, None) => None,
+    }
 }
 
 /// `每天`, `每 2 周`, `每个工作日`, `每 2 周的周二、四`, `每月 1、15 号`, `每年`, `每 3 个月，从完成那天算`,
@@ -128,8 +145,8 @@ pub fn task_line(b: &Board, t: &Task, folder: bool, status: bool, step: Option<(
     if !t.assignees.is_empty() {
         line += &format!(" · 负责 {}", usernames(b, &t.assignees).join("、"));
     }
-    if let Some(d) = &t.due {
-        line += &format!(" · 截止 {}", due(d));
+    if let Some(d) = deadline(t) {
+        line += &format!(" · 截止 {d}");
     }
     if let Some((n, of)) = step {
         line += &format!(" · 第 {n}/{of} 步");
@@ -185,6 +202,9 @@ pub fn task_view(b: &Board, t: &Task) -> Value {
     }
     if let Some(d) = &t.due {
         v["due"] = json!(d);
+    }
+    if let Some(a) = &t.due_after {
+        v["due_after"] = json!(a);
     }
     if let Some(at) = t.done_at {
         v["done_at"] = at.into();
@@ -577,7 +597,7 @@ fn edited(before: &Task, after: &Task) -> Vec<&'static str> {
     };
     let due = match (moved, &before.due, &after.due) {
         (Some(_), Some(b), Some(a)) => !only_date(b, a),
-        _ => before.due != after.due && !ended,
+        _ => (before.due != after.due || before.due_after != after.due_after) && !ended,
     };
     [
         ("title", before.title != after.title),
@@ -987,7 +1007,7 @@ fn fields(e: &Effect, n: &Names) -> Vec<LogField> {
 /// A task's fields as a change shows them, in order.
 fn task_values(t: &Task, n: &Names) -> Vec<(ChangedField, Option<String>)> {
     let due = t.due.as_ref();
-    let reminders: Vec<String> = due.map(|d| d.reminders().iter().map(remind).collect()).unwrap_or_default();
+    let reminders: Vec<String> = t.reminders().iter().map(remind).collect();
     let people: Vec<String> = t.assignees.iter().map(|u| n.person(u)).collect();
     vec![
         (ChangedField::Title, Some(t.title.as_str().to_owned())),
@@ -995,7 +1015,13 @@ fn task_values(t: &Task, n: &Names) -> Vec<(ChangedField, Option<String>)> {
         (ChangedField::Folder, Some(n.path(t.folder_id))),
         (ChangedField::Number, Some(n.label(t))),
         (ChangedField::Start, start(t)),
-        (ChangedField::Due, due.map(|d| moment(&d.date, d.at.as_ref().map(|at| &at.time)))),
+        (
+            ChangedField::Due,
+            match (due.map(|d| moment(&d.date, d.at.as_ref().map(|at| &at.time))), &t.due_after) {
+                (Some(m), Some(a)) => Some(format!("{m}（{}）", due_after(a))),
+                (m, a) => m.or_else(|| a.as_ref().map(due_after)),
+            },
+        ),
         (ChangedField::Reminders, (!reminders.is_empty()).then(|| reminders.join("、"))),
         (ChangedField::Repeat, due.and_then(|d| d.repeat.as_ref().map(|r| repeat(r, &d.date)))),
         (ChangedField::Assignees, (!people.is_empty()).then(|| people.join("、"))),

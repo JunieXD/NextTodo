@@ -85,12 +85,15 @@ export function Seg<T extends string>({
   value,
   onChange,
   small,
+  disabled,
 }: {
   label: string;
   items: [T, string, LucideIcon?][];
   value: T;
   onChange(v: T): void;
   small?: boolean;
+  /** Those that can't be picked now. */
+  disabled?: T[];
 }) {
   return (
     <RadioGroup.Root
@@ -101,7 +104,7 @@ export function Seg<T extends string>({
       onValueChange={(v) => onChange(v as T)}
     >
       {items.map(([v, label, icon]) => (
-        <RadioGroup.Item key={v} value={v}>
+        <RadioGroup.Item key={v} value={v} disabled={disabled?.includes(v)}>
           {icon && <Icon of={icon} size={16} />}
           {label}
         </RadioGroup.Item>

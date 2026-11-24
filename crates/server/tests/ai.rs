@@ -391,7 +391,9 @@ async fn tasks_given_a_due_date_and_no_reminders_get_the_asking_devices_defaults
         {"title": "交报告", "due": "2026-11-06 18:00"},
         {"title": "买票", "due": "2026-11-07"},
         {"title": "取快递", "due": "2026-11-08", "remind": []},
-        {"title": "读书"}
+        {"title": "读书"},
+        {"ref": "p", "title": "拿到发票"},
+        {"title": "报销", "due_after": "30d 18:00", "after": ["p"]}
     ]}"#));
     t.mutate(&s, json!([{ "op": "ai_job.retry", "id": job, "reminders": reminders }])).await;
     let snap = until(&t, &s, |s| s["ai_jobs"].as_array().unwrap().is_empty()).await;
@@ -402,6 +404,9 @@ async fn tasks_given_a_due_date_and_no_reminders_get_the_asking_devices_defaults
     // The text said not to remind of it.
     assert_eq!(due("取快递"), json!({ "date": "2026-11-08" }));
     assert_eq!(due("读书"), Value::Null);
+    // Due some days after its prerequisite, with a time.
+    let claim = snap["tasks"].as_array().unwrap().iter().find(|t| t["title"] == "报销").unwrap();
+    assert_eq!(claim["due_after"], json!({ "days": 30, "time": "18:00", "reminders": [{ "before": 30 }, { "before": 0 }] }));
 }
 
 #[tokio::test]
@@ -410,11 +415,13 @@ async fn a_tidying_gives_the_defaults_to_new_tasks_and_ones_it_first_gives_a_due
     let s = t.admin().await;
     t.ok(&s, "add", json!({ "title": "写周报", "folder": "/工作" })).await;
     t.ok(&s, "add", json!({ "title": "交房租", "folder": "/工作", "due": "2026-11-10" })).await;
+    t.ok(&s, "add", json!({ "title": "报销", "folder": "/工作", "due_after": "7d 18:00", "remind": 60, "after": ["#1"] })).await;
     let folder = t.snapshot(&s).await["folders"][0]["id"].as_str().unwrap().to_owned();
     t.call("PUT", "/ai/settings", Some(&s), Some(config())).await;
     fake.answer(Ok(r#"{"suggestions": [
         {"number": 1, "due": "2026-11-08 17:00", "reason": "周五交"},
         {"number": 2, "due": "2026-11-12", "reason": "推迟"},
+        {"number": 3, "due": "2026-11-12 18:00", "reason": "定下日期"},
         {"ref": "a", "title": "买菜", "due": "2026-11-09", "reason": "新的"},
         {"ref": "b", "title": "打电话", "due": "2026-11-09 10:00", "remind": 5, "reason": "新的"},
         {"ref": "c", "title": "倒垃圾", "due": "2026-11-09", "remind": [], "reason": "新的"}
@@ -432,6 +439,8 @@ async fn a_tidying_gives_the_defaults_to_new_tasks_and_ones_it_first_gives_a_due
             json!({ "date": "2026-11-08", "time": "17:00", "reminders": [{ "before": 30 }] }),
             // It had a due date: the reminders it had, none, stay.
             json!({ "date": "2026-11-12" }),
+            // Due some days after its prerequisite, it had a due date, and its reminder, too.
+            json!({ "date": "2026-11-12", "time": "18:00", "reminders": [{ "before": 60 }] }),
             json!({ "date": "2026-11-09", "reminders": [{ "days": 0, "time": "09:00" }] }),
             json!({ "date": "2026-11-09", "time": "10:00", "reminders": [{ "before": 5 }] }),
             json!({ "date": "2026-11-09" }),

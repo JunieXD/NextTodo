@@ -82,6 +82,18 @@ fn again(t: &Task) -> Option<(&Date, Option<&Time>)> {
     })
 }
 
+/// Whether `t` repeats and has been done before: when it holds up the tasks after it, it is that its
+/// time has come round again, which takes back no due date it gave them (docs/design.md#前置完成后的截止).
+pub fn comes_round(t: &Task) -> bool {
+    again(t).is_some()
+}
+
+/// Whether the tasks after `t` wait for it as of `now`: it is not done, and if it repeats, it has not
+/// been done yet or its current occurrence has begun (docs/design.md#重复).
+pub fn holds_up(t: &Task, now: &Now) -> bool {
+    t.done_at.is_none() && again(t).is_none_or(|(date, time)| !now.before(date, time))
+}
+
 /// A snapshot indexed for lookups, as of `now`, for the user `me`. `None` as a folder means the root,
 /// the user's own.
 pub struct Board<'a> {
@@ -276,10 +288,8 @@ impl<'a> Board<'a> {
         if on == 0 && !not_started { Status::Ready } else { Status::Waiting { on, not_started } }
     }
 
-    /// Whether the tasks after this one wait for it: it is not done, and if it repeats, it has not
-    /// been done yet or its current occurrence has begun (docs/design.md#重复).
     pub fn holds_up(&self, t: &Task) -> bool {
-        t.done_at.is_none() && again(t).is_none_or(|(date, time)| !self.now.before(date, time))
+        holds_up(t, &self.now)
     }
 
     /// Whether a repeating task done now would still hold up the tasks after it: its next time has

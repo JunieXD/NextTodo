@@ -50,6 +50,17 @@ function again(t: Task): Moment | null {
   return t.start !== null ? { date: t.start, time: t.start_time } : { date: t.due.date };
 }
 
+/** Whether `t` repeats and has been done before: when it holds up the tasks after it, it is that its
+ * time has come round again, which takes back no due date it gave them (docs/design.md#前置完成后的截止). */
+export const comesRound = (t: Task) => again(t) !== null;
+
+/** Whether the tasks after `t` wait for it `now`: it is not done, and if it repeats, it has not been
+ * done yet or its current occurrence has begun (docs/design.md#重复). */
+export function holdsUp(t: Task, now: Now): boolean {
+  const a = again(t);
+  return t.done_at === null && (!a || !before(now, a.date, a.time));
+}
+
 /** A snapshot indexed for lookups, as of a moment, the user's `now`, for the user `me`. `null` as a
  * folder means the root, the user's own. */
 export class Board {
@@ -242,11 +253,8 @@ export class Board {
     return (this.prerequisites.get(t.id) ?? []).filter((id) => this.holdsUp(this.tasks.get(id)!, at)).length;
   }
 
-  /** Whether the tasks after this one wait for it: it is not done, and if it repeats, it has not
-   * been done yet or its current occurrence has begun (docs/design.md#重复). */
   holdsUp(t: Task, at = this.now): boolean {
-    const a = again(t);
-    return t.done_at === null && (!a || !before(at, a.date, a.time));
+    return holdsUp(t, at);
   }
 
   /** Whether a repeating task done now would still hold up the tasks after it: its next time has

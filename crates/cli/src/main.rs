@@ -120,8 +120,14 @@ enum Command {
         description: Option<String>,
         #[arg(long, help = "开始时间：2026-11-14 或 \"2026-11-14 09:30\"，没到时事项等着")]
         start: Option<String>,
-        #[arg(long, help = "截止时间：2026-11-20 或 \"2026-11-20 18:00\"")]
+        #[arg(long, conflicts_with = "due_after", help = "截止时间：2026-11-20 或 \"2026-11-20 18:00\"")]
         due: Option<String>,
+        #[arg(
+            long,
+            value_name = "天数",
+            help = "代替 --due：前置（--after）都完成后多久以内截止，30d、2w 或 \"3d 18:00\"，从前置都完成的那天起算，0d 是当天；没有前置时从今天算"
+        )]
+        due_after: Option<String>,
         #[arg(long, num_args = 1.., value_name = "提醒", help = "提醒，可以几个：提前多少分钟（0 是截止时），或截止那天的几点 09:00、提前几天的几点 \"1d 20:00\"")]
         remind: Vec<String>,
         #[arg(
@@ -169,9 +175,16 @@ enum Command {
         start: Option<String>,
         #[arg(long, help = "清除开始时间")]
         no_start: bool,
-        #[arg(long, conflicts_with = "no_due", help = "截止时间：2026-11-20 或 \"2026-11-20 18:00\"")]
+        #[arg(long, conflicts_with_all = ["no_due", "due_after"], help = "截止时间：2026-11-20 或 \"2026-11-20 18:00\"")]
         due: Option<String>,
-        #[arg(long, help = "清除截止时间")]
+        #[arg(
+            long,
+            value_name = "天数",
+            conflicts_with = "no_due",
+            help = "代替 --due：前置都完成后多久以内截止，30d、2w 或 \"3d 18:00\"，从前置都完成的那天起算，0d 是当天；前置已经都完成或没有前置的，从今天算"
+        )]
+        due_after: Option<String>,
+        #[arg(long, help = "清除截止时间，前置完成后几天内的也一样")]
         no_due: bool,
         #[arg(long, num_args = 1.., value_name = "提醒", conflicts_with = "no_remind", help = "提醒，可以几个：提前多少分钟（0 是截止时），或截止那天的几点 09:00、提前几天的几点 \"1d 20:00\"，整个换掉原来的")]
         remind: Vec<String>,
@@ -917,10 +930,24 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             read("log", args, j)
         }
         Command::Jobs => read("jobs", json!({}), j),
-        Command::Add { title, folder, description, start, due, remind, repeat, repeat_from, repeat_until, assign, after, before } => write(
+        Command::Add {
+            title,
+            folder,
+            description,
+            start,
+            due,
+            due_after,
+            remind,
+            repeat,
+            repeat_from,
+            repeat_until,
+            assign,
+            after,
+            before,
+        } => write(
             "add",
             json!({
-                "title": title, "folder": folder, "description": description, "start": start, "due": due,
+                "title": title, "folder": folder, "description": description, "start": start, "due": due, "due_after": due_after,
                 "remind": (!remind.is_empty()).then_some(remind), "repeat": repeat, "repeat_from": repeat_from, "repeat_until": repeat_until, "assign": assign, "after": after, "before": before
             }),
             j,
@@ -934,6 +961,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             start,
             no_start,
             due,
+            due_after,
             no_due,
             remind,
             no_remind,
@@ -963,6 +991,9 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             }
             if no_due || due.is_some() {
                 args.insert("due".into(), due.into());
+            }
+            if let Some(after) = due_after {
+                args.insert("due_after".into(), after.into());
             }
             if no_remind || !remind.is_empty() {
                 args.insert("remind".into(), (!no_remind).then_some(remind).into());

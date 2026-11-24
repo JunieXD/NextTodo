@@ -17,7 +17,7 @@ use uuid::Uuid;
 use super::llm::Prompt;
 use super::organize::{chat, due_text, unwrap};
 use crate::error::from_value;
-use crate::tools::args::{EditArgs, PlanRef, RemindText, RepeatText, TaskRef, WhenText, remind_text, task_ref};
+use crate::tools::args::{EditArgs, PlanRef, RemindText, RepeatText, TaskRef, WhenText, due_after_text, remind_text, task_ref};
 use crate::tools::{Edit, edit_fields, new_due};
 
 /// How many of the folder's open tasks the model is shown, and of its done ones, the latest.
@@ -34,7 +34,7 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
 - folder：这个文件夹；
 - request：用户这次的要求；
 - subfolders：这个文件夹下的子文件夹，可以把事项移进去；
-- open_tasks：文件夹里未完成的事项，按现在的顺序。number 是编号；requires 是它已有的前置事项的编号，那些事项要先做完才能做它；due 是截止时间，remind 是提醒（数字是提前多少分钟，"09:00" 是截止那天的几点，"1d 20:00" 是提前 1 天的 20:00，几个时是列表），repeat 是重复，写成间隔数加单位 d（天）、w（周）、m（月）或 y（年，就是 12 个月），如 1d 每天、2w 每两周、1m 每月、3m 每三个月、1y 每年；按周重复在某几天的，冒号后写周几（1 是周一，7 是周日），如 1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五、2w:2,4 每两周的周二和周四；按月重复在某几号的，冒号后写几号（1–31，没有这天的月份取最后一天），如 1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；repeat_from 为 done 表示下一次从完成那天算；repeat_until 是重复到哪天（含这天），做完这天以前的最后一次，事项就完成了；description_omitted 为 true 的事项描述太长，没有发来；
+- open_tasks：文件夹里未完成的事项，按现在的顺序。number 是编号；requires 是它已有的前置事项的编号，那些事项要先做完才能做它；due 是截止时间，due_after 是前置都完成后几天内截止（如 "30d"、"3d 18:00"，从前置都完成那天算），前置都完成以后才有 due，remind 是提醒（数字是提前多少分钟，"09:00" 是截止那天的几点，"1d 20:00" 是提前 1 天的 20:00，几个时是列表），repeat 是重复，写成间隔数加单位 d（天）、w（周）、m（月）或 y（年，就是 12 个月），如 1d 每天、2w 每两周、1m 每月、3m 每三个月、1y 每年；按周重复在某几天的，冒号后写周几（1 是周一，7 是周日），如 1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五、2w:2,4 每两周的周二和周四；按月重复在某几号的，冒号后写几号（1–31，没有这天的月份取最后一天），如 1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；repeat_from 为 done 表示下一次从完成那天算；repeat_until 是重复到哪天（含这天），做完这天以前的最后一次，事项就完成了；description_omitted 为 true 的事项描述太长，没有发来；
 - done_tasks：最近完成的事项，只有编号和标题。
 
 只输出一个 json 对象，不要有任何别的文字，格式如下：
@@ -49,7 +49,7 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
 1. 修改已有的事项：写 number，再只写要改的字段，不改的省略，不要写空字符串或 null。同一个事项的几处修改写在同一条里，每个事项最多出现一次：
    - title：新标题，一行，简短（最好不超过 30 个字），以动作开头；原标题没说是什么动作的，不要为了以动作开头而猜一个动作或删词。
    - description：新描述，是改好后的完整内容，不是修改说明；Markdown，步骤可以写成清单“- [ ] ”。
-   - due：截止时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"。原来有几点几分、这次只改日期的，带上原来的几点几分；原来和 request 都没说几点的，不要加；原来的提醒和重复保留，新的截止时间不带具体时间的，提醒去掉。
+   - due：截止时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"。原来有几点几分、这次只改日期的，带上原来的几点几分；原来和 request 都没说几点的，不要加；原来的提醒和重复保留，新的截止时间不带具体时间的，提醒去掉。有 due_after 的事项，截止时间和提醒不要改，request 明说要改成某个日期的除外，那时写 due。
    - remind：提醒，写法同上，整个换掉原来的；数字（提前多少分钟，0 表示到截止时间时提醒）要有带具体时间的截止时间。“不用提醒了”是去掉提醒，写 clear: ["remind"]，不是写 0。
    - repeat、repeat_from、repeat_until：重复，写法同输入；要有截止时间。按天数说的照天数写（每 90 天是 90d，不是 3m）；在一周里某几天的写周几，“每个工作日”是 1w:1,2,3,4,5，不是 1d（1d 周末也会出现）。request 说了重复到哪天为止的写 repeat_until，截止时间不能晚于它。这三项也只写要改的，不写的照旧，如只改间隔时不写 repeat_from 和 repeat_until；新设的重复不写 repeat_from 就是从截止日期算，不写 repeat_until 就是一直重复。
    - clear：要清除的设置，是一个列表，可以包含 "due"、"remind"、"repeat"、"repeat_until"（不再重复到哪天，一直重复下去），如 "clear": ["due"]；清除截止时间时，提醒和重复一起清除。去掉前置用 drop_requires，不用 clear。
@@ -142,11 +142,6 @@ pub fn prompt(job: &AiJob, snap: Snapshot, user: &str, notes: Vec<Value>) -> (Pr
             }
             if let Some(d) = &t.due {
                 v["due"] = due_text(d).into();
-                match d.reminders().as_slice() {
-                    [] => {}
-                    [one] => v["remind"] = remind_text(one),
-                    all => v["remind"] = all.iter().map(remind_text).collect(),
-                }
                 if let Some(r) = &d.repeat {
                     v["repeat"] = repeat_text(r).into();
                     if r.from == RepeatFrom::Done {
@@ -156,6 +151,14 @@ pub fn prompt(job: &AiJob, snap: Snapshot, user: &str, notes: Vec<Value>) -> (Pr
                         v["repeat_until"] = until.as_str().into();
                     }
                 }
+            }
+            if let Some(a) = &t.due_after {
+                v["due_after"] = due_after_text(a).into();
+            }
+            match t.reminders().as_slice() {
+                [] => {}
+                [one] => v["remind"] = remind_text(one),
+                all => v["remind"] = all.iter().map(remind_text).collect(),
             }
             let after: Vec<i64> = board.before(t).iter().map(|b| b.number).filter(|n| numbers.contains(n)).collect();
             if !after.is_empty() {
@@ -434,7 +437,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
                 ));
             }
             let remind = s.remind.or_else(|| shown.default_reminders(s.due.as_ref()));
-            let due = new_due(s.due, remind, s.repeat, s.repeat_from, s.repeat_until)
+            let (due, _) = new_due(s.due, None, remind, s.repeat, s.repeat_from, s.repeat_until)
                 .map_err(|e| format!("新事项“{}”：{}", title.as_str(), e.describe()))?;
             let after = distinct(s.after.iter().map(&resolve))?;
             let before = distinct(s.before.iter().map(&resolve))?;
@@ -449,7 +452,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             return Err(format!("修改事项 #{n} 的建议不能写 required_by，后续要写在后续事项自己的 requires 里"));
         }
         let (t, state) = task(n)?;
-        let was = Was { title: t.title.clone(), description: t.description.clone(), due: t.due.clone() };
+        let was = Was { title: t.title.clone(), description: t.description.clone(), due: t.due.clone(), due_after: t.due_after.clone() };
         if s.delete {
             deleted.insert(t.id);
             out.push(Suggestion::Delete(TaskDeletion { delete: t.id, reason: s.reason, was }));
@@ -497,7 +500,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             let remind = match s.remind {
                 _ if clear(Setting::Remind) => Some(None),
                 Some(r) => Some(Some(r)),
-                None => t.due.is_none().then(|| shown.default_reminders(s.due.as_ref())).flatten().map(Some),
+                None => (t.due.is_none() && t.due_after.is_none()).then(|| shown.default_reminders(s.due.as_ref())).flatten().map(Some),
             };
             let args = EditArgs {
                 task: TaskRef { user: None, number: n },
@@ -507,6 +510,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
                 append: None,
                 start: None,
                 due: if clear(Setting::Due) { Some(None) } else { s.due.map(Some) },
+                due_after: None,
                 remind,
                 repeat: if clear(Setting::Repeat) { Some(None) } else { repeat.map(Some) },
                 repeat_from,
@@ -516,7 +520,16 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             };
             edit_fields(&board, t, args).map_err(|e| format!("事项 #{n}：{}", e.describe()))?
         } else {
-            Edit { id: t.id, title: None, description: None, start: None, due: None, assign: Vec::new(), unassign: Vec::new() }
+            Edit {
+                id: t.id,
+                title: None,
+                description: None,
+                start: None,
+                due: None,
+                due_after: None,
+                assign: Vec::new(),
+                unassign: Vec::new(),
+            }
         };
         let folder = match s.folder.as_deref().map(|p| (p, board.find_folder(p))) {
             None => None,
@@ -531,7 +544,9 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             task: t.id,
             title: title.filter(|x| *x != t.title),
             description: description.filter(|x| *x != t.description),
-            due: due.filter(|d| *d != t.due),
+            // One due some days after its prerequisites takes a date of its own only (docs/ai.md#整理文件夹),
+            // which is a change also when the same as the one they gave.
+            due: due.filter(|d| if t.due_after.is_some() { d.is_some() } else { *d != t.due }),
             done: s.done.filter(|&d| d != t.done_at.is_some()),
             folder,
             after,
@@ -877,6 +892,30 @@ mod tests {
         );
         assert_eq!(err(r#"{"order": [1, 5], "reason": ""}"#), "调整顺序只能排未完成的事项，#5 已完成");
         assert!(err(r#"{"number": 1, "title": "a", "note": "x"}"#).starts_with("模型返回的结果不符合格式"));
+    }
+
+    #[test]
+    fn takes_only_a_date_of_its_own_for_a_task_due_some_days_after_its_prerequisites() {
+        let tasks = vec![
+            task(1, "拿到发票", json!({})),
+            task(2, "报销", json!({ "due_after": { "days": 7 } })),
+            task(3, "复诊", json!({ "due_after": { "days": 7 }, "unlocked_on": "2026-11-25", "due": { "date": "2026-12-02" } })),
+        ];
+        let dependencies = vec![Dependency { before: tasks[0].id, after: tasks[1].id, created_at: 0 }];
+        let (_, shown) = prompt(&job(), Snapshot { tasks, dependencies, folders: snap().folders, ..Default::default() }, "me", vec![]);
+        let answer = json!({ "suggestions": [
+            { "number": 2, "clear": ["due"], "reason": "" },
+            { "number": 3, "due": "2026-12-02", "reason": "" },
+        ] });
+        let dues: Vec<_> = parse(&answer.to_string(), &shown)
+            .unwrap()
+            .into_iter()
+            .map(|s| match s {
+                Suggestion::Edit(e) => (e.task, json!(e.due)),
+                _ => panic!("edits only"),
+            })
+            .collect();
+        assert_eq!(dues, [(tid(3), json!({ "date": "2026-12-02" }))]);
     }
 
     #[test]

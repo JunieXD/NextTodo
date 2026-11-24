@@ -825,51 +825,124 @@ pub struct DueFields {
     repeat: Option<Repeat>,
 }
 
+/// The time of day and the reminders of a due date, checked: sorted, none twice.
+fn timing(time: Option<Time>, reminders: Vec<Remind>) -> Result<(Option<DueAt>, Vec<RemindOn>), String> {
+    let (mut before, mut on) = (Vec::new(), Vec::new());
+    for r in reminders {
+        match r {
+            Remind::Before(RemindBefore { before: m }) if m > MAX_REMIND_BEFORE => return Err("提醒最多提前 30 天".into()),
+            Remind::On(RemindOn { days, .. }) if days > MAX_REMIND_DAYS => return Err("提醒最多提前 30 天".into()),
+            Remind::Before(RemindBefore { before: m }) => before.push(m),
+            Remind::On(o) => on.push(o),
+        }
+    }
+    before.sort_unstable();
+    before.dedup();
+    on.sort();
+    on.dedup();
+    if before.len() + on.len() > MAX_REMINDERS {
+        return Err(format!("提醒最多 {MAX_REMINDERS} 个"));
+    }
+    let at = match time {
+        Some(time) => Some(DueAt { time, remind_before: before }),
+        None if before.is_empty() => None,
+        None => return Err("提前多久的提醒需要具体的截止时间".into()),
+    };
+    Ok((at, on))
+}
+
+/// The reminders of a due date at `at` with `on`, the first to come first.
+fn in_order(at: Option<&DueAt>, on: &[RemindOn]) -> Vec<Remind> {
+    let minutes = |t: &Time| {
+        let (h, m) = t.as_str().split_once(':').expect("HH:MM");
+        i64::from(h.parse::<u16>().expect("hours")) * 60 + i64::from(m.parse::<u16>().expect("minutes"))
+    };
+    // Minutes from the start of the due date.
+    let mut all: Vec<(i64, Remind)> = at
+        .iter()
+        .flat_map(|at| at.remind_before.iter().map(|&m| (minutes(&at.time) - i64::from(m), Remind::Before(RemindBefore { before: m }))))
+        .chain(on.iter().map(|o| (minutes(&o.time) - i64::from(o.days) * 1440, Remind::On(o.clone()))))
+        .collect();
+    all.sort_by_key(|(at, _)| *at);
+    all.into_iter().map(|(_, r)| r).collect()
+}
+
 impl Due {
     pub fn new(date: Date, time: Option<Time>, reminders: Vec<Remind>, repeat: Option<Repeat>) -> Result<Due, String> {
         // Before the reminders, as editing says which is wrong (tools::write::edit_fields).
         if let Some(m) = repeat.as_ref().and_then(|r| r.misfit(&date)) {
             return Err(m.to_string());
         }
-        let (mut before, mut on) = (Vec::new(), Vec::new());
-        for r in reminders {
-            match r {
-                Remind::Before(RemindBefore { before: m }) if m > MAX_REMIND_BEFORE => return Err("提醒最多提前 30 天".into()),
-                Remind::On(RemindOn { days, .. }) if days > MAX_REMIND_DAYS => return Err("提醒最多提前 30 天".into()),
-                Remind::Before(RemindBefore { before: m }) => before.push(m),
-                Remind::On(o) => on.push(o),
-            }
-        }
-        before.sort_unstable();
-        before.dedup();
-        on.sort();
-        on.dedup();
-        if before.len() + on.len() > MAX_REMINDERS {
-            return Err(format!("提醒最多 {MAX_REMINDERS} 个"));
-        }
-        let at = match time {
-            Some(time) => Some(DueAt { time, remind_before: before }),
-            None if before.is_empty() => None,
-            None => return Err("提前多久的提醒需要具体的截止时间".into()),
-        };
-        Ok(Due { date, at, remind_on: on, repeat })
+        let (at, remind_on) = timing(time, reminders)?;
+        Ok(Due { date, at, remind_on, repeat })
     }
 
     /// The reminders, the first to come first.
     pub fn reminders(&self) -> Vec<Remind> {
-        let minutes = |t: &Time| {
-            let (h, m) = t.as_str().split_once(':').expect("HH:MM");
-            i64::from(h.parse::<u16>().expect("hours")) * 60 + i64::from(m.parse::<u16>().expect("minutes"))
-        };
-        // Minutes from the start of the due date.
-        let mut all: Vec<(i64, Remind)> = self
-            .at
-            .iter()
-            .flat_map(|at| at.remind_before.iter().map(|&m| (minutes(&at.time) - i64::from(m), Remind::Before(RemindBefore { before: m }))))
-            .chain(self.remind_on.iter().map(|o| (minutes(&o.time) - i64::from(o.days) * 1440, Remind::On(o.clone()))))
-            .collect();
-        all.sort_by_key(|(at, _)| *at);
-        all.into_iter().map(|(_, r)| r).collect()
+        in_order(self.at.as_ref(), &self.remind_on)
+    }
+}
+
+/// A due date some days after the task's prerequisites are all done (docs/design.md#前置完成后的截止):
+/// the time of day and the reminders a due date has, without the date, which comes once they are.
+/// Never repeating.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(try_from = "DueAfterFields", into = "DueAfterFields")]
+#[ts(export, as = "DueAfterFields")]
+pub struct DueAfter {
+    /// After the day they are all done, 0 for that day.
+    pub days: u16,
+    pub at: Option<DueAt>,
+    pub remind_on: Vec<RemindOn>,
+}
+
+pub const MAX_DUE_AFTER_DAYS: u16 = 365;
+
+/// How `DueAfter` looks in JSON.
+#[derive(Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(rename = "DueAfterFields")]
+pub struct DueAfterFields {
+    days: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    time: Option<Time>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(optional, as = "Option<Vec<Remind>>")]
+    reminders: Vec<Remind>,
+}
+
+impl DueAfter {
+    pub fn new(days: u16, time: Option<Time>, reminders: Vec<Remind>) -> Result<DueAfter, String> {
+        if days > MAX_DUE_AFTER_DAYS {
+            return Err(format!("前置完成后最多 {MAX_DUE_AFTER_DAYS} 天"));
+        }
+        let (at, remind_on) = timing(time, reminders)?;
+        Ok(DueAfter { days, at, remind_on })
+    }
+
+    /// The due date it gives counting from `from`.
+    pub fn due(&self, from: &Date) -> Due {
+        Due { date: from.plus(u32::from(self.days)), at: self.at.clone(), remind_on: self.remind_on.clone(), repeat: None }
+    }
+
+    pub fn reminders(&self) -> Vec<Remind> {
+        in_order(self.at.as_ref(), &self.remind_on)
+    }
+}
+
+impl TryFrom<DueAfterFields> for DueAfter {
+    type Error = String;
+
+    fn try_from(f: DueAfterFields) -> Result<Self, String> {
+        DueAfter::new(f.days, f.time, f.reminders)
+    }
+}
+
+impl From<DueAfter> for DueAfterFields {
+    fn from(w: DueAfter) -> Self {
+        let reminders = w.reminders();
+        DueAfterFields { days: w.days, time: w.at.map(|at| at.time), reminders }
     }
 }
 
@@ -1028,6 +1101,17 @@ pub struct Task {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub start_time: Option<Time>,
+    /// Due some days after its prerequisites are all done, as `due` then says; it has no other due
+    /// date (docs/design.md#前置完成后的截止).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub due_after: Option<DueAfter>,
+    /// The day its prerequisites were all done, from which `due_after` counts, on the device that did
+    /// the last of them: its due date is that, or its start if later, and `due_after.days` on. Only
+    /// with `due_after`; none while they are not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub unlocked_on: Option<Date>,
     pub due: Option<Due>,
     /// None until a repeating task is first done.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1052,6 +1136,15 @@ impl Task {
     pub fn occurrence(&self) -> Option<Occurrence> {
         let due = self.due.as_ref().filter(|d| d.repeat.is_some())?;
         Some(Occurrence { due: due.date.clone(), completions: self.completions.as_ref().map_or(0, |c| c.count.get()) })
+    }
+
+    /// The reminders of its due date, also while that is still to come after its prerequisites.
+    pub fn reminders(&self) -> Vec<Remind> {
+        match (&self.due_after, &self.due) {
+            (Some(a), _) => a.reminders(),
+            (None, Some(d)) => d.reminders(),
+            (None, None) => Vec::new(),
+        }
     }
 }
 
@@ -1197,6 +1290,9 @@ pub struct Was {
     pub title: Title,
     pub description: Description,
     pub due: Option<Due>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub due_after: Option<DueAfter>,
 }
 
 /// Tells a missing field (`None`) from an explicit `null` (`Some(None)`).

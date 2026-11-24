@@ -1516,3 +1516,49 @@ async fn a_folder_takes_a_colour_and_an_icon_that_copies_keep() {
         assert_eq!(t.tool(&s, "style", bad.clone()).await.status, StatusCode::BAD_REQUEST, "{bad}");
     }
 }
+
+#[tokio::test]
+async fn a_task_due_some_days_after_its_prerequisites_reads_so_until_they_are_done() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "拿到发票", "folder": "/报销" })).await;
+    let added = t.ok(&s, "add", json!({ "title": "报销", "folder": "/报销", "after": [1], "due_after": "30d 18:00", "remind": 60 })).await;
+    assert!(text(&added).contains("报销"), "{}", text(&added));
+    let shown = t.ok(&s, "show", json!({ "task": 2 })).await;
+    assert!(text(&shown).contains("截止：前置完成后 30 天内 18:00，提醒：提前 1 小时"), "{}", text(&shown));
+    assert_eq!(shown["data"]["due_after"], json!({ "days": 30, "time": "18:00", "reminders": [{ "before": 60 }] }));
+
+    let done = t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-20" })).await;
+    assert!(text(&done).contains("解锁 #2 报销"), "{}", text(&done));
+    let line = text(&t.ok(&s, "list", json!({ "folder": "/报销" })).await).to_owned();
+    assert!(line.contains("截止 2026-12-20 18:00（前置完成后 30 天内 18:00）"), "{line}");
+
+    // Changing the reminders keeps it after the prerequisites; a date given makes it one.
+    t.ok(&s, "edit", json!({ "task": 2, "remind": "1d 09:00" })).await;
+    let shown = t.ok(&s, "show", json!({ "task": 2 })).await["data"].clone();
+    assert_eq!(
+        (shown["due_after"]["reminders"].clone(), shown["due"]["date"].clone()),
+        (json!([{ "days": 1, "time": "09:00" }]), json!("2026-12-20"))
+    );
+    let dated = t.ok(&s, "edit", json!({ "task": 2, "due": "2026-12-01" })).await["data"]["batch"].clone();
+    let log = t.ok(&s, "log", json!({ "batch": dated })).await;
+    assert!(text(&log).contains("截止：2026-12-20 18:00（前置完成后 30 天内 18:00） → 2026-12-01"), "{}", text(&log));
+    let shown = t.ok(&s, "show", json!({ "task": 2 })).await["data"].clone();
+    assert_eq!(
+        (shown.get("due_after"), shown["due"].clone()),
+        (None, json!({ "date": "2026-12-01", "reminders": [{ "days": 1, "time": "09:00" }] }))
+    );
+    let r = t.tool(&s, "edit", json!({ "task": 2, "due_after": "3d", "repeat": "1w" })).await;
+    assert_eq!((r.status, r.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("repeat")), "{}", r.body);
+    let r = t.tool(&s, "add", json!({ "title": "付款", "due": "2026-12-01", "due_after": "3d" })).await;
+    assert_eq!((r.status, r.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("due_after")), "{}", r.body);
+
+    // Copied, it waits again for the copy of its prerequisite; one without any counts from the day.
+    t.ok(&s, "edit", json!({ "task": 2, "due_after": "30d" })).await;
+    t.ok(&s, "add", json!({ "title": "归档", "folder": "/报销", "due_after": "7d" })).await;
+    t.ok(&s, "copy", json!({ "folder": "/报销", "today": "2026-11-25" })).await;
+    let copy = t.ok(&s, "list", json!({ "folder": "/报销 副本" })).await["data"]["tasks"].clone();
+    let by = |title: &str| copy.as_array().unwrap().iter().find(|x| x["title"] == title).unwrap().clone();
+    assert_eq!((by("报销").get("due").cloned(), by("报销")["due_after"]["days"].clone()), (None, json!(30)), "{copy}");
+    assert_eq!(by("归档")["due"]["date"], "2026-12-02", "{copy}");
+}

@@ -179,7 +179,7 @@ mod tests {
     #[test]
     fn writing_what_a_change_did_gives_the_same_data_as_making_it() {
         let mut p = Pair::new();
-        let (top, inner, t1, t2, t3, t4) = (id(), id(), id(), id(), id(), id());
+        let (top, inner, t1, t2, t3, t4, t5) = (id(), id(), id(), id(), id(), id(), id());
         p.change(json!([
             { "op": "folder.create", "id": top, "name": "论文" },
             { "op": "folder.create", "id": inner, "name": "实验", "parent_id": top, "color": "blue", "icon": "flask" },
@@ -187,7 +187,9 @@ mod tests {
             { "op": "task.create", "id": t2, "title": "发问卷", "folder_id": inner },
             { "op": "task.create", "id": t3, "title": "每周组会", "due": { "date": "2026-11-18", "repeat": { "every": 1, "unit": "week", "from": "due" } } },
             { "op": "task.create", "id": t4, "title": "给家里打电话", "due": { "date": "2026-09-25", "repeat": { "every": 12, "unit": "month", "from": "due", "days": [15], "lunar": true } } },
+            { "op": "task.create", "id": t5, "title": "交问卷结果", "due_after": { "days": 3, "time": "18:00" } },
             { "op": "dep.add", "before": t1, "after": t2 },
+            { "op": "dep.add", "before": t1, "after": t5 },
         ]));
         p.change(json!([{ "op": "task.update", "id": t1, "title": "设计并预测问卷", "done": true }]));
         p.change(json!([{ "op": "task.update", "id": t3, "done": true, "today": "2026-11-18" }]));
@@ -243,6 +245,6 @@ mod tests {
         p.sync();
         p.assert_same();
         let numbered: i64 = p.b.hold(|c| c.query_row("SELECT next_task_number FROM users", [], |r| r.get(0)).unwrap());
-        assert_eq!(numbered, 5);
+        assert_eq!(numbered, 6);
     }
 }

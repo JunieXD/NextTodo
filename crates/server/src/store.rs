@@ -17,7 +17,7 @@ const ATTACHMENTS: &str =
     "SELECT a.id, a.task_id, a.job_id, a.name, f.type, f.size, a.created_at FROM attachments a JOIN files f ON f.id = a.id";
 macro_rules! task_columns {
     () => {
-        "id, number, folder_id, title, description, done_at, due_date, due_time, reminders, sort_key, created_at, updated_at, created_via, updated_via, repeat_every, repeat_unit, repeat_from, repeat_days, completion_count, last_completed, repeat_monthdays, start_date, created_by, updated_by, start_time, repeat_until, repeat_lunar"
+        "id, number, folder_id, title, description, done_at, due_date, due_time, reminders, sort_key, created_at, updated_at, created_via, updated_via, repeat_every, repeat_unit, repeat_from, repeat_days, completion_count, last_completed, repeat_monthdays, start_date, created_by, updated_by, start_time, repeat_until, repeat_lunar, due_after, unlocked_on"
     };
 }
 const TASK_COLUMNS: &str = task_columns!();
@@ -74,7 +74,8 @@ fn task_row(r: &Row) -> rusqlite::Result<Task> {
         (Some(count), Some(last)) => Some(Completions { count, last }),
         _ => None,
     };
-    let assignees: String = r.get(27)?;
+    let due_after: Option<String> = r.get(27)?;
+    let assignees: String = r.get(29)?;
     Ok(Task {
         id: r.get(0)?,
         number: r.get(1)?,
@@ -84,6 +85,11 @@ fn task_row(r: &Row) -> rusqlite::Result<Task> {
         done_at: r.get(5)?,
         start: r.get(21)?,
         start_time: r.get(24)?,
+        due_after: due_after
+            .map(|w| serde_json::from_str(&w))
+            .transpose()
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(27, rusqlite::types::Type::Text, Box::new(e)))?,
+        unlocked_on: r.get(28)?,
         due: date
             .map(|date| Due::new(date, time, reminders, repeat))
             .transpose()
@@ -91,7 +97,7 @@ fn task_row(r: &Row) -> rusqlite::Result<Task> {
         completions,
         sort_key: r.get(9)?,
         assignees: serde_json::from_str(&assignees)
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(27, rusqlite::types::Type::Text, Box::new(e)))?,
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(29, rusqlite::types::Type::Text, Box::new(e)))?,
         created_at: r.get(10)?,
         updated_at: r.get(11)?,
         created_by: r.get(22)?,
@@ -290,7 +296,7 @@ pub fn last_folder_key(c: &Connection, owner: &str, parent: Option<FolderId>) ->
 
 /// A task and its owner.
 pub fn load_task(c: &Connection, id: TaskId) -> rusqlite::Result<Option<(Task, String)>> {
-    c.query_row(&format!("SELECT {TASK_SELECT}, owner_id FROM tasks WHERE id = ?1"), [id], |r| Ok((task_row(r)?, r.get(28)?))).optional()
+    c.query_row(&format!("SELECT {TASK_SELECT}, owner_id FROM tasks WHERE id = ?1"), [id], |r| Ok((task_row(r)?, r.get(30)?))).optional()
 }
 
 /// Whether `owner` has another task than `id` numbered `number`.
@@ -311,7 +317,7 @@ pub fn insert_task(c: &Connection, owner: &str, t: &Task) -> rusqlite::Result<()
     let (date, time, remind, every, unit, from, days, monthdays, until, lunar) = due_columns(&t.due);
     c.execute(
         &format!(
-            "INSERT INTO tasks (owner_id, {TASK_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)"
+            "INSERT INTO tasks (owner_id, {TASK_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30)"
         ),
         params![
             owner,
@@ -341,7 +347,9 @@ pub fn insert_task(c: &Connection, owner: &str, t: &Task) -> rusqlite::Result<()
             t.updated_by,
             t.start_time,
             until,
-            lunar
+            lunar,
+            due_after(t),
+            t.unlocked_on
         ],
     )?;
     set_assignees(c, t)
@@ -353,7 +361,8 @@ pub fn update_task(c: &Connection, owner: &str, t: &Task) -> rusqlite::Result<()
         "UPDATE tasks SET folder_id = ?2, title = ?3, description = ?4, done_at = ?5, due_date = ?6, due_time = ?7,
          reminders = ?8, sort_key = ?9, updated_at = ?10, updated_via = ?11, repeat_every = ?12, repeat_unit = ?13,
          repeat_from = ?14, repeat_days = ?15, completion_count = ?16, last_completed = ?17, repeat_monthdays = ?18,
-         start_date = ?19, updated_by = ?20, owner_id = ?21, number = ?22, start_time = ?23, repeat_until = ?24, repeat_lunar = ?25 WHERE id = ?1",
+         start_date = ?19, updated_by = ?20, owner_id = ?21, number = ?22, start_time = ?23, repeat_until = ?24, repeat_lunar = ?25,
+         due_after = ?26, unlocked_on = ?27 WHERE id = ?1",
         params![
             t.id,
             t.folder_id,
@@ -379,10 +388,16 @@ pub fn update_task(c: &Connection, owner: &str, t: &Task) -> rusqlite::Result<()
             t.number,
             t.start_time,
             until,
-            lunar
+            lunar,
+            due_after(t),
+            t.unlocked_on
         ],
     )?;
     set_assignees(c, t)
+}
+
+fn due_after(t: &Task) -> Option<String> {
+    t.due_after.as_ref().map(|a| serde_json::to_string(a).expect("due_after serializes"))
 }
 
 fn set_assignees(c: &Connection, t: &Task) -> rusqlite::Result<()> {

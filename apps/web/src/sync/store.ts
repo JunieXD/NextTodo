@@ -13,7 +13,7 @@ import type { Op } from "../api/types/Op";
 import type { SeqSnapshot } from "../api/types/SeqSnapshot";
 import type { Snapshot } from "../api/types/Snapshot";
 import type { TaskId } from "../api/types/TaskId";
-import { type Data, Rejected, apply, copy, fromSnapshot, replay, toSnapshot } from "../domain/apply";
+import { type Data, Rejected, apply, copy, fromSnapshot, localOf, replay, toSnapshot } from "../domain/apply";
 import { Board, before, cmp, nowOf } from "../domain/board";
 
 /** A change made here, with when it was made, so that applying it again gives the same times. */
@@ -167,8 +167,9 @@ export class Store {
   /** Makes a change here at once and queues it for the server. Throws `Rejected` when it cannot
    * apply, in which case nothing is queued. */
   commit(ops: Op[]): { id: MutationId; effects: Effect[] } {
-    const pending = { mutation: { id: after(this.outbox), ops }, at: Date.now() };
-    const effects = apply(copy(this.data), ops, this.context(pending.at));
+    const now = new Date();
+    const pending = { mutation: { id: after(this.outbox), ops, ...(this.countsDays(ops) && nowOf(now)) }, at: now.getTime() };
+    const effects = apply(copy(this.data), ops, this.context(pending));
     this.outbox.push(pending);
     // Sent once saved: a tab that hears of it from the server takes it out of the saved outbox,
     // which only works if it is there by then.
@@ -299,8 +300,18 @@ export class Store {
     void this.changed();
   }
 
-  private context(now: number) {
-    return { me: this.me, now, effectsOf: this.effectsOf, effectsAfter: this.effectsAfter };
+  private context(p: Pending) {
+    return { me: this.me, now: p.at, local: localOf(p.mutation, p.at), effectsOf: this.effectsOf, effectsAfter: this.effectsAfter };
+  }
+
+  /** Whether a change is to say the day and time it is made: where a due date may count from them
+   * (docs/design.md#前置完成后的截止). Not otherwise, as a server older than that turns down every change
+   * that does. */
+  private countsDays(ops: Op[]): boolean {
+    return (
+      ops.some((op) => (op.op === "task.create" || op.op === "task.update") && op.due_after) ||
+      [...this.data.tasks.values()].some((t) => t.due_after)
+    );
   }
 
   /** What the changes after `id` did: those confirmed, then those made here and applied so far. */
@@ -328,7 +339,7 @@ export class Store {
     this.local = new Map();
     for (const p of this.outbox) {
       try {
-        this.local.set(p.mutation.id, apply(d, p.mutation.ops, this.context(p.at)));
+        this.local.set(p.mutation.id, apply(d, p.mutation.ops, this.context(p)));
       } catch (e) {
         if (!(e instanceof Rejected)) throw e;
         stuck.add(p.mutation.id);

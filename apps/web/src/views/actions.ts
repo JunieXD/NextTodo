@@ -62,9 +62,11 @@ export function useTaskActions(): RowActions & {
         id: t.id,
         done: completing,
         ...(ended && { due: ended }),
-        // A repeating task's next due date counts from the day here; the time done is the one seen,
-        // not one after it done meanwhile elsewhere.
-        ...(repeating && { today: isoDate(new Date()), occurrence: occurrence(t) }),
+        // The day here: a repeating task's next due date counts from it, as does a due date some days
+        // after this is done, also once sent later. The time done is the one seen, not one after it
+        // done meanwhile elsewhere.
+        ...(completing && { today: isoDate(new Date()) }),
+        ...(repeating && { occurrence: occurrence(t) }),
       },
     ]);
     if (!r) return;

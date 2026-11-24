@@ -594,3 +594,34 @@ async fn copies_keep_assignees_only_inside_the_same_shared_folder() {
     t.ok(&alice, "copy", json!({ "folder": "/装修" })).await;
     assert!(t.snapshot(&bob).await["folders"].as_array().unwrap().iter().all(|f| f["name"] != "装修 副本"));
 }
+
+#[tokio::test]
+async fn a_folder_moved_into_a_shared_one_keeps_the_due_dates_its_prerequisites_gave() {
+    let s = shared().await;
+    let (t, alice) = (&s.t, &s.alice);
+    let post = |today: &str, ops: Value| t.call("POST", "/mutations", Some(alice), Some(json!({ "id": id(), "today": today, "ops": ops })));
+    let (flowers, water, log, outside, plan) = (id(), id(), id(), id(), id());
+    let daily = json!({ "date": "2026-11-20", "repeat": { "every": 1, "unit": "day", "from": "due" } });
+    let r = post(
+        "2026-11-20",
+        json!([
+            { "op": "folder.create", "id": flowers, "name": "养花" },
+            { "op": "task.create", "id": water, "title": "浇花", "folder_id": flowers, "due": daily },
+            { "op": "task.create", "id": log, "title": "记下长势", "folder_id": flowers, "due_after": { "days": 1 } },
+            { "op": "dep.add", "before": water, "after": log },
+            { "op": "task.create", "id": outside, "title": "买花盆", "folder_id": s.private },
+            { "op": "task.create", "id": plan, "title": "换盆", "folder_id": flowers, "due_after": { "days": 2 } },
+            { "op": "dep.add", "before": outside, "after": plan },
+            { "op": "task.update", "id": water, "done": true, "today": "2026-11-20" },
+        ]),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    // Watering has come round again by the time the folder moves; its dependency moves along.
+    let r = post("2026-11-23", json!([{ "op": "folder.update", "id": flowers, "parent_id": s.home }])).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    let snap = t.snapshot(alice).await;
+    assert_eq!(task(&snap, "记下长势")["due"]["date"], "2026-11-21");
+    // The one whose only prerequisite stayed behind has none left.
+    assert_eq!(task(&snap, "换盆")["due"]["date"], "2026-11-25");
+}

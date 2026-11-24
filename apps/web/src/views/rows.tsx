@@ -8,7 +8,7 @@ import type { Folder } from "../api/types/Folder";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
-import { dueKind, formatDue, isoDate, startLabel } from "../domain/dates";
+import { dueAfterLabel, dueKind, formatDue, isoDate, startLabel } from "../domain/dates";
 import { plainRail, railLayout } from "../domain/rail";
 import { doneToday, skippable } from "../domain/repeat";
 import { range, rekey } from "../domain/reorder";
@@ -91,6 +91,13 @@ export function TaskRow({
       <span key="due" className={dueClass(t, now)}>
         <Icon of={t.due.repeat ? Repeat : Clock} size={14} />
         {formatDue(t.due, now)}
+      </span>,
+    );
+  } else if (t.due_after) {
+    meta.push(
+      <span key="due">
+        <Icon of={Clock} size={14} />
+        {dueAfterLabel(t.due_after)}
       </span>,
     );
   }

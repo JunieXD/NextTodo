@@ -1232,7 +1232,9 @@ fn try_out(tx: &mut Transaction, r: &Request, files: &Files, now: i64) -> Result
         return Ok(Tried::Before);
     }
     let (ops, done) = match &r.work {
-        Work::Mutation { mutation, .. } => (mutation.ops.clone(), mutate::run(&point, &actor, &mutation.ops, now)?),
+        Work::Mutation { mutation, .. } => {
+            (mutation.ops.clone(), mutate::run(&point, &actor, &mutation.ops, now, &mutate::local(mutation, now))?)
+        }
         Work::Tool { build, local, .. } => match write::attempt(&point, &actor, files, now, local.clone(), build)? {
             Attempt::Preview(output) => return Ok(Tried::Preview(output)),
             Attempt::Made { ops, done } => (ops, done),

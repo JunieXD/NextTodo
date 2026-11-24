@@ -5,6 +5,7 @@ import { Popover } from "radix-ui";
 import { type ReactNode, useContext, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import type { Due } from "../api/types/Due";
+import type { DueAfter } from "../api/types/DueAfter";
 import type { Remind } from "../api/types/Remind";
 import type { RemindBefore } from "../api/types/RemindBefore";
 import type { RemindOn } from "../api/types/RemindOn";
@@ -47,9 +48,12 @@ const UNITS: [RepeatUnit, string][] = [
 const AHEAD = (["minute", "hour", "day"] as const).map((u): [RemindUnit, string] => [u, REMIND_UNITS[u].name]);
 
 /** Sets or clears the due date, its time, the reminder and how it repeats; a task `done` doesn't
- * repeat. Not before the task's `start`, at `startTime`. */
+ * repeat. Not before the task's `start`, at `startTime`. Or the due date some days after the task's
+ * prerequisites are done, `dueAfter`, of which `due` is then the date given once they were
+ * (docs/design.md#前置完成后的截止). */
 export function DueEditor({
   due,
+  dueAfter,
   start,
   startTime,
   done,
@@ -57,21 +61,26 @@ export function DueEditor({
   onClose,
 }: {
   due: Due | null;
+  dueAfter?: DueAfter;
   start: string | null;
   startTime?: string;
   done: boolean;
-  onSave(d: Due | null): void;
+  onSave(change: { due: Due | null } | { due_after: DueAfter }): void;
   onClose(): void;
 }) {
+  const now = useNow();
   const [date, setDate] = useState(() => {
     const today = isoDate(new Date());
     return due?.date ?? (start && start > today ? start : today);
   });
-  const [time, setTime] = useState(due?.time ?? "");
+  const [after, setAfter] = useState(dueAfter !== undefined);
+  const [afterDays, setAfterDays] = useState(dueAfter?.days ?? 7);
+  const timing = dueAfter ?? due;
+  const [time, setTime] = useState(timing?.time ?? "");
   // As picked; for a task given a due date now, until they are, this device's defaults for a due
   // date with a time or without (docs/design.md#提醒). Those before the time go with it.
   const defaults = useDefaultReminders();
-  const [chosen, setChosen] = useState<Remind[] | null>(due ? (due.reminders ?? []) : null);
+  const [chosen, setChosen] = useState<Remind[] | null>(timing ? (timing.reminders ?? []) : null);
   const reminders = inOrder(chosen ?? (time ? defaults.timed : defaults.dated), time || undefined);
   // One not on the menu being added: so far ahead of the time, or on a day before at a time.
   const [adding, setAdding] = useState(false);
@@ -120,7 +129,7 @@ export function DueEditor({
   const menu = workdays ? "workdays" : named ? "days" : kind;
   // Said once saving is tried, until it is put right.
   const [tried, setTried] = useState(false);
-  const early = Boolean(startTime && time && date === start && time < startTime);
+  const early = Boolean(startTime && time && (after ? afterDays === 0 : date === start) && time < startTime);
   // Moved past the last day it repeats on.
   const ended = Boolean(repeat?.until && repeat.until < date);
   // By the lunar calendar, outside its table.
@@ -128,7 +137,8 @@ export function DueEditor({
   const tooMany = reminders.length > MAX_REMINDERS;
   const save = () => {
     if (early || ended || unlisted || tooMany) return setTried(true);
-    onSave({ date, ...(time && { time }), ...(reminders.length && { reminders }), ...(repeat && { repeat }) });
+    const timed = { ...(time && { time }), ...(reminders.length && { reminders }) };
+    onSave(after ? { due_after: { days: afterDays, ...timed } } : { due: { date, ...timed, ...(repeat && { repeat }) } });
     onClose();
   };
   return (
@@ -148,8 +158,8 @@ export function DueEditor({
                     : `提醒最多 ${MAX_REMINDERS} 个`}
             </p>
           )}
-          {due && (
-            <button className="text-btn danger-text" onClick={() => (onSave(null), onClose())}>
+          {timing && (
+            <button className="text-btn danger-text" onClick={() => (onSave({ due: null }), onClose())}>
               清除截止时间
             </button>
           )}
@@ -159,9 +169,41 @@ export function DueEditor({
         </>
       }
     >
-      <Calendar value={date} min={start ?? undefined} onChange={setDate} />
+      <div className="due-mode">
+        <Seg<"date" | "after">
+          label="截止方式"
+          items={[
+            ["date", "按日期"],
+            ["after", "前置完成后"],
+          ]}
+          value={after ? "after" : "date"}
+          disabled={repeat ? ["after"] : undefined}
+          onChange={(m) => setAfter(m === "after")}
+        />
+      </div>
+      {repeat && <p className="group-note">重复的事项按日期算截止</p>}
+      {after ? (
+        <>
+          <div className="group settings">
+            <Controls name="几天内">
+              <Stepper label="几天内" min={0} max={365} value={afterDays} onChange={setAfterDays} />
+            </Controls>
+          </div>
+          <p className="group-note">
+            前置都完成的那天起算，0 是当天
+            {dueAfter && due && (
+              <>
+                <br />
+                已定下：{formatDue({ date: due.date }, now)}
+              </>
+            )}
+          </p>
+        </>
+      ) : (
+        <Calendar value={date} min={start ?? undefined} onChange={setDate} />
+      )}
       <div className="group settings">
-        <TimeRow value={time} extra={due?.time} min={date === start ? startTime : undefined} onChange={setTime} optional />
+        <TimeRow value={time} extra={timing?.time} min={(after ? afterDays === 0 : date === start) ? startTime : undefined} onChange={setTime} optional />
         <MultiSelect
           label="提醒"
           text={remindersLabel(reminders)}
@@ -186,7 +228,7 @@ export function DueEditor({
           </Controls>
         )}
         {adding && (time && !byDay ? <AddAhead onAdd={add} /> : <AddOnDay onAdd={add} />)}
-        <Select<typeof menu>
+        {!after && <Select<typeof menu>
           label="重复"
           row
           items={[
@@ -208,7 +250,7 @@ export function DueEditor({
             setDays(k === "workdays" ? WORKDAYS : null);
             setLunar(false);
           }}
-        />
+        />}
         {kind === "custom" && (
           <Controls name="间隔">
             <Stepper label="间隔数" min={1} value={every} max={365} onChange={setEvery} />
@@ -282,28 +324,34 @@ export const ARROWS = new Map([
   ["ArrowDown", 7],
 ]);
 
-/** Sets when a task starts, a day and maybe a time, not after it is `due`; or clears it. */
+/** Sets when a task starts, a day and maybe a time, not after it is `due`; or clears it. Due some days
+ * after its prerequisites (`dueAfter`), it counts from a later start, so that only a time on the day
+ * itself, 0 days after, may be too late. */
 export function StartEditor({
   start,
   time: was,
   due,
+  dueAfter,
   onSave,
   onClose,
 }: {
   start: string | null;
   time?: string;
   due: Due | null;
+  dueAfter?: DueAfter;
   onSave(start: { date: string; time?: string } | null): void;
   onClose(): void;
 }) {
+  const bound = dueAfter ? null : due;
   const [date, setDate] = useState(() => {
     const today = isoDate(new Date());
-    return start ?? (due && due.date < today ? due.date : today);
+    return start ?? (bound && bound.date < today ? bound.date : today);
   });
   const [time, setTime] = useState(was ?? "");
   // Said once saving is tried, until it is put right.
   const [tried, setTried] = useState(false);
-  const late = Boolean(due?.time && time && date === due.date && time > due.time);
+  const latest = dueAfter?.days === 0 ? dueAfter.time : date === bound?.date ? bound.time : undefined;
+  const late = Boolean(latest && time && time > latest);
   const save = () => {
     if (late) return setTried(true);
     onSave({ date, ...(time && { time }) });
@@ -331,9 +379,9 @@ export function StartEditor({
         </>
       }
     >
-      <Calendar value={date} max={due?.date} onChange={setDate} />
+      <Calendar value={date} max={bound?.date} onChange={setDate} />
       <div className="group settings">
-        <TimeRow value={time} extra={was} max={date === due?.date ? due.time : undefined} onChange={setTime} optional />
+        <TimeRow value={time} extra={was} max={latest} onChange={setTime} optional />
       </div>
     </Modal>
   );

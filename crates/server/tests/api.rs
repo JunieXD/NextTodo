@@ -572,3 +572,179 @@ async fn resetting_a_forgotten_password_signs_out_every_device() {
     assert_eq!(t.login("alice", "correct horse").await.status, StatusCode::UNAUTHORIZED);
     assert_eq!(t.login("alice", "new password").await.status, StatusCode::OK);
 }
+
+/// A change made on a device on `today`, and its id.
+fn made_on(today: &str, ops: Value) -> (String, Value) {
+    let m = id();
+    (m.clone(), json!({ "id": m, "today": today, "ops": ops }))
+}
+
+/// Task `id` as `effects` left it.
+fn task_in<'a>(effects: &'a Value, id: &str) -> &'a Value {
+    effects.as_array().unwrap().iter().rev().find(|e| e["kind"] == "task" && e["after"]["id"] == id).map(|e| &e["after"]).unwrap()
+}
+
+#[tokio::test]
+async fn a_due_date_after_the_prerequisites_comes_when_they_are_done_and_goes_when_one_is_reopened() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let post = |body: Value| t.call("POST", "/mutations", Some(&s), Some(body));
+    let (invoice, claim) = (id(), id());
+    let due_after = json!({ "days": 30, "time": "18:00", "reminders": [{ "days": 1, "time": "09:00" }] });
+    let (_, made) = made_on(
+        "2026-11-20",
+        json!([
+            { "op": "task.create", "id": invoice, "title": "拿到发票" },
+            { "op": "task.create", "id": claim, "title": "报销", "due_after": due_after },
+            { "op": "dep.add", "before": invoice, "after": claim },
+        ]),
+    );
+    let r = post(made).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    let waiting = task_in(&r.body["effects"], &claim);
+    assert_eq!((&waiting["due_after"], &waiting["due"], &waiting.get("unlocked_on")), (&due_after, &Value::Null, &None));
+
+    let ops = json!([{ "op": "task.update", "id": invoice, "done": true }]);
+    let r = post(json!({ "id": id(), "today": "2026-11-24", "time": "23:30", "ops": ops })).await;
+    let claimed = task_in(&r.body["effects"], &claim);
+    assert_eq!(claimed["unlocked_on"], "2026-11-24", "{}", r.body);
+    assert_eq!(claimed["due"], json!({ "date": "2026-12-24", "time": "18:00", "reminders": [{ "days": 1, "time": "09:00" }] }));
+
+    let r = t.mutate(&s, json!([{ "op": "task.update", "id": invoice, "done": false }])).await;
+    assert_eq!(task_in(&r.body["effects"], &claim)["due"], Value::Null, "waiting again: {}", r.body);
+    // Done again a day later, it counts from then; undoing that takes its date back with it.
+    let (again, body) = made_on("2026-11-25", json!([{ "op": "task.update", "id": invoice, "done": true }]));
+    let r = post(body).await;
+    assert_eq!(task_in(&r.body["effects"], &claim)["due"]["date"], "2026-12-25", "{}", r.body);
+    let r = t.mutate(&s, json!([{ "op": "undo", "mutation": again }])).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    let snap = t.snapshot(&s).await;
+    let back = snap["tasks"].as_array().unwrap().iter().find(|x| x["id"] == claim.as_str()).unwrap();
+    assert_eq!((&back["due"], back.get("unlocked_on"), &back["due_after"]), (&Value::Null, None, &due_after));
+}
+
+#[tokio::test]
+async fn a_due_date_after_the_prerequisites_counts_from_a_later_start_and_from_the_last_one_taken_away() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let post = |body: Value| t.call("POST", "/mutations", Some(&s), Some(body));
+    let (report, visit) = (id(), id());
+    let (_, body) = made_on(
+        "2026-11-20",
+        json!([
+            { "op": "task.create", "id": report, "title": "拿到报告" },
+            { "op": "task.create", "id": visit, "title": "复诊", "start": "2026-12-01", "due_after": { "days": 7 } },
+            { "op": "dep.add", "before": report, "after": visit },
+        ]),
+    );
+    post(body).await;
+    let (_, body) = made_on("2026-11-21", json!([{ "op": "dep.remove", "before": report, "after": visit }]));
+    let r = post(body).await;
+    let v = task_in(&r.body["effects"], &visit);
+    assert_eq!((&v["unlocked_on"], &v["due"]["date"]), (&json!("2026-11-21"), &json!("2026-12-08")), "from its start: {}", r.body);
+
+    // Linked to a prerequisite done, it stays; to one not done, it waits again.
+    let done = id();
+    let (_, body) = made_on(
+        "2026-11-22",
+        json!([
+            { "op": "task.create", "id": done, "title": "挂号", "done": true },
+            { "op": "dep.add", "before": done, "after": visit },
+        ]),
+    );
+    let r = post(body).await;
+    assert!(r.body["effects"].as_array().unwrap().iter().all(|e| e["after"]["id"] != visit.as_str()), "{}", r.body);
+    let r = t.mutate(&s, json!([{ "op": "dep.add", "before": report, "after": visit }])).await;
+    assert_eq!(task_in(&r.body["effects"], &visit)["due"], Value::Null, "{}", r.body);
+
+    // Its start moved on moves the date it was given; deleting the last prerequisite gives it one.
+    let (_, body) = made_on("2026-11-23", json!([{ "op": "task.delete", "id": report }]));
+    let r = post(body).await;
+    assert_eq!(task_in(&r.body["effects"], &visit)["due"]["date"], "2026-12-08", "{}", r.body);
+    let r = t.mutate(&s, json!([{ "op": "task.update", "id": visit, "start": "2026-12-10" }])).await;
+    assert_eq!(task_in(&r.body["effects"], &visit)["due"]["date"], "2026-12-17", "{}", r.body);
+
+    // A date set by hand is no longer after the prerequisites, and the other way round.
+    let r = t.mutate(&s, json!([{ "op": "task.update", "id": visit, "due": { "date": "2026-12-20" } }])).await;
+    let v = task_in(&r.body["effects"], &visit);
+    assert_eq!((v.get("due_after"), v.get("unlocked_on"), &v["due"]), (None, None, &json!({ "date": "2026-12-20" })));
+    let r = post(made_on("2026-11-24", json!([{ "op": "task.update", "id": visit, "due_after": { "days": 0 } }])).1).await;
+    assert_eq!(task_in(&r.body["effects"], &visit)["due"], json!({ "date": "2026-12-10" }), "{}", r.body);
+    let r = t.mutate(&s, json!([{ "op": "task.update", "id": visit, "due_after": null }])).await;
+    let v = task_in(&r.body["effects"], &visit);
+    assert_eq!((v.get("due_after"), &v["due"]), (None, &Value::Null), "{}", r.body);
+}
+
+#[tokio::test]
+async fn a_repeating_prerequisite_coming_round_again_leaves_the_date_it_gave() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let (water, log) = (id(), id());
+    let daily = json!({ "date": "2026-11-20", "repeat": { "every": 1, "unit": "day", "from": "due" } });
+    t.mutate(
+        &s,
+        json!([
+            { "op": "task.create", "id": water, "title": "浇花", "due": daily },
+            { "op": "task.create", "id": log, "title": "记下长势", "due_after": { "days": 1 } },
+            { "op": "dep.add", "before": water, "after": log },
+        ]),
+    )
+    .await;
+    let post = |body: Value| t.call("POST", "/mutations", Some(&s), Some(body));
+    // Done on the device's day, given with the task done.
+    let (first, body) = made_on("2026-11-20", json!([{ "op": "task.update", "id": water, "done": true, "today": "2026-11-20" }]));
+    let r = post(body).await;
+    assert_eq!(task_in(&r.body["effects"], &log)["due"]["date"], "2026-11-21", "{}", r.body);
+    let (_, body) = made_on("2026-11-23", json!([{ "op": "task.update", "id": log, "title": "记下花的长势" }]));
+    let r = post(body).await;
+    assert_eq!(task_in(&r.body["effects"], &log)["due"]["date"], "2026-11-21", "{}", r.body);
+    // Deleted and brought back, it is as it was, the dependency with it.
+    let (deleted, body) = made_on("2026-11-23", json!([{ "op": "task.delete", "id": log }]));
+    post(body).await;
+    let r = post(made_on("2026-11-23", json!([{ "op": "undo", "mutation": deleted }])).1).await;
+    assert_eq!(task_in(&r.body["effects"], &log)["due"]["date"], "2026-11-21", "{}", r.body);
+    // Done again the next day and that undone, it is that day's time again: the date stays. Undoing the
+    // time that gave it takes it back.
+    let (again, body) = made_on("2026-11-21", json!([{ "op": "task.update", "id": water, "done": true, "today": "2026-11-21" }]));
+    post(body).await;
+    post(made_on("2026-11-21", json!([{ "op": "undo", "mutation": again }])).1).await;
+    let due = |snap: &Value| snap["tasks"].as_array().unwrap().iter().find(|x| x["id"] == log.as_str()).unwrap()["due"].clone();
+    assert_eq!(due(&t.snapshot(&s).await)["date"], "2026-11-21");
+    let r = post(made_on("2026-11-21", json!([{ "op": "undo", "mutation": first }])).1).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    assert_eq!(due(&t.snapshot(&s).await), Value::Null);
+}
+
+#[tokio::test]
+async fn a_dependency_an_undo_brings_back_to_a_prerequisite_reopened_since_takes_the_date_back() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let post = |body: Value| t.call("POST", "/mutations", Some(&s), Some(body));
+    let (invoice, claim) = (id(), id());
+    let ops = json!([
+        { "op": "task.create", "id": invoice, "title": "收到发票", "done": true },
+        { "op": "task.create", "id": claim, "title": "报销", "due_after": { "days": 7 } },
+        { "op": "dep.add", "before": invoice, "after": claim },
+    ]);
+    let r = post(made_on("2026-11-20", ops).1).await;
+    assert_eq!(task_in(&r.body["effects"], &claim)["due"]["date"], "2026-11-27", "{}", r.body);
+    let (removed, body) = made_on("2026-11-21", json!([{ "op": "dep.remove", "before": invoice, "after": claim }]));
+    post(body).await;
+    t.mutate(&s, json!([{ "op": "task.update", "id": invoice, "done": false }])).await;
+    let r = post(made_on("2026-11-22", json!([{ "op": "undo", "mutation": removed }])).1).await;
+    assert_eq!(task_in(&r.body["effects"], &claim)["due"], Value::Null, "{}", r.body);
+}
+
+#[tokio::test]
+async fn a_due_date_after_the_prerequisites_is_checked_as_given() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let both = json!([{ "op": "task.create", "id": id(), "title": "付款", "due": { "date": "2026-11-20" }, "due_after": { "days": 3 } }]);
+    assert_eq!(t.mutate(&s, both).await.body["details"]["field"], "due_after");
+    let late = json!([{ "op": "task.create", "id": id(), "title": "付款", "start": "2026-11-20", "start_time": "19:00", "due_after": { "days": 0, "time": "18:00" } }]);
+    assert_eq!(t.mutate(&s, late).await.body["details"]["field"], "start_time");
+    let far = json!([{ "op": "task.create", "id": id(), "title": "付款", "due_after": { "days": 366 } }]);
+    assert_eq!(t.mutate(&s, far).await.status, StatusCode::BAD_REQUEST);
+    let time = json!({ "id": id(), "time": "18:00", "ops": [{ "op": "task.create", "id": id(), "title": "付款" }] });
+    assert_eq!(t.call("POST", "/mutations", Some(&s), Some(time)).await.status, StatusCode::BAD_REQUEST);
+}

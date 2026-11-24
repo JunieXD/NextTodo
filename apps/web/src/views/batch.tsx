@@ -164,9 +164,10 @@ function useBatchActions(place: Place, chosen: Task[], end: () => void): { actio
     if (!going.length) return end();
     const readyBefore = new Set(board().next().map((t) => t.id));
     const counts = new Map(going.map((t) => [t.id, t.completions?.count]));
-    // A repeating task's next due date counts from the day here.
+    // The day here: a repeating task's next due date counts from it, as does a due date some days after
+    // these are done.
     const today = isoDate(new Date());
-    const r = commit(going.map((t): Op => ({ op: "task.update", id: t.id, done: true, ...(t.due?.repeat && { today, occurrence: seen.get(t.id) }) })));
+    const r = commit(going.map((t): Op => ({ op: "task.update", id: t.id, done: true, today, ...(t.due?.repeat && { occurrence: seen.get(t.id) }) })));
     if (!r) return;
     const took = going.filter((t) => {
       const now = board().task(t.id)!;

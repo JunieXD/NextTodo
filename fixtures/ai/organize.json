@@ -278,5 +278,83 @@
     "note": "外层和内层的说明不一致：标题按内层的，以页面名开头",
     "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/工作/官网", "open_tasks": [], "text": "首页的轮播图换成新做的三张，联系我们页面的电话改成新号码", "notes": [{ "folder": "/", "text": "标题简短，不加前缀" }, { "folder": "/工作/官网", "text": "标题以页面名开头，用全角冒号隔开，如“首页：改按钮颜色”" }] },
     "expect": { "tasks": [2, 2], "facts": [["轮播图"], ["电话"], ["联系我们：", "联系我们页面：", "联系页："]], "verbatim": ["首页："] }
+  },
+  {
+    "id": "due-after-new-prereq",
+    "note": "期限从另一件事做完时算：那件事建成前置，期限写 due_after，不换算成日期",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/生活", "open_tasks": [], "text": "体检报告出来以后一周内拿着报告去复诊" },
+    "expect": { "tasks": [2, 2], "facts": [["体检报告", "报告"], ["复诊"]], "due": [], "due_after": [["复诊", "7d"]], "linked": true }
+  },
+  {
+    "id": "due-after-open-task",
+    "note": "等的那件事是已有事项：连上它，期限写 due_after",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/出行", "open_tasks": [{ "number": 12, "title": "办理签证" }], "text": "签证办下来以后两周内订好往返机票" },
+    "expect": { "tasks": [1, 1], "facts": [["机票"]], "due": [], "due_after": [["机票", "14d"]], "after": [12] }
+  },
+  {
+    "id": "due-after-time",
+    "note": "从另一件事做完算的期限带几点",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/装修", "open_tasks": [], "text": "合同签完以后 3 天内、下午 5 点前把首付款打给装修公司" },
+    "expect": { "tasks": [2, 2], "facts": [["合同"], ["首付"]], "due": [], "due_after": [["首付", "3d 17:00"]], "linked": true }
+  },
+  {
+    "id": "due-after-english",
+    "note": "英文：从另一件事做完算的期限",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/Home", "open_tasks": [], "text": "Once the landlord hands over the keys, get the internet set up within 2 days" },
+    "expect": { "tasks": [2, 2], "facts": [["keys"], ["internet"]], "due": [], "due_after": [["internet", "2d"]], "linked": true }
+  },
+  {
+    "id": "due-after-not-from-now",
+    "note": "期限从现在算，换算成日期；即使有前置也不写 due_after",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/课程", "open_tasks": [], "text": "三天后交实验报告，交之前先把数据再核对一遍" },
+    "expect": { "tasks": [2, 2], "facts": [["实验报告"], ["核对"]], "due": ["2026-11-28"], "due_after": [], "linked": true }
+  },
+  {
+    "id": "due-after-process",
+    "note": "一段流程里有几个从上一步做完算的期限",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/装修", "open_tasks": [], "text": "装修流程：先签合同，签完 3 天内付首款；水电改造做完后 7 天内约物业验收，验收通过当天付第二笔款" },
+    "expect": { "tasks": [4, 6], "facts": [["合同"], ["首款"], ["水电"], ["验收"], ["第二笔"]], "due": [], "due_after": [["首款", "3d"], ["验收", "7d"], ["第二笔", "0d"]], "order": ["合同", "首款"] }
+  },
+  {
+    "id": "meeting-actions",
+    "note": "会议纪要里的几件待办，有先后、有截止，口头的日子换算成日期",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/工作", "open_tasks": [], "text": "今天周会定了几件事：1. 下周三前把需求文档定稿；2. 定稿以后排开发计划；3. 周五之前把测试环境搭好；4. 下次周会是 12 月 2 号上午 10 点，要提前准备进度汇报" },
+    "expect": { "tasks": [3, 5], "facts": [["需求文档"], ["开发计划", "排期"], ["测试环境"], ["进度汇报", "汇报"]], "order": ["定稿", "开发"] }
+  },
+  {
+    "id": "shopping-list",
+    "note": "一次采购的清单：一件事，东西都列在描述或标题里，备注原样",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/生活", "open_tasks": [], "text": "周末去超市：鸡蛋、牛奶、全麦面包、洗衣液、猫粮（要鸡肉味的）" },
+    "expect": { "tasks": [1, 1], "facts": [["超市"], ["鸡蛋"], ["牛奶"], ["全麦面包"], ["洗衣液"], ["猫粮"], ["鸡肉味"]] }
+  },
+  {
+    "id": "trip-plan",
+    "note": "出差前后的几件事，日子从出发那天推",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/工作", "open_tasks": [], "text": "12 月 12 号去成都出差三天，出发前订好机票和酒店，前一天晚上收拾行李，回来以后交差旅报销" },
+    "expect": { "tasks": [3, 6], "facts": [["成都"], ["机票"], ["酒店"], ["行李"], ["报销"]] }
+  },
+  {
+    "id": "written-notice",
+    "note": "转来的书面通知：要求和数字原样，截止带具体时间",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/课程", "open_tasks": [], "text": "【通知】各位同学：本学期课程论文须于 12 月 25 日 23:59 前提交至教学平台，字数不少于 5000 字，查重率低于 20%。逾期按零分处理。" },
+    "expect": { "tasks": [1, 2], "facts": [["课程论文"], ["教学平台"], ["5000"], ["20%"], ["零分"]], "due": ["2026-12-25 23:59"], "written": true }
+  },
+  {
+    "id": "dev-steps",
+    "note": "按顺序的几步，命令原样",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/开发", "open_tasks": [], "text": "把 CI 修好：先把 Node 升到 22，再跑 pnpm install --no-frozen-lockfile 重新生成 lockfile，最后提个 PR" },
+    "expect": { "tasks": [1, 3], "facts": [["CI"], ["Node"], ["22"], ["lockfile"], ["PR"]], "verbatim": ["pnpm install --no-frozen-lockfile"], "order": ["Node", "lockfile", "PR"] }
+  },
+  {
+    "id": "chores-mixed",
+    "note": "家务：两件按周期做，一件只做一次",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/家务", "open_tasks": [], "text": "家务分一下：每周六上午大扫除，每天晚上倒垃圾，这周日之前把阳台的纸箱卖掉" },
+    "expect": { "tasks": [3, 3], "facts": [["大扫除"], ["垃圾"], ["纸箱"]], "repeat": [["大扫除", ["2026-11-28 ~1w", "2026-11-28 ~1w:6"]], ["垃圾", ["2026-11-25 ~1d"]]], "linked": false }
+  },
+  {
+    "id": "voice-long",
+    "note": "一大段口述：改口只留改过的，数字照改过的，有一个从另一件事做完算的期限",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/工作", "open_tasks": [], "text": "嗯我想想啊，明天要做的，首先是把上周的会议纪要发给张总，哦不对是发给李总，然后那个报价单要改一下，运费那栏算错了，应该是 380 不是 830，还有就是问一下财务发票什么时候能开，开出来以后一周内要寄给客户" },
+    "expect": { "tasks": [3, 5], "facts": [["会议纪要"], ["李总"], ["报价单"], ["380"], ["发票"], ["客户"]], "absent": ["张总"], "due_after": [["寄", "7d"]] }
   }
 ]

@@ -100,6 +100,13 @@ export const skippable = (t: Task, today: string) => t.done_at === null && t.due
 /** The time a task is due now, should it repeat, as `Task::occurrence` in Rust has it. */
 export const occurrence = (t: Task): Occurrence | undefined => (t.due?.repeat ? { due: t.due.date, completions: t.completions?.count ?? 0 } : undefined);
 
+/** The date `days` days after `date`, but no later than 9999-12-31: dates go no further. */
+export function plus(date: string, days: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  const t = utc(y, m, d + days);
+  return t.getUTCFullYear() > 9999 ? "9999-12-31" : `${pad(t.getUTCFullYear(), 4)}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
+}
+
 /** `date` moved as many days as `from` moved to `to`: a start date kept as far before its due date. */
 export function shifted(date: string, from: string, to: string): string {
   const day = (s: string) => {

@@ -10,7 +10,7 @@ import { groups, ops } from "./tidy";
 const ME = "019a4b2c-0000-7000-8000-0000000000ee";
 
 const id = (n: number) => `019a4b2c-0000-7000-8000-${String(n).padStart(12, "0")}`;
-const cx = { me: ME, now: 1000, effectsOf: () => undefined, effectsAfter: () => [] };
+const cx = { me: ME, now: 1000, local: { today: "2026-11-20" }, effectsOf: () => undefined, effectsAfter: () => [] };
 const was = (title: string) => ({ title, description: "", due: null });
 
 function task(n: number, title: string, extra: Partial<Task> = {}): Task {
@@ -110,4 +110,22 @@ test("what has changed since is shown as it is now, and what is done already is 
   );
   expect(shown).toHaveLength(1);
   expect(shown[0].parts[0].now).toBe("整理后已改为：官网（已改）");
+});
+
+test("a date for a task due some days after its prerequisites shows what it was, and is a change also when the same", () => {
+  const { shown, after } = tidy(
+    [task(1, "报销", { due_after: { days: 7 } }), task(2, "复诊", { due: { date: "2026-12-02" }, due_after: { days: 7 }, unlocked_on: "2026-11-25" })],
+    [],
+    [
+      // Made 30 days, then 7 on another device since.
+      { task: id(1), due: { date: "2026-12-15" }, after: [], reason: "", was: { ...was("报销"), due_after: { days: 30 } } },
+      { task: id(2), due: { date: "2026-12-02" }, after: [], reason: "", was: { ...was("复诊"), due: { date: "2026-12-02" }, due_after: { days: 7 } } },
+    ],
+  );
+  const [claim, visit] = shown.map((g) => g.parts[0]);
+  expect(claim.text).toMatch(/^前置完成后 30 天内 → /);
+  expect(claim.now).toBe("整理后已改为：前置完成后 7 天内");
+  expect(visit.text).toMatch(/（前置完成后 7 天内） → /);
+  expect(visit.now).toBeUndefined();
+  expect([after.task(id(2))!.due, after.task(id(2))!.due_after]).toEqual([{ date: "2026-12-02" }, undefined]);
 });

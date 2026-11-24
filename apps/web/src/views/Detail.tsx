@@ -11,7 +11,7 @@ import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
 import { lateness } from "../domain/calendar";
-import { day, formatDay, formatDue, formatMoment, isoDate, remindersLabel, startLabel } from "../domain/dates";
+import { day, dueAfterLabel, formatDay, formatDue, formatMoment, isoDate, remindersLabel, startLabel } from "../domain/dates";
 import { doneToday, repeatText, skippable } from "../domain/repeat";
 import { filesIn, reference } from "../attach";
 import { checkDescription, checkTitle } from "../domain/text";
@@ -209,11 +209,32 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
         <Prop
           icon={Calendar}
           label="截止"
-          value={t.due ? formatDue(t.due, now) : "未设置"}
-          cls={t.due ? dueClass(t, now) : "muted"}
+          value={
+            t.due && t.due_after ? (
+              <>
+                {formatDue(t.due, now)}
+                <span className="muted">（{dueAfterLabel(t.due_after)}）</span>
+              </>
+            ) : t.due ? (
+              formatDue(t.due, now)
+            ) : t.due_after ? (
+              dueAfterLabel(t.due_after)
+            ) : (
+              "未设置"
+            )
+          }
+          cls={t.due ? dueClass(t, now) : t.due_after ? "" : "muted"}
           onClick={() => setPanel("due")}
         />
-        {t.due && <Prop icon={Bell} label="提醒" value={remindersLabel(t.due.reminders)} cls={t.due.reminders ? "" : "muted"} onClick={() => setPanel("due")} />}
+        {(t.due ?? t.due_after) && (
+          <Prop
+            icon={Bell}
+            label="提醒"
+            value={remindersLabel((t.due ?? t.due_after)?.reminders)}
+            cls={(t.due ?? t.due_after)?.reminders ? "" : "muted"}
+            onClick={() => setPanel("due")}
+          />
+        )}
         {t.due?.repeat && <Prop icon={Repeat} label="重复" value={repeatText(t.due.repeat, t.due.date, now)} onClick={() => setPanel("due")} />}
         {(t.due?.repeat || t.completions) && (
           <Prop
@@ -299,6 +320,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
           start={t.start}
           time={t.start_time}
           due={t.due}
+          dueAfter={t.due_after}
           onSave={(s) => update(s ? { start: s.date, start_time: s.time ?? null } : { start: null })}
           onClose={() => setPanel(null)}
         />
@@ -306,10 +328,11 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
       {panel === "due" && (
         <DueEditor
           due={t.due}
+          dueAfter={t.due_after}
           start={t.start}
           startTime={t.start_time}
           done={t.done_at !== null}
-          onSave={(due) => update({ due })}
+          onSave={update}
           onClose={() => setPanel(null)}
         />
       )}

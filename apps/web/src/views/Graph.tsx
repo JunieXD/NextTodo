@@ -23,7 +23,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { FolderId } from "../api/types/FolderId";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
-import { formatDue, startLabel } from "../domain/dates";
+import { dueAfterLabel, formatDue, startLabel } from "../domain/dates";
 import { type Edge, lineage, scene } from "../domain/graph";
 import { useView } from "../session";
 import { useBack } from "../ui/back";
@@ -161,6 +161,13 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
         <span className={`n-meta ${dueClass(t, now)}`}>
           <Icon of={Clock} size={12} />
           {formatDue(t.due, now)}
+        </span>
+      );
+    } else if (!outside && t.due_after) {
+      meta = (
+        <span className="n-meta">
+          <Icon of={Clock} size={12} />
+          {dueAfterLabel(t.due_after)}
         </span>
       );
     } else if (!outside && status === "waiting") {

@@ -6,7 +6,7 @@ import { checkFolderName } from "./text";
 
 const ME = "019a4b2c-0000-7000-8000-0000000000ee";
 const id = (n: number) => `019a4b2c-0000-7000-8000-${String(n).padStart(12, "0")}`;
-const cx = { me: ME, now: 1000, effectsOf: () => undefined, effectsAfter: () => [] };
+const cx = { me: ME, now: 1000, local: { today: "2026-11-20" }, effectsOf: () => undefined, effectsAfter: () => [] };
 const board = (d: Data) => new Board(toSnapshot(d), { today: "2026-11-20" }, ME);
 
 test("a copy is named after the folder, or as a copy of it when that is taken", () => {

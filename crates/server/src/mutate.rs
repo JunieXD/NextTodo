@@ -11,10 +11,11 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::num::NonZeroU32;
 
+use nexttodo_core::board::{Now, comes_round, holds_up};
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
-    AiJob, AiJobId, Attachment, AttachmentId, Change, Completion, Completions, Dependency, Due, Effect, Folder, FolderId, Holder, JobKind,
-    JobState, Link, MutationId, Person, Share, SortKey, Task, TaskId,
+    AiJob, AiJobId, Attachment, AttachmentId, Change, Completion, Completions, Dependency, Due, DueAfter, Effect, Folder, FolderId, Holder,
+    JobKind, JobState, Link, MutationId, Person, Share, SortKey, Task, TaskId,
 };
 use nexttodo_core::ops::{MAX_OPS, Mutation, Op};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -52,7 +53,7 @@ pub fn apply(conn: &mut Connection, actor: &Actor, m: &Mutation, now: i64) -> Re
     if let Some(applied) = earlier(&tx, actor, m.id)? {
         return Ok((applied, Vec::new()));
     }
-    let done = run(&tx, actor, &m.ops, now)?;
+    let done = run(&tx, actor, &m.ops, now, &local(m, now))?;
     let recorded = record(&tx, actor, m.id, &m.ops, &done, now)?;
     tx.commit()?;
     Ok((Applied { seq: recorded.seq, effects: done.view(actor.user) }, recorded.to))
@@ -77,9 +78,24 @@ pub fn earlier(c: &Connection, actor: &Actor, id: MutationId) -> Result<Option<A
     Ok(Some(Applied { seq, effects }))
 }
 
-/// Applies the operations inside the caller's transaction and returns what changed. At most
-/// `MAX_OPS` at once, however they were made: one change is one transaction on the one connection.
-pub fn run(c: &Connection, actor: &Actor, ops: &[Op], now: i64) -> Result<Done, ApiError> {
+/// The day and time on the device that made `m` (docs/api.md#改动): as given with it, or with a task
+/// done in it, or else UTC's.
+pub fn local(m: &Mutation, now: i64) -> Now {
+    let done_on = m.ops.iter().find_map(|op| match op {
+        Op::TaskUpdate { today: Some(today), .. } => Some(today),
+        _ => None,
+    });
+    match (&m.today, done_on) {
+        (Some(today), _) => Now { today: today.clone(), time: m.time.clone() },
+        (None, Some(today)) => Now { today: today.clone(), time: None },
+        (None, None) => Now::utc(now),
+    }
+}
+
+/// Applies the operations inside the caller's transaction, made on a device at `local`, and returns
+/// what changed. At most `MAX_OPS` at once, however they were made: one change is one transaction on
+/// the one connection.
+pub fn run(c: &Connection, actor: &Actor, ops: &[Op], now: i64, local: &Now) -> Result<Done, ApiError> {
     if ops.len() > MAX_OPS {
         return Err(ApiError::invalid(format!("每次最多 {MAX_OPS} 个操作，本次有 {} 个", ops.len()), None));
     }
@@ -87,6 +103,7 @@ pub fn run(c: &Connection, actor: &Actor, ops: &[Op], now: i64) -> Result<Done, 
     for op in ops {
         cx.op(op)?;
     }
+    cx.settle(local)?;
     cx.introduce()?;
     Ok(cx.done)
 }
@@ -345,6 +362,17 @@ fn restore_due(cur: &Option<Due>, b: &Option<Due>, a: &Option<Due>) -> Option<Du
     })
 }
 
+pub(crate) fn both_due() -> ApiError {
+    ApiError::invalid("due 和 due_after 只能给一个：截止日期，或者前置完成后几天内", Some("due_after".into()))
+}
+
+/// The due date `t`'s `due_after` gives it, when it has that: none while its prerequisites are not all
+/// done, then counting from the day they were, or its start if later (docs/design.md#前置完成后的截止).
+fn due_after(t: &Task) -> Option<Option<Due>> {
+    let after = t.due_after.as_ref()?;
+    Some(t.unlocked_on.as_ref().map(|on| after.due(t.start.as_ref().filter(|s| *s > on).unwrap_or(on))))
+}
+
 /// `cur` with the people added between `b` and `a` taken off again and those taken off put back,
 /// leaving those changed since.
 fn restore_people(cur: &[String], b: &[String], a: &[String]) -> Vec<String> {
@@ -389,6 +417,12 @@ fn check_task(t: &Task) -> Result<(), ApiError> {
             None => Ok(()),
         };
     };
+    // Due the day they are done, it may come to be due the day it starts (docs/design.md#前置完成后的截止).
+    if let Some(DueAfter { days: 0, at: Some(at), .. }) = &t.due_after
+        && t.start_time.as_ref().is_some_and(|time| *time > at.time)
+    {
+        return Err(ApiError::invalid(format!("“{}”的开始时间不能晚于截止时间", t.title.as_str()), Some("start_time".into())));
+    }
     let Some(due) = &t.due else { return Ok(()) };
     if *start > due.date {
         return Err(ApiError::invalid(format!("“{}”的开始日期不能晚于截止日期", t.title.as_str()), Some("start".into())));
@@ -454,6 +488,65 @@ impl<'a> Cx<'a> {
 
     fn push(&mut self, effect: Effect, before: Side, after: Side, kept: bool) {
         self.done.seen.push(Seen { effect, before, after, kept });
+    }
+
+    /// Of the tasks due some days after their prerequisites are done that this change concerns, gives
+    /// those with all of them done the day it was made, `local`'s, and takes that back from those a
+    /// prerequisite came to hold up in it (docs/design.md#前置完成后的截止). Only on such changes, and
+    /// not for a repeating prerequisite done before: its time come round again, by the clock or by an
+    /// undo, it leaves its tasks be.
+    fn settle(&mut self, local: &Now) -> Result<(), ApiError> {
+        let mut concerned = BTreeSet::new();
+        // A prerequisite that came to hold up a task, and the task.
+        let mut held = HashSet::new();
+        // Tasks that came to hold up those after them, or stopped.
+        let mut turned = Vec::new();
+        // Not what only came into or out of someone's view with a folder moved.
+        for s in self.done.seen.iter().filter(|s| !s.kept) {
+            match &s.effect {
+                Effect::Task(Change::Created(t)) if t.due_after.is_some() => _ = concerned.insert(t.id),
+                Effect::Task(Change::Updated { before, after }) => {
+                    if after.due_after.is_some() {
+                        concerned.insert(after.id);
+                    }
+                    let holds = holds_up(after, local);
+                    if holds != holds_up(before, local) {
+                        turned.push((after.id, holds));
+                    }
+                }
+                Effect::Dependency(Link::Added(d)) => {
+                    concerned.insert(d.after);
+                    held.insert((d.before, d.after));
+                }
+                Effect::Dependency(Link::Removed(d)) => _ = concerned.insert(d.after),
+                _ => {}
+            }
+        }
+        for (id, holds) in turned {
+            for d in store::task_dependencies(self.c, id)?.into_iter().filter(|d| d.before == id) {
+                concerned.insert(d.after);
+                if holds {
+                    held.insert((d.before, d.after));
+                }
+            }
+        }
+        for id in concerned {
+            let Some((t, owner)) = store::load_task(self.c, id)?.filter(|(t, _)| t.due_after.is_some()) else { continue };
+            let mut holding = Vec::new();
+            for d in store::task_dependencies(self.c, id)?.into_iter().filter(|d| d.after == id) {
+                let (p, _) = store::load_task(self.c, d.before)?.expect("a dependency's tasks are there");
+                if holds_up(&p, local) {
+                    holding.push(p);
+                }
+            }
+            let unlocked_on = match &t.unlocked_on {
+                None if holding.is_empty() => Some(local.today.clone()),
+                Some(_) if holding.iter().any(|p| held.contains(&(p.id, id)) && !comes_round(p)) => None,
+                _ => continue,
+            };
+            self.update_task(t.clone(), &owner, Task { unlocked_on, ..t }, None)?;
+        }
+        Ok(())
     }
 
     /// Those a task comes into view for meet who made it and who changed it last, when those are not
@@ -522,9 +615,12 @@ impl<'a> Cx<'a> {
                 let (_, owner) = self.folder(*id)?;
                 self.delete_folder(*id, &owner)
             }
-            Op::TaskCreate { id, title, folder_id, description, start, start_time, due, sort_key, done, assignees } => {
+            Op::TaskCreate { id, title, folder_id, description, start, start_time, due, due_after, sort_key, done, assignees } => {
                 if store::task_id_taken(self.c, *id)? {
                     return Err(ApiError::conflict("事项 ID 已存在"));
+                }
+                if due.is_some() && due_after.is_some() {
+                    return Err(both_due());
                 }
                 let owner = self.owner_in(*folder_id)?;
                 let mut assignees = assignees.clone();
@@ -544,6 +640,8 @@ impl<'a> Cx<'a> {
                     done_at: done.then_some(self.now),
                     start: start.clone(),
                     start_time: start_time.clone(),
+                    due_after: due_after.clone(),
+                    unlocked_on: None,
                     due: due.clone(),
                     completions: None,
                     sort_key,
@@ -565,6 +663,7 @@ impl<'a> Cx<'a> {
                 start,
                 start_time,
                 due,
+                due_after,
                 sort_key,
                 done,
                 today,
@@ -591,8 +690,24 @@ impl<'a> Cx<'a> {
                 if let Some(time) = start_time {
                     t.start_time = time.clone();
                 }
-                if let Some(due) = due {
-                    t.due = due.clone();
+                match (due, due_after) {
+                    (Some(_), Some(_)) => return Err(both_due()),
+                    (Some(due), None) => {
+                        t.due = due.clone();
+                        t.due_after = None;
+                        t.unlocked_on = None;
+                    }
+                    (None, Some(due_after)) => {
+                        // Turned to or from counting after the prerequisites, the due date goes: given
+                        // again when they are done, or now if they are. A due date of its own stays when
+                        // there was no `due_after` to clear.
+                        if t.due_after.is_some() != due_after.is_some() {
+                            t.unlocked_on = None;
+                            t.due = None;
+                        }
+                        t.due_after = due_after.clone();
+                    }
+                    (None, None) => {}
                 }
                 if let Some(k) = sort_key {
                     t.sort_key = k.clone();
@@ -1030,6 +1145,7 @@ impl<'a> Cx<'a> {
     }
 
     fn create_task(&mut self, mut t: Task, owner: &str) -> Result<(), ApiError> {
+        t.due = due_after(&t).unwrap_or(t.due);
         check_task(&t)?;
         let space = self.space(owner, t.folder_id)?;
         t.assignees.retain(|u| space.shared() && space.sees(u));
@@ -1044,6 +1160,7 @@ impl<'a> Cx<'a> {
     /// where it is: numbered anew if that is someone else, or with the number it had there, when that
     /// is `had`, undoing such a move, and still free.
     fn update_task(&mut self, before: Task, owner: &str, mut after: Task, had: Option<i64>) -> Result<(), ApiError> {
+        after.due = due_after(&after).unwrap_or(after.due);
         if after == before {
             return Ok(());
         }
@@ -1414,11 +1531,28 @@ impl<'a> Cx<'a> {
                         {
                             return Err(ApiError::conflict(format!("“{}”在这之后又完成或撤销过，请先撤销后来的那次", cur.title.as_str())));
                         }
-                        let mut restored =
-                            restore!(cur, b, a, folder_id, title, description, done_at, start, start_time, completions, sort_key);
-                        // A time without its date, which was cleared since, goes too.
+                        let mut restored = restore!(
+                            cur,
+                            b,
+                            a,
+                            folder_id,
+                            title,
+                            description,
+                            done_at,
+                            start,
+                            start_time,
+                            due_after,
+                            unlocked_on,
+                            completions,
+                            sort_key
+                        );
+                        // A time without its date, which was cleared since, goes too; so does the day
+                        // prerequisites were done, without a due date counting from it.
                         restored.start_time = restored.start_time.filter(|_| restored.start.is_some());
-                        restored.due = restore_due(&cur.due, &b.due, &a.due);
+                        restored.unlocked_on = restored.unlocked_on.filter(|_| restored.due_after.is_some());
+                        // A due date `due_after` gave is given again.
+                        let set = |t: &Task| t.due.clone().filter(|_| t.due_after.is_none());
+                        restored.due = restore_due(&set(&cur), &set(&b), &set(&a));
                         restored.assignees = restore_people(&cur.assignees, &b.assignees, &a.assignees);
                         self.update_task(cur, &owner, restored, Some(b.number))?;
                     }

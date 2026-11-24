@@ -3,6 +3,7 @@ import type { Completions } from "./Completions";
 import type { Date } from "./Date";
 import type { Description } from "./Description";
 import type { Due } from "./Due";
+import type { DueAfter } from "./DueAfter";
 import type { FolderId } from "./FolderId";
 import type { SortKey } from "./SortKey";
 import type { TaskId } from "./TaskId";
@@ -18,7 +19,18 @@ start: Date | null,
  * The time on the start day it starts; without one, the start of the day. Only with a start date,
  * and not after the due time on the same day.
  */
-start_time?: Time, due: Due | null, 
+start_time?: Time, 
+/**
+ * Due some days after its prerequisites are all done, as `due` then says; it has no other due
+ * date (docs/design.md#前置完成后的截止).
+ */
+due_after?: DueAfter, 
+/**
+ * The day its prerequisites were all done, from which `due_after` counts, on the device that did
+ * the last of them: its due date is that, or its start if later, and `due_after.days` on. Only
+ * with `due_after`; none while they are not.
+ */
+unlocked_on?: Date, due: Due | null, 
 /**
  * None until a repeating task is first done.
  */

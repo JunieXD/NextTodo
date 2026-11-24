@@ -17,6 +17,7 @@ const log = new Map<string, Effect[]>();
 const cx = {
   me: ME,
   now: 1000,
+  local: { today: "2026-11-20" },
   effectsOf: (m: string) => log.get(m),
   effectsAfter: (m: string) => [...log.entries()].slice([...log.keys()].indexOf(m) + 1).map(([, e]) => e),
 };
@@ -209,6 +210,71 @@ test("folders cannot move into themselves", () => {
     { op: "folder.create", id: id(2), name: "下", parent_id: id(1) },
   ]);
   expect(() => apply(d, [{ op: "folder.update", id: id(1), parent_id: id(2) }], cx)).toThrow("文件夹不能移入自身或其子文件夹");
+});
+
+test("a due date after the prerequisites goes when one is reopened or linked, and an undo takes back what it gave", () => {
+  const d = empty();
+  const due = (n: number) => d.tasks.get(id(n))?.due ?? null;
+  run(d, 500, [
+    { op: "task.create", id: id(1), title: "拿到发票" },
+    { op: "task.create", id: id(2), title: "报销", due_after: { days: 30, time: "18:00", reminders: [{ before: 60 }] } },
+    { op: "dep.add", before: id(1), after: id(2) },
+  ]);
+  expect(due(2)).toBeNull();
+  run(d, 501, [{ op: "task.update", id: id(1), done: true }]);
+  expect(due(2)).toEqual({ date: "2026-12-20", time: "18:00", reminders: [{ before: 60 }] });
+  run(d, 502, [{ op: "task.update", id: id(1), done: false }]);
+  expect(due(2)).toBeNull();
+  run(d, 503, [{ op: "undo", mutation: id(502) }]);
+  expect(due(2)?.date).toBe("2026-12-20");
+  // A prerequisite not done linked to it makes it wait again; one done leaves it.
+  run(d, 504, [
+    { op: "task.create", id: id(3), title: "填报销单", done: true },
+    { op: "dep.add", before: id(3), after: id(2) },
+  ]);
+  expect(due(2)?.date).toBe("2026-12-20");
+  run(d, 505, [
+    { op: "task.create", id: id(4), title: "领导签字" },
+    { op: "dep.add", before: id(4), after: id(2) },
+  ]);
+  expect(due(2)).toBeNull();
+  // Given a date by hand, it is no longer after the prerequisites; undone, it is again.
+  run(d, 506, [{ op: "task.update", id: id(2), due: { date: "2026-12-01" } }]);
+  expect(d.tasks.get(id(2))).toMatchObject({ due: { date: "2026-12-01" }, due_after: undefined, unlocked_on: undefined });
+  run(d, 507, [{ op: "undo", mutation: id(506) }]);
+  expect(d.tasks.get(id(2))).toMatchObject({ due: null, due_after: { days: 30 } });
+});
+
+test("a repeating prerequisite done before takes back no date it gave, by an undo either; another one does", () => {
+  const d = empty();
+  const due = () => d.tasks.get(id(62))!.due;
+  // Changes made on `today`, remembered for undo.
+  const on = (today: string, n: number, ops: Op[]) => log.set(id(n), apply(d, ops, { ...cx, local: { today } }));
+  const daily = { date: "2026-11-20", repeat: { every: 1, unit: "day" as const, from: "due" as const } };
+  on("2026-11-20", 510, [
+    { op: "task.create", id: id(61), title: "浇花", due: daily },
+    { op: "task.create", id: id(62), title: "记下长势", due_after: { days: 1 } },
+    { op: "dep.add", before: id(61), after: id(62) },
+    { op: "task.update", id: id(61), done: true, today: "2026-11-20" },
+  ]);
+  expect(due()?.date).toBe("2026-11-21");
+  // Deleted and brought back once watering has come round again, it is as it was.
+  on("2026-11-23", 511, [{ op: "task.delete", id: id(62) }]);
+  on("2026-11-23", 512, [{ op: "undo", mutation: id(511) }]);
+  expect(due()?.date).toBe("2026-11-21");
+  // Watered again and that undone, it is that day's time again.
+  on("2026-11-21", 513, [{ op: "task.update", id: id(61), done: true, today: "2026-11-21" }]);
+  on("2026-11-21", 514, [{ op: "undo", mutation: id(513) }]);
+  expect(due()?.date).toBe("2026-11-21");
+  // A prerequisite reopened while unlinked, linked again by an undo, takes it back.
+  on("2026-11-21", 515, [
+    { op: "task.create", id: id(63), title: "买花盆", done: true },
+    { op: "dep.add", before: id(63), after: id(62) },
+  ]);
+  on("2026-11-21", 516, [{ op: "dep.remove", before: id(63), after: id(62) }]);
+  on("2026-11-21", 517, [{ op: "task.update", id: id(63), done: false }]);
+  on("2026-11-22", 518, [{ op: "undo", mutation: id(516) }]);
+  expect(due()).toBeNull();
 });
 
 test("a repeating task moves on rather than being done, and is never done while it repeats", () => {

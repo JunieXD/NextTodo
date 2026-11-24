@@ -303,6 +303,7 @@ label.row { cursor: pointer; }
 .seg button { position: relative; height: 30px; border-radius: 8px; font-size: 14px; font-weight: 500; color: var(--on-surface-variant); display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 10px; transition: color .2s; }
 .seg button[data-state="checked"] { color: var(--on-surface); }
 .seg.sm button { height: 26px; font-size: 13px; }
+.seg button:disabled { color: var(--outline); cursor: default; }
 .view-seg { margin: 14px 16px 4px; }
 
 /* quick add: a field with its own fill and the buttons beside it, at the bottom as the field grows */
@@ -747,6 +748,7 @@ a.text-btn { display: inline-flex; align-items: center; }
 .form-ok { margin: -4px 16px 12px; font-size: 13px; color: var(--primary); }
 .field.error input { border-color: var(--error); }
 .field .hint.error-text { color: var(--error); }
+.due-mode { margin: 0 16px 12px; }
 .form-error { margin: -4px 16px 12px; font-size: 13px; color: var(--error); }
 .filled-btn, .tonal-btn { height: 40px; border-radius: 20px; padding: 0 20px; font-size: 14px; font-weight: 600; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .filled-btn { background: var(--primary); color: var(--on-primary); }

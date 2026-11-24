@@ -15,6 +15,7 @@ import type { Due } from "../api/types/Due";
 import type { Effect } from "../api/types/Effect";
 import type { Folder } from "../api/types/Folder";
 import type { FolderId } from "../api/types/FolderId";
+import type { Mutation } from "../api/types/Mutation";
 import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
 import type { Person } from "../api/types/Person";
@@ -22,9 +23,9 @@ import type { Share } from "../api/types/Share";
 import type { Snapshot } from "../api/types/Snapshot";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
-import { cmp } from "./board";
+import { type Now, cmp, comesRound, holdsUp } from "./board";
 import { lunarDate } from "./lunar";
-import { nextDue, occurrence, shifted } from "./repeat";
+import { nextDue, occurrence, plus, shifted } from "./repeat";
 
 /** A user's data, keyed for changes. */
 export interface Data {
@@ -160,10 +161,21 @@ export interface Context {
   /** The user making the change. */
   me: string;
   now: number;
+  /** The day and time on the device that made it. */
+  local: Now;
   /** What an earlier mutation changed, for undoing it; `undefined` when this copy does not know. */
   effectsOf(id: MutationId): Effect[] | undefined;
   /** What the changes after mutation `id`, up to the one being made, did, as far as this copy knows. */
   effectsAfter(id: MutationId): Effect[][];
+}
+
+/** The day and time on the device that made `m`, as the server takes them (`mutate::local`): as given
+ * with it, or with a task done in it, or else UTC's at `at`. */
+export function localOf(m: Mutation, at: number): Now {
+  if (m.today) return { today: m.today, ...(m.time && { time: m.time }) };
+  for (const op of m.ops) if (op.op === "task.update" && op.today) return { today: op.today };
+  const utc = new Date(at).toISOString();
+  return { today: utc.slice(0, 10), time: utc.slice(11, 16) };
 }
 
 /** Applies the operations to `d` and returns what changed. On failure `d` is left as it was. */
@@ -171,6 +183,7 @@ export function apply(d: Data, ops: Op[], cx: Context): Effect[] {
   const a = new Applier(d, cx);
   try {
     for (const op of ops) a.op(op);
+    a.settle();
   } catch (e) {
     revert(d, a.effects);
     throw e;
@@ -241,6 +254,7 @@ class Applier {
         return;
       case "task.create": {
         if (this.d.tasks.has(op.id)) throw new Rejected("conflict", "事项 ID 已存在");
+        if (op.due && op.due_after) throw bothDue();
         const folder = op.folder_id ?? null;
         if (folder) this.folder(folder);
         const keys = [...this.d.tasks.values()].filter((t) => t.folder_id === folder).map((t) => t.sort_key);
@@ -255,6 +269,7 @@ class Applier {
           done_at: op.done ? now : null,
           start: op.start ?? null,
           start_time: op.start_time,
+          due_after: op.due_after,
           due: op.due ?? null,
           sort_key: op.sort_key ?? lastKey(keys),
           assignees,
@@ -279,10 +294,21 @@ class Applier {
           t.start = op.start;
         }
         if (op.start_time !== undefined) t.start_time = op.start_time ?? undefined;
+        if (op.due !== undefined && op.due_after !== undefined) throw bothDue();
         if (op.due !== undefined) {
           // As given, before doing it the last time could take the repeat away.
           checkRepeat(t.title, op.due);
           t.due = op.due;
+          t.due_after = undefined;
+          t.unlocked_on = undefined;
+        }
+        if (op.due_after !== undefined) {
+          // As in mutate.rs: turned to or from counting after the prerequisites, the due date goes.
+          if (!t.due_after !== (op.due_after === null)) {
+            t.unlocked_on = undefined;
+            t.due = null;
+          }
+          t.due_after = op.due_after ?? undefined;
         }
         if (op.sort_key !== undefined) t.sort_key = op.sort_key;
         if (op.assign?.length || op.unassign?.length) {
@@ -502,6 +528,46 @@ class Applier {
     set(this.d, e, "after");
   }
 
+  /** As `Cx::settle` in mutate.rs: of the tasks due some days after their prerequisites are done that
+   * the change concerns, gives those with all of them done the day it was made, and takes that back
+   * from those a prerequisite came to hold up in it, but for a repeating one done before, its time come
+   * round again (docs/design.md#前置完成后的截止). */
+  settle() {
+    const local = this.cx.local;
+    const concerned = new Set<TaskId>();
+    // A prerequisite that came to hold up a task, and the task, as `depKey` has them.
+    const held = new Set<string>();
+    // Tasks that came to hold up those after them, or stopped.
+    const turned: [TaskId, boolean][] = [];
+    for (const e of this.effects) {
+      if (e.kind === "task" && e.after) {
+        if (e.after.due_after) concerned.add(e.after.id);
+        const holds = holdsUp(e.after, local);
+        if (e.before && holds !== holdsUp(e.before, local)) turned.push([e.after.id, holds]);
+      } else if (e.kind === "dependency") {
+        const dep = (e.before ?? e.after)!;
+        concerned.add(dep.after);
+        if (e.after) held.add(depKey(dep.before, dep.after));
+      }
+    }
+    for (const [id, holds] of turned) {
+      for (const dep of this.d.deps.values()) {
+        if (dep.before !== id) continue;
+        concerned.add(dep.after);
+        if (holds) held.add(depKey(dep.before, dep.after));
+      }
+    }
+    for (const id of concerned) {
+      const t = this.d.tasks.get(id);
+      if (!t?.due_after) continue;
+      const holding = [...this.d.deps.values()].filter((dep) => dep.after === id && holdsUp(this.d.tasks.get(dep.before)!, local));
+      if (!t.unlocked_on && !holding.length) this.updateTask(t, { ...t, unlocked_on: local.today });
+      else if (t.unlocked_on && holding.some((dep) => held.has(depKey(dep.before, id)) && !comesRound(this.d.tasks.get(dep.before)!))) {
+        this.updateTask(t, { ...t, unlocked_on: undefined });
+      }
+    }
+  }
+
   private checkName(f: Folder) {
     for (const o of this.d.folders.values()) {
       // Folders others share are at the top of no tree of the user's.
@@ -601,7 +667,8 @@ class Applier {
     for (const f of folders) this.push({ kind: "folder", before: f, after: null });
   }
 
-  private createTask(t: Task) {
+  private createTask(task: Task) {
+    const t = dueAfter(task);
     checkTask(t);
     const space = this.space(t.folder_id);
     this.push({ kind: "task", before: null, after: { ...t, assignees: t.assignees.filter((u) => space.root && sees(space, u)) } });
@@ -609,7 +676,8 @@ class Applier {
 
   /** Changes a task. One moved into or out of a shared folder loses its dependencies and the
    * assignees who can't see it now, and belongs to the owner of where it is. */
-  private updateTask(before: Task, after: Task) {
+  private updateTask(before: Task, changed: Task) {
+    const after = dueAfter(changed);
     if (same(before, after)) return;
     checkTask(after);
     if (after.folder_id !== before.folder_id && after.folder_id !== null) this.folder(after.folder_id);
@@ -771,7 +839,7 @@ class Applier {
           this.createTask({ ...t, updated_at: now, updated_by: this.cx.me, updated_via: null });
         } else {
           const cur = this.d.tasks.get(e.before.id);
-          const fields = ["folder_id", "title", "description", "done_at", "start", "start_time", "completions", "sort_key"] as const;
+          const fields = ["folder_id", "title", "description", "done_at", "start", "start_time", "due_after", "unlocked_on", "completions", "sort_key"] as const;
           // Done again or taken back since, maybe to the same count on the same day: setting the count
           // back would undo that too.
           const { before, after } = e;
@@ -784,11 +852,15 @@ class Applier {
           }
           if (cur) {
             const restored = restore(cur, e.before, e.after, fields);
+            // A due date `due_after` gave is given again.
+            const set = (t: Task) => (t.due_after ? null : t.due);
             this.updateTask(cur, {
               ...restored,
-              // A time without its date, which was cleared since, goes too.
+              // A time without its date, which was cleared since, goes too; so does the day
+              // prerequisites were done, without a due date counting from it.
               start_time: restored.start ? restored.start_time : undefined,
-              due: restoreDue(cur.due, e.before.due, e.after.due),
+              unlocked_on: restored.due_after ? restored.unlocked_on : undefined,
+              due: restoreDue(set(cur), set(e.before), set(e.after)),
               assignees: restorePeople(cur.assignees, e.before.assignees, e.after.assignees),
             });
           }
@@ -920,6 +992,18 @@ function checkRepeat(title: string, due: Due | null) {
   if (due?.repeat?.lunar && !lunarDate(due.date)) throw new Rejected("invalid", `“${title}”的按农历重复的截止日期应在 1900-01-31 到 2101-01-28 之间`);
 }
 
+const bothDue = () => new Rejected("invalid", "due 和 due_after 只能给一个：截止日期，或者前置完成后几天内");
+
+/** `t` with the due date its `due_after` gives it, when it has that: none while its prerequisites are
+ * not all done, then counting from the day they were, or its start if later (docs/design.md#前置完成后的截止). */
+function dueAfter(t: Task): Task {
+  if (!t.due_after) return t;
+  const on = t.unlocked_on;
+  if (!on) return { ...t, due: null };
+  const { days, ...timing } = t.due_after;
+  return { ...t, due: { date: plus(t.start && t.start > on ? t.start : on, days), ...timing } };
+}
+
 /** What the server rejects too, so that a change it would refuse isn't applied here meanwhile. */
 function checkTask(t: Task) {
   if (t.done_at !== null && t.due?.repeat) throw new Rejected("invalid", `“${t.title}”已完成，不能设置重复，请先重新打开`);
@@ -927,6 +1011,10 @@ function checkTask(t: Task) {
   if (!t.start) {
     if (t.start_time) throw new Rejected("invalid", "设置开始时刻须先有开始日期");
     return;
+  }
+  // Due the day they are done, it may come to be due the day it starts (docs/design.md#前置完成后的截止).
+  if (t.due_after?.days === 0 && t.due_after.time && t.start_time && t.start_time > t.due_after.time) {
+    throw new Rejected("invalid", `“${t.title}”的开始时间不能晚于截止时间`);
   }
   if (t.due && t.start > t.due.date) throw new Rejected("invalid", `“${t.title}”的开始日期不能晚于截止日期`);
   if (t.due?.time && t.start_time && t.start === t.due.date && t.start_time > t.due.time) {

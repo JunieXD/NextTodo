@@ -79,6 +79,9 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
   // 开始时间的日期和几点几分：没设时 start 为 null，只有日期时没有 start_time，见 design.md#开始时间
   "due": { "date": "2026-11-02", "time": "18:00", "reminders": [{ "days": 1, "time": "20:00" }, { "before": 60 }], "repeat": { "every": 1, "unit": "week", "from": "due" } },
   // 没有截止时间时为 null；time、reminders、repeat 可省略；reminders 是提醒：{"before": 分钟} 提前多久（0 是截止时，要有 time，最多 43200），{"days": 天数, "time": "20:00"} 截止那天（0）或提前几天（最多 30）的几点，按到点的先后排、不重复，最多 100 个；旧版本写的 remind_before（提前多少分钟）读入时换成一个提前多久的提醒，不再写出；按周的 repeat 可以带 "days": [1, 3, 5]，在周几（1 是周一，7 是周日）；按月的 days 是几号（1–31）。每年是 every 12、unit month。repeat 可以带 "until": "2026-12-19"，重复到哪天（含这天）。按农历的按月 repeat 带 "lunar": true，这时一定有 days，是农历的几号（1–30，初一到三十），见[重复](design.md#重复)
+  "due_after": { "days": 30, "time": "18:00", "reminders": [{ "before": 60 }] }, "unlocked_on": "2026-11-24",
+  // 前置完成后几天内截止的才有，见下面的[前置完成后的截止](#前置完成后的截止)：due_after 同 due 去掉 date 和 repeat，days 是 0–365；
+  // unlocked_on 是前置都完成的那天，没完成时没有这一项，这时 due 为 null
   "completions": { "count": 12, "last": "2026-11-01" },
   // 重复的事项完成过几次、最近一次的日期；没完成过时没有这一项。只随完成改变，改动里不能直接写
   "sort_key": "a1", "assignees": ["<用户 id>"],
@@ -105,10 +108,10 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 
 ## 改动
 
-`POST /mutations` 的请求体，也是同步协议里 `mutate` 消息的内容。一个改动包含一个或多个操作，在一个事务里全部生效或全部不生效。
+`POST /mutations` 的请求体，也是同步协议里 `mutate` 消息的内容。一个改动包含一个或多个操作，在一个事务里全部生效或全部不生效。可选的 `today`、`time` 是发出改动的设备上的日期和时间，见[前置完成后的截止](#前置完成后的截止)；给了 `time` 就要给 `today`。
 
 ```json
-{ "id": "<uuidv7>", "ops": [
+{ "id": "<uuidv7>", "today": "2026-11-24", "time": "23:30", "ops": [
   { "op": "task.create", "id": "<uuidv7>", "folder_id": "<id>", "title": "写初稿" },
   { "op": "dep.add", "before": "<id>", "after": "<上面新建的 id>" }
 ] }
@@ -119,8 +122,8 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | `folder.create` | `id`、`name`，可选 `parent_id`、`sort_key`、`color`、`icon` | 不给 `sort_key` 时排在同一层最后 |
 | `folder.update` | `id`，可选 `name`、`parent_id`、`sort_key`、`color`、`icon` | `parent_id: null` 表示移到根目录；`color`、`icon` 给 `null` 表示改回默认 |
 | `folder.delete` | `id` | 连同子文件夹、事项和相关依赖 |
-| `task.create` | `id`、`title`，可选 `folder_id`、`description`、`start`、`start_time`、`due`、`sort_key`、`done`、`assignees` | `assignees` 是负责人的用户 ID |
-| `task.update` | `id`，可选 `folder_id`、`title`、`description`、`start`、`start_time`、`due`、`sort_key`、`done`、`today`、`occurrence`、`assign`、`unassign` | 只带要改的字段；`start: null` 清除开始时间（连同几点）；只给 `start` 时几点不变，`start_time: null` 只清除几点；有 `start_time` 就要有开始日期；`due: null` 清除截止时间（连同重复）；`done: true/false` 完成或重新打开；`assign`、`unassign` 是要加上、去掉的负责人，两个人同时指派时都算数 |
+| `task.create` | `id`、`title`，可选 `folder_id`、`description`、`start`、`start_time`、`due` 或 `due_after`、`sort_key`、`done`、`assignees` | `assignees` 是负责人的用户 ID |
+| `task.update` | `id`，可选 `folder_id`、`title`、`description`、`start`、`start_time`、`due` 或 `due_after`、`sort_key`、`done`、`today`、`occurrence`、`assign`、`unassign` | 只带要改的字段；`start: null` 清除开始时间（连同几点）；只给 `start` 时几点不变，`start_time: null` 只清除几点；有 `start_time` 就要有开始日期；`due: null` 清除截止时间（连同重复和 `due_after`），给了日期就不再是前置完成后的；`due_after: null` 清除它和它给的截止日期；`done: true/false` 完成或重新打开；`assign`、`unassign` 是要加上、去掉的负责人，两个人同时指派时都算数 |
 | `task.delete` | `id` | 连同相关依赖 |
 | `dep.add` | `before`、`after` | |
 | `dep.remove` | `before`、`after` | |
@@ -132,7 +135,16 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | `share.remove` | `folder_id`、`user_id` | 共享人移除成员，或成员自己退出。最后一个成员离开时文件夹回到私人的 |
 | `undo` | `mutation` | 撤销一个改动：按相反顺序把它的变化恢复回去，恢复时同样要通过所有规则。要改回去的东西已经不存在的跳过；要恢复的事项或文件夹原来所在的文件夹、要恢复的依赖连着的事项已经被删除时，整个撤销不生效 |
 
-`task.update` 把有[重复](design.md#重复)的事项标为完成（`done: true`）时不记完成时间，而是按 `today`（发出改动的设备上的当天，`YYYY-MM-DD`）把截止日期顺延到下一次，`completions` 的次数加一、日期记为 `today`；这时缺了 `today` 返回 400。顺延出的下一次晚于重复的 `until` 时，这次就是最后一次：次数同样加一、日期记为 `today`，然后去掉重复、记完成时间。同一个改动里的 `due` 先生效，所以去掉重复的同时 `done: true` 就是结束重复并完成：记完成时间，不动 `completions`，也不看 `today`。别的事项不看 `today`。带上 `occurrence`（要完成的那一次：`{due, completions}`，它的截止日期和那时完成过的次数）时，重复的事项现在已经不是这一次的，这次完成不生效，改动照样成功：那一次已经在别处完成、跳过或改了日期，再完成就会把下一次也完成掉。只看日期不够：从完成那天算的提前完成了，下一次可能还是同一天截止。App 和网页上勾选完成（包括批量完成）、手机的通知、提醒卡片和小组件上的“完成”都给重复的事项带着它：列表可能过时，几台设备也可能离线时各自完成了同一次；结束重复并完成不带；不重复的事项不看 `occurrence`。已完成的事项不能有重复，截止日期不能晚于重复的 `until`，新建或修改出这样的事项返回 400。
+`task.update` 把有[重复](design.md#重复)的事项标为完成（`done: true`）时不记完成时间，而是按 `today`（发出改动的设备上的当天，`YYYY-MM-DD`）把截止日期顺延到下一次，`completions` 的次数加一、日期记为 `today`；这时缺了 `today` 返回 400。顺延出的下一次晚于重复的 `until` 时，这次就是最后一次：次数同样加一、日期记为 `today`，然后去掉重复、记完成时间。同一个改动里的 `due` 先生效，所以去掉重复的同时 `done: true` 就是结束重复并完成：记完成时间，不动 `completions`，也不看 `today`。别的事项只用 `today` 定下[前置完成后的截止](#前置完成后的截止)。带上 `occurrence`（要完成的那一次：`{due, completions}`，它的截止日期和那时完成过的次数）时，重复的事项现在已经不是这一次的，这次完成不生效，改动照样成功：那一次已经在别处完成、跳过或改了日期，再完成就会把下一次也完成掉。只看日期不够：从完成那天算的提前完成了，下一次可能还是同一天截止。App 和网页上勾选完成（包括批量完成）、手机的通知、提醒卡片和小组件上的“完成”都给重复的事项带着它：列表可能过时，几台设备也可能离线时各自完成了同一次；结束重复并完成不带；不重复的事项不看 `occurrence`。已完成的事项不能有重复，截止日期不能晚于重复的 `until`，新建或修改出这样的事项返回 400。
+
+### 前置完成后的截止
+
+事项可以用 `due_after` 代替 `due`：前置都完成后几天内截止（[设计](design.md#前置完成后的截止)）。`due` 由服务端算出，改动里不能同时给两个，同时给返回 400（`field` 是 `due_after`）：
+
+- 每个改动的操作都生效以后，服务端看这个改动涉及的有 `due_after` 的事项：新建或改了 `due_after`、`start` 的，前置完成、重新打开或删除的，连上或去掉前置的。前置都不挡着它（同[状态](design.md#状态)，重复的前置这一次没开始也算）、又还没定下的，`unlocked_on` 记为这个改动的“今天”；定下了、而这个改动让某个前置变成挡着它的（重新打开、连上没完成的，包括撤销时恢复的连线），去掉 `unlocked_on`；做过的重复前置（有 `completions`）不算，它挡着只是又到了它的一次。别的时候不动，重复的前置到了下一次不去掉。
+- 定下以后 `due` 是 `unlocked_on` 和 `start` 里晚的那天加 `days`，几点和提醒照 `due_after`；没定下时 `due` 为 `null`。这些变化是同一个改动的效果，一起撤销。
+- “今天”依次看：改动的 `today`；改动里 `task.update` 带的 `today`（网页和 App 上勾选完成都带着它，离线时完成、联网后补发的也按完成那天算）；都没有时按 UTC。网页和 App 只在这台设备上有 `due_after` 的事项、或这个改动设了它时才带 `today`、`time`，免得不认它们的旧服务端拒收所有改动。
+- `days` 是 0 的，开始时间和 `due_after` 都有几点时，开始的几点不能晚于截止的，否则返回 400。不能设重复：要设重复就给 `due`。
 
 成功返回 `{seq, effects}`。同一个 `id` 再次提交时直接返回第一次的结果，不会重复生效；超过保留期的只返回 `seq`，`effects` 为空。
 

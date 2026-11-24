@@ -1,6 +1,7 @@
 // Due dates as people read them. Dates and times are the user's local ones, as stored.
 
 import type { Due } from "../api/types/Due";
+import type { DueAfter } from "../api/types/DueAfter";
 import type { Remind } from "../api/types/Remind";
 import type { RemindOn } from "../api/types/RemindOn";
 
@@ -56,6 +57,13 @@ export function dueKind(due: Due, now: Date): DueKind {
   if (deadline(due) <= now) return "overdue";
   const days = daysFrom(now, due.date);
   return days === 0 ? "today" : days <= 7 ? "week" : "later";
+}
+
+/** `前置完成后 3 天内`, `前置完成当天 18:00`: a due date still to come after the prerequisites, as the
+ * server's `text::due_after` writes it. */
+export function dueAfterLabel(a: DueAfter): string {
+  const days = a.days === 0 ? "前置完成当天" : `前置完成后 ${a.days} 天内`;
+  return a.time ? `${days} ${a.time}` : days;
 }
 
 /** `今天 18:00`, `明天`, `周五`, `11月20日 18:00`, `2027年3月15日`. */

@@ -18,6 +18,8 @@ type Case = {
   jobs?: [string, string | null, JobState][];
   /** As the API takes them (docs/api.md#改动). */
   ops: Op[];
+  /** The day on the device the change is made on. */
+  today?: string;
 } & ({ error: { code: string; message: string } } | { expect: Partial<Seen> });
 
 /** The data as the user sees it, made as the case says. */
@@ -82,12 +84,14 @@ const seen = (d: Data) => ({
   assignees: Object.fromEntries([...d.tasks.values()].filter((t) => t.assignees.length).map((t) => [t.id, t.assignees])),
   attachments: Object.fromEntries([...d.attachments.values()].map((a) => [a.id, a.task_id ?? a.job_id])),
   jobs: Object.fromEntries([...d.jobs.values()].map((j) => [j.id, j.state])),
+  due: Object.fromEntries([...d.tasks.values()].flatMap((t) => (t.due ? [[t.id, t.due.date]] : []))),
 });
 
 test.each(cases as Case[])("changes go as the fixtures say: $name", (c) => {
   const d = given(c);
   const before = structuredClone(d);
-  const run = () => apply(d, c.ops, { me: c.me ?? "alice", now: 1000, effectsOf: () => undefined, effectsAfter: () => [] });
+  const local = { today: c.today ?? "1970-01-01" };
+  const run = () => apply(d, c.ops, { me: c.me ?? "alice", now: 1000, local, effectsOf: () => undefined, effectsAfter: () => [] });
   if ("error" in c) {
     let thrown: unknown;
     try {

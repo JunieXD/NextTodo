@@ -68,7 +68,8 @@ export function copyFolder(
       ...(description && { description }),
       ...(t.start && { start: t.start }),
       ...(t.start_time && { start_time: t.start_time }),
-      ...(t.due && { due: t.due }),
+      // One due after its prerequisites counts anew (docs/design.md#前置完成后的截止).
+      ...(t.due_after ? { due_after: t.due_after } : t.due && { due: t.due }),
       sort_key: t.sort_key,
       // Still in the shared folder it was in, a task keeps who it is assigned to.
       ...(board.sharedRoot(t.folder_id) === board.sharedRoot(parent) && t.assignees.length && { assignees: t.assignees }),

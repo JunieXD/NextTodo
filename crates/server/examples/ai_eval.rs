@@ -97,6 +97,9 @@ struct Expect {
     written: bool,
     /// The due times, in any order.
     due: Option<Vec<String>>,
+    /// The tasks due some days after their prerequisites, each by a word in its title and its
+    /// `due_after` in days, `30d` or `3d 17:00`; empty for none. Each is to have a prerequisite.
+    due_after: Option<Vec<(String, String)>>,
     /// The start times, in any order.
     start: Option<Vec<String>>,
     remind: Option<Vec<u32>>,
@@ -511,6 +514,31 @@ fn check(e: &Expect, input: &Value, v: &Value, snap: &Snapshot, ops: &[Op]) -> (
     {
         problems.push(if want { "新事项之间没有连上先后".into() } else { "新事项之间不该连先后".into() });
     }
+    if let Some(want) = &e.due_after {
+        // As the server takes them, so that `1w` is `7d`.
+        let got: Vec<(String, String)> = ops
+            .iter()
+            .filter_map(|op| match op {
+                Op::TaskCreate { title, due_after: Some(a), .. } => {
+                    let time = a.at.as_ref().map_or(String::new(), |at| format!(" {}", at.time.as_str()));
+                    Some((squash(title.as_str()), format!("{}d{time}", a.days)))
+                }
+                _ => None,
+            })
+            .collect();
+        let right = got.len() == want.len()
+            && want.iter().all(|(word, days)| got.iter().any(|(title, d)| title.contains(&squash(word)) && d == days));
+        if !right {
+            problems.push(format!("前置完成后 {got:?}，应为 {want:?}"));
+        }
+        let alone = ops.iter().filter_map(|op| match op {
+            Op::TaskCreate { id, title, due_after: Some(_), .. } if !edges.iter().any(|(_, a)| a == id) => Some(title.as_str()),
+            _ => None,
+        });
+        for title in alone {
+            problems.push(format!("“{title}”写了 due_after，却没有前置"));
+        }
+    }
     let titled = |word: &str| created.iter().find(|(_, t)| t.contains(&squash(word))).map(|(id, _)| *id);
     for pair in e.order.windows(2) {
         match (titled(&pair[0]), titled(&pair[1])) {
@@ -634,6 +662,7 @@ fn tidy_data(input: &Value) -> (Snapshot, AiJob) {
     let done = list("done_tasks");
     for (i, t) in open.iter().chain(&done).enumerate() {
         let n = t["number"].as_i64().expect("tasks have numbers");
+        let reminders = t["remind"].as_u64().map(|before| json!([{ "before": before }]));
         let due = t["due"].as_str().map(|d| {
             let (date, time) = d.split_once(' ').map_or((d, None), |(d, t)| (d, Some(t)));
             let repeat = t["repeat"].as_str().map(|r| {
@@ -647,17 +676,23 @@ fn tidy_data(input: &Value) -> (Snapshot, AiJob) {
                 };
                 json!({ "every": every.parse::<u32>().expect("a number"), "unit": unit, "from": t["repeat_from"].as_str().unwrap_or("due"), "days": days, "until": t["repeat_until"] })
             });
-            let reminders = t["remind"].as_u64().map(|before| json!([{ "before": before }]));
             json!({ "date": date, "time": time, "reminders": reminders, "repeat": repeat })
         });
-        let due = due.map(|mut d| {
-            d.as_object_mut().unwrap().retain(|_, v| !v.is_null());
-            d
+        let due_after = t["due_after"].as_str().map(|a| {
+            let (days, time) = a.split_once(' ').map_or((a, None), |(d, t)| (d, Some(t)));
+            let days: u16 = days.strip_suffix('d').and_then(|d| d.parse().ok()).expect("due_after as 30d");
+            json!({ "days": days, "time": time, "reminders": reminders })
+        });
+        let [due, due_after] = [due, due_after].map(|d| {
+            d.map(|mut d| {
+                d.as_object_mut().unwrap().retain(|_, v| !v.is_null());
+                d
+            })
         });
         tasks.push(json!({
             "id": task_id(n), "number": n, "folder_id": folder, "title": t["title"], "description": t["description"].as_str().unwrap_or_default(),
             // Listed latest first.
-            "done_at": (i >= open.len()).then(|| 10_000 - i), "due": due, "sort_key": format!("a{i:02}1"),
+            "done_at": (i >= open.len()).then(|| 10_000 - i), "due": due, "due_after": due_after, "sort_key": format!("a{i:02}1"),
             "assignees": [], "created_at": 0, "updated_at": 0, "created_by": ME, "updated_by": ME, "created_via": null, "updated_via": null,
         }));
         for b in t["requires"].as_array().into_iter().flatten() {

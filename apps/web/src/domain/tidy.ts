@@ -3,13 +3,14 @@
 
 import type { AiJob } from "../api/types/AiJob";
 import type { Due } from "../api/types/Due";
+import type { DueAfter } from "../api/types/DueAfter";
 import type { FolderId } from "../api/types/FolderId";
 import type { NewTask } from "../api/types/NewTask";
 import type { Op } from "../api/types/Op";
 import type { Suggestion } from "../api/types/Suggestion";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "./board";
-import { formatDue, isoDate, remindLabel } from "./dates";
+import { dueAfterLabel, formatDue, isoDate, remindLabel } from "./dates";
 import { rekey } from "./reorder";
 import { lastTime, repeatText } from "./repeat";
 
@@ -45,6 +46,14 @@ const sameDue = (a: Due | null, b: Due | null) =>
 const dueText = (d: Due | null, now: Date) =>
   d ? [formatDue(d, now), d.reminders?.map(remindLabel).join("、"), d.repeat && repeatText(d.repeat, d.date, now)].filter(Boolean).join(" · ") : "无";
 
+const sameAfter = (a: DueAfter | undefined, b: DueAfter | undefined) =>
+  a?.days === b?.days && a?.time === b?.time && JSON.stringify(a?.reminders) === JSON.stringify(b?.reminders);
+
+/** A due date as `dueText` has it, and the prerequisites it counts from, if it does: `前置完成后 3 天内`,
+ * and once they are done `11月20日 18:00（前置完成后 3 天内 18:00）`. */
+const deadlineText = (d: Due | null, after: DueAfter | undefined, now: Date) =>
+  !after ? dueText(d, now) : d ? `${dueText(d, now)}（${dueAfterLabel(after)}）` : dueAfterLabel(after);
+
 /** What `s` would still do: to tasks there and in the state it found them, and links not made yet. */
 function group(s: Suggestion, j: AiJob, board: Board, created: Map<TaskId, string>): Group | null {
   const now = new Date();
@@ -77,8 +86,9 @@ function group(s: Suggestion, j: AiJob, board: Board, created: Map<TaskId, strin
   const heading = t && `#${t.number} ${t.title}`;
   if ("delete" in s) {
     if (!t) return null;
-    const changed = t.title !== s.was.title || t.description !== s.was.description || !sameDue(t.due, s.was.due);
-    const current = JSON.stringify([t.title, t.description, t.due]);
+    const changed =
+      t.title !== s.was.title || t.description !== s.was.description || !sameDue(t.due, s.was.due) || !sameAfter(t.due_after, s.was.due_after);
+    const current = JSON.stringify([t.title, t.description, t.due, t.due_after]);
     const part: Part = { key: "delete", label: "删除", text: "删除这个事项", act: { remove: id }, ...(changed && { now: "整理后改过这个事项", current }) };
     return { key: id, heading: heading!, reason: s.reason, parts: [part] };
   }
@@ -96,10 +106,12 @@ function group(s: Suggestion, j: AiJob, board: Board, created: Map<TaskId, strin
     const was = changed && { now: `整理后已改为：${show(t.title, t.description)}`, current };
     parts.push({ key: "text", label, text: show(text.title ?? "", text.description ?? ""), act: { update: id, fields: text }, ...was });
   }
-  if (s.due !== undefined && !sameDue(t.due, s.due)) {
-    const changed = !sameDue(t.due, s.was.due);
-    const was = changed && { now: `整理后已改为：${dueText(t.due, now)}`, current: JSON.stringify(t.due) };
-    parts.push({ key: "due", label: "截止", text: `${dueText(s.was.due, now)} → ${dueText(s.due, now)}`, act: { update: id, fields: { due: s.due } }, ...was });
+  // A date the prerequisites gave, set as a date of its own, is a change too.
+  if (s.due !== undefined && (!sameDue(t.due, s.due) || t.due_after)) {
+    const changed = !sameDue(t.due, s.was.due) || !sameAfter(t.due_after, s.was.due_after);
+    const was = changed && { now: `整理后已改为：${deadlineText(t.due, t.due_after, now)}`, current: JSON.stringify([t.due, t.due_after]) };
+    const text = `${deadlineText(s.was.due, s.was.due_after, now)} → ${dueText(s.due, now)}`;
+    parts.push({ key: "due", label: "截止", text, act: { update: id, fields: { due: s.due } }, ...was });
   }
   if (s.done !== undefined && s.done !== (t.done_at !== null)) {
     // As the suggestion's own due date, taken with it by default, has it.

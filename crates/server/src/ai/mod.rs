@@ -13,7 +13,9 @@ use std::time::{Duration, Instant};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use nexttodo_core::board::{Board, Now};
-use nexttodo_core::model::{AiJob, AiJobId, Attachment, FolderId, Holder, JobKind, JobState, MutationId, NoteText, Suggestion, TaskId};
+use nexttodo_core::model::{
+    AiJob, AiJobId, Attachment, Date, FolderId, Holder, JobKind, JobState, MutationId, NoteText, Suggestion, TaskId, Time,
+};
 use nexttodo_core::ops::Op;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
 use rusqlite::{Connection, OptionalExtension, ToSql, params};
@@ -534,13 +536,15 @@ fn added(
     let owner = actor.user;
     let Some(j) = store::load_job(c, owner, job)?.filter(|j| j.state == JobState::Running) else { return Ok(None) };
     let snap = store::snapshot(c, owner)?;
-    let board = Board::new(&snap, Now::utc(now), owner);
+    let local = asked(&j, now);
+    let board = Board::new(&snap, local.clone(), owner);
     let mut tasks = tasks.to_vec();
     // Those the model gave a due date and no word on reminders get the asking device's
     // (docs/ai.md#提示词和结果); `[]` is its word for none.
     if let Some(r) = &j.reminders {
         for t in tasks.iter_mut().filter(|t| t.remind.is_none()) {
-            t.remind = t.due.as_ref().map(|due| RemindText(r.for_due(due.time.is_some())));
+            let timed = t.due.as_ref().map(|d| d.time.is_some()).or(t.due_after.as_ref().map(|a| a.time.is_some()));
+            t.remind = timed.map(|timed| RemindText(r.for_due(timed)));
         }
     }
     let mut ops = tools::plan_into(&board, j.folder_id, tasks, &shown.tasks)?;
@@ -559,8 +563,17 @@ fn added(
         ops.push(Op::AttachmentUpdate { id: a.id, name: None, task_id: Some(task) });
     }
     ops.push(Op::AiJobDelete { id: job });
-    let done = mutate::run(c, actor, &ops, now)?;
+    let done = mutate::run(c, actor, &ops, now, &local)?;
     Ok(Some((ops, done)))
+}
+
+/// The day and time job `j` was asked on its device, as its `local_time` has them first,
+/// `2026-11-04 16:30 星期三`; UTC's now when it doesn't.
+fn asked(j: &AiJob, now: i64) -> Now {
+    let mut parts = j.local_time.as_str().split_whitespace();
+    let today = parts.next().and_then(|d| Date::try_from(d.to_owned()).ok());
+    let time = parts.next().and_then(|t| Time::try_from(t.to_owned()).ok());
+    today.map_or_else(|| Now::utc(now), |today| Now { today, time })
 }
 
 // The API.

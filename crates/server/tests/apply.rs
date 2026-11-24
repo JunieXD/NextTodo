@@ -33,6 +33,8 @@ struct Case {
     #[serde(default)]
     jobs: Vec<(String, Option<String>, JobState)>,
     ops: Vec<Value>,
+    /// The day on the device the change is made on.
+    today: Option<String>,
     error: Option<Value>,
     expect: Option<Map<String, Value>>,
 }
@@ -98,14 +100,18 @@ impl World {
         op
     }
 
-    async fn mutate(&mut self, by: &str, ops: &[Value]) -> (StatusCode, Value) {
+    async fn mutate(&mut self, by: &str, ops: &[Value], today: Option<&str>) -> (StatusCode, Value) {
         let ops: Vec<Value> = ops.iter().map(|op| self.op(op)).collect();
-        let r = self.t.mutate(&self.secrets[by], json!(ops)).await;
+        let mut m = json!({ "id": id(), "ops": ops });
+        if let Some(today) = today {
+            m["today"] = today.into();
+        }
+        let r = self.t.call("POST", "/mutations", Some(&self.secrets[by]), Some(m)).await;
         (r.status, r.body)
     }
 
     async fn given(&mut self, by: &str, ops: Vec<Value>) {
-        let (status, body) = self.mutate(by, &ops).await;
+        let (status, body) = self.mutate(by, &ops, None).await;
         assert_eq!(status, StatusCode::OK, "{body}");
     }
 
@@ -141,6 +147,12 @@ impl World {
             by("attachments", &|a| self.name(if a["task_id"].is_null() { &a["job_id"] } else { &a["task_id"] })),
         );
         seen.insert("jobs".into(), by("ai_jobs", &|j| j["state"].clone()));
+        let due: Map<String, Value> = all("tasks")
+            .iter()
+            .filter(|t| !t["due"].is_null())
+            .map(|t| (self.names[t["id"].as_str().unwrap()].clone(), t["due"]["date"].clone()))
+            .collect();
+        seen.insert("due".into(), due.into());
         seen
     }
 }
@@ -221,7 +233,7 @@ async fn changes_go_as_the_fixtures_say() {
         let me = c.me.clone().unwrap_or_else(|| "alice".into());
         give(&mut w, &c, &me).await;
         let before = w.t.snapshot(&w.secrets[&me]).await;
-        let (status, body) = w.mutate(&me, &c.ops).await;
+        let (status, body) = w.mutate(&me, &c.ops, c.today.as_deref()).await;
         let wanted = match (c.error, c.expect) {
             (Some(error), None) => {
                 assert!(!status.is_success(), "{}: {body}", c.name);

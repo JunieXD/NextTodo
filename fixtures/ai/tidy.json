@@ -340,5 +340,17 @@
     "note": "说明要英文标题，但这次只要求推迟：只改截止时间，不借说明去改标题",
     "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/学习/英语", "request": "把背单词推迟到周五", "subfolders": [], "open_tasks": [{ "number": 71, "title": "背单词 Unit 5", "due": "2026-11-11" }, { "number": 72, "title": "每天听半小时听力" }], "done_tasks": [], "notes": [{ "folder": "/学习/英语", "text": "这个文件夹里的标题都用英文写" }] },
     "expect": { "allowed": ["due"], "due": [[71, "2026-11-13"]], "untouched": [72] }
+  },
+  {
+    "id": "due-after-keep",
+    "note": "默认要求：前置完成后几天内截止的事项，截止和提醒不动",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/报销", "request": "把标题改清楚，描述改成简洁的书面语，补上漏掉的先后关系。", "subfolders": [], "open_tasks": [{ "number": 11, "title": "拿到发票" }, { "number": 12, "title": "报销", "description": "嗯就是发票拿到以后要尽快报，财务说最晚 30 天", "due_after": "30d 18:00", "remind": 60, "requires": [11] }], "done_tasks": [] },
+    "expect": { "allowed": ["title", "description", "after"], "due": [], "facts": [["发票"], ["30 天", "30天", "三十天"]] }
+  },
+  {
+    "id": "due-after-to-date",
+    "note": "要求把前置完成后几天内的截止改成具体日期",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/报销", "request": "“报销”的截止直接定在 12 月 15 号", "subfolders": [], "open_tasks": [{ "number": 11, "title": "拿到发票" }, { "number": 12, "title": "报销", "due_after": "30d", "requires": [11] }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[12, "2026-12-15"]], "untouched": [11] }
   }
 ]

@@ -235,7 +235,24 @@ async fn editing_a_task() {
     assert_eq!(due, json!({ "date": "2026-11-22", "reminders": [{ "days": 1, "time": "20:00" }, { "days": 0, "time": "09:00" }] }));
     t.ok(&s, "edit", json!({ "task": 1, "remind": [] })).await;
     assert_eq!(t.ok(&s, "show", json!({ "task": 1 })).await["data"]["due"]["reminders"], Value::Null);
-    for bad in [json!("1x 20:00"), json!("25:00"), json!(["31d 09:00"])] {
+    // As long before, in minutes, hours, days or weeks; a list also as one string, as models write them.
+    t.ok(&s, "edit", json!({ "task": 1, "due": "2026-11-30 09:00", "remind": ["2h30m", "1d", "1w 08:00, 3d", "30m"] })).await;
+    let due = t.ok(&s, "show", json!({ "task": 1 })).await["data"]["due"].clone();
+    assert_eq!(
+        due["reminders"],
+        json!([{ "days": 7, "time": "08:00" }, { "before": 4320 }, { "before": 1440 }, { "before": 150 }, { "before": 30 }])
+    );
+    for bad in [
+        json!("1x 20:00"),
+        json!("25:00"),
+        json!(["31d 09:00"]),
+        json!("5w"),
+        json!("1d 2h 09:00"),
+        json!("24h 09:00"),
+        json!("1 2m"),
+        json!("2x"),
+        json!("30m,,1d"),
+    ] {
         assert_eq!(t.tool(&s, "edit", json!({ "task": 1, "remind": bad })).await.status, StatusCode::BAD_REQUEST, "{bad}");
     }
     assert_eq!(t.tool(&s, "edit", json!({ "task": 1 })).await.status, StatusCode::BAD_REQUEST, "nothing to change");

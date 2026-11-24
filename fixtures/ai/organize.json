@@ -35,7 +35,7 @@
   {
     "id": "short-remind",
     "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/毕业论文", "open_tasks": [], "text": "明天下午三点开组会，提前半小时提醒我" },
-    "expect": { "tasks": [1, 1], "facts": [["组会"]], "description": false, "due": ["2026-11-05 15:00"], "start": [], "remind": [30] }
+    "expect": { "tasks": [1, 1], "facts": [["组会"]], "description": false, "due": ["2026-11-05 15:00 !30"], "start": [] }
   },
   {
     "id": "short-action",
@@ -169,61 +169,61 @@
     "id": "repeat-weekly",
     "note": "说了每周几、几点：从下一次开始重复，周期不写进标题",
     "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/学习", "open_tasks": [], "text": "每周一上午十点开组会" },
-    "expect": { "tasks": [1, 1], "facts": [["组会"]], "description": false, "absent": ["每周"], "repeat": [["组会", ["2026-11-09 10:00 ~1w", "2026-11-09 10:00 ~1w:1"]]] }
+    "expect": { "tasks": [1, 1], "facts": [["组会"]], "description": false, "absent": ["每周"], "repeat": [["组会", "2026-11-09 10:00 ~1w"]] }
   },
   {
     "id": "repeat-workdays",
     "note": "每个工作日：今天就是一次，没说几点的不带时间",
     "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/工作", "open_tasks": [], "text": "每个工作日下班前把日报发到群里" },
-    "expect": { "tasks": [1, 1], "facts": [["日报"], ["群"]], "repeat": [["日报", ["2026-11-04 ~1w:1,2,3,4,5"]]] }
+    "expect": { "tasks": [1, 1], "facts": [["日报"], ["群"]], "repeat": [["日报", "2026-11-04 ~1w:1,2,3,4,5"]] }
   },
   {
     "id": "repeat-monthly",
     "note": "每月几号，数字原样",
     "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/生活", "open_tasks": [], "text": "每月15号交房租2800，直接转给房东" },
-    "expect": { "tasks": [1, 1], "facts": [["房租"], ["房东"]], "verbatim": ["2800"], "repeat": [["房租", ["2026-11-15 ~1m", "2026-11-15 ~1m:15"]]] }
+    "expect": { "tasks": [1, 1], "facts": [["房租"], ["房东"]], "verbatim": ["2800"], "repeat": [["房租", "2026-11-15 ~1m"]] }
   },
   {
     "id": "repeat-until",
     "note": "说了练到哪天为止：重复到那天，日子不写进标题",
     "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/备考", "open_tasks": [], "text": "从明天起每天练一套数学卷子，一直练到12月19号" },
-    "expect": { "tasks": [1, 1], "facts": [["卷子"]], "absent": ["12月19", "每天"], "repeat": [["卷子", ["2026-11-05 ~1d..2026-12-19"]]] }
+    "expect": { "tasks": [1, 1], "facts": [["卷子"]], "absent": ["12月19", "每天"], "repeat": [["卷子", "2026-11-05 ~1d..2026-12-19"]] }
   },
   {
     "id": "repeat-until-before",
     "note": "到某件事之前、又给了那件事的日子：重复到前一天；考试本身是另一件事",
     "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/备考", "open_tasks": [], "text": "12月20号考六级，考前每天背50个单词" },
-    "expect": { "tasks": [1, 2], "facts": [["单词"], ["六级"], ["50"]], "repeat": [["单词", ["2026-11-04 ~1d..2026-12-19"]]] }
+    "expect": { "tasks": [1, 2], "facts": [["单词"], ["六级"], ["50"]], "repeat": [["单词", "2026-11-04 ~1d..2026-12-19"]] }
   },
   {
     "id": "repeat-daily-habit",
     "note": "没说从哪天开始的每天打卡：从今天开始",
     "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/学习", "open_tasks": [], "text": "每天背50个单词" },
-    "expect": { "tasks": [1, 1], "facts": [["单词"], ["50"]], "description": false, "repeat": [["单词", ["2026-11-04 ~1d"]]] }
+    "expect": { "tasks": [1, 1], "facts": [["单词"], ["50"]], "description": false, "repeat": [["单词", "2026-11-04 ~1d"]] }
   },
   {
     "id": "repeat-daily-past-time",
     "note": "每天几点，今天的已经过了：从明天开始",
     "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/健康", "open_tasks": [], "text": "每天早上七点跑步" },
-    "expect": { "tasks": [1, 1], "facts": [["跑步"]], "description": false, "repeat": [["跑步", ["2026-11-05 07:00 ~1d"]]] }
+    "expect": { "tasks": [1, 1], "facts": [["跑步"]], "description": false, "repeat": [["跑步", "2026-11-05 07:00 ~1d"]] }
   },
   {
     "id": "repeat-from-tomorrow",
     "note": "说了从哪天开始：第一次就是那天",
     "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/学习", "open_tasks": [], "text": "从明天起每天背50个单词" },
-    "expect": { "tasks": [1, 1], "facts": [["单词"], ["50"]], "description": false, "start": [], "repeat": [["单词", ["2026-11-05 ~1d"]]] }
+    "expect": { "tasks": [1, 1], "facts": [["单词"], ["50"]], "description": false, "start": [], "repeat": [["单词", "2026-11-05 ~1d"]] }
   },
   {
     "id": "repeat-with-one-off",
     "note": "一件只做一次、一件从下周起每周做：只有后一件重复",
     "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/毕业论文", "open_tasks": [], "text": "下周五前交开题报告，另外从下周开始每周三下午三点和导师碰一次进度" },
-    "expect": { "tasks": [2, 2], "facts": [["开题报告"], ["导师"], ["进度"]], "due": ["2026-11-13", "2026-11-11 15:00"], "repeat": [["导师", ["2026-11-11 15:00 ~1w", "2026-11-11 15:00 ~1w:3"]]] }
+    "expect": { "tasks": [2, 2], "facts": [["开题报告"], ["导师"], ["进度"]], "due": ["2026-11-13", "2026-11-11 15:00 ~1w"], "repeat": [["导师", "2026-11-11 15:00 ~1w"]] }
   },
   {
     "id": "repeat-assigned",
     "note": "共享的文件夹里交给别人按周期做：照样重复；今天的时间已过，从明天开始",
     "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/销售组", "open_tasks": [], "text": "让小王每个工作日早上九点前把销售数据发到群里", "people": [{ "username": "junie", "name": "Junie", "me": true }, { "username": "wang", "name": "小王" }] },
-    "expect": { "tasks": [1, 1], "facts": [["销售数据"], ["群"]], "repeat": [["销售数据", ["2026-11-05 09:00 ~1w:1,2,3,4,5"]]] }
+    "expect": { "tasks": [1, 1], "facts": [["销售数据"], ["群"]], "repeat": [["销售数据", "2026-11-05 09:00 ~1w:1,2,3,4,5"]] }
   },
   {
     "id": "repeat-not-vague",
@@ -259,7 +259,7 @@
     "id": "start-remind",
     "note": "到某个时候才能做、又要提醒：提醒只能跟着截止，要写截止；同一时刻的开始写不写都行，提醒不看开始",
     "input": { "local_time": "2026-11-23 14:00 星期一", "folder": "/生活", "open_tasks": [], "text": "今晚8点开抢演唱会门票，提前10分钟提醒我" },
-    "expect": { "tasks": [1, 1], "facts": [["演唱会"], ["票"]], "due": ["2026-11-23 20:00"], "remind": [10] }
+    "expect": { "tasks": [1, 1], "facts": [["演唱会"], ["票"]], "due": ["2026-11-23 20:00 !10"] }
   },
   {
     "id": "start-not-planned-day",
@@ -349,12 +349,96 @@
     "id": "chores-mixed",
     "note": "家务：两件按周期做，一件只做一次",
     "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/家务", "open_tasks": [], "text": "家务分一下：每周六上午大扫除，每天晚上倒垃圾，这周日之前把阳台的纸箱卖掉" },
-    "expect": { "tasks": [3, 3], "facts": [["大扫除"], ["垃圾"], ["纸箱"]], "repeat": [["大扫除", ["2026-11-28 ~1w", "2026-11-28 ~1w:6"]], ["垃圾", ["2026-11-25 ~1d"]]], "linked": false }
+    "expect": { "tasks": [3, 3], "facts": [["大扫除"], ["垃圾"], ["纸箱"]], "repeat": [["大扫除", "2026-11-28 ~1w"], ["垃圾", "2026-11-25 ~1d"]], "linked": false }
   },
   {
     "id": "voice-long",
     "note": "一大段口述：改口只留改过的，数字照改过的，有一个从另一件事做完算的期限",
     "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/工作", "open_tasks": [], "text": "嗯我想想啊，明天要做的，首先是把上周的会议纪要发给张总，哦不对是发给李总，然后那个报价单要改一下，运费那栏算错了，应该是 380 不是 830，还有就是问一下财务发票什么时候能开，开出来以后一周内要寄给客户" },
     "expect": { "tasks": [3, 5], "facts": [["会议纪要"], ["李总"], ["报价单"], ["380"], ["发票"], ["客户"]], "absent": ["张总"], "due_after": [["寄", "7d"]] }
+  },
+  {
+    "id": "remind-hour-before",
+    "note": "带时间的事项，提前一小时提醒；还要带的东西写进描述",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/生活", "open_tasks": [], "text": "周四下午两点半牙医复诊，提前一小时提醒我，记得带上次拍的片子" },
+    "expect": { "tasks": [1, 1], "facts": [["牙"], ["片子"]], "due": ["2026-11-26 14:30 !60"] }
+  },
+  {
+    "id": "remind-hours-before",
+    "note": "提前两个小时提醒",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/工作", "open_tasks": [], "text": "明天下午 3 点和客户开视频会，提前两个小时提醒我" },
+    "expect": { "tasks": [1, 1], "facts": [["客户"], ["视频会", "会议", "开会"]], "due": ["2026-11-26 15:00 !120"] }
+  },
+  {
+    "id": "remind-day-before",
+    "note": "带时间的事项，“前一天提醒”是提前 24 小时",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/毕业论文", "open_tasks": [], "text": "下周一上午 9 点交开题报告，前一天提醒我一下" },
+    "expect": { "tasks": [1, 1], "facts": [["开题报告"]], "due": ["2026-11-30 09:00 !1440"] }
+  },
+  {
+    "id": "gift-one-job",
+    "note": "一件事带一串要求：不拆，要求都写进描述，金额原样",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/生活", "open_tasks": [], "text": "给妈妈买生日礼物，她想要条羊绒围巾，预算 800 以内，颜色别太艳" },
+    "expect": { "tasks": [1, 1], "facts": [["妈妈"], ["围巾"], ["羊绒"], ["800"], ["艳", "素", "低调"]], "verbatim": ["800"] }
+  },
+  {
+    "id": "ask-hr-questions",
+    "note": "要问的几个问题，一个都不能丢",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/工作", "open_tasks": [], "text": "问一下 HR：年假能不能跨年用？公积金基数什么时候调？还有体检报告去哪领" },
+    "expect": { "tasks": [1, 3], "facts": [["HR", "人事"], ["年假"], ["跨年"], ["公积金"], ["基数"], ["体检报告"]] }
+  },
+  {
+    "id": "dinner-prep",
+    "note": "请客前的几步：买菜要在腌肉之前，量原样",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/生活", "open_tasks": [], "text": "周六晚上请朋友来家里吃饭，做红烧肉和清蒸鲈鱼。周五下班去超市买五花肉 500 克、鲈鱼一条，周六中午把肉焯水腌上" },
+    "expect": { "tasks": [2, 4], "facts": [["红烧肉"], ["鲈鱼"], ["五花肉"], ["500"]], "order": ["买", "腌"] }
+  },
+  {
+    "id": "pr-steps-mixed-english",
+    "note": "中英混写的开发流程，编号原样，按顺序连",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/开发", "open_tasks": [], "text": "周五前 review 一下 PR #482，没问题就 merge，merge 完部署到 staging 让 QA 测" },
+    "expect": { "tasks": [2, 4], "facts": [["review", "审"], ["merge", "合并"], ["staging"], ["QA", "测试"]], "verbatim": ["#482"], "order": ["482", "staging"] }
+  },
+  {
+    "id": "repeat-biweekly-day",
+    "note": "每两周的周六，从这周六起",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/运动", "open_tasks": [], "text": "从这周六开始，每两周周六上午 10 点去打羽毛球" },
+    "expect": { "tasks": [1, 1], "facts": [["羽毛球"]], "repeat": [["羽毛球", "2026-11-28 10:00 ~2w"]] }
+  },
+  {
+    "id": "repeat-month-end",
+    "note": "每月最后一天，第一次是这个月的",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/生活", "open_tasks": [], "text": "每个月最后一天抄一下水电表读数发给房东" },
+    "expect": { "tasks": [1, 1], "facts": [["水电"], ["房东"]], "repeat": [["水电", "2026-11-30 ~1m"]] }
+  },
+  {
+    "id": "wedding-errands",
+    "note": "一件大事下的几件事，各有期限和金额，信息都留着",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/生活", "open_tasks": [], "text": "表姐 12 月 20 号结婚，我是伴娘。月底前把伴娘服尺码报给她；婚礼前一周去试妆；份子钱 2000 记得 19 号前转过去；还要准备一段 3 分钟的祝福致辞，先写稿，写完找表姐看一下" },
+    "expect": { "tasks": [4, 7], "facts": [["尺码"], ["试妆"], ["2000"], ["致辞"], ["3 分钟", "三分钟"], ["表姐"]], "verbatim": ["2000"], "dated": [["尺码", "2026-11-30"], ["份子", "2026-12-19"]] }
+  },
+  {
+    "id": "voice-errands-codes",
+    "note": "语音口述的几件顺路的事，取件码、药名和数量原样",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/生活", "open_tasks": [], "text": "呃今天下班要干几件事啊，先去菜鸟驿站取快递，取件码是 3-2-1508，然后去药店给我爸买降压药，就是那个硝苯地平缓释片，买两盒，哦对了还得给车加油，油快没了" },
+    "expect": { "tasks": [3, 3], "facts": [["快递"], ["药"], ["硝苯地平"], ["两盒", "2 盒"], ["加油"]], "verbatim": ["3-2-1508"] }
+  },
+  {
+    "id": "follows-open-chain",
+    "note": "接在已有的一串后面，新的两步也有先后",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/入职", "open_tasks": [{ "number": 31, "title": "等体检报告" }, { "number": 32, "title": "交入职材料", "after": [31] }], "text": "入职材料交了以后去银行办工资卡，办好把卡号发给 HR" },
+    "expect": { "tasks": [2, 2], "facts": [["工资卡"], ["卡号"], ["HR", "人事"]], "after": [32], "before": [], "order": ["办", "卡号"] }
+  },
+  {
+    "id": "english-action-items",
+    "note": "英文的会议待办：用英文写，有一个要等预算批下来",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/Work", "open_tasks": [], "text": "Action items from today's sync: get the revised budget approved by Friday; book the venue for the offsite (Dec 10-11) once the budget is approved; renew the team's Figma license before it expires on Dec 1." },
+    "expect": { "tasks": [3, 3], "facts": [["budget"], ["venue"], ["offsite"], ["Figma"]], "dated": [["revised", "2026-11-27"]], "order": ["revised", "venue"] }
+  },
+  {
+    "id": "due-in-weeks",
+    "note": "“两周后”按今天算成日期；要求已是书面的，照写进描述",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/学期", "open_tasks": [], "text": "两周后交课程论文，字数 5000 以上，参考文献不少于 15 篇" },
+    "expect": { "tasks": [1, 1], "facts": [["论文"], ["5000"], ["15"]], "verbatim": ["5000", "15"], "written": true, "due": ["2026-12-09"] }
   }
 ]

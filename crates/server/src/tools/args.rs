@@ -156,7 +156,7 @@ pub struct AddArgs {
     pub due_after: Option<DueAfterText>,
     #[schemars(
         with = "Option<RemindInput>",
-        description = "提醒，一个或几个（列表）：数字是提前多少分钟，0 是截止时，要有带具体时间的截止；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设。如 [60, \"1d 20:00\"]"
+        description = "提醒，一个或几个（列表）：提前多久写 \"30m\"、\"2h\"、\"1d\"、\"1w\" 或分钟数，0 是截止时，要有带具体时间的截止；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设。如 [\"30m\", \"1d 20:00\"]"
     )]
     pub remind: Option<RemindText>,
     #[schemars(
@@ -219,7 +219,7 @@ pub struct EditArgs {
     #[serde(default, deserialize_with = "nullable")]
     #[schemars(
         with = "Option<RemindInput>",
-        description = "提醒，一个或几个（列表），整个换掉原来的：数字是提前多少分钟，0 是截止时，要有带具体时间的截止；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设；null 或 [] 清除"
+        description = "提醒，一个或几个（列表），整个换掉原来的：提前多久写 \"30m\"、\"2h\"、\"1d\"、\"1w\" 或分钟数，0 是截止时，要有带具体时间的截止；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设；null 或 [] 清除"
     )]
     pub remind: Option<Option<RemindText>>,
     #[serde(default, deserialize_with = "nullable")]
@@ -441,7 +441,7 @@ pub struct PlanTask {
     pub due_after: Option<DueAfterText>,
     #[schemars(
         with = "Option<RemindInput>",
-        description = "提醒，一个或几个（列表）：数字是提前多少分钟，0 是截止时，要有带具体时间的截止；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设。如 [60, \"1d 20:00\"]"
+        description = "提醒，一个或几个（列表）：提前多久写 \"30m\"、\"2h\"、\"1d\"、\"1w\" 或分钟数，0 是截止时，要有带具体时间的截止；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设。如 [\"30m\", \"1d 20:00\"]"
     )]
     pub remind: Option<RemindText>,
     #[schemars(
@@ -530,8 +530,10 @@ pub fn due_after_text(a: &DueAfter) -> String {
     }
 }
 
-/// Reminders as typed: one or a list of minutes before the due time, `60`, or a time on the due date,
-/// `"09:00"`, or so many days before it, `"1d 20:00"`.
+/// Reminders as typed: one or a list of minutes before the due time, `60`, or as long in minutes,
+/// hours, days or weeks, `"30m"`, `"2h"`, `"1d"`, `"1w"`, `"2h30m"`; a time on the due date,
+/// `"09:00"`, or so many days or weeks before it, `"1d 20:00"`, `"1w 09:00"`. A list may also be
+/// one string, `"1d, 60"`: models write them all so.
 #[derive(Clone, Deserialize)]
 #[serde(try_from = "RemindInput")]
 pub struct RemindText(pub Vec<Remind>);
@@ -558,7 +560,25 @@ impl TryFrom<RemindInput> for RemindText {
             RemindInput::One(item) => vec![item],
             RemindInput::Many(items) => items,
         };
-        items.into_iter().map(remind).collect::<Result<_, _>>().map(RemindText)
+        let mut all = Vec::new();
+        for item in items {
+            match item {
+                RemindItem::Minutes(before) => all.push(Remind::Before(RemindBefore { before })),
+                RemindItem::Text(s) => {
+                    for one in s.split([',', '，']).map(str::trim) {
+                        all.push(remind(one).ok_or_else(|| {
+                            if one.is_empty() && s.contains([',', '，']) {
+                                return format!("提醒“{s}”里逗号之间不能留空");
+                            }
+                            format!(
+                                "提醒“{one}”格式错误，应为提前的分钟数如 60，提前多久如 \"30m\"、\"2h\"、\"1d\"、\"1w\"，截止那天的几点如 \"09:00\"，或提前几天的几点如 \"1d 20:00\""
+                            )
+                        })?);
+                    }
+                }
+            }
+        }
+        Ok(RemindText(all))
     }
 }
 
@@ -571,21 +591,42 @@ pub fn remind_text(r: &Remind) -> serde_json::Value {
     }
 }
 
-fn remind(item: RemindItem) -> Result<Remind, String> {
-    let s = match item {
-        RemindItem::Minutes(before) => return Ok(Remind::Before(RemindBefore { before })),
-        RemindItem::Text(s) => s,
-    };
-    let wrong = || format!("提醒“{s}”格式错误，应为提前的分钟数如 60，截止那天的几点如 \"09:00\"，或提前几天的几点如 \"1d 20:00\"");
-    let t = s.trim();
-    if let Ok(before) = t.parse() {
-        return Ok(Remind::Before(RemindBefore { before }));
+/// One reminder as typed, if it is one.
+fn remind(s: &str) -> Option<Remind> {
+    // A time on the due date, or so many days or weeks before it: `09:00`, `1d 20:00`, `1w 09:00`.
+    if s.contains(':') {
+        let (before, time) = s.rsplit_once(char::is_whitespace).unwrap_or(("0d", s));
+        let before = before.trim_end();
+        let days = match before.strip_suffix('w') {
+            Some(weeks) => weeks.parse::<u32>().ok()?.checked_mul(7)?,
+            None => before.strip_suffix('d')?.parse().ok()?,
+        };
+        return Some(Remind::On(RemindOn { days, time: Time::try_from(time.to_owned()).ok()? }));
     }
-    let (days, time) = match t.split_once(char::is_whitespace) {
-        Some((days, time)) => (days.strip_suffix('d').and_then(|d| d.parse().ok()).ok_or_else(wrong)?, time.trim()),
-        None => (0, t),
-    };
-    Ok(Remind::On(RemindOn { days, time: Time::try_from(time.to_owned()).map_err(|_| wrong())? }))
+    // So many minutes before the due time: `60`, or as long in minutes, hours, days or weeks, `2h30m`.
+    s.parse().ok().or_else(|| minutes(s)).map(|before| Remind::Before(RemindBefore { before }))
+}
+
+/// The minutes in `s`, a length of time in minutes, hours, days and weeks: `30m`, `2h30m`, `1d 2h`.
+fn minutes(s: &str) -> Option<u32> {
+    let (mut total, mut number) = (0u32, None::<u32>);
+    for c in s.chars() {
+        let unit = match c {
+            // Between a unit and the next number only: `1 2m` is no 12 minutes.
+            _ if c.is_whitespace() && number.is_none() => continue,
+            'm' => 1,
+            'h' => 60,
+            'd' => 1440,
+            'w' => 7 * 1440,
+            _ => {
+                number = Some(number.unwrap_or(0).checked_mul(10)?.checked_add(c.to_digit(10)?)?);
+                continue;
+            }
+        };
+        total = total.checked_add(number.take()?.checked_mul(unit)?)?;
+    }
+    // Each number with its unit, and at least one.
+    (number.is_none() && !s.trim().is_empty()).then_some(total)
 }
 
 /// A repeat as typed: `1d`, `2w`, `3m`, `1y` (12 months); weekly on some days, Monday 1 to Sunday 7,

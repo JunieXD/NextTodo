@@ -13,7 +13,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use clap::Parser;
 use nexttodo_core::board::{Board, Now, Snapshot};
 use nexttodo_core::dag::find_path;
-use nexttodo_core::model::{AiJob, Due, Remind, RepeatFrom, Suggestion, TaskId};
+use nexttodo_core::model::{AiJob, Date, Due, Period, Remind, Repeat, RepeatFrom, Suggestion, TaskId, Time, days_in_month};
 use nexttodo_core::ops::{MAX_OPS, Op};
 use nexttodo_server::ai::llm::{Api, Config, Http, Prompt, Thinking};
 use nexttodo_server::ai::{organize, tidy};
@@ -95,17 +95,20 @@ struct Expect {
     /// The text is written prose already: its words may stay.
     #[serde(default)]
     written: bool,
-    /// The due times, in any order.
+    /// The due dates in full, as `due_text` writes them, in any order.
     due: Option<Vec<String>>,
+    /// Some tasks' due dates in full, each by a word in its title, which only that one has; the others'
+    /// not checked.
+    #[serde(default)]
+    dated: Vec<(String, String)>,
     /// The tasks due some days after their prerequisites, each by a word in its title and its
     /// `due_after` in days, `30d` or `3d 17:00`; empty for none. Each is to have a prerequisite.
     due_after: Option<Vec<(String, String)>>,
     /// The start times, in any order.
     start: Option<Vec<String>>,
-    remind: Option<Vec<u32>>,
     /// The repeated tasks, each by a word in its title, and its due date in full as `due_text` writes
-    /// it, in one of its wordings (`~1w` or `~1w:1`, due on a Monday); empty for none.
-    repeat: Option<Vec<(String, Vec<String>)>>,
+    /// it; empty for none.
+    repeat: Option<Vec<(String, String)>>,
     /// The open tasks made to come before the new ones, and after them.
     after: Option<Vec<i64>>,
     before: Option<Vec<i64>>,
@@ -451,21 +454,31 @@ fn check(e: &Expect, input: &Value, v: &Value, snap: &Snapshot, ops: &[Op]) -> (
     }
 
     if let Some(want) = &e.due {
-        let got: Vec<String> = sorted(tasks.iter().map(|t| field(t, "due")).filter(|d| !d.is_empty()));
+        let got: Vec<String> = sorted(ops.iter().filter_map(|op| match op {
+            Op::TaskCreate { due: Some(d), .. } => Some(due_text(Some(d))),
+            _ => None,
+        }));
         if got != sorted(want.iter().cloned()) {
             problems.push(format!("截止时间 {got:?}，应为 {want:?}"));
+        }
+    }
+    for (word, want) in &e.dated {
+        // Of the one task with the word, not the first of several.
+        let got: Vec<String> = ops
+            .iter()
+            .filter_map(|op| match op {
+                Op::TaskCreate { title, due, .. } if squash(title.as_str()).contains(&squash(word)) => Some(due_text(due.as_ref())),
+                _ => None,
+            })
+            .collect();
+        if got != [want.as_str()] {
+            problems.push(format!("标题里有“{word}”的事项截止时间 {got:?}，应为一项 {want:?}"));
         }
     }
     if let Some(want) = &e.start {
         let got: Vec<String> = sorted(tasks.iter().map(|t| field(t, "start")).filter(|d| !d.is_empty()));
         if got != sorted(want.iter().cloned()) {
             problems.push(format!("开始时间 {got:?}，应为 {want:?}"));
-        }
-    }
-    if let Some(want) = &e.remind {
-        let got: Vec<u32> = sorted(tasks.iter().filter_map(|t| t["remind"].as_u64()).map(|r| r as u32));
-        if got != sorted(want.iter().copied()) {
-            problems.push(format!("提醒 {got:?}，应为 {want:?}"));
         }
     }
     if let Some(want) = &e.repeat {
@@ -478,7 +491,7 @@ fn check(e: &Expect, input: &Value, v: &Value, snap: &Snapshot, ops: &[Op]) -> (
             })
             .collect();
         let right = got.len() == want.len()
-            && want.iter().all(|(word, ways)| got.iter().any(|(title, r)| title.contains(&squash(word)) && ways.contains(r)));
+            && want.iter().all(|(word, due)| got.iter().any(|(title, r)| title.contains(&squash(word)) && r == due));
         if !right {
             problems.push(format!("重复 {got:?}，应为 {want:?}"));
         }
@@ -551,23 +564,47 @@ fn check(e: &Expect, input: &Value, v: &Value, snap: &Snapshot, ops: &[Op]) -> (
     (problems, found)
 }
 
-/// A due date in full, for comparing: `2026-12-01 09:00 !1440 ~1m`, each reminder after a `!` (`!1d20:00`
-/// by the day) and the
+/// A due date in full, for comparing: `2026-12-01 09:00 !1440 ~1m`, each reminder after a `!` and the
 /// repeat after `~` as the model writes it (`1w:1,3,5` on some days), `/done` when counted from the day
-/// it is done, `..2026-12-19` when it ends; empty for none.
+/// it is done, `..2026-12-19` when it ends; empty for none. Written one way whichever way it was put: a
+/// reminder in minutes before the due time, by the day (`!1d20:00`) only on a date alone; a repeat on
+/// the due date's own weekday or day of the month alone without it, where that comes to the same.
 fn due_text(d: Option<&Due>) -> String {
     let Some(d) = d else { return String::new() };
+    let minutes = |t: &Time| {
+        let (h, m) = t.as_str().split_once(':').expect("HH:MM");
+        h.parse::<i64>().expect("hours") * 60 + m.parse::<i64>().expect("minutes")
+    };
     let mut s = d.date.as_str().to_owned();
     if let Some(at) = &d.at {
         s += &format!(" {}", at.time.as_str());
     }
     for r in d.reminders() {
-        s += &match r {
-            Remind::Before(b) => format!(" !{}", b.before),
-            Remind::On(o) => format!(" !{}d{}", o.days, o.time.as_str()),
+        s += &match (r, &d.at) {
+            (Remind::Before(b), _) => format!(" !{}", b.before),
+            (Remind::On(o), Some(at)) => format!(" !{}", i64::from(o.days) * 1440 + minutes(&at.time) - minutes(&o.time)),
+            (Remind::On(o), None) => format!(" !{}d{}", o.days, o.time.as_str()),
         };
     }
     if let Some(r) = &d.repeat {
+        let monday = Date::try_from("2026-11-23".to_owned()).expect("a Monday");
+        let weekday = u8::try_from(d.date.days_after(&monday).rem_euclid(7) + 1).expect("1 to 7");
+        let date = d.date.as_str();
+        let (y, m): (u32, u32) = (date[0..4].parse().expect("a year"), date[5..7].parse().expect("a month"));
+        let day: u8 = date[8..10].parse().expect("a day");
+        // Its own weekday or day of the month alone, counted from the due date, falls on the dates
+        // none would. Not from the 28th to the 30th: `1m` keeps to the month's ends once it is at one.
+        let plain = match r.period {
+            Period::Week(Some(days)) if r.from == RepeatFrom::Due && Vec::from(days) == [weekday] => Some(Period::Week(None)),
+            Period::Month(Some(days))
+                if r.from == RepeatFrom::Due
+                    && (Vec::from(days) == [day] && day <= 27 || Vec::from(days) == [31] && u32::from(day) == days_in_month(y, m)) =>
+            {
+                Some(Period::Month(None))
+            }
+            _ => None,
+        };
+        let r = &Repeat { period: plain.unwrap_or(r.period), ..r.clone() };
         s += &format!(" ~{}{}", tidy::repeat_text(r), if r.from == RepeatFrom::Done { "/done" } else { "" });
         if let Some(until) = &r.until {
             s += &format!("..{}", until.as_str());

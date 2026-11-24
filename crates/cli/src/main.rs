@@ -128,7 +128,7 @@ enum Command {
             help = "代替 --due：前置（--after）都完成后多久以内截止，30d、2w 或 \"3d 18:00\"，从前置都完成的那天起算，0d 是当天；没有前置时从今天算"
         )]
         due_after: Option<String>,
-        #[arg(long, num_args = 1.., value_name = "提醒", help = "提醒，可以几个：提前多少分钟（0 是截止时），或截止那天的几点 09:00、提前几天的几点 \"1d 20:00\"")]
+        #[arg(long, num_args = 1.., value_name = "提醒", help = "提醒，可以几个：提前多久 30m、2h、1d、1w 或分钟数（0 是截止时），或截止那天的几点 09:00、提前几天的几点 \"1d 20:00\"")]
         remind: Vec<String>,
         #[arg(
             long,
@@ -186,7 +186,7 @@ enum Command {
         due_after: Option<String>,
         #[arg(long, help = "清除截止时间，前置完成后几天内的也一样")]
         no_due: bool,
-        #[arg(long, num_args = 1.., value_name = "提醒", conflicts_with = "no_remind", help = "提醒，可以几个：提前多少分钟（0 是截止时），或截止那天的几点 09:00、提前几天的几点 \"1d 20:00\"，整个换掉原来的")]
+        #[arg(long, num_args = 1.., value_name = "提醒", conflicts_with = "no_remind", help = "提醒，可以几个：提前多久 30m、2h、1d、1w 或分钟数（0 是截止时），或截止那天的几点 09:00、提前几天的几点 \"1d 20:00\"，整个换掉原来的")]
         remind: Vec<String>,
         #[arg(long, help = "清除提醒")]
         no_remind: bool,

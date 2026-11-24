@@ -153,7 +153,7 @@
     "id": "some-weekdays",
     "note": "按周几重复：每周一三五，每两周的周六",
     "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/生活", "request": "健身改成每周一三五，打扫卫生改成每两周的周六", "subfolders": [], "open_tasks": [{ "number": 1, "title": "健身", "due": "2026-11-09 19:00", "repeat": "1w" }, { "number": 2, "title": "打扫卫生", "due": "2026-11-14" }, { "number": 3, "title": "买菜" }], "done_tasks": [] },
-    "expect": { "allowed": ["due"], "due": [[1, "2026-11-09 19:00 ~1w:1,3,5"], [2, "2026-11-14 ~2w:6"]], "untouched": [3] }
+    "expect": { "allowed": ["due"], "due": [[1, "2026-11-09 19:00 ~1w:1,3,5"], [2, "2026-11-14 ~2w"]], "untouched": [3] }
   },
   {
     "id": "keep-weekdays",
@@ -352,5 +352,59 @@
     "note": "要求把前置完成后几天内的截止改成具体日期",
     "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/报销", "request": "“报销”的截止直接定在 12 月 15 号", "subfolders": [], "open_tasks": [{ "number": 11, "title": "拿到发票" }, { "number": 12, "title": "报销", "due_after": "30d", "requires": [11] }], "done_tasks": [] },
     "expect": { "allowed": ["due"], "due": [[12, "2026-12-15"]], "untouched": [11] }
+  },
+  {
+    "id": "remind-days-before-time",
+    "note": "改成提前几天的提醒，时间和重复留着",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/生活", "request": "交房租改成提前三天提醒", "subfolders": [], "open_tasks": [{ "number": 1, "title": "交房租", "due": "2026-12-01 09:00", "remind": 60, "repeat": "1m" }, { "number": 2, "title": "交物业费" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2026-12-01 09:00 !4320 ~1m"]], "untouched": [2] }
+  },
+  {
+    "id": "remind-hours",
+    "note": "提前两小时提醒",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/生活", "request": "体检提前两小时提醒我", "subfolders": [], "open_tasks": [{ "number": 1, "title": "体检", "due": "2026-11-27 08:00" }, { "number": 2, "title": "取体检报告" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2026-11-27 08:00 !120"]], "untouched": [2] }
+  },
+  {
+    "id": "move-by-kind",
+    "note": "按一类挪进子文件夹：没写“买”字的也算",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/待办", "request": "买东西的都放到购物里", "subfolders": ["/待办/购物", "/待办/工作"], "open_tasks": [{ "number": 1, "title": "买洗衣液" }, { "number": 2, "title": "改简历" }, { "number": 3, "title": "给猫买猫砂" }, { "number": 4, "title": "整理发票报销" }, { "number": 5, "title": "看牙医" }, { "number": 6, "title": "囤点卫生纸" }], "done_tasks": [] },
+    "expect": { "allowed": ["folder"], "moved": [[1, "/待办/购物"], [3, "/待办/购物"], [6, "/待办/购物"]], "untouched": [2, 4, 5] }
+  },
+  {
+    "id": "postpone-kind-week",
+    "note": "一类事项推到下周同一天，时间留着",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/日常", "request": "这周腿受伤了，运动类的每项都推到下周同一天", "subfolders": [], "open_tasks": [{ "number": 1, "title": "跑步", "due": "2026-11-25" }, { "number": 2, "title": "交周报", "due": "2026-11-27 17:00" }, { "number": 3, "title": "健身房练腿", "due": "2026-11-26 19:00" }, { "number": 4, "title": "看电影" }, { "number": 5, "title": "游泳", "due": "2026-11-28" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2026-12-02"], [3, "2026-12-03 19:00"], [5, "2026-12-05"]], "untouched": [2, 4] }
+  },
+  {
+    "id": "done-some-not-others",
+    "note": "说了做完的标完成，说了没做的不动",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/生活", "request": "今天快递取了，水费也交了，电话还没打", "subfolders": [], "open_tasks": [{ "number": 1, "title": "买菜" }, { "number": 2, "title": "取快递" }, { "number": 3, "title": "交水费" }, { "number": 4, "title": "给爸妈打电话" }], "done_tasks": [] },
+    "expect": { "allowed": ["done"], "done": [2, 3], "untouched": [1, 4] }
+  },
+  {
+    "id": "clear-all-reminders",
+    "note": "去掉所有提醒，截止时间和重复留着",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/工作", "request": "把所有提醒都关了，太吵了", "subfolders": [], "open_tasks": [{ "number": 1, "title": "开周会", "due": "2026-11-30 10:00", "remind": 15, "repeat": "1w" }, { "number": 2, "title": "交报告", "due": "2026-11-27 18:00", "remind": 60 }, { "number": 3, "title": "整理桌面" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2026-11-30 10:00 ~1w"], [2, "2026-11-27 18:00"]], "untouched": [3] }
+  },
+  {
+    "id": "due-day-after-tomorrow",
+    "note": "相对日期加上几点",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/工作", "request": "回复客户邮件改到后天下午三点前", "subfolders": [], "open_tasks": [{ "number": 1, "title": "回复客户邮件", "due": "2026-11-25" }, { "number": 2, "title": "改合同" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2026-11-27 15:00"]], "untouched": [2] }
+  },
+  {
+    "id": "trip-deps-and-dates",
+    "note": "一句话里既有先后又有从出发日算的期限",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/旅行/日本", "request": "出发是 1 月 15 号。签证下来以后才能订机票和酒店，换日元和买 JR Pass 出发前一周弄好", "subfolders": [], "open_tasks": [{ "number": 1, "title": "办签证" }, { "number": 2, "title": "订机票" }, { "number": 3, "title": "订酒店" }, { "number": 4, "title": "换日元" }, { "number": 5, "title": "买 JR Pass" }], "done_tasks": [] },
+    "expect": { "allowed": ["after", "due"], "linked": [[1, 2], [1, 3]], "not_linked": [[2, 3], [3, 2]], "due": [[4, "2027-01-08"], [5, "2027-01-08"]] }
+  },
+  {
+    "id": "fix-overdue-date",
+    "note": "把已经过了的截止日期改正：没说年份，按原来的日期定在今年，不推到明年",
+    "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/工作", "request": "交接文档的截止日期填错了，应该是 11 月 20 号，不是 21 号", "subfolders": [], "open_tasks": [{ "number": 1, "title": "写交接文档", "due": "2026-11-21" }, { "number": 2, "title": "约新同事吃饭", "due": "2026-11-27 12:00" }], "done_tasks": [] },
+    "expect": { "allowed": ["due"], "due": [[1, "2026-11-20"]], "untouched": [2] }
   }
 ]

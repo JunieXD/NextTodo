@@ -13,6 +13,13 @@ export const isoDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}
 /** `HH:MM` of a moment, in local time. */
 export const isoTime = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
+/** The next time on the five minutes after `now`, as `HH:MM`: the nearest may be gone already, and a due
+ * time it is set to would be due at once. 23:55 at the latest, gone or not. */
+export function nextFive(now: Date): string {
+  const m = Math.min((Math.floor((now.getHours() * 60 + now.getMinutes()) / 5) + 1) * 5, 23 * 60 + 55);
+  return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+}
+
 /** `HH:MM` of a time typed: `9:07`, `907`, or the hour alone, `9`; with a full-width colon or a dot as
  * well, as Chinese input methods give them. Null if it is none. */
 export function parseTime(s: string): string | null {

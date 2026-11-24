@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { deadline, dueKind, formatDue, inOrder, parseTime, remindAt, remindersLabel } from "./dates";
+import { deadline, dueKind, formatDue, inOrder, nextFive, parseTime, remindAt, remindersLabel } from "./dates";
 
 // Monday 2 November 2026, 10:30
 const now = new Date(2026, 10, 2, 10, 30);
@@ -37,6 +37,13 @@ test("reminders", () => {
   expect(remindAt(due, { days: 1, time: "20:00" })).toEqual(new Date(2026, 10, 7, 20, 0));
   expect(remindAt(due, { before: 90 })).toEqual(new Date(2026, 10, 8, 7, 30));
   expect(remindAt({ date: "2026-12-01" }, { days: 2, time: "09:30" })).toEqual(new Date(2026, 10, 29, 9, 30));
+});
+
+test("the next five minutes", () => {
+  const at = (h: number, m: number, s: number) => nextFive(new Date(2026, 10, 2, h, m, s));
+  expect([at(3, 42, 20), at(3, 45, 0), at(3, 45, 30), at(3, 49, 59), at(23, 54, 0), at(23, 55, 0), at(23, 59, 59)]).toEqual([
+    "03:45", "03:50", "03:50", "03:50", "23:55", "23:55", "23:55",
+  ]);
 });
 
 test("times typed", () => {

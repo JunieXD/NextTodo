@@ -22,6 +22,7 @@ import {
   inOrder,
   isoDate,
   monthGrid,
+  nextFive,
   parseTime,
   remindLabel,
   remindersLabel,
@@ -160,7 +161,7 @@ export function DueEditor({
     >
       <Calendar value={date} min={start ?? undefined} onChange={setDate} />
       <div className="group settings">
-        <TimeRow value={time} extra={due?.time} onChange={setTime} optional />
+        <TimeRow value={time} extra={due?.time} min={date === start ? startTime : undefined} onChange={setTime} optional />
         <MultiSelect
           label="提醒"
           text={remindersLabel(reminders)}
@@ -358,7 +359,7 @@ export function StartEditor({
     >
       <Calendar value={date} max={due?.date} onChange={setDate} />
       <div className="group settings">
-        <TimeRow value={time} extra={was} onChange={setTime} optional />
+        <TimeRow value={time} extra={was} max={date === due?.date ? due.time : undefined} onChange={setTime} optional />
       </div>
     </Modal>
   );
@@ -460,18 +461,23 @@ const FIVES = Array.from({ length: 12 }, (_, i) => i * 5);
 
 /** The time of day, `HH:MM`: typed, or the hour, then the minute, every 5, from two columns. The
  * minutes of `extra`, the time it was, and of the time now are there to pick too. `optional`, it can
- * be none, "". */
+ * be none, "": opened then, it starts at the next five minutes, not before `min` nor after `max`, to take
+ * as it is or change. */
 export function TimeRow({
   label = "时间",
   value,
   extra,
   optional = false,
+  min,
+  max,
   onChange,
 }: {
   label?: string;
   value: string;
   extra?: string;
   optional?: boolean;
+  min?: string;
+  max?: string;
   onChange(time: string): void;
 }) {
   const root = useContext(RootContext);
@@ -494,10 +500,9 @@ export function TimeRow({
     if (m) centre(mins.current!, m);
     return at;
   };
-  // Opened, at this hour if none is picked; that hour takes the focus.
   const show = (e: Event) => {
     e.preventDefault();
-    scroll(hour ?? new Date().getHours()).focus({ preventScroll: true });
+    scroll(hour!).focus({ preventScroll: true });
   };
   // Typed, the columns show it at once: its minute may be a new one.
   const typed = (time: string) => {
@@ -505,7 +510,18 @@ export function TimeRow({
     scroll(Number(time.slice(0, 2)));
   };
   return (
-    <Popover.Root open={open} onOpenChange={setOpen} modal>
+    <Popover.Root
+      open={open}
+      onOpenChange={(o) => {
+        // In the same render as opening, so that `show` finds the hour picked to focus.
+        if (o && !value) {
+          const next = nextFive(new Date());
+          onChange(min && next < min ? min : max && next > max ? max : next);
+        }
+        setOpen(o);
+      }}
+      modal
+    >
       <Popover.Trigger className="row pick">
         <div className="row-inner">
           {label}

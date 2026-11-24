@@ -203,48 +203,35 @@ svg { display: block; flex: none; }
 .rail-note .row-inner { min-height: 44px; justify-content: space-between; font-size: 13px; color: var(--on-surface-variant); }
 
 .folder-row .row-inner { gap: 12px; }
-.folder-ic { width: 30px; height: 30px; border-radius: 8px; background: var(--fc-container, var(--primary-container)); color: var(--fc-on, var(--on-primary-container)); display: grid; place-items: center; flex: none; }
-/* A folder's colour (docs/ui.md#文件夹的颜色和图标): Material 3 tones 90, 10 and 40, dark 30, 90 and 80. */
-.fc-red { --fc-container: #FFDAD6; --fc-on: #410002; --fc-accent: #9C4239; }
-.fc-orange { --fc-container: #FFDBC8; --fc-on: #321300; --fc-accent: #96490C; }
-.fc-amber { --fc-container: #FFDDB6; --fc-on: #2A1800; --fc-accent: #845400; }
-.fc-yellow { --fc-container: #FFE17A; --fc-on: #231B00; --fc-accent: #715C00; }
-.fc-lime { --fc-container: #D9EC7B; --fc-on: #181E00; --fc-accent: #566500; }
-.fc-green { --fc-container: #ACF4A2; --fc-on: #002203; --fc-accent: #296B2A; }
-.fc-teal { --fc-container: #78F8DD; --fc-on: #00201A; --fc-accent: #006B5B; }
-.fc-cyan { --fc-container: #99F0FF; --fc-on: #001F24; --fc-accent: #006874; }
-.fc-blue { --fc-container: #D5E3FF; --fc-on: #001C3B; --fc-accent: #215FA6; }
-.fc-indigo { --fc-container: #E1DFFF; --fc-on: #0B0664; --fc-accent: #5455A9; }
-.fc-purple { --fc-container: #F0DBFF; --fc-on: #2C0051; --fc-accent: #744C9D; }
-.fc-pink { --fc-container: #FFD8E8; --fc-on: #3C0028; --fc-accent: #944170; }
-:root[data-theme="dark"] .fc-red { --fc-container: #7D2B24; --fc-on: #FFDAD6; --fc-accent: #FFB4AB; }
-:root[data-theme="dark"] .fc-orange { --fc-container: #753400; --fc-on: #FFDBC8; --fc-accent: #FFB68B; }
-:root[data-theme="dark"] .fc-amber { --fc-container: #643F00; --fc-on: #FFDDB6; --fc-accent: #FFB95A; }
-:root[data-theme="dark"] .fc-yellow { --fc-container: #554500; --fc-on: #FFE17A; --fc-accent: #E5C449; }
-:root[data-theme="dark"] .fc-lime { --fc-container: #404C00; --fc-on: #D9EC7B; --fc-accent: #BDD062; }
-:root[data-theme="dark"] .fc-green { --fc-container: #0B5314; --fc-on: #ACF4A2; --fc-accent: #91D888; }
-:root[data-theme="dark"] .fc-teal { --fc-container: #005144; --fc-on: #78F8DD; --fc-accent: #59DBC1; }
-:root[data-theme="dark"] .fc-cyan { --fc-container: #004F58; --fc-on: #99F0FF; --fc-accent: #4FD8EC; }
-:root[data-theme="dark"] .fc-blue { --fc-container: #004787; --fc-on: #D5E3FF; --fc-accent: #A6C8FF; }
-:root[data-theme="dark"] .fc-indigo { --fc-container: #3B3D8F; --fc-on: #E1DFFF; --fc-accent: #C1C1FF; }
-:root[data-theme="dark"] .fc-purple { --fc-container: #5B3383; --fc-on: #F0DBFF; --fc-accent: #DCB8FF; }
-:root[data-theme="dark"] .fc-pink { --fc-container: #772957; --fc-on: #FFD8E8; --fc-accent: #FFAFD6; }
+.folder-ic { width: 30px; height: 30px; border-radius: 8px; background: var(--fc-fill, var(--primary-container)); color: var(--fc-on, var(--on-primary-container)); display: grid; place-items: center; flex: none; }
+/* A folder's colour (docs/ui.md#文件夹的颜色和图标): what it draws comes with it, from folder-look.tsx; drawn
+   on the page, its icon is the one for the theme. */
+.fc { --fc-accent: var(--fc-light); }
+:root[data-theme="dark"] .fc { --fc-accent: var(--fc-dark); }
 /* Colours to choose from: a folder's, the accent. Ringed when chosen, the gap showing what is behind. */
-.color-choices { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin: 0 12px; }
+.color-choices { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; margin: 0 12px; }
 .color-choices.accents { grid-template-columns: repeat(7, 36px); justify-content: space-between; margin: 0 16px; }
 .color-choice { height: 36px; display: grid; place-items: center; border-radius: 50%; }
-.color-choice .swatch { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--swatch, var(--fc-accent, var(--primary))); color: var(--surface); }
-.color-choice[aria-pressed="true"] .swatch { outline: 2px solid var(--swatch, var(--fc-accent, var(--primary))); outline-offset: 2px; }
+.color-choice .swatch { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--swatch); color: var(--swatch-on, var(--surface)); }
+.color-choice[aria-pressed="true"] .swatch { outline: 2px solid var(--swatch); outline-offset: 2px; }
 /* A folder's default: no colour of its own, the folder taking the accent. */
 .color-choice .swatch.none { background: none; color: var(--on-surface-variant); box-shadow: inset 0 0 0 2px var(--outline); }
 .color-choice[aria-pressed="true"] .swatch.none { outline-color: var(--outline); }
-.swatch.accent-emerald { --swatch: var(--accent-emerald); }
-.swatch.accent-lime { --swatch: var(--accent-lime); }
-.swatch.accent-cyan { --swatch: var(--accent-cyan); }
-.swatch.accent-blue { --swatch: var(--accent-blue); }
-.swatch.accent-indigo { --swatch: var(--accent-indigo); }
-.swatch.accent-purple { --swatch: var(--accent-purple); }
-.swatch.accent-pink { --swatch: var(--accent-pink); }
+/* Every hue, as on the bar a colour of one's own is picked on. */
+:root { --hues: #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00; }
+.color-choice .swatch.rainbow { background: conic-gradient(var(--hues)); }
+/* A colour of one's own: saturation across and value up the square, of the hue chosen on the bar. */
+.picker { display: flex; flex-direction: column; gap: 14px; margin: 14px 16px 0; }
+.picker-sv, .picker-hue { position: relative; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; outline: none; }
+.picker-sv { height: 160px; border-radius: 12px; background: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent), hsl(var(--hue) 100% 50%); }
+.picker-hue { height: 24px; border-radius: 12px; cursor: pointer; background: linear-gradient(to right, var(--hues)); }
+.picker-thumb { position: absolute; width: 24px; height: 24px; margin: -12px; border-radius: 50%; background: var(--thumb); border: 3px solid #fff; box-shadow: 0 0 0 1px rgb(0 0 0 / .2), 0 1px 4px rgb(0 0 0 / .3); pointer-events: none; }
+.picker-sv:focus-visible .picker-thumb, .picker-hue:focus-visible .picker-thumb { box-shadow: 0 0 0 2px var(--primary), 0 1px 4px rgb(0 0 0 / .3); }
+.picker-fields { display: flex; gap: 10px; }
+.picker-fields label { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; font-size: 13px; color: var(--on-surface-variant); }
+.picker-fields label:first-child { flex: 1.8; }
+.picker-fields input { width: 100%; min-width: 0; height: 36px; border-radius: 10px; border: 1px solid var(--outline-variant); background: var(--group-bg); padding: 0 8px; font: 400 15px var(--font); color: var(--on-surface); outline: none; font-variant-numeric: tabular-nums; }
+.picker-fields input:focus { border-color: var(--primary); }
 .folder-glyph { display: inline-flex; flex: none; color: var(--fc-accent, currentColor); }
 /* Centred on the title's characters, whose middle is about .36em above the baseline (Chinese ones, in PingFang
    and Noto Sans CJK alike); the tile itself stands on its icon's bottom edge, half the icon below its middle. */

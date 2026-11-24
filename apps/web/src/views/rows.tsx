@@ -330,7 +330,7 @@ export function RailList({
           </div>
         </button>
       )}
-      <div className="rail-list reorderable" ref={list} style={{ "--gutter": `${rail.gutter}px`, "--sep-left": `${rail.gutter}px` } as React.CSSProperties}>
+      <div className="rail-list reorderable" ref={list} style={{ "--gutter": `${rail.gutter}px`, "--sep-left": `${rail.gutter}px` }}>
         {layout && (
           <svg className="rail" width={layout.gutter} height={layout.height}>
             {layout.paths.map((p) => (

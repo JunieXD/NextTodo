@@ -400,7 +400,7 @@ function Appearance() {
       <h2 className="group-title">主题色</h2>
       <div className="color-choices accents">
         {ACCENTS.map(([a, name]) => (
-          <Swatch key={a} label={name} tint={`accent-${a}`} chosen={a === accent} onChoose={() => setAccent(a)} />
+          <Swatch key={a} label={name} color={`var(--accent-${a})`} chosen={a === accent} onChoose={() => setAccent(a)} />
         ))}
       </div>
       <h2 className="group-title">已完成的事项</h2>

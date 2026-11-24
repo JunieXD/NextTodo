@@ -24,12 +24,29 @@ export function Check({ status, large, pop, left, onToggle }: { status: Status; 
   );
 }
 
-/** A round swatch to choose a colour by, ringed and ticked when chosen. `tint` is the class giving its
- * colour; none, a hollow circle, for a default with no colour of its own. */
-export function Swatch({ label, tint, chosen, onChoose }: { label: string; tint?: string; chosen: boolean; onChoose(): void }) {
+/** A round swatch to choose a colour by, ringed and ticked when chosen, the tick in `on`. Without a
+ * colour, a hollow circle, for a default with none of its own; or, `rainbow`, every hue, for a colour
+ * still to make. */
+export function Swatch({
+  label,
+  color,
+  on,
+  rainbow = false,
+  chosen,
+  onChoose,
+}: {
+  label: string;
+  color?: string;
+  on?: string;
+  rainbow?: boolean;
+  chosen: boolean;
+  onChoose(): void;
+}) {
   return (
     <button type="button" className="color-choice" aria-label={label} aria-pressed={chosen} title={label} onClick={onChoose}>
-      <span className={`swatch ${tint ?? "none"}`}>{chosen && <Icon of={CheckIcon} size={16} />}</span>
+      <span className={`swatch${color ? "" : rainbow ? " rainbow" : " none"}`} style={{ "--swatch": color, "--swatch-on": on }}>
+        {chosen && <Icon of={CheckIcon} size={16} />}
+      </span>
     </button>
   );
 }
@@ -78,7 +95,7 @@ export function Seg<T extends string>({
   return (
     <RadioGroup.Root
       className={`seg${small ? " sm" : ""}`}
-      style={{ "--n": items.length, "--i": items.findIndex(([v]) => v === value) } as React.CSSProperties}
+      style={{ "--n": items.length, "--i": items.findIndex(([v]) => v === value) }}
       aria-label={label}
       value={value}
       onValueChange={(v) => onChange(v as T)}

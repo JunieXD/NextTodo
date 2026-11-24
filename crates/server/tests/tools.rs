@@ -1507,8 +1507,12 @@ async fn a_folder_takes_a_colour_and_an_icon_that_copies_keep() {
     assert_eq!(looks(t.ok(&s, "tree", json!({})).await["data"].clone())[1], (json!("学习"), Value::Null, json!("book")));
     t.ok(&s, "undo", json!({ "batch": styled["data"]["batch"] })).await;
     assert_eq!(looks(t.ok(&s, "tree", json!({})).await["data"].clone())[1], (json!("学习"), Value::Null, Value::Null));
-    for bad in [json!({ "folder": "/学习" }), json!({ "folder": "/学习", "color": "black" }), json!({ "folder": "/", "icon": "book" })]
-    {
+    // A colour of one's own, in either case, is kept in lower case.
+    t.ok(&s, "style", json!({ "folder": "/学习", "color": "#3478F6" })).await;
+    assert_eq!(looks(t.ok(&s, "tree", json!({})).await["data"].clone())[1].1, json!("#3478f6"));
+    let mut bad = vec![json!({ "folder": "/学习" }), json!({ "folder": "/", "icon": "book" })];
+    bad.extend(["black", "3478f6", "#3478f", "#3478f60", "#34g8f6", "#+478f6"].map(|c| json!({ "folder": "/学习", "color": c })));
+    for bad in bad {
         assert_eq!(t.tool(&s, "style", bad.clone()).await.status, StatusCode::BAD_REQUEST, "{bad}");
     }
 }

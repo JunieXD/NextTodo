@@ -9,8 +9,9 @@ use uuid::Uuid;
 /// older version would not read changes, the operations and what they did included
 /// (docs/local.md#格式版本). Every format before it is still read. 2: a repeat may end or go by the lunar
 /// calendar, a folder has a colour and an icon, and each time a repeating task is done is recorded. 3:
-/// several reminders. 4: a time of a repeating task done again keeps a record of each.
-pub(crate) const FORMAT: i64 = 4;
+/// several reminders. 4: a time of a repeating task done again keeps a record of each. 5: a folder's
+/// colour may be one of the user's own, and there are more presets.
+pub(crate) const FORMAT: i64 = 5;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct Commit {

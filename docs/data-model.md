@@ -57,7 +57,7 @@
 | parent_id | TEXT → folders，可空 | 空表示在根目录；删除父文件夹时级联删除 |
 | name | TEXT | 1–100 字，单行，不含 `/` 和控制字符 |
 | sort_key | TEXT | 同一层内的顺序 |
-| color | TEXT，可空 | [颜色](ui.md#文件夹的颜色和图标)：`red`、`orange`、`amber`、`yellow`、`lime`、`green`、`teal`、`cyan`、`blue`、`indigo`、`purple`、`pink`；空表示默认 |
+| color | TEXT，可空 | [颜色](ui.md#文件夹的颜色和图标)：预设的 `red`、`orange`、`amber`、`yellow`、`lime`、`green`、`teal`、`cyan`、`blue`、`indigo`、`purple`、`pink`、`brown`、`gray`，或自己调的 `#rrggbb`（写的时候大小写都行，存成小写）；空表示默认 |
 | icon | TEXT，可空 | [图标](ui.md#文件夹的颜色和图标)：`briefcase`、`graduation-cap`、`book`、`pen`、`file`、`laptop`、`code`、`flask`、`calculator`、`lightbulb`、`target`、`house`、`cart`、`utensils`、`coffee`、`shirt`、`baby`、`paw`、`heart`、`gift`、`dumbbell`、`bike`、`heart-pulse`、`pill`、`wallet`、`piggy-bank`、`plane`、`car`、`map-pin`、`music`、`camera`、`palette`、`gamepad`、`star`、`flag`、`rocket`、`trophy`、`wrench`、`leaf`、`users`，依次是界面上那 40 个图标；空表示默认 |
 | created_at / updated_at | INTEGER | |
 

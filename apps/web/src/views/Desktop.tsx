@@ -2,7 +2,7 @@
 // open task's details on the right.
 
 import { CalendarDays, ChevronLeft, ChevronRight, CircleCheck, FolderRoot, History, ListChecks, Lock, PanelLeft, Search } from "lucide-react";
-import { type CSSProperties, Fragment, type ReactNode, useRef, useState } from "react";
+import { Fragment, type ReactNode, useRef, useState } from "react";
 import { Link, Redirect, useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
 import { formatToday } from "../domain/dates";
@@ -174,7 +174,7 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
   return (
     <div
       className={`desk-cols${sideOpen ? "" : " side-closed"}${open ? "" : " pane-closed"}${columns.dragging ? " resizing" : ""}`}
-      style={{ "--sidebar": `${columns.shown.sidebar}px`, "--pane": `${columns.shown.pane}px` } as CSSProperties}
+      style={{ "--sidebar": `${columns.shown.sidebar}px`, "--pane": `${columns.shown.pane}px` }}
       onTransitionEnd={(e) => e.target === e.currentTarget && !open && setShown(null)}
     >
       <Sidebar at={query.trim() ? null : at} query={query} setQuery={search} />

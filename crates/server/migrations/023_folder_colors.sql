@@ -1,0 +1,3 @@
+-- A folder's colour may be one of the user's own, `#rrggbb`, and there are two more presets
+-- (docs/ui.md#文件夹的颜色和图标). The table stays as it is; the version goes up so that an older
+-- version, which can't read these colours, turns the database down rather than taking it in.

@@ -235,7 +235,11 @@ enum Command {
     #[command(about = "设文件夹的颜色和图标")]
     Style {
         folder: String,
-        #[arg(long, conflicts_with = "no_color", help = "red、orange、amber、yellow、lime、green、teal、cyan、blue、indigo、purple、pink")]
+        #[arg(
+            long,
+            conflicts_with = "no_color",
+            help = "预设的 red、orange、amber、yellow、lime、green、teal、cyan、blue、indigo、purple、pink、brown、gray，或自己调的 #rrggbb"
+        )]
         color: Option<String>,
         #[arg(long, help = "改回默认的颜色")]
         no_color: bool,

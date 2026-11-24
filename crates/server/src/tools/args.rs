@@ -325,7 +325,7 @@ pub struct StyleArgs {
     #[serde(default, deserialize_with = "nullable")]
     #[schemars(
         with = "Option<String>",
-        description = "颜色：red、orange、amber、yellow、lime、green、teal、cyan、blue、indigo、purple、pink；null 改回默认；不给就不改"
+        description = "颜色：预设的 red、orange、amber、yellow、lime、green、teal、cyan、blue、indigo、purple、pink、brown、gray，或自己调的 #rrggbb；null 改回默认；不给就不改"
     )]
     pub color: Option<Option<FolderColor>>,
     #[serde(default, deserialize_with = "nullable")]

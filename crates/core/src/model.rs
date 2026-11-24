@@ -104,6 +104,8 @@ macro_rules! text_type {
 macro_rules! sql_text_enum {
     ($name:ident { $($variant:ident = $text:literal),* }) => {
         impl $name {
+            pub const ALL: &'static [Self] = &[$($name::$variant),*];
+
             pub fn as_str(self) -> &'static str {
                 match self {
                     $($name::$variant => $text),*
@@ -145,12 +147,62 @@ macro_rules! text_enum {
 }
 
 text_enum!(
-    /// A folder's colour, from the presets (docs/ui.md#文件夹的颜色和图标).
-    FolderColor {
+    /// A folder's colour from the presets (docs/ui.md#文件夹的颜色和图标).
+    ColorPreset {
         Red = "red", Orange = "orange", Amber = "amber", Yellow = "yellow", Lime = "lime", Green = "green",
         Teal = "teal", Cyan = "cyan", Blue = "blue", Indigo = "indigo", Purple = "purple", Pink = "pink",
+        Brown = "brown", Gray = "gray",
     }
 );
+
+/// A folder's colour: a preset by its name, or one of the user's own, `#rrggbb`
+/// (docs/ui.md#文件夹的颜色和图标).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(try_from = "String", into = "String")]
+#[ts(export, untagged)]
+pub enum FolderColor {
+    Preset(ColorPreset),
+    #[ts(type = "`#${string}`")]
+    Own([u8; 3]),
+}
+
+impl TryFrom<String> for FolderColor {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, String> {
+        if let Some(hex) = s.strip_prefix('#').filter(|h| h.len() == 6 && h.bytes().all(|b| b.is_ascii_hexdigit())) {
+            let byte = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).expect("hex digits");
+            return Ok(Self::Own([byte(0), byte(2), byte(4)]));
+        }
+        ColorPreset::ALL.iter().find(|p| p.as_str() == s).map(|&p| Self::Preset(p)).ok_or_else(|| {
+            let names: Vec<_> = ColorPreset::ALL.iter().map(|p| p.as_str()).collect();
+            format!("颜色要是 {} 之一，或者 # 加六位十六进制数，如 #3478f6", names.join("、"))
+        })
+    }
+}
+
+impl From<FolderColor> for String {
+    fn from(c: FolderColor) -> String {
+        match c {
+            FolderColor::Preset(p) => p.as_str().to_owned(),
+            FolderColor::Own([r, g, b]) => format!("#{r:02x}{g:02x}{b:02x}"),
+        }
+    }
+}
+
+#[cfg(feature = "sql")]
+impl rusqlite::ToSql for FolderColor {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        Ok(String::from(*self).into())
+    }
+}
+
+#[cfg(feature = "sql")]
+impl rusqlite::types::FromSql for FolderColor {
+    fn column_result(v: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        Self::try_from(v.as_str()?.to_owned()).map_err(|e| rusqlite::types::FromSqlError::Other(e.into()))
+    }
+}
 
 text_enum!(
     /// A folder's icon, from the presets (docs/ui.md#文件夹的颜色和图标).

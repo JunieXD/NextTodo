@@ -207,7 +207,7 @@ function Year(p: {
         return (
           <section key={m} className="cal-mini">
             <h3>{m + 1}月</h3>
-            <div style={{ "--skip": (first.getDay() + 6) % 7 } as React.CSSProperties}>
+            <div style={{ "--skip": (first.getDay() + 6) % 7 }}>
               {Array.from({ length }, (_, i) => {
                 const iso = isoDate(new Date(year, m, i + 1));
                 const n = done.get(iso)?.length ?? 0;

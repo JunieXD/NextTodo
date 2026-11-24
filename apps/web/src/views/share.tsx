@@ -24,7 +24,7 @@ async function send(ops: Op[]): Promise<{ id: MutationId; effects: Effect[] }> {
   return { id, effects };
 }
 
-const sized = (size: number) => ({ "--size": `${size}px` }) as CSSProperties;
+const sized = (size: number): CSSProperties => ({ "--size": `${size}px` });
 
 /** Someone's avatar, `size` across: the first character of their name, beside which it stands. */
 function Avatar({ board, id, size }: { board: Board; id: string; size: number }) {

@@ -1008,7 +1008,7 @@ fn folder_values(f: &Folder, n: &Names) -> Vec<(ChangedField, Option<String>)> {
     vec![
         (ChangedField::Name, Some(f.name.as_str().to_owned())),
         (ChangedField::Parent, Some(n.path(f.parent_id))),
-        (ChangedField::Color, f.color.map(|c| c.as_str().to_owned())),
+        (ChangedField::Color, f.color.map(String::from)),
         (ChangedField::Icon, f.icon.map(|i| i.as_str().to_owned())),
     ]
 }

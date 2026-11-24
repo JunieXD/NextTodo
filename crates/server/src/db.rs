@@ -33,6 +33,7 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/020_completions.sql"),
     include_str!("../migrations/021_reminders.sql"),
     include_str!("../migrations/022_completions_again.sql"),
+    include_str!("../migrations/023_folder_colors.sql"),
 ];
 
 #[derive(Clone)]

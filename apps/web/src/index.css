@@ -653,7 +653,8 @@ a.text-btn { display: inline-flex; align-items: center; }
 .crumbs .crumb-back:hover { opacity: .8; }
 .main-title { margin: 0; font-size: 28px; font-weight: 700; line-height: 1.2; }
 .main-head .seg { width: 200px; }
-.head-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+/* Short of room, such as the batch's in a narrow middle column, whole buttons go on to another line. */
+.head-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-left: auto; }
 .main-scroll { flex: 1; overflow-y: auto; padding: 0 12px 40px; }
 .main > :not(.main-tools) { animation: fade .2s var(--ease); }
 .main-scroll .group-title:first-child { margin-top: 6px; }
@@ -747,7 +748,7 @@ a.text-btn { display: inline-flex; align-items: center; }
 .field.error input { border-color: var(--error); }
 .field .hint.error-text { color: var(--error); }
 .form-error { margin: -4px 16px 12px; font-size: 13px; color: var(--error); }
-.filled-btn, .tonal-btn { height: 40px; border-radius: 20px; padding: 0 20px; font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.filled-btn, .tonal-btn { height: 40px; border-radius: 20px; padding: 0 20px; font-size: 14px; font-weight: 600; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .filled-btn { background: var(--primary); color: var(--on-primary); }
 .tonal-btn { background: var(--secondary-container); color: var(--on-secondary-container); }
 .filled-btn:disabled, .tonal-btn:disabled, .actions .text-btn:disabled, .login-local .text-btn:disabled { opacity: .5; cursor: default; }

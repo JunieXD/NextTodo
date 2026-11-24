@@ -1,7 +1,8 @@
 // Batch operations (docs/ui.md#批量操作): tasks chosen on a folder's page or on what is done, then
-// completed, reopened, moved, assigned or deleted together, as one change that one undo takes back.
+// completed, reopened, chained, moved, assigned or deleted together, as one change that one undo takes
+// back.
 
-import { Check as CheckIcon, FolderInput, type LucideIcon, RotateCcw, Trash2, Users, X } from "lucide-react";
+import { Check as CheckIcon, FolderInput, Link, type LucideIcon, RotateCcw, Trash2, Users, X } from "lucide-react";
 import { type Dispatch, type ReactNode, type SetStateAction, createContext, useContext, useEffect, useLayoutEffect, useState } from "react";
 import { useLocation } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
@@ -122,6 +123,8 @@ interface BatchAction {
   icon: LucideIcon;
   label: string;
   danger?: boolean;
+  /** How many have to be chosen for it, one if not said. */
+  least?: number;
   run(): void;
 }
 
@@ -193,6 +196,22 @@ function useBatchActions(place: Place, chosen: Task[], end: () => void): { actio
     if (r) done(r, `已恢复 ${going.length} 项`);
   };
 
+  /** The links `tasks` lack to be one after another, in the order given. */
+  const links = (tasks: Task[]) => tasks.slice(1).flatMap((t, i): Op[] => (board().before(t).some((p) => p.id === tasks[i].id) ? [] : [{ op: "dep.add", before: tasks[i].id, after: t.id }]));
+
+  const chain = async () => {
+    const lacking = links(chosen).length;
+    if (!lacking) return snack("它们已经按这个顺序连着了");
+    if (!fits(lacking)) return;
+    if (!(await confirm({ title: `将 ${chosen.length} 项按顺序串起来？`, body: "从上到下，每一项都要等上一项完成。", ok: "串起来" }))) return;
+    const going = still(chosen);
+    const ops = links(going);
+    if (!ops.length) return end();
+    if (!fits(ops.length)) return;
+    const r = commit(ops);
+    if (r) done(r, `已将 ${going.length} 项串起来`);
+  };
+
   const move = (folder: FolderId | null) => {
     if (!chosen.length || !fits(chosen.length)) return;
     // Last there, in the order they were listed.
@@ -238,6 +257,7 @@ function useBatchActions(place: Place, chosen: Task[], end: () => void): { actio
   return {
     actions: [
       allDone ? reopening : { icon: CheckIcon, label: "完成", run: complete },
+      { icon: Link, label: "串起来", least: 2, run: chain },
       { icon: FolderInput, label: "移动到", run: () => setMoving(true) },
       ...(shared ? [{ icon: Users, label: "负责人", run: () => setAssigning(true) }] : []),
       deleting,
@@ -288,7 +308,7 @@ export function BatchBar() {
     <>
       <nav className="tabbar batch-bar" style={{ gridTemplateColumns: `repeat(${actions.length}, 1fr)` }}>
         {actions.map((a) => (
-          <button key={a.label} className={`tab${a.danger ? " danger" : ""}`} disabled={!batch.tasks.length} onClick={a.run}>
+          <button key={a.label} className={`tab${a.danger ? " danger" : ""}`} disabled={batch.tasks.length < (a.least ?? 1)} onClick={a.run}>
             <span className="tab-ic">
               <Icon of={a.icon} size={22} />
             </span>
@@ -329,7 +349,7 @@ export function BatchTools() {
         {all ? "全不选" : "全选"}
       </button>
       {actions.map((a) => (
-        <button key={a.label} className={`tonal-btn${a.danger ? " danger-text" : ""}`} disabled={!tasks.length} onClick={a.run}>
+        <button key={a.label} className={`tonal-btn${a.danger ? " danger-text" : ""}`} disabled={tasks.length < (a.least ?? 1)} onClick={a.run}>
           <Icon of={a.icon} size={18} />
           {a.label}
         </button>

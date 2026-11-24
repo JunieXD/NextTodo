@@ -2,25 +2,50 @@
 // a due date, and in the apps, which remind, whether reminders hide what they are of, and the daily
 // digest.
 
+import { type ReactNode, useState } from "react";
 import type { Remind } from "../api/types/Remind";
 import { app } from "../api/http";
-import { DAY_REMINDERS, REMINDERS, inOrder, remindLabel, remindersLabel } from "../domain/dates";
+import { DAY_REMINDERS, MAX_REMINDERS, REMINDERS, inOrder, remindLabel, remindersLabel } from "../domain/dates";
 import { setDailyDigest, setDefaultReminders, setHideReminders, useDailyDigest, useDefaultReminders, useHideReminders } from "../remind-settings";
 import { MultiSelect, Switch } from "../ui/controls";
-import { TimeRow } from "./due";
+import { useFeedback } from "../ui/feedback";
+import { AddAhead, AddOnDay, TimeRow } from "./due";
 
-/** `offered` as the menu lists them; `value`, those picked, in the order they come. */
-function Pick<R extends Remind>({ label, offered, value, onChange }: { label: string; offered: R[]; value: Remind[]; onChange(v: R[]): void }) {
+/** The menu of `presets` and those of `value`, the reminders picked, ordered as for a task due at
+ * `time`; “自定义…” opens the rows `adder` gives to add one more. */
+function Pick<R extends Remind>(p: {
+  label: string;
+  presets: R[];
+  value: R[];
+  time: string | undefined;
+  onChange(v: R[]): void;
+  adder(add: (r: R) => void): ReactNode;
+}) {
+  const [adding, setAdding] = useState(false);
+  const { snack } = useFeedback();
   const key = (r: Remind) => JSON.stringify(r);
+  // A task given a due date gets them all, and can't be saved with more.
+  const set = (v: R[]) => (v.length > MAX_REMINDERS ? snack(`提醒最多 ${MAX_REMINDERS} 个`) : p.onChange(v));
+  const value = inOrder(p.value, p.time);
+  // From the due time back.
+  const listed = inOrder([...p.presets, ...value], p.time).reverse();
   return (
-    <MultiSelect
-      label={label}
-      text={remindersLabel(value)}
-      items={offered.map((r) => [key(r), remindLabel(r)])}
-      value={value.map(key)}
-      onChange={(keys) => onChange(offered.filter((r) => keys.includes(key(r))))}
-      none="不提醒"
-    />
+    <>
+      <MultiSelect
+        label={p.label}
+        text={remindersLabel(value)}
+        items={listed.map((r) => [key(r), remindLabel(r)])}
+        value={value.map(key)}
+        onChange={(keys) => set(listed.filter((r) => keys.includes(key(r))))}
+        none="不提醒"
+        more={["自定义…", () => setAdding(true)]}
+      />
+      {adding &&
+        p.adder((r) => {
+          set(inOrder([...value, r], p.time));
+          setAdding(false);
+        })}
+    </>
   );
 }
 
@@ -28,17 +53,26 @@ export function RemindSettings() {
   const defaults = useDefaultReminders();
   const hidden = useHideReminders();
   const digest = useDailyDigest();
-  const timed = REMINDERS.map((before) => ({ before }));
   return (
     <>
       <div className="group settings">
-        {/* Any time orders those before it alike. */}
-        <Pick label="有时间的事项" offered={timed} value={inOrder(defaults.timed, "00:00")} onChange={(v) => setDefaultReminders({ ...defaults, timed: v })} />
+        {/* Only so far before the time: one by the day, 当天 09:00 say, would come after a task due
+            earlier. Any time orders those alike. */}
+        <Pick
+          label="有时间的事项"
+          presets={REMINDERS.map((before) => ({ before }))}
+          value={defaults.timed}
+          time="00:00"
+          onChange={(timed) => setDefaultReminders({ ...defaults, timed })}
+          adder={(add) => <AddAhead onAdd={add} />}
+        />
         <Pick
           label="只有日期的事项"
-          offered={DAY_REMINDERS}
-          value={inOrder(defaults.dated, undefined)}
-          onChange={(v) => setDefaultReminders({ ...defaults, dated: v })}
+          presets={DAY_REMINDERS}
+          value={defaults.dated}
+          time={undefined}
+          onChange={(dated) => setDefaultReminders({ ...defaults, dated })}
+          adder={(add) => <AddOnDay onAdd={add} />}
         />
       </div>
       {app && (

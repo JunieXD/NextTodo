@@ -138,7 +138,7 @@ const minutesOf = (time: string) => {
 /** `reminders` of a task due at `time`, if any, as the server keeps them: those before the time only
  * with one, each once, the first to come first, one before the time ahead of one by the day at the
  * same moment. */
-export function inOrder(reminders: Remind[], time: string | undefined): Remind[] {
+export function inOrder<R extends Remind>(reminders: R[], time: string | undefined): R[] {
   // Minutes from the start of the due date.
   const before = time === undefined ? [] : reminders.flatMap((r) => ("before" in r ? [[minutesOf(time) - r.before, r] as const] : []));
   const on = reminders.flatMap((r) => ("days" in r ? [[minutesOf(r.time) - r.days * 1440, r] as const] : []));

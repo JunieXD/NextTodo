@@ -6,6 +6,8 @@ import { type ReactNode, useContext, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import type { Due } from "../api/types/Due";
 import type { Remind } from "../api/types/Remind";
+import type { RemindBefore } from "../api/types/RemindBefore";
+import type { RemindOn } from "../api/types/RemindOn";
 import type { Repeat } from "../api/types/Repeat";
 import type { RepeatFrom } from "../api/types/RepeatFrom";
 import type { RepeatUnit } from "../api/types/RepeatUnit";
@@ -74,10 +76,8 @@ export function DueEditor({
   // One not on the menu being added: so far ahead of the time, or on a day before at a time.
   const [adding, setAdding] = useState(false);
   const [byDay, setByDay] = useState(false);
-  const [ahead, setAhead] = useState<[number, RemindUnit]>([10, "minute"]);
-  const [onDay, setOnDay] = useState<[number, string]>([1, "09:00"]);
-  const add = () => {
-    setChosen([...reminders, time && !byDay ? { before: ahead[0] * REMIND_UNITS[ahead[1]].minutes } : { days: onDay[0], time: onDay[1] }]);
+  const add = (r: Remind) => {
+    setChosen([...reminders, r]);
     setAdding(false);
   };
   // From the due time back, as the menu lists them.
@@ -185,33 +185,7 @@ export function DueEditor({
             />
           </Controls>
         )}
-        {adding &&
-          (time && !byDay ? (
-            <Controls name="提前">
-              <Stepper label="提前多少" min={1} value={ahead[0]} max={MAX_REMIND / REMIND_UNITS[ahead[1]].minutes} onChange={(n) => setAhead([n, ahead[1]])} />
-              <Seg<RemindUnit>
-                label="提前的单位"
-                small
-                items={AHEAD}
-                value={ahead[1]}
-                onChange={(u) => setAhead([Math.min(ahead[0], MAX_REMIND / REMIND_UNITS[u].minutes), u])}
-              />
-            </Controls>
-          ) : (
-            <>
-              <Controls name="提前几天">
-                <Stepper label="提前几天" min={0} value={onDay[0]} max={MAX_REMIND_DAYS} onChange={(n) => setOnDay([n, onDay[1]])} />
-              </Controls>
-              <TimeRow label="几点" value={onDay[1]} onChange={(t) => setOnDay([onDay[0], t])} />
-            </>
-          ))}
-        {adding && (
-          <Controls name="">
-            <button className="text-btn" onClick={add}>
-              添加
-            </button>
-          </Controls>
-        )}
+        {adding && (time && !byDay ? <AddAhead onAdd={add} /> : <AddOnDay onAdd={add} />)}
         <Select<typeof menu>
           label="重复"
           row
@@ -634,6 +608,48 @@ function TimeInput({ onChange, onDone }: { onChange(time: string): void; onDone(
 
 const MONTHDAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
 const LUNAR_DAYS = Array.from({ length: 30 }, (_, i) => dayName(i + 1));
+
+/** The rows under a reminder menu that add one so far ahead of the due time. */
+export function AddAhead({ onAdd }: { onAdd(r: RemindBefore): void }) {
+  const [ahead, setAhead] = useState<[number, RemindUnit]>([10, "minute"]);
+  return (
+    <>
+      <Controls name="提前">
+        <Stepper label="提前多少" min={1} value={ahead[0]} max={MAX_REMIND / REMIND_UNITS[ahead[1]].minutes} onChange={(n) => setAhead([n, ahead[1]])} />
+        <Seg<RemindUnit>
+          label="提前的单位"
+          small
+          items={AHEAD}
+          value={ahead[1]}
+          onChange={(u) => setAhead([Math.min(ahead[0], MAX_REMIND / REMIND_UNITS[u].minutes), u])}
+        />
+      </Controls>
+      <Controls name="">
+        <button className="text-btn" onClick={() => onAdd({ before: ahead[0] * REMIND_UNITS[ahead[1]].minutes })}>
+          添加
+        </button>
+      </Controls>
+    </>
+  );
+}
+
+/** The rows under a reminder menu that add one on the due date, or days before it, at a time. */
+export function AddOnDay({ onAdd }: { onAdd(r: RemindOn): void }) {
+  const [onDay, setOnDay] = useState<[number, string]>([1, "09:00"]);
+  return (
+    <>
+      <Controls name="提前几天">
+        <Stepper label="提前几天" min={0} value={onDay[0]} max={MAX_REMIND_DAYS} onChange={(n) => setOnDay([n, onDay[1]])} />
+      </Controls>
+      <TimeRow label="几点" value={onDay[1]} onChange={(t) => setOnDay([onDay[0], t])} />
+      <Controls name="">
+        <button className="text-btn" onClick={() => onAdd({ days: onDay[0], time: onDay[1] })}>
+          添加
+        </button>
+      </Controls>
+    </>
+  );
+}
 
 /** A row named on the left with controls for its value on the right, or under the name, to the right,
  * where the two don't fit side by side: a narrow screen, or large text. */

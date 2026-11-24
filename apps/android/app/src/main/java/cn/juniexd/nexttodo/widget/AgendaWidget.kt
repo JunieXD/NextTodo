@@ -16,7 +16,6 @@ import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
-import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.itemsIndexed
 import androidx.glance.appwidget.provideContent
@@ -57,7 +56,7 @@ private fun AgendaContent(context: Context, shown: Agendas) {
     val now = shown.now
     val compact = LocalSize.current.height < COMPACT_BELOW
     val calendar = open(context, "nexttodo://calendar")
-    Column(GlanceModifier.fillMaxSize().background(Colors.background).cornerRadius(20.dp)) {
+    Column(GlanceModifier.fillMaxSize().card()) {
         Row(GlanceModifier.fillMaxWidth().height(HEADER), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 GlanceModifier.defaultWeight().fillMaxHeight().padding(start = EDGE, top = TOP, bottom = UNDER_HEADER).clickable(calendar),

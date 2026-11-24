@@ -76,6 +76,11 @@ internal object Colors {
     val divider = of { divider }
 }
 
+/** A widget's background. The image rounds it before Android 12 too, where Glance's corners do nothing;
+ * from 12 on, they also clip what is drawn over them. */
+internal fun GlanceModifier.card() =
+    background(ImageProvider(R.drawable.widget_card), colorFilter = ColorFilter.tint(Colors.background)).cornerRadius(R.dimen.widget_radius)
+
 private val TaskKey = ActionParameters.Key<String>("task")
 private val TitleKey = ActionParameters.Key<String>("title")
 
@@ -120,7 +125,7 @@ internal val HEADER = TOP + 32.dp + UNDER_HEADER
 private fun Content(context: Context, shown: Shown) {
     val now = shown.now
     val compact = LocalSize.current.height < COMPACT_BELOW
-    Column(GlanceModifier.fillMaxSize().background(Colors.background).cornerRadius(20.dp)) {
+    Column(GlanceModifier.fillMaxSize().card()) {
         Row(GlanceModifier.fillMaxWidth().height(HEADER), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 GlanceModifier.defaultWeight().fillMaxHeight().padding(start = EDGE, top = TOP, bottom = UNDER_HEADER).clickable(open(context, "nexttodo://home")),

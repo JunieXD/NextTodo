@@ -2,7 +2,7 @@
 // waits for and what waits for it.
 
 import { Bell, Calendar, CalendarCheck, CalendarClock, Folder as FolderIcon, KeyRound, type LucideIcon, Plus, Repeat, User, Users, X } from "lucide-react";
-import { type ReactNode, Suspense, useEffect, useRef, useState } from "react";
+import { type ReactNode, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Attachment } from "../api/types/Attachment";
 import type { Completion } from "../api/types/Completion";
 import type { MutationId } from "../api/types/MutationId";
@@ -382,37 +382,77 @@ function Title({ task, onSave }: { task: Task; onSave: Save }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const { snack } = useFeedback();
   const keep = useKeepEdit("title", "标题");
+  // Where the cursor starts in the box: where the title was clicked.
+  const caret = useRef(0);
+  const placeCaret = useCallback((box: HTMLTextAreaElement | null) => box?.setSelectionRange(caret.current, caret.current), []);
+  // Kept as soon as it is rendered: the details can close right after a blur, in the same go.
+  const pending = useRef({ draft, task, onSave });
+  useLayoutEffect(() => {
+    pending.current = { draft, task, onSave };
+  });
+  /** Saves the edit, taking it out, so that leaving right after a blur does not save it again. */
+  const finish = () => {
+    const { draft: d, task: t, onSave: done } = pending.current;
+    if (!d) return;
+    pending.current.draft = null;
+    const c = checkTitle(d.text);
+    if (!c.ok) snack(c.error);
+    else void keep(t.id, d.base, c.value, done);
+  };
+  // Closing the details by a swipe or the back button takes the box away without it losing focus.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- saves once, when leaving
+  useEffect(() => finish, []);
   if (draft === null) {
     return (
       <h2 className="d-title">
-        <button type="button" onClick={() => setDraft({ text: task.title, base: task.title })}>
+        <button
+          type="button"
+          onClick={(e) => {
+            // From the keyboard (no `detail`), at the end.
+            const at = e.detail ? caretAt(e.clientX, e.clientY) : null;
+            caret.current = at && at[0] === e.currentTarget.firstChild ? at[1] : task.title.length;
+            setDraft({ text: task.title, base: task.title });
+          }}
+        >
           {task.title}
         </button>
       </h2>
     );
   }
-  const save = () => {
-    setDraft(null);
-    const c = checkTitle(draft.text);
-    if (!c.ok) snack(c.error);
-    else void keep(task.id, draft.base, c.value, onSave);
-  };
   return (
     <textarea
+      ref={placeCaret}
       className="title-edit"
       autoFocus
       rows={1}
       value={draft.text}
       aria-label="标题"
       onChange={(e) => setDraft({ ...draft, text: e.target.value.replace(/\n/g, "") })}
-      onBlur={save}
+      onBlur={() => {
+        finish();
+        setDraft(null);
+      }}
       onKeyDown={(e) => {
         if (composing(e)) return;
         if (e.key === "Enter") e.currentTarget.blur();
-        if (e.key === "Escape") setDraft(null);
+        if (e.key === "Escape") {
+          pending.current.draft = null;
+          setDraft(null);
+        }
       }}
     />
   );
+}
+
+/** The text node and offset in it where a click at (`x`, `y`) puts the cursor. */
+function caretAt(x: number, y: number): [Node, number] | null {
+  // The standard one is new; older WebViews have only WebKit's own.
+  if (typeof document.caretPositionFromPoint === "function") {
+    const p = document.caretPositionFromPoint(x, y);
+    return p && [p.offsetNode, p.offset];
+  }
+  const r = document.caretRangeFromPoint(x, y);
+  return r && [r.startContainer, r.startOffset];
 }
 
 /** Files dropped on the details are added to the task; while they are dragged over, `on`. One dropped

@@ -4,6 +4,7 @@
 import { SystemBars, SystemBarsStyle } from "@capacitor/core";
 import { useSyncExternalStore } from "react";
 import { app } from "./api/http";
+import { NextTodo } from "./mobile";
 
 export type Theme = "system" | "light" | "dark";
 /** The default, emerald, is the colours `:root` has; the others, `:root[data-accent]`'s. */
@@ -22,9 +23,12 @@ export function applyTheme() {
   const root = document.documentElement;
   root.dataset.theme = isDark ? "dark" : "light";
   root.dataset.accent = accent();
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", getComputedStyle(root).getPropertyValue("--surface"));
-  // iOS colors the status bar's text by the system's appearance, not the page's.
+  // Older engines keep the space before a custom property's value.
+  const surface = getComputedStyle(root).getPropertyValue("--surface").trim();
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", surface);
+  // Left alone, the apps color the status bar's icons by the system's appearance, not the page's.
   if (app === "ios") void SystemBars.setStyle({ style: isDark ? SystemBarsStyle.Dark : SystemBarsStyle.Light });
+  else if (app === "android") void NextTodo.setSystemBars({ color: surface, dark: isDark });
 }
 
 const crossFade = (change: () => void) => (document.startViewTransition ? document.startViewTransition(change) : change());

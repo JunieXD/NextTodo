@@ -55,6 +55,8 @@ interface NextTodoPlugin {
   /** Asks for notifications where Android asks; whether they are allowed. */
   allowNotifications(): Promise<{ notify: boolean }>;
   openExactAlarmSettings(): Promise<void>;
+  /** Shows the system bars as over a page of `color`, `#rrggbb` (docs/android.md#结构). */
+  setSystemBars(o: { color: string; dark: boolean }): Promise<void>;
   /** The system settings choosing the sound and vibration of reminders (docs/android.md#通知). */
   openReminderSound(): Promise<void>;
   /** Turns the reminder card on or off (docs/android.md#弹窗提醒). */

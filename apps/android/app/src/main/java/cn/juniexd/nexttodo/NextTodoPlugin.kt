@@ -4,6 +4,8 @@ import android.Manifest
 import android.app.NotificationManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.res.Configuration
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -141,6 +143,39 @@ class NextTodoPlugin : Plugin() {
             }
         context.startActivity(intent.putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         call.resolve()
+    }
+
+    /** The page's colour and whether it is dark, once the page has told them. */
+    private var page: Pair<Int, Boolean>? = null
+
+    /** Shows the system bars as over the page (docs/android.md#结构). */
+    @PluginMethod
+    fun setSystemBars(call: PluginCall) {
+        val look = Color.parseColor(call.getString("color")!!) to call.getBoolean("dark")!!
+        activity.runOnUiThread {
+            page = look
+            paintBars()
+            call.resolve()
+        }
+    }
+
+    /** Their icons light over a dark page; and the window the page's colour, which shows where
+     * Capacitor leaves room for the bars rather than the page going under them. */
+    private fun paintBars() {
+        val (color, dark) = page ?: return
+        val window = activity.window
+        window.decorView.setBackgroundColor(color)
+        WindowCompat.getInsetsController(window, window.decorView).run {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
+        }
+    }
+
+    // Capacitor's SystemBars puts the bars back as the system's on each change of configuration
+    // (turning the phone, say): again once it has.
+    override fun handleOnConfigurationChanged(newConfig: Configuration) {
+        super.handleOnConfigurationChanged(newConfig)
+        activity.window.decorView.post(::paintBars)
     }
 
     /** Turns the reminder card on or off. */

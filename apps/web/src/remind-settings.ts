@@ -3,38 +3,51 @@
 // does the theme.
 
 import { useSyncExternalStore } from "react";
-import type { RemindBefore } from "./api/types/RemindBefore";
-import type { RemindOn } from "./api/types/RemindOn";
+import type { DefaultReminders } from "./api/types/DefaultReminders";
 
 const DEFAULTS = "nexttodo.defaultReminders";
 const HIDE = "nexttodo.hideReminders";
-
-/** For a task due at a time, and for one due on a date alone. */
-export interface DefaultReminders {
-  timed: RemindBefore[];
-  dated: RemindOn[];
-}
 
 const listeners = new Set<() => void>();
 
 /** Calls `f` each time these settings change; returns how to stop. */
 export function onRemindSettings(f: () => void): () => void {
   listeners.add(f);
-  return () => listeners.delete(f);
+  // Changed in another tab, or the desktop app's other window.
+  const other = (e: StorageEvent) => (e.key === DEFAULTS || e.key === HIDE || e.key === DIGEST) && f();
+  addEventListener("storage", other);
+  return () => {
+    listeners.delete(f);
+    removeEventListener("storage", other);
+  };
 }
 
 const changed = () => {
   for (const l of listeners) l();
 };
 
-// The same object until it changes, as React wants of what it subscribes to.
-let defaults: DefaultReminders | undefined;
+/** Reads what is kept under `key`, or else `none`: the same object until what is kept changes, here
+ * or in another window, as React wants of what it subscribes to. */
+function kept<T>(key: string, none: string): () => T {
+  let last: { saved: string | null; value: T } | undefined;
+  return () => {
+    const saved = localStorage.getItem(key);
+    if (last?.saved !== saved) last = { saved, value: JSON.parse(saved ?? none) };
+    return last.value;
+  };
+}
 
-export const defaultReminders = (): DefaultReminders => (defaults ??= JSON.parse(localStorage.getItem(DEFAULTS) ?? '{"timed":[],"dated":[]}'));
+export const defaultReminders = kept<DefaultReminders>(DEFAULTS, '{"timed":[],"dated":[]}');
+
+/** Those for AI organizing to give the tasks it makes with a due date and no reminders
+ * (docs/ai.md#提示词和结果): none when there are none. */
+export function jobReminders(): DefaultReminders | undefined {
+  const d = defaultReminders();
+  return d.timed.length || d.dated.length ? d : undefined;
+}
 
 export function setDefaultReminders(d: DefaultReminders) {
   localStorage.setItem(DEFAULTS, JSON.stringify(d));
-  defaults = d;
   changed();
 }
 
@@ -54,13 +67,10 @@ export interface Digest {
 
 const DIGEST = "nexttodo.digest";
 
-let digest: Digest | undefined;
-
-export const dailyDigest = (): Digest => (digest ??= JSON.parse(localStorage.getItem(DIGEST) ?? '{"on":false,"time":"21:00"}'));
+export const dailyDigest = kept<Digest>(DIGEST, '{"on":false,"time":"21:00"}');
 
 export function setDailyDigest(d: Digest) {
   localStorage.setItem(DIGEST, JSON.stringify(d));
-  digest = d;
   changed();
 }
 

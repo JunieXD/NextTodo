@@ -360,6 +360,86 @@ async fn a_failed_job_says_why_and_can_be_retried() {
 }
 
 #[tokio::test]
+async fn tasks_given_a_due_date_and_no_reminders_get_the_asking_devices_defaults() {
+    let (t, fake) = server();
+    let s = t.admin().await;
+    t.call("PUT", "/ai/settings", Some(&s), Some(config())).await;
+    let mut beyond = create(&id(), "交报告", None);
+    beyond["reminders"] = json!({ "timed": [], "dated": [{ "days": 31, "time": "09:00" }] });
+    let r = t.mutate(&s, json!([beyond])).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.body);
+
+    let reminders = json!({ "timed": [{ "before": 30 }, { "before": 0 }, { "before": 30 }], "dated": [{ "days": 1, "time": "20:00" }] });
+    let job = id();
+    fake.answer(Err("接口返回 401：invalid api key"));
+    let mut op = create(&job, "明天下午三点开会，提前 10 分钟提醒我；周五 18:00 前交报告；周六买票；有空读书", None);
+    op["reminders"] = reminders.clone();
+    t.mutate(&s, json!([op])).await;
+    let snap = until(&t, &s, |s| job_state(s, &job).is_some_and(|(state, _)| state == "failed")).await;
+    assert_eq!(
+        snap["ai_jobs"][0]["reminders"],
+        json!({ "timed": [{ "before": 0 }, { "before": 30 }], "dated": [{ "days": 1, "time": "20:00" }] })
+    );
+
+    // Retried from a device without defaults: the job has none.
+    fake.answer(Err("接口返回 401：invalid api key"));
+    t.mutate(&s, json!([{ "op": "ai_job.retry", "id": job }])).await;
+    until(&t, &s, |s| job_state(s, &job).is_some_and(|(state, _)| state == "failed") && s["ai_jobs"][0].get("reminders").is_none()).await;
+
+    fake.answer(Ok(r#"{"tasks": [
+        {"title": "开会", "due": "2026-11-05 15:00", "remind": 10},
+        {"title": "交报告", "due": "2026-11-06 18:00"},
+        {"title": "买票", "due": "2026-11-07"},
+        {"title": "取快递", "due": "2026-11-08", "remind": []},
+        {"title": "读书"}
+    ]}"#));
+    t.mutate(&s, json!([{ "op": "ai_job.retry", "id": job, "reminders": reminders }])).await;
+    let snap = until(&t, &s, |s| s["ai_jobs"].as_array().unwrap().is_empty()).await;
+    let due = |title: &str| snap["tasks"].as_array().unwrap().iter().find(|t| t["title"] == title).unwrap()["due"].clone();
+    assert_eq!(due("开会"), json!({ "date": "2026-11-05", "time": "15:00", "reminders": [{ "before": 10 }] }));
+    assert_eq!(due("交报告"), json!({ "date": "2026-11-06", "time": "18:00", "reminders": [{ "before": 30 }, { "before": 0 }] }));
+    assert_eq!(due("买票"), json!({ "date": "2026-11-07", "reminders": [{ "days": 1, "time": "20:00" }] }));
+    // The text said not to remind of it.
+    assert_eq!(due("取快递"), json!({ "date": "2026-11-08" }));
+    assert_eq!(due("读书"), Value::Null);
+}
+
+#[tokio::test]
+async fn a_tidying_gives_the_defaults_to_new_tasks_and_ones_it_first_gives_a_due_date() {
+    let (t, fake) = server();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "写周报", "folder": "/工作" })).await;
+    t.ok(&s, "add", json!({ "title": "交房租", "folder": "/工作", "due": "2026-11-10" })).await;
+    let folder = t.snapshot(&s).await["folders"][0]["id"].as_str().unwrap().to_owned();
+    t.call("PUT", "/ai/settings", Some(&s), Some(config())).await;
+    fake.answer(Ok(r#"{"suggestions": [
+        {"number": 1, "due": "2026-11-08 17:00", "reason": "周五交"},
+        {"number": 2, "due": "2026-11-12", "reason": "推迟"},
+        {"ref": "a", "title": "买菜", "due": "2026-11-09", "reason": "新的"},
+        {"ref": "b", "title": "打电话", "due": "2026-11-09 10:00", "remind": 5, "reason": "新的"},
+        {"ref": "c", "title": "倒垃圾", "due": "2026-11-09", "remind": [], "reason": "新的"}
+    ]}"#));
+    let job = id();
+    let mut op = create(&job, "整理一下", Some(&folder));
+    op["kind"] = "tidy".into();
+    op["reminders"] = json!({ "timed": [{ "before": 30 }], "dated": [{ "days": 0, "time": "09:00" }] });
+    t.mutate(&s, json!([op])).await;
+    let snap = until(&t, &s, |s| job_state(s, &job).is_some_and(|(state, _)| state == "ready")).await;
+    let due: Vec<Value> = snap["ai_jobs"][0]["suggestions"].as_array().unwrap().iter().map(|s| s["due"].clone()).collect();
+    assert_eq!(
+        due,
+        [
+            json!({ "date": "2026-11-08", "time": "17:00", "reminders": [{ "before": 30 }] }),
+            // It had a due date: the reminders it had, none, stay.
+            json!({ "date": "2026-11-12" }),
+            json!({ "date": "2026-11-09", "reminders": [{ "days": 0, "time": "09:00" }] }),
+            json!({ "date": "2026-11-09", "time": "10:00", "reminders": [{ "before": 5 }] }),
+            json!({ "date": "2026-11-09" }),
+        ]
+    );
+}
+
+#[tokio::test]
 async fn a_device_hands_its_settings_over_for_one_job() {
     let (t, fake) = server();
     let s = t.admin().await;

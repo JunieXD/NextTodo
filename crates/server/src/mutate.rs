@@ -706,7 +706,7 @@ impl<'a> Cx<'a> {
                 let (a, side) = self.attachment(*id)?;
                 self.delete_attachment(a, side)
             }
-            Op::AiJobCreate { id, kind, text, local_time, folder_id } => {
+            Op::AiJobCreate { id, kind, text, local_time, folder_id, reminders } => {
                 if store::job_id_taken(self.c, *id)? {
                     return Err(ApiError::conflict("请求 ID 已存在"));
                 }
@@ -719,6 +719,7 @@ impl<'a> Cx<'a> {
                     kind: kind.unwrap_or_default(),
                     text: text.clone(),
                     local_time: local_time.clone(),
+                    reminders: reminders.clone(),
                     state: JobState::Waiting,
                     error: None,
                     suggestions: None,
@@ -726,14 +727,15 @@ impl<'a> Cx<'a> {
                     updated_at: self.now,
                 })
             }
-            Op::AiJobRetry { id, text, folder_id } => {
+            Op::AiJobRetry { id, text, folder_id, reminders } => {
                 let before = self.job(*id)?;
                 match before.state {
                     JobState::Failed | JobState::Ready => {}
                     JobState::Running => return Err(ApiError::conflict("正在整理，稍后再改")),
                     JobState::Waiting => return Err(ApiError::conflict("这条请求已在等待整理")),
                 }
-                let mut j = AiJob { state: JobState::Waiting, error: None, suggestions: None, ..before.clone() };
+                let mut j =
+                    AiJob { state: JobState::Waiting, error: None, suggestions: None, reminders: reminders.clone(), ..before.clone() };
                 if let Some(text) = text {
                     j.text = text.clone();
                 }

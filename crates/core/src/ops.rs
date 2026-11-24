@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::model::{
-    AiJobId, AttachmentId, Date, Description, Due, FileName, FileSize, FolderColor, FolderIcon, FolderId, JobKind, JobText, LocalTime,
-    MediaType, MutationId, Name, Occurrence, SortKey, TaskId, Time, Title, nullable,
+    AiJobId, AttachmentId, Date, DefaultReminders, Description, Due, FileName, FileSize, FolderColor, FolderIcon, FolderId, JobKind,
+    JobText, LocalTime, MediaType, MutationId, Name, Occurrence, SortKey, TaskId, Time, Title, nullable,
 };
 
 pub const MAX_OPS: usize = 1000;
@@ -210,6 +210,10 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         folder_id: Option<FolderId>,
+        /// The device's own (docs/ai.md#提示词和结果).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        reminders: Option<DefaultReminders>,
     },
     /// Puts a failed job, or a tidying with suggestions, back in the queue, with its text or folder
     /// changed if given.
@@ -223,6 +227,10 @@ pub enum Op {
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         folder_id: Option<Option<FolderId>>,
+        /// The device's own, in place of those of the one that asked before.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        reminders: Option<DefaultReminders>,
     },
     #[serde(rename = "ai_job.delete")]
     AiJobDelete { id: AiJobId },

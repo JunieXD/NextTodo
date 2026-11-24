@@ -2,6 +2,7 @@
 import type { AiJobId } from "./AiJobId";
 import type { AttachmentId } from "./AttachmentId";
 import type { Date } from "./Date";
+import type { DefaultReminders } from "./DefaultReminders";
 import type { Description } from "./Description";
 import type { Due } from "./Due";
 import type { FileName } from "./FileName";
@@ -72,8 +73,16 @@ assign?: Array<string>, unassign?: Array<string>, } | { "op": "task.delete", id:
 /**
  * Organizing when not given.
  */
-kind?: JobKind, text: JobText, local_time: LocalTime, folder_id?: FolderId, } | { "op": "ai_job.retry", id: AiJobId, text?: JobText, 
+kind?: JobKind, text: JobText, local_time: LocalTime, folder_id?: FolderId, 
+/**
+ * The device's own (docs/ai.md#提示词和结果).
+ */
+reminders?: DefaultReminders, } | { "op": "ai_job.retry", id: AiJobId, text?: JobText, 
 /**
  * `null` is the root.
  */
-folder_id?: FolderId | null, } | { "op": "ai_job.delete", id: AiJobId, } | { "op": "share.add", folder_id: FolderId, username: string, } | { "op": "share.remove", folder_id: FolderId, user_id: string, } | { "op": "undo", mutation: MutationId, };
+folder_id?: FolderId | null, 
+/**
+ * The device's own, in place of those of the one that asked before.
+ */
+reminders?: DefaultReminders, } | { "op": "ai_job.delete", id: AiJobId, } | { "op": "share.add", folder_id: FolderId, username: string, } | { "op": "share.remove", folder_id: FolderId, user_id: string, } | { "op": "undo", mutation: MutationId, };

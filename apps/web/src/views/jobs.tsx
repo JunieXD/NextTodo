@@ -10,6 +10,7 @@ import type { Op } from "../api/types/Op";
 import { lastKey } from "../domain/apply";
 import type { Board } from "../domain/board";
 import { checkJobText } from "../domain/text";
+import { jobReminders } from "../remind-settings";
 import { useCommit, useUndo } from "../session";
 import { Modal, useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
@@ -37,7 +38,8 @@ function useJobActions() {
   const { snack } = useFeedback();
   return {
     retry(j: AiJob, text?: string) {
-      commit([{ op: "ai_job.retry", id: j.id, ...(text !== undefined && text !== j.text && { text }) }]);
+      const reminders = jobReminders();
+      commit([{ op: "ai_job.retry", id: j.id, ...(text !== undefined && text !== j.text && { text }), ...(reminders && { reminders }) }]);
     },
     remove(j: AiJob) {
       const r = commit([{ op: "ai_job.delete", id: j.id }]);

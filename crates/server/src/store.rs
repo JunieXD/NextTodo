@@ -11,7 +11,7 @@ use nexttodo_core::model::{
 use rusqlite::{Connection, OptionalExtension, Params, Row, params};
 
 const FOLDER_COLUMNS: &str = "id, parent_id, name, sort_key, created_at, updated_at, color, icon";
-const JOB_COLUMNS: &str = "id, folder_id, kind, text, local_time, state, error, suggestions, created_at, updated_at";
+const JOB_COLUMNS: &str = "id, folder_id, kind, text, local_time, state, error, suggestions, created_at, updated_at, reminders";
 /// Attachments, with what their files are.
 const ATTACHMENTS: &str =
     "SELECT a.id, a.task_id, a.job_id, a.name, f.type, f.size, a.created_at FROM attachments a JOIN files f ON f.id = a.id";
@@ -103,6 +103,7 @@ fn task_row(r: &Row) -> rusqlite::Result<Task> {
 
 fn job_row(r: &Row) -> rusqlite::Result<AiJob> {
     let suggestions: Option<String> = r.get(7)?;
+    let reminders: Option<String> = r.get(10)?;
     Ok(AiJob {
         id: r.get(0)?,
         folder_id: r.get(1)?,
@@ -115,6 +116,10 @@ fn job_row(r: &Row) -> rusqlite::Result<AiJob> {
             .map(|s| serde_json::from_str(&s))
             .transpose()
             .map_err(|e| rusqlite::Error::FromSqlConversionFailure(7, rusqlite::types::Type::Text, Box::new(e)))?,
+        reminders: reminders
+            .map(|s| serde_json::from_str(&s))
+            .transpose()
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(10, rusqlite::types::Type::Text, Box::new(e)))?,
         created_at: r.get(8)?,
         updated_at: r.get(9)?,
     })
@@ -122,6 +127,10 @@ fn job_row(r: &Row) -> rusqlite::Result<AiJob> {
 
 fn suggestions(j: &AiJob) -> Option<String> {
     j.suggestions.as_ref().map(|s| serde_json::to_string(s).expect("suggestions serialize"))
+}
+
+fn reminders(j: &AiJob) -> Option<String> {
+    j.reminders.as_ref().map(|r| serde_json::to_string(r).expect("reminders serialize"))
 }
 
 fn dep_row(r: &Row) -> rusqlite::Result<Dependency> {
@@ -482,7 +491,7 @@ pub fn delete_completion(c: &Connection, r: &Completion) -> rusqlite::Result<()>
 /// The AI jobs in the subtree rooted at `id`, with whose they are.
 pub fn subtree_jobs(c: &Connection, id: FolderId) -> rusqlite::Result<Vec<(AiJob, String)>> {
     c.prepare_cached(&format!("{SUBTREE} SELECT {JOB_COLUMNS}, owner_id FROM ai_jobs WHERE folder_id IN (SELECT id FROM sub)"))?
-        .query_map([id], |r| Ok((job_row(r)?, r.get(10)?)))?
+        .query_map([id], |r| Ok((job_row(r)?, r.get(11)?)))?
         .collect()
 }
 
@@ -516,16 +525,29 @@ pub fn job_id_taken(c: &Connection, id: AiJobId) -> rusqlite::Result<bool> {
 
 pub fn insert_job(c: &Connection, owner: &str, j: &AiJob) -> rusqlite::Result<()> {
     c.execute(
-        &format!("INSERT INTO ai_jobs (owner_id, {JOB_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"),
-        params![owner, j.id, j.folder_id, j.kind, j.text, j.local_time, j.state, j.error, suggestions(j), j.created_at, j.updated_at],
+        &format!("INSERT INTO ai_jobs (owner_id, {JOB_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"),
+        params![
+            owner,
+            j.id,
+            j.folder_id,
+            j.kind,
+            j.text,
+            j.local_time,
+            j.state,
+            j.error,
+            suggestions(j),
+            j.created_at,
+            j.updated_at,
+            reminders(j)
+        ],
     )?;
     Ok(())
 }
 
 pub fn update_job(c: &Connection, j: &AiJob) -> rusqlite::Result<()> {
     c.execute(
-        "UPDATE ai_jobs SET folder_id = ?2, text = ?3, state = ?4, error = ?5, suggestions = ?6, updated_at = ?7 WHERE id = ?1",
-        params![j.id, j.folder_id, j.text, j.state, j.error, suggestions(j), j.updated_at],
+        "UPDATE ai_jobs SET folder_id = ?2, text = ?3, state = ?4, error = ?5, suggestions = ?6, updated_at = ?7, reminders = ?8 WHERE id = ?1",
+        params![j.id, j.folder_id, j.text, j.state, j.error, suggestions(j), j.updated_at, reminders(j)],
     )?;
     Ok(())
 }

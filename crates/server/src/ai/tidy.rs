@@ -6,8 +6,8 @@ use std::collections::{HashMap, HashSet};
 use nexttodo_core::board::{Board, Now, Snapshot};
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
-    AiJob, Date, Description, FolderId, NewTask, Period, Reorder, Repeat, RepeatFrom, Suggestion, Task, TaskDeletion, TaskEdit, TaskId,
-    Title, Was,
+    AiJob, Date, DefaultReminders, Description, FolderId, NewTask, Period, Reorder, Repeat, RepeatFrom, Suggestion, Task, TaskDeletion,
+    TaskEdit, TaskId, Title, Was,
 };
 use nexttodo_core::ops::MAX_OPS;
 use serde::Deserialize;
@@ -58,7 +58,7 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
    - requires：这一项要新加的前置，也就是要先做完、才能做这一项的事项：事项的编号，或新建事项的 ref；已有的不用写。
    - drop_requires：要去掉的这一项已有的前置，写编号。
 2. 删除已有的事项：写 number 和 "delete": true。
-3. 新建事项，放进这个文件夹：写 ref，依次是 "a"、"b"、"c"……，和 title；选填 description、due、remind、repeat、repeat_from、repeat_until，以及 requires（要先做完、才能做它的事项）和 required_by（要等它做完才能做的事项），写事项的编号或新建事项的 ref。
+3. 新建事项，放进这个文件夹：写 ref，依次是 "a"、"b"、"c"……，和 title；选填 description、due、remind、repeat、repeat_from、repeat_until，以及 requires（要先做完、才能做它的事项）和 required_by（要等它做完才能做的事项），写事项的编号或新建事项的 ref。request 明确说新建的事项不用提醒的，写 "remind": []；没说提醒的不写 remind。
 4. 调整顺序：order 是 open_tasks 里事项的编号，按新的顺序排；只写要调整的那些，它们在原来占着的位置之间重新排列。order 只改列表里的位置，前置总排在后续前面。request 要的顺序和已有的先后冲突时（如要把“上线”排到最前，而它要等“测试”），保留先后，只排没有冲突的那些；除非 request 明说要改先后，不要为了排序去掉或反转前置。
 
 整理时：
@@ -94,6 +94,15 @@ pub struct Shown {
     now: Now,
     folder: Option<FolderId>,
     tasks: HashMap<i64, Seen>,
+    /// The job's, for due dates the model gives with no word on reminders.
+    reminders: Option<DefaultReminders>,
+}
+
+impl Shown {
+    /// The reminders the job's device gives a task due `due`, if any.
+    fn default_reminders(&self, due: Option<&WhenText>) -> Option<RemindText> {
+        Some(RemindText(self.reminders.as_ref()?.for_due(due?.time.is_some())))
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -185,7 +194,7 @@ pub fn prompt(job: &AiJob, snap: Snapshot, user: &str, notes: Vec<Value>) -> (Pr
     if referring {
         prompt.system = format!("{}\n\n{REFERENCES}", prompt.system);
     }
-    (prompt, Shown { snap, user: user.to_owned(), now, folder: job.folder_id, tasks })
+    (prompt, Shown { snap, user: user.to_owned(), now, folder: job.folder_id, tasks, reminders: job.reminders.clone() })
 }
 
 /// The references to attachments in a description, `[名称](attachment:<ID>)` with `[`, `]` and `\`
@@ -424,7 +433,8 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
                     title.as_str()
                 ));
             }
-            let due = new_due(s.due, s.remind, s.repeat, s.repeat_from, s.repeat_until)
+            let remind = s.remind.or_else(|| shown.default_reminders(s.due.as_ref()));
+            let due = new_due(s.due, remind, s.repeat, s.repeat_from, s.repeat_until)
                 .map_err(|e| format!("新事项“{}”：{}", title.as_str(), e.describe()))?;
             let after = distinct(s.after.iter().map(&resolve))?;
             let before = distinct(s.before.iter().map(&resolve))?;
@@ -483,6 +493,12 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
                 }
                 _ => (s.repeat, s.repeat_from, s.repeat_until),
             };
+            // As a new task's when it first gets a due date.
+            let remind = match s.remind {
+                _ if clear(Setting::Remind) => Some(None),
+                Some(r) => Some(Some(r)),
+                None => t.due.is_none().then(|| shown.default_reminders(s.due.as_ref())).flatten().map(Some),
+            };
             let args = EditArgs {
                 task: TaskRef { user: None, number: n },
                 title,
@@ -491,7 +507,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
                 append: None,
                 start: None,
                 due: if clear(Setting::Due) { Some(None) } else { s.due.map(Some) },
-                remind: if clear(Setting::Remind) { Some(None) } else { s.remind.map(Some) },
+                remind,
                 repeat: if clear(Setting::Repeat) { Some(None) } else { repeat.map(Some) },
                 repeat_from,
                 repeat_until,

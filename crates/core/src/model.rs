@@ -445,6 +445,48 @@ pub enum Remind {
     On(RemindOn),
 }
 
+/// The reminders a device gives a task as it gets a due date (docs/design.md#提醒): one due at a time
+/// those so many minutes before, one due on a date alone those by the day. Sorted, none twice.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(try_from = "DefaultRemindersFields")]
+#[ts(export)]
+pub struct DefaultReminders {
+    timed: Vec<RemindBefore>,
+    dated: Vec<RemindOn>,
+}
+
+impl DefaultReminders {
+    /// Those for a due date at a time, or else for one on a date alone.
+    pub fn for_due(&self, timed: bool) -> Vec<Remind> {
+        if timed { self.timed.iter().cloned().map(Remind::Before).collect() } else { self.dated.iter().cloned().map(Remind::On).collect() }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DefaultRemindersFields {
+    timed: Vec<RemindBefore>,
+    dated: Vec<RemindOn>,
+}
+
+impl TryFrom<DefaultRemindersFields> for DefaultReminders {
+    type Error = String;
+
+    fn try_from(DefaultRemindersFields { mut timed, mut dated }: DefaultRemindersFields) -> Result<Self, String> {
+        if timed.iter().any(|r| r.before > MAX_REMIND_BEFORE) || dated.iter().any(|r| r.days > MAX_REMIND_DAYS) {
+            return Err("提醒最多提前 30 天".into());
+        }
+        timed.sort_by_key(|r| r.before);
+        timed.dedup();
+        dated.sort();
+        dated.dedup();
+        if timed.len().max(dated.len()) > MAX_REMINDERS {
+            return Err(format!("提醒最多 {MAX_REMINDERS} 个"));
+        }
+        Ok(DefaultReminders { timed, dated })
+    }
+}
+
 /// A repeating task stays open: done, its due date moves on, until the last time (docs/design.md#重复).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(try_from = "RepeatFields", into = "RepeatFields")]
@@ -1174,6 +1216,11 @@ pub struct AiJob {
     pub kind: JobKind,
     pub text: JobText,
     pub local_time: LocalTime,
+    /// Those of the device that asked, or asked again, for tasks it is to make with a due date and
+    /// no reminders (docs/ai.md#提示词和结果); none when that device has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub reminders: Option<DefaultReminders>,
     pub state: JobState,
     /// Why it failed; only when it has.
     pub error: Option<String>,

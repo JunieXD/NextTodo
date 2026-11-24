@@ -377,6 +377,7 @@ class Applier {
           kind: op.kind ?? "organize",
           text: op.text,
           local_time: op.local_time,
+          ...(op.reminders && { reminders: op.reminders }),
           state: "waiting",
           error: null,
           suggestions: null,
@@ -389,7 +390,8 @@ class Applier {
         const before = this.job(op.id);
         if (before.state === "running") throw new Rejected("conflict", "正在整理，稍后再改");
         if (before.state === "waiting") throw new Rejected("conflict", "这条请求已在等待整理");
-        const j: AiJob = { ...before, state: "waiting", error: null, suggestions: null };
+        const { reminders: _, ...kept } = before;
+        const j: AiJob = { ...kept, state: "waiting", error: null, suggestions: null, ...(op.reminders && { reminders: op.reminders }) };
         if (op.text !== undefined) j.text = op.text;
         if (op.folder_id !== undefined) {
           if (op.folder_id) this.folder(op.folder_id);

@@ -19,6 +19,7 @@ import { checkFolderName, checkJobText } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
 import { dropFiles } from "../sync/files";
 import { Modal, forUser, useFeedback } from "../ui/feedback";
+import { jobReminders } from "../remind-settings";
 import { composing } from "../ui/keys";
 import { ContextMenu, type MenuItem, MenuButton } from "../ui/menu";
 import { useAiNote } from "./AiNotes";
@@ -132,7 +133,16 @@ function useTidy(folder: FolderId | null): { start(): void; panel: ReactNode } {
     setAsking(true);
   };
   const submit = (text: string) => {
-    const op = { op: "ai_job.create", id: uuidv7(), kind: "tidy", text, local_time: localTime(new Date()), ...(folder && { folder_id: folder }) } as const;
+    const reminders = jobReminders();
+    const op = {
+      op: "ai_job.create",
+      id: uuidv7(),
+      kind: "tidy",
+      text,
+      local_time: localTime(new Date()),
+      ...(folder && { folder_id: folder }),
+      ...(reminders && { reminders }),
+    } as const;
     if (commit([op])) snack("已提交整理，完成后在列表顶部确认建议");
   };
   return { start, panel: asking && <TidyRequest onSubmit={submit} onClose={() => setAsking(false)} /> };

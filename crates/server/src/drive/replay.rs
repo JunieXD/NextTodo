@@ -170,7 +170,7 @@ mod tests {
         /// without the drive.
         fn assert_same(&self) {
             for sql in SHARED {
-                let sql = sql.replace("SELECT * FROM ai_jobs", "SELECT id, owner_id, folder_id, kind, text, local_time, state, error, suggestions, created_at, updated_at FROM ai_jobs");
+                let sql = sql.replace("SELECT * FROM ai_jobs", "SELECT id, owner_id, folder_id, kind, text, local_time, state, error, suggestions, created_at, updated_at, reminders FROM ai_jobs");
                 assert_eq!(dump(&self.a, &sql), dump(&self.b, &sql), "{sql}");
             }
         }
@@ -210,7 +210,10 @@ mod tests {
 
         // An AI job started by the server, as the queue does.
         let job = id();
-        p.change(json!([{ "op": "ai_job.create", "id": job, "text": "下周要交开题报告", "local_time": "2026-11-17 16:30 星期二" }]));
+        p.change(json!([{
+            "op": "ai_job.create", "id": job, "text": "下周要交开题报告", "local_time": "2026-11-17 16:30 星期二",
+            "reminders": { "timed": [{ "before": 30 }], "dated": [] },
+        }]));
         let started = p.a.hold(|c| {
             mutate::set_job_state(
                 c,

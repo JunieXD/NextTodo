@@ -91,6 +91,8 @@
 
 结果是 `apply` [计划](agent.md#计划)里的事项列表：`{"tasks": [{ref, title, description, start, due, remind, repeat, after, before, assign}]}`，不能写 `folder`，事项都放进请求所在的文件夹。由服务端用 `apply` 的同一套代码校验并执行，规则和 agent 提交的计划完全一样。
 
+默认提醒：提交整理的设备把它的[默认提醒](design.md#提醒)一起交来（`reminders`，`{timed, dated}`，就是设置里的两行），存在请求上；重试时换成重试的那台设备的。整理出的事项有截止时间、模型没写 `remind` 的，按有没有具体时间带上其中一组；模型写了的（原文说了怎么提醒，如“提前 10 分钟提醒我”）按模型的；原文明确说不用提醒的，模型写空列表，也不带。[整理文件夹](#整理文件夹)时，新建的事项和原来没有截止时间、建议加上的也这样，建议里列的就是带上以后的提醒。设备上没设默认提醒的不交。
+
 提示词要求（措辞经[评测](#评测)比较选定）：
 
 - 原文的每个要求、细节、理由、背景、疑问和不确定之处都要留在事项里（标题、描述，或截止时间、开始时间、提醒、重复），不编造。
@@ -208,8 +210,8 @@ cargo run -p nexttodo-server --example ai_eval -- fixtures/ai/organize.json --re
 
 | 改动操作 | 字段 | 说明 |
 |---|---|---|
-| `ai_job.create` | `id`、`text`、`local_time`，可选 `folder_id`、`kind` | `local_time` 是提交时的本地时间，如 `2026-11-04 16:30 星期三`；`kind` 是 `organize`（整理请求，默认）或 `tidy`（整理文件夹，`text` 是要求） |
-| `ai_job.retry` | `id`，可选 `text`、`folder_id` | 只能对失败的请求和有建议的整理文件夹：带上改过的原文或文件夹（`null` 是根目录）重试，回到等待，原来的建议丢掉 |
+| `ai_job.create` | `id`、`text`、`local_time`，可选 `folder_id`、`kind`、`reminders` | `local_time` 是提交时的本地时间，如 `2026-11-04 16:30 星期三`；`kind` 是 `organize`（整理请求，默认）或 `tidy`（整理文件夹，`text` 是要求）；`reminders` 是[默认提醒](#提示词和结果) |
+| `ai_job.retry` | `id`，可选 `text`、`folder_id`、`reminders` | 只能对失败的请求和有建议的整理文件夹：带上改过的原文或文件夹（`null` 是根目录）重试，回到等待，原来的建议丢掉；`reminders` 换成重试的设备的，不带就是没有 |
 | `ai_job.delete` | `id` | 整理中也可以删，结果丢弃 |
 
 开始整理、失败和整理完成是服务端自己做的改动，`actor` 是“AI 整理”。完成的那个改动删除请求、添加事项和依赖，撤销它就是撤销整理结果；整理文件夹完成时只把请求改成 `ready` 并带上建议，应用建议是用户自己的改动。

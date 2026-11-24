@@ -28,7 +28,7 @@ use crate::auth::Auth;
 use crate::drive::{self, Drive, Maker, Route, StepFn};
 use crate::error::{ApiError, Json};
 use crate::mutate::{self, Actor, Done};
-use crate::tools::args::PlanTask;
+use crate::tools::args::{PlanTask, RemindText};
 use crate::{AppState, Hub};
 use crate::{store, tools};
 use llm::{Api, Config, Endpoint, Failure, PROVIDERS, Provider, Thinking};
@@ -535,7 +535,15 @@ fn added(
     let Some(j) = store::load_job(c, owner, job)?.filter(|j| j.state == JobState::Running) else { return Ok(None) };
     let snap = store::snapshot(c, owner)?;
     let board = Board::new(&snap, Now::utc(now), owner);
-    let mut ops = tools::plan_into(&board, j.folder_id, tasks.to_vec(), &shown.tasks)?;
+    let mut tasks = tasks.to_vec();
+    // Those the model gave a due date and no word on reminders get the asking device's
+    // (docs/ai.md#提示词和结果); `[]` is its word for none.
+    if let Some(r) = &j.reminders {
+        for t in tasks.iter_mut().filter(|t| t.remind.is_none()) {
+            t.remind = t.due.as_ref().map(|due| RemindText(r.for_due(due.time.is_some())));
+        }
+    }
+    let mut ops = tools::plan_into(&board, j.folder_id, tasks, &shown.tasks)?;
     // The job's attachments go to the tasks they were put under, in the same change; one added since
     // the model was asked, to the first.
     let made: Vec<TaskId> = ops

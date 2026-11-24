@@ -20,7 +20,7 @@ import { day, type DueKind, dueKind, formatDay, inOrder, localTime } from "../do
 import { checkJobText, checkTitle } from "../domain/text";
 import { useCommit, useSession, useView } from "../session";
 import { readyIn, setNextFolders, useNextFolders } from "../next-folders";
-import { defaultReminders } from "../remind-settings";
+import { defaultReminders, jobReminders } from "../remind-settings";
 import { addOps, filesIn, isPicture, plan, unseen } from "../attach";
 import { type Staged, draft, keepDraft, keepStaged, onDrafts, stagedFiles } from "../sync/drafts";
 import { dropFiles } from "../sync/files";
@@ -459,7 +459,8 @@ export function QuickAdd({ folder, on, hide = false }: { folder?: FolderId | nul
     }
     if (!canSend()) return false;
     const id = uuidv7();
-    const op: Op = { op: "ai_job.create", id, text: c.value, local_time: localTime(new Date()), ...(into && { folder_id: into }) };
+    const reminders = jobReminders();
+    const op: Op = { op: "ai_job.create", id, text: c.value, local_time: localTime(new Date()), ...(into && { folder_id: into }), ...(reminders && { reminders }) };
     if (!commit([op, ...addOps(staged, { job_id: id })])) return false;
     edit("");
     stage([]);

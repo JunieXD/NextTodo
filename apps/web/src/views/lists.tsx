@@ -33,6 +33,7 @@ import { composing } from "../ui/keys";
 import { useLeave } from "../ui/leave";
 import { useWide } from "../ui/hooks";
 import { useTaskActions } from "./actions";
+import { addedTo, pickAddTo, useAddTo } from "./add-to";
 import { StagedFiles, useKeepFiles } from "./attachments";
 import { useListed } from "./batch";
 import { useRowDrag } from "./drag";
@@ -322,8 +323,8 @@ function due(date: string): Due {
 
 /** Adds tasks by typing, or, switched to AI organizing with ✦, has AI organize what is written into
  * tasks; that text can be expanded to write at length. Files pasted or dropped in go with what is
- * added. In a folder (`null` for the root) it adds there; elsewhere to a folder picked beside it, the
- * root by default. In the calendar, `on` the day picked there, a task is due that day, with the
+ * added. In a folder (`null` for the root) it adds there; elsewhere to a folder picked beside it, as
+ * `add-to.ts` keeps it. In the calendar, `on` the day picked there, a task is due that day, with the
  * defaults for a due date; it has no AI organizing, which dates tasks by what the text says. Hidden by
  * `hide`, it keeps what it has, the folder picked and the files still being saved. */
 export function QuickAdd({ folder, on, hide = false }: { folder?: FolderId | null; on?: string; hide?: boolean }) {
@@ -388,9 +389,9 @@ export function QuickAdd({ folder, on, hide = false }: { folder?: FolderId | nul
   const ai = useAiMode() && on === undefined;
   const vision = useAiVision(user.id, ai && staged.some((f) => isPicture(f.type)));
   const hidden = ai && vision !== undefined ? unseen(staged, vision) : undefined;
-  // In “接下来” until one is picked, the first folder it lists, so that a new task shows there; in the
-  // calendar, the root.
-  const [target, setTarget] = useState<FolderId | null>();
+  // Until one is picked or fixed, in “接下来” the first folder it lists, so that a new task shows
+  // there; in the calendar, the root.
+  const target = useAddTo(board);
   const listed = useNextFolders(board);
   const [picking, setPicking] = useState(false);
   const [tall, setTall] = useState(false);
@@ -398,7 +399,7 @@ export function QuickAdd({ folder, on, hide = false }: { folder?: FolderId | nul
   const into =
     folder !== undefined
       ? folder
-      : target !== undefined && board.hasFolder(target)
+      : target !== undefined
         ? target
         : on === undefined
           ? (board.folderTree().find((f) => listed.includes(f)) ?? null)
@@ -462,6 +463,7 @@ export function QuickAdd({ folder, on, hide = false }: { folder?: FolderId | nul
     if (!commit([op, ...addOps(staged, { job_id: id })])) return false;
     edit("");
     stage([]);
+    if (folder === undefined) addedTo(user.id, into);
     snack("已交给 AI 整理");
     return true;
   };
@@ -487,6 +489,7 @@ export function QuickAdd({ folder, on, hide = false }: { folder?: FolderId | nul
     for (const f of staged) commit(addOps([f], { task_id: id }));
     edit("");
     stage([]);
+    if (folder === undefined) addedTo(user.id, into);
     snack(`已添加“${c.value}”`);
   };
 
@@ -575,7 +578,7 @@ export function QuickAdd({ folder, on, hide = false }: { folder?: FolderId | nul
           {send}
         </Editor>
       )}
-      {picking && <FolderPicker mode="add" current={into} onPick={setTarget} onClose={() => setPicking(false)} />}
+      {picking && <FolderPicker mode="add" current={into} onPick={(f) => pickAddTo(user.id, f)} onClose={() => setPicking(false)} />}
     </>
   );
 }

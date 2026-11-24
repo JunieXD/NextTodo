@@ -1,6 +1,6 @@
 // The settings: a home page that lists the sections, each a page of its own (docs/ui.md#设置).
 
-import { Bell, ChevronRight, Copy, HardDrive, History, Info, KeyRound, Lock, type LucideIcon, Mail, Monitor, Palette, Paperclip, Plus, Sparkles, SquareTerminal } from "lucide-react";
+import { Bell, ChevronRight, CirclePlus, Copy, HardDrive, History, Info, KeyRound, Lock, type LucideIcon, Mail, Monitor, Palette, Paperclip, Plus, Sparkles, SquareTerminal } from "lucide-react";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { useLocation } from "wouter";
 import { ApiError, api, app, desktopOs, phoneApp, serverUrl } from "../api/http";
@@ -18,7 +18,7 @@ import { NextTodo, type WidgetTextSize } from "../mobile";
 import * as local from "../local";
 import { usePrivacyLock } from "../lock";
 import { useServerVersions } from "../server-update";
-import { useSession } from "../session";
+import { useSession, useView } from "../session";
 import { type Accent, type Theme, setAccent, setTheme, useAccent, useTheme } from "../theme";
 import { type Zoom, type Zoomed, setZoom, useZoom } from "../zoom";
 import { copyText, useCopy } from "../ui/clipboard";
@@ -28,6 +28,7 @@ import { Help } from "../ui/help";
 import { Icon } from "../ui/icons";
 import { newer, usePending } from "../updates";
 import { About } from "./About";
+import { fixAddTo, unfixAddTo, useAddTo, useFixedAddTo } from "./add-to";
 import { AiPage, useAiSummary } from "./AiSettings";
 import { BackgroundSettings } from "./Background";
 import { DesktopBackground } from "./DesktopBackground";
@@ -36,6 +37,7 @@ import { DriveSyncDialog, syncLine, useDriveSync } from "./DriveSync";
 import { MAX_KEEP_DONE, setKeepDone, useKeepDone } from "./keep-done";
 import { LockPage } from "./Lock";
 import { LogPage } from "./Log";
+import { FolderPicker } from "./pickers";
 import { type SettingsSection, settingsUrl } from "./nav";
 
 /** The link that opens registration with an invite code: on the server, which in the app is not
@@ -48,6 +50,7 @@ const TITLES: Record<SettingsSection, string> = {
   log: "改动记录",
   lock: "隐私锁",
   appearance: "外观",
+  add: "快速添加",
   // iOS has nothing to allow for running in the background (docs/ios.md#设置), the web nothing to run.
   background: app === "ios" || !app ? "提醒" : "提醒和后台",
   ai: "AI 整理",
@@ -64,6 +67,7 @@ const ICONS: Record<Exclude<SettingsSection, "account">, LucideIcon> = {
   log: History,
   lock: Lock,
   appearance: Palette,
+  add: CirclePlus,
   background: Bell,
   ai: Sparkles,
   agent: KeyRound,
@@ -94,7 +98,7 @@ function useSections(): SettingsSection[][] {
   const { user } = useSession();
   const inLocal = local.inLocalMode();
   // Phones have a lock screen of their own (docs/design.md#隐私锁).
-  const groups: SettingsSection[][] = [[inLocal ? "local" : "account", "log", ...(phoneApp ? [] : (["lock"] as const))], ["appearance", "background"]];
+  const groups: SettingsSection[][] = [[inLocal ? "local" : "account", "log", ...(phoneApp ? [] : (["lock"] as const))], ["appearance", "add", "background"]];
   groups.push(!inLocal || app === "desktop" ? ["ai", "agent"] : ["ai"]);
   // The server's own: its admin's, or in local mode the user's, who has it alone.
   const server: SettingsSection[] = [...(user.is_admin && !inLocal ? (["invites"] as const) : []), ...(user.is_admin || inLocal ? (["attachments"] as const) : [])];
@@ -113,7 +117,9 @@ export function useSectionAt(location: string): SettingsSection | null | undefin
 export function SettingsHome() {
   const [, navigate] = useLocation();
   const { user } = useSession();
+  const { board } = useView();
   const theme = useTheme();
+  const addTo = useFixedAddTo(user.id);
   const ai = useAiSummary();
   const pending = usePending();
   const server = useServerVersions();
@@ -121,6 +127,7 @@ export function SettingsHome() {
   const upgradable = user.is_admin && !local.inLocalMode() && server?.latest && newer(server.latest, server.server);
   const values: Partial<Record<SettingsSection, string>> = {
     appearance: THEMES.find(([t]) => t === theme)![1],
+    add: addTo === undefined ? "上次选的" : board.hasFolder(addTo) ? board.folderName(addTo) : GONE,
     lock: lock ? `闲置 ${lock.idle} 分钟后` : "关闭",
     ai,
     attachments: serverSettings().compress_images ? "压缩图片" : "上传原图",
@@ -188,6 +195,7 @@ export function SettingsPage({ section, onSignOut }: { section: SettingsSection;
     log: () => <LogPage />,
     lock: () => <LockPage />,
     appearance: () => <Appearance />,
+    add: () => <AddTo />,
     background: () => (
       <>
         <RemindSettings />
@@ -417,6 +425,51 @@ function Appearance() {
       </div>
       {app === "desktop" && <Zooms />}
       {app === "android" && <WidgetText />}
+    </>
+  );
+}
+
+/** What a fixed folder for quick add shows as once deleted or no longer shared. */
+const GONE = "已不在";
+
+/** Which folder quick add puts a task in, outside a folder (docs/ui.md#其他). Fixing one picks it
+ * first: without a pick, it stays as it was. */
+function AddTo() {
+  const { board } = useView();
+  const fixed = useFixedAddTo(board.me);
+  const shown = useAddTo(board);
+  const [picking, setPicking] = useState(false);
+  const gone = fixed !== undefined && !board.hasFolder(fixed);
+  return (
+    <>
+      <div className="group">
+        <div className="row">
+          <div className="row-inner controls">
+            添加到
+            <span className="row-value">
+              <Seg<"last" | "fixed">
+                small
+                label="快速添加到"
+                items={[
+                  ["last", "上次选的"],
+                  ["fixed", "固定的"],
+                ]}
+                value={fixed === undefined ? "last" : "fixed"}
+                onChange={(to) => (to === "last" ? unfixAddTo(board.me, shown) : setPicking(true))}
+              />
+            </span>
+          </div>
+        </div>
+        {fixed !== undefined && <Action label="文件夹" value={gone ? GONE : board.folderName(fixed)} onClick={() => setPicking(true)} />}
+      </div>
+      <p className="group-note">
+        {fixed === undefined
+          ? "“接下来”和日历的快速添加栏放进上次在栏里选的文件夹。"
+          : gone
+            ? "这个文件夹已删除或不再共享，它回来了才接着用；在这之前，没在栏里临时选别的，就放进默认的位置。也可以另选一个。"
+            : "“接下来”和日历的快速添加栏总是放进这个文件夹；在栏里临时选了别的，只用一次。"}
+      </p>
+      {picking && <FolderPicker mode="add" current={fixed} onPick={(f) => fixAddTo(board.me, f)} onClose={() => setPicking(false)} />}
     </>
   );
 }

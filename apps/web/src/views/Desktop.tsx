@@ -19,6 +19,7 @@ import { Detail } from "./Detail";
 import { useTreeDrag } from "./drag";
 import { FolderContextMenu, FolderMenu, usePlaceFolder } from "./FolderMenu";
 import { CalendarBody, CalendarViewSeg } from "./calendar";
+import { setFolderClosed, useClosedFolders } from "./closed-folders";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, NextFilter, QuickAdd, SearchResults } from "./lists";
 import { readyIn, useNextFolders } from "../next-folders";
 import { folderUrl, settingsUrl, useFolderView, useSelection } from "./nav";
@@ -235,28 +236,17 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ca
   const connection = useConnection();
   const lock = usePrivacyLock();
   const [, navigate] = useLocation();
-  const [collapsed, setCollapsed] = useState(() => new Set<FolderId | null>());
+  const collapsed = useClosedFolders(board.me);
   const go = (to: string) => {
     setQuery("");
     navigate(to);
   };
-  const toggle = (id: FolderId | null) =>
-    setCollapsed((c) => {
-      const next = new Set(c);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
   const scroll = useRef<HTMLDivElement>(null);
   const place = usePlaceFolder();
   useTreeDrag(scroll, {
     canPlace: (folder, parent) => board.canMove(folder, parent),
     place,
-    unfold: (id) =>
-      setCollapsed((c) => {
-        const next = new Set(c);
-        next.delete(id);
-        return next;
-      }),
+    unfold: (id) => setFolderClosed(board.me, id, false),
   });
   // The root first, with the folders inside it; then each folder others share with the user, which
   // stays where it is, with who shares it.
@@ -283,7 +273,7 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ca
               onClick={(e) => {
                 if (!kids.length) return;
                 e.stopPropagation();
-                toggle(id);
+                setFolderClosed(board.me, id, open);
               }}
             >
               {kids.length > 0 && <Icon of={ChevronRight} size={14} width={2.2} />}

@@ -97,6 +97,8 @@ struct Expect {
     written: bool,
     /// The due times, in any order.
     due: Option<Vec<String>>,
+    /// The start times, in any order.
+    start: Option<Vec<String>>,
     remind: Option<Vec<u32>>,
     /// The repeated tasks, each by a word in its title, and its due date in full as `due_text` writes
     /// it, in one of its wordings (`~1w` or `~1w:1`, due on a Monday); empty for none.
@@ -449,6 +451,12 @@ fn check(e: &Expect, input: &Value, v: &Value, snap: &Snapshot, ops: &[Op]) -> (
         let got: Vec<String> = sorted(tasks.iter().map(|t| field(t, "due")).filter(|d| !d.is_empty()));
         if got != sorted(want.iter().cloned()) {
             problems.push(format!("截止时间 {got:?}，应为 {want:?}"));
+        }
+    }
+    if let Some(want) = &e.start {
+        let got: Vec<String> = sorted(tasks.iter().map(|t| field(t, "start")).filter(|d| !d.is_empty()));
+        if got != sorted(want.iter().cloned()) {
+            problems.push(format!("开始时间 {got:?}，应为 {want:?}"));
         }
     }
     if let Some(want) = &e.remind {

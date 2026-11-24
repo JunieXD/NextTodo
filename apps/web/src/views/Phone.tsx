@@ -4,7 +4,7 @@ import { CalendarDays, ChevronLeft, CircleCheck, Folder as FolderIcon, History, 
 import { type ReactNode, useState } from "react";
 import { Redirect, useLocation } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
-import { formatToday } from "../domain/dates";
+import { formatToday, isoDate } from "../domain/dates";
 import { useConnection, useSession, useView } from "../session";
 import { useBack } from "../ui/back";
 import { Tip } from "../ui/feedback";
@@ -14,7 +14,7 @@ import { Sheet } from "../ui/Sheet";
 import { app } from "../api/http";
 import { BackgroundTip } from "./Background";
 import { BatchBar, BatchHead, useBatch } from "./batch";
-import { CalendarBody, CalendarViewSeg } from "./calendar";
+import { CalendarBody, CalendarViewSeg, useCalendarView } from "./calendar";
 import { Detail } from "./Detail";
 import { FolderMenu } from "./FolderMenu";
 import { FolderTile, styled } from "./folder-look";
@@ -166,15 +166,17 @@ function NextScreen({ anim, now }: { anim: string; now: Date }) {
 }
 
 function CalendarScreen({ anim, now }: { anim: string; now: Date }) {
+  const [picked, setPicked] = useState(() => isoDate(now));
+  const [view] = useCalendarView();
   return (
-    <Screen title="日历" anim={anim}>
+    <Screen title="日历" anim={anim} after={<QuickAdd key="calendar" on={picked} hide={view === "year"} />}>
       <div className="hero">
         <h1 className="large-title">日历</h1>
         <span className="hero-actions">
           <CalendarViewSeg />
         </span>
       </div>
-      <CalendarBody now={now} />
+      <CalendarBody now={now} picked={picked} setPicked={setPicked} />
     </Screen>
   );
 }

@@ -2,7 +2,7 @@
 // and the day picked listed under it.
 
 import { Check as CheckIcon, ChevronLeft, ChevronRight } from "lucide-react";
-import { useRef, useState, useSyncExternalStore } from "react";
+import { useRef, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { completionKey } from "../domain/apply";
 import { type DoneOn, type DueOn, doneByDay, dueBetween, heat, lateness } from "../domain/calendar";
@@ -65,11 +65,10 @@ function turned(date: string, view: CalendarView, by: number): string {
   return isoDate(new Date(y, m, Math.min(d.getDate(), last)));
 }
 
-export function CalendarBody({ now }: { now: Date }) {
+export function CalendarBody({ now, picked, setPicked }: { now: Date; picked: string; setPicked(date: string): void }) {
   const { board } = useView();
   const [view, setView] = useCalendarView();
   const today = isoDate(now);
-  const [picked, setPicked] = useState(today);
   const shown = day(picked);
   const days =
     view === "week"

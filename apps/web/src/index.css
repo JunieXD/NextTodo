@@ -788,6 +788,8 @@ a.text-btn { display: inline-flex; align-items: center; }
    (12) and the groups' margin (16) accounted for. */
 .desk .settings-page { max-width: 600px; margin-inline: auto; }
 .main-head.narrow { width: 100%; max-width: 624px; margin-inline: auto; }
+/* Its quick add lines up with the groups of the column, 16 inside it as elsewhere. */
+.desk .main-head.narrow + .quick-add { width: calc(100% - 56px); max-width: 568px; margin-inline: auto; }
 .secret { margin: 0 16px 12px; padding: 6px 6px 6px 14px; border-radius: 12px; background: var(--surface-container); font: 13px/1.5 ui-monospace, Menlo, monospace; display: flex; align-items: center; gap: 8px; }
 .secret span { flex: 1; padding: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
 .field .secret { margin: 0; font-weight: 400; color: var(--on-surface); }

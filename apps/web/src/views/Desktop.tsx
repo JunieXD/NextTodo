@@ -5,7 +5,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, CircleCheck, FolderRoot, Histo
 import { Fragment, type ReactNode, useRef, useState } from "react";
 import { Link, Redirect, useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
-import { formatToday } from "../domain/dates";
+import { formatToday, isoDate } from "../domain/dates";
 import { lockNow, usePrivacyLock } from "../lock";
 import { useConnection, useSession, useView } from "../session";
 import { useBack } from "../ui/back";
@@ -18,7 +18,7 @@ import { useColumns } from "./columns";
 import { Detail } from "./Detail";
 import { useTreeDrag } from "./drag";
 import { FolderContextMenu, FolderMenu, usePlaceFolder } from "./FolderMenu";
-import { CalendarBody, CalendarViewSeg } from "./calendar";
+import { CalendarBody, CalendarViewSeg, useCalendarView } from "./calendar";
 import { setFolderClosed, useClosedFolders } from "./closed-folders";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, NextFilter, QuickAdd, SearchResults } from "./lists";
 import { readyIn, useNextFolders } from "../next-folders";
@@ -127,19 +127,7 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
       </Page>
     );
   } else if (at === "calendar") {
-    main = (
-      <Page
-        title="日历"
-        actions={
-          <div className="head-actions">
-            <CalendarViewSeg />
-          </div>
-        }
-        narrow
-      >
-        <CalendarBody now={now} />
-      </Page>
-    );
+    main = <CalendarPage now={now} />;
   } else if (at !== "root" && !board.folder(at)) {
     main = <Redirect to="/folders" replace />;
   } else {
@@ -195,6 +183,25 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
         <div className="pane-inner">{shown && <Detail key={shown} id={shown} now={now} closing={!open} onClose={close} />}</div>
       </aside>
     </div>
+  );
+}
+
+function CalendarPage({ now }: { now: Date }) {
+  const [picked, setPicked] = useState(() => isoDate(now));
+  const [view] = useCalendarView();
+  return (
+    <Page
+      title="日历"
+      actions={
+        <div className="head-actions">
+          <CalendarViewSeg />
+        </div>
+      }
+      add={<QuickAdd key="calendar" on={picked} hide={view === "year"} />}
+      narrow
+    >
+      <CalendarBody now={now} picked={picked} setPicked={setPicked} />
+    </Page>
   );
 }
 

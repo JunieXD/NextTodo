@@ -8,6 +8,7 @@ import { v7 as uuidv7 } from "uuid";
 import { useLocation, useSearchParams } from "wouter";
 import { NextTodo } from "../mobile";
 import { app } from "../api/http";
+import type { Due } from "../api/types/Due";
 import type { Folder } from "../api/types/Folder";
 import type { FolderId } from "../api/types/FolderId";
 import type { Op } from "../api/types/Op";
@@ -15,10 +16,11 @@ import type { Task } from "../api/types/Task";
 import { lastKey } from "../domain/apply";
 import { matches } from "../domain/board";
 import { aiReady, setAiMode, useAiMode, useAiVision } from "../ai";
-import { type DueKind, dueKind, formatDay, localTime } from "../domain/dates";
+import { day, type DueKind, dueKind, formatDay, inOrder, localTime } from "../domain/dates";
 import { checkJobText, checkTitle } from "../domain/text";
 import { useCommit, useSession, useView } from "../session";
 import { readyIn, setNextFolders, useNextFolders } from "../next-folders";
+import { defaultReminders } from "../remind-settings";
 import { addOps, filesIn, isPicture, plan, unseen } from "../attach";
 import { type Staged, draft, keepDraft, keepStaged, onDrafts, stagedFiles } from "../sync/drafts";
 import { dropFiles } from "../sync/files";
@@ -312,16 +314,24 @@ export function SearchResults({ query, now }: { query: string; now: Date }) {
   );
 }
 
+/** A due date on `date`, with this device's defaults for one without a time. */
+function due(date: string): Due {
+  const reminders = inOrder(defaultReminders().dated, undefined);
+  return { date, ...(reminders.length > 0 && { reminders }) };
+}
+
 /** Adds tasks by typing, or, switched to AI organizing with ✦, has AI organize what is written into
  * tasks; that text can be expanded to write at length. Files pasted or dropped in go with what is
  * added. In a folder (`null` for the root) it adds there; elsewhere to a folder picked beside it, the
- * root by default. */
-export function QuickAdd({ folder }: { folder?: FolderId | null }) {
+ * root by default. In the calendar, `on` the day picked there, a task is due that day, with the
+ * defaults for a due date; it has no AI organizing, which dates tasks by what the text says. Hidden by
+ * `hide`, it keeps what it has, the folder picked and the files still being saved. */
+export function QuickAdd({ folder, on, hide = false }: { folder?: FolderId | null; on?: string; hide?: boolean }) {
   const { board } = useView();
   const commit = useCommit();
   const { snack } = useFeedback();
   const { user } = useSession();
-  const place = folder === undefined ? "next" : (folder ?? "root");
+  const place = on !== undefined ? "calendar" : folder === undefined ? "next" : (folder ?? "root");
   const [title, setTitle] = useState(() => draft(user.id, place));
   const edit = (text: string) => {
     setTitle(text);
@@ -375,16 +385,25 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
     return !refused;
   };
   // The device remembers the mode last used.
-  const ai = useAiMode();
+  const ai = useAiMode() && on === undefined;
   const vision = useAiVision(user.id, ai && staged.some((f) => isPicture(f.type)));
   const hidden = ai && vision !== undefined ? unseen(staged, vision) : undefined;
-  // In “接下来” until one is picked, the first folder it lists, so that a new task shows there.
+  // In “接下来” until one is picked, the first folder it lists, so that a new task shows there; in the
+  // calendar, the root.
   const [target, setTarget] = useState<FolderId | null>();
   const listed = useNextFolders(board);
   const [picking, setPicking] = useState(false);
   const [tall, setTall] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const into = folder !== undefined ? folder : target !== undefined && board.hasFolder(target) ? target : (board.folderTree().find((f) => listed.includes(f)) ?? null);
+  const into =
+    folder !== undefined
+      ? folder
+      : target !== undefined && board.hasFolder(target)
+        ? target
+        : on === undefined
+          ? (board.folderTree().find((f) => listed.includes(f)) ?? null)
+          : null;
+  const when = on && formatDay(day(on).getTime(), new Date());
   const area = useRef<HTMLTextAreaElement>(null);
   const focus = () => area.current?.focus();
   // The Android widget opens `/?add` to type a new task straight away, and so does the desktop app's
@@ -452,10 +471,17 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
     if (!title.trim()) return;
     if (ai) return void organize();
     const c = checkTitle(title);
-    if (!c.ok) return snack([...title.trim()].length > 200 ? `${c.error}；长段文字可以点 ✦ 交给 AI 整理` : c.error);
+    if (!c.ok) return snack([...title.trim()].length > 200 && on === undefined ? `${c.error}；长段文字可以点 ✦ 交给 AI 整理` : c.error);
     if (!canSend()) return;
     const id = uuidv7();
-    const op: Op = { op: "task.create", id, title: c.value, sort_key: lastKey(board.contents(into).map((t) => t.sort_key)), ...(into && { folder_id: into }) };
+    const op: Op = {
+      op: "task.create",
+      id,
+      title: c.value,
+      sort_key: lastKey(board.contents(into).map((t) => t.sort_key)),
+      ...(into && { folder_id: into }),
+      ...(on && { due: due(on) }),
+    };
     if (!commit([op])) return;
     // Each file in a change of its own: one the server turns down leaves the task and the others.
     for (const f of staged) commit(addOps([f], { task_id: id }));
@@ -488,7 +514,7 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
 
   return (
     <>
-      <form className="quick-add" onSubmit={submit} onDragOver={files.onDragOver} onDrop={files.onDrop}>
+      <form className="quick-add" hidden={hide} onSubmit={submit} onDragOver={files.onDragOver} onDrop={files.onDrop}>
         <div className="qa-field">
           <StagedFiles files={staged} unseen={hidden} onRemove={unstage} />
           {/* A title pasted on many lines is joined into one. */}
@@ -499,10 +525,10 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
             value={title}
             onChange={(e) => edit(ai ? e.target.value : e.target.value.replace(/[\r\n]/g, ""))}
             onKeyDown={enter}
-            placeholder={ai ? "交给 AI 整理" : "添加事项"}
+            placeholder={when ? `添加到${/^\d/.test(when) ? " " : ""}${when}` : ai ? "交给 AI 整理" : "添加事项"}
             autoComplete="off"
             enterKeyHint={ai ? undefined : "done"}
-            aria-label={ai ? "交给 AI 整理的内容" : "新事项标题"}
+            aria-label={ai ? "交给 AI 整理的内容" : when ? `新事项标题，截止${when}` : "新事项标题"}
           />
         </div>
         <div className="qa-side">
@@ -515,17 +541,19 @@ export function QuickAdd({ folder }: { folder?: FolderId | null }) {
           )}
           <div className="qa-btns">
             {/* Not taking the focus from the text: on a phone the keyboard would go down and come up again. */}
-            <Tip label="AI 整理">
-              <button
-                type="button"
-                className={`qa-btn icon${ai ? " on" : ""}`}
-                aria-pressed={ai}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => void switchMode()}
-              >
-                <Icon of={Sparkles} size={16} />
-              </button>
-            </Tip>
+            {on === undefined && (
+              <Tip label="AI 整理">
+                <button
+                  type="button"
+                  className={`qa-btn icon${ai ? " on" : ""}`}
+                  aria-pressed={ai}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => void switchMode()}
+                >
+                  <Icon of={Sparkles} size={16} />
+                </button>
+              </Tip>
+            )}
             {pick}
             {send}
           </div>

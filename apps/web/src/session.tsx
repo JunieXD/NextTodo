@@ -75,9 +75,16 @@ async function logout(): Promise<boolean> {
 /** What a tab tells the others, numbered in the device's sequence: who signed in, so that tabs of
  * anyone else end; who signed out on this device, so that the user's tabs end too, whichever sign-in
  * they are in, instead of saving the data again; that the server turned a change down, which only
- * the tab that sent it hears, so that tabs that took it from the outbox drop it too; that a file has
- * been uploaded, so that the change waiting for it goes. */
-type Message = { signedIn: Login } | { signedOut: Login } | { rejected: MutationId } | FileMessage;
+ * the tab that sent it hears, so that tabs that took it from the outbox drop it too, and with why when
+ * it was a file that could not go, for the tab the user is in; that a file has been uploaded, so that
+ * the change waiting for it goes; and the changes a closing tab leaves the server to confirm, so that
+ * they go from another, not at the next start. */
+type Message =
+  | { signedIn: Login }
+  | { signedOut: Login }
+  | { rejected: MutationId; told?: { user: string; text: string } }
+  | { handed: { user: string; changes: Mutation[] } }
+  | FileMessage;
 const tabs = new BroadcastChannel("nexttodo");
 
 /** Calls `f` whenever another tab signs in. */
@@ -173,8 +180,13 @@ export class Session {
   }
 
   private readonly heard = ({ data }: MessageEvent<Message>) => {
-    if ("rejected" in data) void this.store.drop(data.rejected);
-    else if ("uploaded" in data) this.files.heard(data);
+    if ("rejected" in data) {
+      void this.store.drop(data.rejected);
+      // Android's quick add card, say, whose file the app's window uploads.
+      if (data.told?.user === this.user.id && document.visibilityState === "visible") this.listeners.told(data.told.text);
+    } else if ("handed" in data) {
+      if (data.handed.user === this.user.id) this.store.adopt(data.handed.changes);
+    } else if ("uploaded" in data) this.files.heard(data);
     // A message can be heard late: only a sign-in or sign-out after this session's sign-in ends it.
     else if ("signedIn" in data) {
       if (data.signedIn.user.id !== this.user.id && data.signedIn.id > this.login) this.endedElsewhere(false);
@@ -260,6 +272,11 @@ export class Session {
       }
     });
     return !found || found instanceof Session ? found : fresh(found, copy);
+  }
+
+  /** Hands what the server has not confirmed yet to the user's other tabs, this one closing. */
+  handOver() {
+    tabs.postMessage({ handed: { user: this.user.id, changes: this.store.queued } } satisfies Message);
   }
 
   /** Asks the server whether the session still holds, and refreshes the user's details. */

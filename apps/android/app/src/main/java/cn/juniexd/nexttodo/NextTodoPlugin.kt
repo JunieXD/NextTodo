@@ -331,6 +331,30 @@ class NextTodoPlugin : Plugin() {
         }
     }
 
+    /** What another app shared, when it opened the quick add card: `text` and `files`, each a `path`
+     * in the cache, `name` and `type`; or, past `max` bytes and not of type `shrunk`, `name` and
+     * `tooLarge`; or why it could not be read, `error`. Nothing else, or once taken
+     * (docs/android.md#快速添加小窗). */
+    @PluginMethod
+    fun takeShared(call: PluginCall) = work(call, "读取分享的内容") {
+        (activity as? QuickAddActivity)?.takeShared(call.data.getLong("max"), call.getString("shrunk")) ?: JSObject()
+    }
+
+    /** Closes the quick add card, back to the app it was opened over. */
+    @PluginMethod
+    fun closeCard(call: PluginCall) {
+        activity.finish()
+        call.resolve()
+    }
+
+    /** Opens the app at `url`, `nexttodo://…` as the widgets do, and closes the quick add card. */
+    @PluginMethod
+    fun openApp(call: PluginCall) {
+        activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(call.getString("url")!!), context, MainActivity::class.java))
+        activity.finish()
+        call.resolve()
+    }
+
     /** Downloads the build of the web app on `server`, the one signed in to, for the next start: see
      * `WebUpdate`. */
     @PluginMethod
@@ -475,9 +499,10 @@ class NextTodoPlugin : Plugin() {
     /** The file in it, under the name the attachment goes by. */
     private fun attachment(id: String, name: String) = File(directory(id), fileName(name))
 
-    /** The attachments opened in the last run go as the page loads. */
+    /** The attachments opened in the last run go as the page loads: the app's page, not the quick add
+     * card's, which would take away a file just handed to another app. */
     override fun load() {
-        File(context.cacheDir, ATTACHMENTS).deleteRecursively()
+        if (activity !is QuickAddActivity) File(context.cacheDir, ATTACHMENTS).deleteRecursively()
     }
 
     /** Writes the `first` piece of an attachment's file, or the next, base64 `data`: the bridge takes

@@ -6,4 +6,5 @@
     <string name="widget_description">显示当前可做的事项，点圆圈即可完成</string>
     <string name="agenda_widget_name">日程</string>
     <string name="agenda_widget_description">按天列出今天起 7 天截止的事项</string>
+    <string name="quick_add">快速添加</string>
 </resources>

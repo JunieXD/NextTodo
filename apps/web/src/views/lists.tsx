@@ -8,9 +8,11 @@ import { v7 as uuidv7 } from "uuid";
 import { useLocation, useSearchParams } from "wouter";
 import { NextTodo } from "../mobile";
 import { app } from "../api/http";
+import type { AiJobId } from "../api/types/AiJobId";
 import type { Due } from "../api/types/Due";
 import type { Folder } from "../api/types/Folder";
 import type { FolderId } from "../api/types/FolderId";
+import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
 import { lastKey } from "../domain/apply";
@@ -321,18 +323,29 @@ function due(date: string): Due {
   return { date, ...(reminders.length > 0 && { reminders }) };
 }
 
+/** What a quick add sent: its changes, and the AI job it asked for, if it did. */
+export interface Sent {
+  changes: MutationId[];
+  job?: AiJobId;
+}
+
+/** Where the quick add bar keeps its draft and files: one in the calendar, one in each folder, and one
+ * for what is next, which adds to a folder picked beside it. */
+export const quickAddPlace = (folder?: FolderId | null, on?: string) => (on !== undefined ? "calendar" : folder === undefined ? "next" : (folder ?? "root"));
+
 /** Adds tasks by typing, or, switched to AI organizing with ✦, has AI organize what is written into
  * tasks; that text can be expanded to write at length. Files pasted or dropped in go with what is
  * added. In a folder (`null` for the root) it adds there; elsewhere to a folder picked beside it, as
  * `add-to.ts` keeps it. In the calendar, `on` the day picked there, a task is due that day, with the
  * defaults for a due date; it has no AI organizing, which dates tasks by what the text says. Hidden by
- * `hide`, it keeps what it has, the folder picked and the files still being saved. */
-export function QuickAdd({ folder, on, hide = false }: { folder?: FolderId | null; on?: string; hide?: boolean }) {
+ * `hide`, it keeps what it has, the folder picked and the files still being saved. `onSent` hears of
+ * what each add sent. */
+export function QuickAdd({ folder, on, hide = false, onSent }: { folder?: FolderId | null; on?: string; hide?: boolean; onSent?: (sent: Sent) => void }) {
   const { board } = useView();
   const commit = useCommit();
   const { snack } = useFeedback();
   const { user } = useSession();
-  const place = on !== undefined ? "calendar" : folder === undefined ? "next" : (folder ?? "root");
+  const place = quickAddPlace(folder, on);
   const [title, setTitle] = useState(() => draft(user.id, place));
   const edit = (text: string) => {
     setTitle(text);
@@ -407,8 +420,9 @@ export function QuickAdd({ folder, on, hide = false }: { folder?: FolderId | nul
   const when = on && formatDay(day(on).getTime(), new Date());
   const area = useRef<HTMLTextAreaElement>(null);
   const focus = () => area.current?.focus();
-  // The Android widget opens `/?add` to type a new task straight away, and so does the desktop app's
-  // panel each time it opens: on Android with the keyboard up, which focusing alone does not bring.
+  // Android's quick add card opens with `?add` to type a new task straight away, and so does the
+  // desktop app's panel each time it opens: on Android with the keyboard up, which focusing alone does
+  // not bring.
   const [params] = useSearchParams();
   const [location, navigate] = useLocation();
   const asked = params.has("add");
@@ -461,11 +475,13 @@ export function QuickAdd({ folder, on, hide = false }: { folder?: FolderId | nul
     const id = uuidv7();
     const reminders = jobReminders();
     const op: Op = { op: "ai_job.create", id, text: c.value, local_time: localTime(new Date()), ...(into && { folder_id: into }), ...(reminders && { reminders }) };
-    if (!commit([op, ...addOps(staged, { job_id: id })])) return false;
+    const made = commit([op, ...addOps(staged, { job_id: id })]);
+    if (!made) return false;
     edit("");
     stage([]);
     if (folder === undefined) addedTo(user.id, into);
     snack("已交给 AI 整理");
+    onSent?.({ changes: [made.id], job: id });
     return true;
   };
 
@@ -485,13 +501,19 @@ export function QuickAdd({ folder, on, hide = false }: { folder?: FolderId | nul
       ...(into && { folder_id: into }),
       ...(on && { due: due(on) }),
     };
-    if (!commit([op])) return;
+    const made = commit([op]);
+    if (!made) return;
+    const changes = [made.id];
     // Each file in a change of its own: one the server turns down leaves the task and the others.
-    for (const f of staged) commit(addOps([f], { task_id: id }));
+    for (const f of staged) {
+      const added = commit(addOps([f], { task_id: id }));
+      if (added) changes.push(added.id);
+    }
     edit("");
     stage([]);
     if (folder === undefined) addedTo(user.id, into);
     snack(`已添加“${c.value}”`);
+    onSent?.({ changes });
   };
 
   // A title is one line, so Enter adds it; AI organizing's text has many, so Enter starts one and

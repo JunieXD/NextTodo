@@ -46,8 +46,8 @@ export interface View {
 export interface Hooks {
   /** Saves the copy, and the changes that `queued` joined the outbox and `settled` left it: those
    * the server confirmed or turned down. Every change that arrives settles, also one queued in
-   * another tab. Resolves once written, or failed to be. */
-  save(copy: Copy, queued: Pending[], settled: MutationId[]): Promise<void>;
+   * another tab. Resolves once written, true, or failed to be. */
+  save(copy: Copy, queued: Pending[], settled: MutationId[]): Promise<boolean>;
   send(m: Mutation): void;
   /** Whether the files of the attachments `m` adds are on the server. */
   uploaded(m: Mutation): boolean;
@@ -75,6 +75,10 @@ export class Store {
   private readonly saving = new Set<MutationId>();
   /** Changes handed to `send` since the connection last caught up. */
   private released = new Set<MutationId>();
+  /** The last save asked for: saves are written in turn, so this one is the last to be. */
+  private lastSave = Promise.resolve(true);
+  /** Changes made here that the server turned down, or this device withdrew. */
+  private readonly turnedDown = new Set<MutationId>();
   private view!: View;
   private data!: Data;
   private readonly listeners = new Set<() => void>();
@@ -102,6 +106,15 @@ export class Store {
   };
 
   getView = () => this.view;
+
+  /** Whether the changes made so far are written on this device, once they are or writing them failed. */
+  saved = () => this.lastSave;
+
+  /** Where change `id`, made here, stands with the server. */
+  standing(id: MutationId): "waiting" | "confirmed" | "turned down" {
+    if (this.outbox.some((p) => p.mutation.id === id)) return "waiting";
+    return this.turnedDown.has(id) ? "turned down" : "confirmed";
+  }
 
   /** Moves the view on as a task's start comes, what starts then can be done, or back as the clock is
    * turned back past one; and on a new day (docs/design.md#开始时间). */
@@ -182,13 +195,13 @@ export class Store {
     return { id, effects };
   }
 
-  /** Takes in changes made on this device without the page, by the Android widget and reminders, that
-   * the server may not have yet: they join the outbox in the order made, as if made here, and are
-   * sent once saved (docs/android.md#原生发出的改动). One the copy has already is left out; one sent
-   * twice the server takes once. */
+  /** Takes in changes made on this device without the page, by the Android widget and reminders, or by
+   * another tab that closed, that the server may not have yet: they join the outbox in the order made,
+   * as if made here, and are sent once saved (docs/android.md#原生发出的改动). One the copy has
+   * already, or knows was turned down, is left out; one sent twice the server takes once. */
   adopt(mutations: Mutation[]) {
     const fresh = mutations
-      .filter((m) => !this.log.has(m.id) && !this.outbox.some((p) => p.mutation.id === m.id))
+      .filter((m) => !this.log.has(m.id) && !this.turnedDown.has(m.id) && !this.outbox.some((p) => p.mutation.id === m.id))
       .map((mutation) => ({ mutation, at: madeAt(mutation.id) }));
     if (!fresh.length) return;
     this.outbox = [...this.outbox, ...fresh].sort((a, b) => cmp(a.mutation.id, b.mutation.id));
@@ -272,6 +285,7 @@ export class Store {
       return;
     }
     this.outbox = this.outbox.filter((p) => p !== pending);
+    this.turnedDown.add(id);
     void this.changed([], [id]);
     this.hooks.rejected(pending.mutation, error);
     this.flush();
@@ -279,8 +293,10 @@ export class Store {
 
   /** Another tab heard the server turn a change down, or this device withdrew it: drop it here too,
    * without telling again. Resolves once that is saved. */
-  drop(id: MutationId): Promise<void> {
-    if (!this.outbox.some((p) => p.mutation.id === id)) return Promise.resolve();
+  drop(id: MutationId): Promise<boolean> {
+    // Also one not here: another tab may hand it over yet.
+    this.turnedDown.add(id);
+    if (!this.outbox.some((p) => p.mutation.id === id)) return Promise.resolve(true);
     this.outbox = this.outbox.filter((p) => p.mutation.id !== id);
     const saved = this.changed([], [id]);
     this.flush();
@@ -326,9 +342,9 @@ export class Store {
     if (this.log.size > LOG_SIZE) this.log.delete(this.log.keys().next().value!);
   }
 
-  private changed(queued: Pending[] = [], settled: MutationId[] = []): Promise<void> {
+  private changed(queued: Pending[] = [], settled: MutationId[] = []): Promise<boolean> {
     this.recompute();
-    const saved = this.hooks.save({ seq: this.seq, base: toSnapshot(this.base), log: [...this.log] }, queued, settled);
+    const saved = (this.lastSave = this.hooks.save({ seq: this.seq, base: toSnapshot(this.base), log: [...this.log] }, queued, settled));
     for (const listener of this.listeners) listener();
     return saved;
   }

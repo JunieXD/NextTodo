@@ -314,7 +314,7 @@ label.row { cursor: pointer; }
    compositing slip next to the tab bar's backdrop filter. */
 .screen .quick-add { will-change: transform; }
 .qa-field { flex: 1; min-width: 0; display: flex; flex-direction: column; border-radius: 20px; background: var(--surface-container); }
-.qa-field textarea { flex: 1; min-width: 0; border: 0; background: none; outline: none; resize: none; font-size: 16px; line-height: 22px; padding: 9px 14px; max-height: calc(22px * 5 + 18px); overflow-y: auto; text-overflow: ellipsis; }
+.qa-field textarea { min-width: 0; border: 0; background: none; outline: none; resize: none; font-size: 16px; line-height: 22px; padding: 9px 14px; max-height: calc(22px * 5 + 18px); overflow-y: auto; text-overflow: ellipsis; }
 /* The placeholder takes one line, cut short with the field's ellipsis. */
 .qa-field ::placeholder { white-space: nowrap; overflow: hidden; text-overflow: inherit; }
 .qa-side { align-self: stretch; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; gap: 4px; padding-bottom: 2px; flex: none; }
@@ -718,6 +718,16 @@ a.text-btn { display: inline-flex; align-items: center; }
 .panel .batch-bar { position: static; flex: none; }
 .panel .snackbar { bottom: 12px; }
 .panel-out { height: 100%; display: grid; place-content: center; justify-items: center; gap: 16px; padding: 24px; text-align: center; color: var(--on-surface-variant); }
+
+/* Android's quick add card: a sheet at the bottom, the app it is over showing dimmed above it. */
+.in-card, .in-card body, .app.card { background: transparent; }
+.card-page { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; }
+.card-sheet { background: var(--surface); border-radius: 28px 28px 0 0; padding: 12px 0 calc(12px + var(--safe-bottom)); }
+.card .quick-add { position: static; margin: 0 12px; box-shadow: none; }
+.card-note { margin: 0; padding: 14px 24px; color: var(--on-surface-variant); }
+.card-out { display: grid; justify-items: center; gap: 12px; padding: 12px 24px; text-align: center; color: var(--on-surface-variant); }
+.card-out p { margin: 0; }
+.card .snackbar { bottom: auto; top: calc(12px + var(--safe-top)); }
 
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .3s; }
 @media (prefers-reduced-motion: reduce) {

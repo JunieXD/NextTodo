@@ -25,15 +25,48 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- The widgets and reminders open a task, the home page, quick add or the calendar as
-                 nexttodo://task/<id>, nexttodo://home, nexttodo://add, nexttodo://calendar. -->
+            <!-- The widgets and reminders open a task, the home page or the calendar as
+                 nexttodo://task/<id>, nexttodo://home, nexttodo://calendar; the quick add card
+                 another page as nexttodo://page/<path>. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="nexttodo" />
             </intent-filter>
 
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+
         </activity>
+
+        <!-- The quick add card over another app, also what other apps share: a task of its own, not
+             one to come back to. docs/android.md#快速添加小窗. -->
+        <activity
+            android:name=".QuickAddActivity"
+            android:exported="true"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:theme="@style/QuickAdd">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".QuickAddTile"
+            android:exported="true"
+            android:icon="@drawable/ic_add"
+            android:label="@string/quick_add"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
         <!-- Restarts the app from a process of its own: Restart.kt. -->
         <activity

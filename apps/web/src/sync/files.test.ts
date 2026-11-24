@@ -50,6 +50,7 @@ function tab(u: string, queued: Mutation[]) {
       // As the session's saver does, of the outbox all tabs share.
       save: async (_, __, settled) => {
         for (const id of settled) await unqueue(u, id);
+        return true;
       },
       send: (m) => sent.push(m),
       uploaded: (m) => files.has(m),
@@ -99,7 +100,8 @@ test("a change whose file is no longer on the device goes, as one turned down, a
   await device(u, [m, after], []);
   const open = tab(u, [m, after]);
   await vi.waitFor(() => expect(open.sent).toEqual([after]));
-  expect(open.told).toEqual([{ rejected: m.id }]);
+  // With why, for another tab the user may be in.
+  expect(open.told).toEqual([{ rejected: m.id, told: { user: u, text: "“图片 1.png”上传失败：文件已不在这台设备上" } }]);
   open.files.stop();
 });
 

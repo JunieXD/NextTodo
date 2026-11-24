@@ -112,20 +112,23 @@ export interface Planned {
   shrink: boolean;
 }
 
-const tooLarge = (name: string) => `“${name}”超过 20 MB，不能添加`;
+export const tooLarge = (name: string) => `“${name}”超过 20 MB，不能添加`;
+
+/** How large a file may be added: `max` bytes, but for a photo of type `shrunk`, which is made smaller
+ * first and may come under it then. */
+export const sizeLimit = (): { max: number; shrunk?: string } => ({ max: MAX_FILE_SIZE, ...(serverSettings().compress_images && { shrunk: "image/jpeg" }) });
 
 /** Names `files` among `taken` and gives them ids, in the order given, which is the order they are
  * added in. Tells `refuse` of those that cannot be added, which are left out. */
 export function plan(files: File[], taken: string[], refuse: (text: string) => void): Planned[] {
   const planned: Planned[] = [];
-  const compress = serverSettings().compress_images;
+  const { max, shrunk } = sizeLimit();
   for (const file of files) {
     const type = mediaType(file.type);
     const name = nameFor(file.name, type, [...taken, ...planned.map((p) => p.name)]);
-    const shrink = compress && type === "image/jpeg";
+    const shrink = type === shrunk;
     if (!file.size) refuse(`“${name}”是空文件，不能添加`);
-    // A photo made smaller may come under the limit.
-    else if (file.size > MAX_FILE_SIZE && !shrink) refuse(tooLarge(name));
+    else if (file.size > max && !shrink) refuse(tooLarge(name));
     else planned.push({ id: uuidv7(), name, type, file, shrink });
   }
   return planned;

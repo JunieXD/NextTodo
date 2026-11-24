@@ -194,9 +194,9 @@ function current(saved: SavedCopy, { id, username, display_name }: User): Copy {
 export interface Saver {
   /** Saves the copy and the changes that joined and left the outbox. Writes go one at a time: one
    * waiting for its turn takes the latest copy and everything since the last write. Resolves once
-   * written, or once a write has failed: then `failed` hears of it, and what is not written yet goes
-   * with the next save. */
-  save(copy: Copy, queued: Pending[], settled: MutationId[]): Promise<void>;
+   * written, true, or once a write has failed: then `failed` hears of it, and what is not written yet
+   * goes with the next save. */
+  save(copy: Copy, queued: Pending[], settled: MutationId[]): Promise<boolean>;
   /** Stops saving, once what was saved so far is written; a failed write gets one more try. */
   close(): Promise<void>;
 }
@@ -206,7 +206,7 @@ export function saver(userId: string, copyId: string, failed: (e: unknown) => vo
   const queued = new Map<MutationId, Pending>();
   const settled = new Set<MutationId>();
   /** Resolves the saves gathered for the next write. */
-  let gathered: { promise: Promise<void>; resolve(): void } | undefined;
+  let gathered: { promise: Promise<boolean>; resolve(written: boolean): void } | undefined;
   let writing: Promise<void> | null = null;
   let closed = false;
 
@@ -233,7 +233,7 @@ export function saver(userId: string, copyId: string, failed: (e: unknown) => vo
             ...batch.settled.map((id) => outbox.delete([userId, id])),
             tx.done,
           ]);
-          batch.gathered?.resolve();
+          batch.gathered?.resolve(true);
         } catch (e) {
           copy ??= batch.copy;
           for (const p of batch.queued) if (!settled.has(p.mutation.id)) queued.set(p.mutation.id, p);
@@ -241,8 +241,8 @@ export function saver(userId: string, copyId: string, failed: (e: unknown) => vo
           failed(e);
           // Saves waiting for the next write hear of the failure too, instead of waiting for a save
           // that may not come; in the order they were made, which is the order changes go out in.
-          batch.gathered?.resolve();
-          gathered?.resolve();
+          batch.gathered?.resolve(false);
+          gathered?.resolve(false);
           gathered = undefined;
           break;
         }
@@ -252,7 +252,7 @@ export function saver(userId: string, copyId: string, failed: (e: unknown) => vo
 
   return {
     save(c, joined, left) {
-      if (closed) return Promise.resolve();
+      if (closed) return Promise.resolve(false);
       copy = c;
       for (const p of joined) queued.set(p.mutation.id, p);
       for (const id of left) {
@@ -260,7 +260,7 @@ export function saver(userId: string, copyId: string, failed: (e: unknown) => vo
         settled.add(id);
       }
       if (!gathered) {
-        let resolve!: () => void;
+        let resolve!: (written: boolean) => void;
         gathered = { promise: new Promise((r) => (resolve = r)), resolve };
       }
       const done = gathered.promise;

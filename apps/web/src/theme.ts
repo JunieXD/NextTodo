@@ -4,7 +4,7 @@
 import { SystemBars, SystemBarsStyle } from "@capacitor/core";
 import { useSyncExternalStore } from "react";
 import { app } from "./api/http";
-import { NextTodo } from "./mobile";
+import { NextTodo, inCard } from "./mobile";
 
 export type Theme = "system" | "light" | "dark";
 /** The default, emerald, is the colours `:root` has; the others, `:root[data-accent]`'s. */
@@ -28,7 +28,8 @@ export function applyTheme() {
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", surface);
   // Left alone, the apps color the status bar's icons by the system's appearance, not the page's.
   if (app === "ios") void SystemBars.setStyle({ style: isDark ? SystemBarsStyle.Dark : SystemBarsStyle.Light });
-  else if (app === "android") void NextTodo.setSystemBars({ color: surface, dark: isDark });
+  // The quick add card leaves the bars to the app it is over.
+  else if (app === "android" && !inCard) void NextTodo.setSystemBars({ color: surface, dark: isDark });
 }
 
 const crossFade = (change: () => void) => (document.startViewTransition ? document.startViewTransition(change) : change());

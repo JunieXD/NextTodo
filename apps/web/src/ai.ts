@@ -2,9 +2,10 @@
 // handing them over for the jobs waiting. See docs/ai.md.
 
 import { Preferences } from "@capacitor/preferences";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useEffectEvent, useState, useSyncExternalStore } from "react";
 import { ApiError, OFFLINE, api } from "./api/http";
 import type { AiConfig } from "./api/types/AiConfig";
+import type { AiJobId } from "./api/types/AiJobId";
 import type { AiSettings } from "./api/types/AiSettings";
 import type { Store } from "./sync/store";
 
@@ -92,17 +93,26 @@ export async function setAiMode(on: boolean) {
   await Preferences.set({ key: AI_MODE, value: on ? "on" : "off" });
 }
 
-/** Whether a model is set up, here or on the server; `true` too when the server cannot be asked,
- * offline say: the job then waits. */
-export async function aiReady(userId: string): Promise<boolean> {
-  if (localAiConfig(userId)) return true;
+/** Whether the server has a model set up for the user, as it says now, which is kept as last heard;
+ * unknown when it cannot be asked, offline say. Any other failure counts as none. */
+async function onServer(userId: string): Promise<boolean | undefined> {
   try {
-    return (await api<AiSettings | null>("GET", "/ai/settings")) !== null;
+    const settings = await api<AiSettings | null>("GET", "/ai/settings");
+    keepServerAiModel(userId, settings?.model ?? null);
+    return settings !== null;
   } catch (e) {
     if (!(e instanceof ApiError)) throw e;
-    return e.code === OFFLINE;
+    return e.code === OFFLINE ? undefined : false;
   }
 }
+
+/** Whether a model is set up, here or on the server; also when the server cannot be asked, offline
+ * say: the job then waits. */
+export const aiReady = async (userId: string) => localAiConfig(userId) !== null || ((await onServer(userId)) ?? true);
+
+/** Whether a model is known to be set up, here or on the server, offline as last heard: what another
+ * app shares goes to AI organizing only then, not on a guess (docs/android.md#快速添加小窗). */
+export const aiSetUp = async (userId: string) => localAiConfig(userId) !== null || ((await onServer(userId)) ?? !!serverAiModel(userId));
 
 /** Whether the model in use sees pictures (docs/ai.md#附件), as the settings kept here say, or else
  * those on the server, asked while `asking`; unknown until it answers, and when it cannot. */
@@ -135,8 +145,11 @@ const RETRY_MS = 5_000;
  * turns down a job it has not heard of yet, one already taken, and one while another is being
  * organized, which may be one deleted meanwhile and so seen nowhere: what changed meanwhile has it
  * look again, and otherwise it does after a while, waiting longer each time. Offline, the same; and
- * when the drive it syncs through has not taken the start in time (docs/local.md#排定先后). */
-export function useLocalRunner(store: Store, userId: string) {
+ * when the drive it syncs through has not taken the start in time (docs/local.md#排定先后). A job it
+ * turns down for any other reason, such as the settings, `failed` hears of, and it waits until they
+ * change. */
+export function useLocalRunner(store: Store, userId: string, failed: (job: AiJobId, e: ApiError) => void) {
+  const fail = useEffectEvent(failed);
   useEffect(() => {
     let asking = false;
     let again = false;
@@ -144,6 +157,9 @@ export function useLocalRunner(store: Store, userId: string) {
     let wait = RETRY_MS;
     // Once the session or the user has changed, a request still under way schedules nothing more.
     let stopped = false;
+    const refused = new Set<AiJobId>();
+    /** Counts the changes of the settings: a job turned down with ones before is not set aside. */
+    let settings = 0;
     const look = () => {
       if (stopped) return;
       if (asking) {
@@ -152,16 +168,24 @@ export function useLocalRunner(store: Store, userId: string) {
       }
       const config = localAiConfig(userId);
       const jobs = store.getView().board.snapshot.ai_jobs;
-      const next = jobs.find((j) => j.state === "waiting");
+      const next = jobs.find((j) => j.state === "waiting" && !refused.has(j.id));
       if (!config || !next || jobs.some((j) => j.state === "running")) return;
       asking = true;
       again = false;
+      const asked = settings;
       api("POST", `/ai/jobs/${next.id}/run`, config)
         .then(
           () => (wait = RETRY_MS),
           (e) => {
             if (!(e instanceof ApiError)) throw e;
-            if (stopped || (e.status !== 409 && e.status !== 503 && e.code !== OFFLINE)) return;
+            if (stopped) return;
+            if (e.status !== 409 && e.status !== 503 && e.code !== OFFLINE) {
+              again = true;
+              if (asked !== settings) return;
+              refused.add(next.id);
+              fail(next.id, e);
+              return;
+            }
             clearTimeout(retry);
             retry = setTimeout(look, wait);
             wait = Math.min(wait * 2, 120_000);
@@ -174,7 +198,11 @@ export function useLocalRunner(store: Store, userId: string) {
     };
     look();
     const unsubscribe = store.subscribe(look);
-    const unwatch = onConfig(userId, look);
+    const unwatch = onConfig(userId, () => {
+      settings++;
+      refused.clear();
+      look();
+    });
     return () => {
       stopped = true;
       clearTimeout(retry);

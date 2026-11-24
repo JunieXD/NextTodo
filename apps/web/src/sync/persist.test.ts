@@ -56,13 +56,13 @@ test("a failed write is reported, and what it held goes with the next", async ()
   const failed: unknown[] = [];
   const save = saver(u, "here", (e) => failed.push(e));
   // A function cannot be stored; the second save waits for the first write, and hears after it.
-  const heard: number[] = [];
+  const heard: [number, boolean][] = [];
   await Promise.all([
-    save.save({ ...copy(1), base: { ...copy(1).base, folders: [() => {}] as never } }, [pending(1)], []).then(() => heard.push(1)),
-    save.save(copy(2), [pending(2)], []).then(() => heard.push(2)),
+    save.save({ ...copy(1), base: { ...copy(1).base, folders: [() => {}] as never } }, [pending(1)], []).then((w) => heard.push([1, w])),
+    save.save(copy(2), [pending(2)], []).then((w) => heard.push([2, w])),
   ]);
-  expect([failed.length, await outbox(u), heard]).toEqual([1, [], [1, 2]]);
-  await save.save(copy(3), [pending(3)], []);
+  expect([failed.length, await outbox(u), heard]).toEqual([1, [], [[1, false], [2, false]]]);
+  expect(await save.save(copy(3), [pending(3)], [])).toBe(true);
   expect([failed.length, await outbox(u)]).toEqual([1, [1, 2, 3]]);
 });
 

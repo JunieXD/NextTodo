@@ -31,6 +31,8 @@ if (desktop.inPanel) {
   // shows, for the server and session it keeps in memory (api/http.ts) to be read anew.
   onSignInElsewhere(() => location.reload());
 }
+// Android's quick add card shows the app it is over around its sheet.
+if (mobile.inCard) document.documentElement.classList.add("in-card");
 // The app carries its files in the package; only the web app needs a service worker for offline use.
 if (!native) registerSW({ immediate: true });
 

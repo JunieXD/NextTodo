@@ -1,5 +1,5 @@
-// The signed-in app: the layout for the screen size, or the desktop app's panel; and what the session
-// reports.
+// The signed-in app: the layout for the screen size, the desktop app's panel, or Android's quick add
+// card; and what the session reports.
 
 import { useEffect } from "react";
 import { useLocalRunner } from "../ai";
@@ -11,6 +11,7 @@ import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
 import { inPanel } from "../desktop";
+import { inCard } from "../mobile";
 import { type Session, SessionContext, useSession, useUndo } from "../session";
 import { forUser, useFeedback } from "../ui/feedback";
 import { useWide } from "../ui/hooks";
@@ -19,6 +20,7 @@ import { inLocalMode } from "../local";
 import { SERVER_EVERY_MS, checkServer, useServerVersions } from "../server-update";
 import { EVERY_MS, check, install, newer, restart, usePending } from "../updates";
 import { BatchProvider } from "./batch";
+import { Card } from "./Card";
 import { WhatsNew } from "./Changelog";
 import { Desktop } from "./Desktop";
 import { MarksProvider } from "./marks";
@@ -45,14 +47,14 @@ export function Main({ session, onSignedOut }: { session: Session; onSignedOut(n
     await session.signOut();
     onSignedOut();
   };
-  const className = inPanel ? "app phone panel" : wide ? "app desk" : "app phone";
+  const className = inPanel ? "app phone panel" : inCard ? "app phone card" : wide ? "app desk" : "app phone";
   return (
     <SessionContext value={session}>
       <MarksProvider>
         <Root className={className} outside={outside}>
           <Events onSignedOut={onSignedOut} />
-          {/* The main window's, done once. */}
-          {!inPanel && (
+          {/* The main window's, done once; the card hands AI jobs over itself. */}
+          {!inPanel && !inCard && (
             <>
               <LocalRunner />
               <Updates />
@@ -60,7 +62,7 @@ export function Main({ session, onSignedOut }: { session: Session; onSignedOut(n
               {(session.user.is_admin || app) && !inLocalMode() && <ServerVersions admin={session.user.is_admin} />}
             </>
           )}
-          <BatchProvider>{inPanel ? <Panel /> : wide ? <Desktop onSignOut={signOut} /> : <Phone onSignOut={signOut} />}</BatchProvider>
+          <BatchProvider>{inPanel ? <Panel /> : inCard ? <Card /> : wide ? <Desktop onSignOut={signOut} /> : <Phone onSignOut={signOut} />}</BatchProvider>
         </Root>
       </MarksProvider>
     </SessionContext>
@@ -114,7 +116,8 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
 /** Has AI organize, with what is set up on this device (ai.ts). */
 function LocalRunner() {
   const session = useSession();
-  useLocalRunner(session.store, session.user.id);
+  const { snack } = useFeedback();
+  useLocalRunner(session.store, session.user.id, (_, e) => snack(forUser("开始 AI 整理", e)));
   return null;
 }
 

@@ -4,9 +4,11 @@ import { Session } from "./session";
 import { Root } from "./ui/Root";
 import { forUser } from "./ui/feedback";
 import { inPanel } from "./desktop";
+import { inCard } from "./mobile";
 import { unlock, useLocked, usePrivacyLock } from "./lock";
 import { started } from "./updates";
 import { LockScreen } from "./views/Lock";
+import { CardOut } from "./views/Card";
 import { Login, StartFailedPage } from "./views/Login";
 import { Main } from "./views/Main";
 import { PanelLocked, PanelOut } from "./views/Panel";
@@ -54,6 +56,13 @@ export function App() {
     return (
       <Root className="app phone panel">
         <PanelOut failed={state.kind === "failed" ? state.message : undefined} />
+      </Root>
+    );
+  }
+  if (inCard && state.kind !== "in") {
+    return (
+      <Root className="app phone card">
+        <CardOut failed={state.kind === "failed" ? state.message : undefined} />
       </Root>
     );
   }

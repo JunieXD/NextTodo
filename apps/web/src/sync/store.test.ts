@@ -48,7 +48,7 @@ function setup(saved: Saved = Store.empty()) {
       for (const p of queued) outbox.set(p.mutation.id, p);
       for (const id of settled) outbox.delete(id);
       last = { ...copy, outbox: [...outbox.values()] };
-      return written;
+      return written.then(() => true);
     },
     send: (m) => sent.push(m),
     uploaded: (m) => m.ops.every((op) => op.op !== "attachment.add" || uploaded.has(op.id)),
@@ -89,10 +89,12 @@ test("a change shows at once, is sent once saved, and leaves the queue when the 
   release();
   await settle();
   expect([sent.length, store.unconfirmed.length]).toEqual([1, 1]);
+  expect(store.standing(sent[0].id)).toBe("waiting");
 
   const made = effects[0].after as Task;
   store.receive([echo(sent[0], 1, [{ kind: "task", before: null, after: { ...made, number: 7 } }])], 1);
   expect(store.getView().pending).toBe(0);
+  expect(store.standing(sent[0].id)).toBe("confirmed");
   expect(store.getView().board.task(id(1))!.number).toBe(7);
   expect([store.since, saved().seq, saved().base.tasks.length]).toEqual([1, 1, 1]);
 });
@@ -128,13 +130,26 @@ test("a rejected change leaves the view and is reported", async () => {
   store.reject(sent[0].id, { code: "conflict", message: "事项 ID 已存在" });
   expect(titles()).toEqual([]);
   expect(rejected.map(([, e]) => e.message)).toEqual(["事项 ID 已存在"]);
+  expect(store.standing(sent[0].id)).toBe("turned down");
 });
 
 test("a change another tab heard turned down leaves the view without being reported again", async () => {
   const { store, rejected, titles, saved } = setup();
   const { id: change } = store.commit([{ op: "task.create", id: id(1), title: "一", sort_key: "a1" }]);
+  const [made] = store.queued;
   await store.drop(change);
-  expect([titles(), saved().outbox, rejected]).toEqual([[], [], []]);
+  expect([titles(), saved().outbox, rejected, store.standing(change)]).toEqual([[], [], [], "turned down"]);
+  // Handed over by a tab that had not heard yet, it stays out.
+  store.adopt([made]);
+  expect([titles(), store.getView().pending, store.standing(change)]).toEqual([[], 0, "turned down"]);
+});
+
+test("a change heard turned down before another tab hands it over is not taken", async () => {
+  const { store, titles } = setup();
+  const made = { id: id(9), ops: [{ op: "task.create" as const, id: id(1), title: "一", sort_key: "a1" }] };
+  await store.drop(made.id);
+  store.adopt([made]);
+  expect([titles(), store.getView().pending]).toEqual([[], 0]);
 });
 
 test("a change that no longer applies waits for the server instead of breaking the view", () => {
@@ -280,7 +295,7 @@ test("a change the fresh copy already has leaves the queue when the server ackno
   store.acked(sent[0].id, 12);
   expect(store.unconfirmed).toHaveLength(1);
   store.acked(sent[0].id, 5);
-  expect([store.unconfirmed.length, store.getView().stuck.size]).toEqual([0, 0]);
+  expect([store.unconfirmed.length, store.getView().stuck.size, store.standing(sent[0].id)]).toEqual([0, 0, "confirmed"]);
   expect(titles()).toEqual(["交电费"]);
 });
 

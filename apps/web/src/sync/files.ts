@@ -55,7 +55,7 @@ export type FileMessage = { uploaded: string };
 
 export interface FileHooks {
   /** Tells the other tabs. */
-  broadcast(m: FileMessage | { rejected: MutationId }): void;
+  broadcast(m: FileMessage | { rejected: MutationId; told?: { user: string; text: string } }): void;
   /** Tells the user. */
   told(text: string): void;
   /** The server no longer accepts the session. */
@@ -295,15 +295,17 @@ export class Files {
         files: adds(m).map((a) => ({ id: a.id, name: a.name, type: a.type, size: a.size, ...(a.id === add.id && { error: reason }) })),
       },
     );
-    await this.unqueue(m.id);
-    this.hooks.told(`“${add.name}”${failed}失败：${reason}${job ? "，AI 整理的内容已放回输入框" : ""}`);
+    const told = `“${add.name}”${failed}失败：${reason}${job ? "，AI 整理的内容已放回输入框" : ""}`;
+    await this.unqueue(m.id, told);
+    this.hooks.told(told);
   }
 
   /** Takes change `id`, noted as withdrawn, out of the outbox, here and in the other tabs, as one the
-   * server turned down; the note goes once the other tabs are told. */
-  private async unqueue(id: MutationId) {
+   * server turned down, with why to tell, should another be where the user is; the note goes once the
+   * other tabs are told. */
+  private async unqueue(id: MutationId, told?: string) {
     await unqueue(this.user, id);
-    this.hooks.broadcast({ rejected: id });
+    this.hooks.broadcast({ rejected: id, ...(told && { told: { user: this.user, text: told } }) });
     withdrawnGone(this.user, [id]);
     await this.store.drop(id);
   }

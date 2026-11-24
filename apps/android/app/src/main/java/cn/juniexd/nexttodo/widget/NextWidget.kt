@@ -51,6 +51,7 @@ import androidx.glance.text.TextStyle
 import cn.juniexd.nexttodo.Changes
 import cn.juniexd.nexttodo.MainActivity
 import cn.juniexd.nexttodo.Occurrence
+import cn.juniexd.nexttodo.QuickAddActivity
 import cn.juniexd.nexttodo.Server
 import cn.juniexd.nexttodo.R
 import cn.juniexd.nexttodo.forUser
@@ -122,7 +123,7 @@ private fun Content(context: Context, shown: Shown) {
     val look = shown.look
     val compact = LocalSize.current.height < COMPACT_BELOW
     Card {
-        Header(look, "接下来", open(context, "nexttodo://home"), actionRunCallback<RefreshAction>(), open(context, "nexttodo://add"))
+        Header(look, "接下来", open(context, "nexttodo://home"), actionRunCallback<RefreshAction>(), actionStartActivity(Intent(context, QuickAddActivity::class.java)))
         when {
             !shown.signedIn -> Note("打开 NextTodo 登录", open(context, "nexttodo://home"))
             shown.items.isEmpty() && shown.more == 0 -> Note("暂无可做的事项", open(context, "nexttodo://home"))

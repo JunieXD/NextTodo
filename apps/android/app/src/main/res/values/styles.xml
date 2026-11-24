@@ -23,4 +23,11 @@
         <item name="android:windowCloseOnTouchOutside">true</item>
         <item name="android:windowAnimationStyle">@android:style/Animation.InputMethod</item>
     </style>
+    <!-- The quick add card: over the app it is opened on, dimmed behind. -->
+    <style name="QuickAdd" parent="@style/AppTheme.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.InputMethod</item>
+    </style>
 </resources>

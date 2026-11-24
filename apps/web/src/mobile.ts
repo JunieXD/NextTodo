@@ -3,10 +3,11 @@
 // the system calendar. See docs/android.md and docs/ios.md.
 
 import { App } from "@capacitor/app";
-import { type PermissionState, registerPlugin } from "@capacitor/core";
+import { Capacitor, type PermissionState, registerPlugin } from "@capacitor/core";
 import { navigate } from "wouter/use-browser-location";
 import { app } from "./api/http";
 import type { Attachment } from "./api/types/Attachment";
+import { sizeLimit, tooLarge } from "./attach";
 import type { FolderId } from "./api/types/FolderId";
 import type { Mutation } from "./api/types/Mutation";
 import type { Task } from "./api/types/Task";
@@ -18,6 +19,7 @@ import type { Started } from "./local";
 import type { Store } from "./sync/store";
 import type { WidgetLook } from "./domain/widget-look";
 import { back } from "./ui/back";
+import { forUser } from "./ui/feedback";
 import { nextFolders, onNextFolders, readyIn } from "./next-folders";
 
 /** A calendar on the device the app may write to; `synced` unless it is on this device alone. */
@@ -103,6 +105,17 @@ interface NextTodoPlugin {
   webReady(): Promise<void>;
   /** Shows the keyboard for the field just focused, which a page cannot but on a tap. */
   showKeyboard(): Promise<void>;
+  /** What another app shared, when it opened the quick add card: the text, and the files copied into
+   * the app's cache, but for those larger than `sizeLimit` allows, or why one could not be read;
+   * nothing else, or once taken. */
+  takeShared(limit: ReturnType<typeof sizeLimit>): Promise<{
+    text?: string;
+    files?: ({ path: string; name: string; type: string } | { name: string; tooLarge: true } | { error: string })[];
+  }>;
+  /** Closes the quick add card, back to the app it was opened over. */
+  closeCard(): Promise<void>;
+  /** Opens the app at `url`, `nexttodo://…`, and closes the quick add card. */
+  openApp(o: { url: string }): Promise<void>;
   /** Downloads `server`'s build of the web app for the next start; the version when there was one. */
   updateWeb(o: { server: string }): Promise<{ staged?: string }>;
   /** Downloads the APK and hands it to the system installer; `started: false` when the app may not
@@ -136,6 +149,31 @@ interface NextTodoPlugin {
 }
 
 export const NextTodo = registerPlugin<NextTodoPlugin>("NextTodo");
+
+/** This page is Android's quick add card over another app, not the app (docs/android.md#快速添加小窗). */
+export const inCard = app === "android" && location.pathname === "/quick-add";
+
+/** What another app shared to the quick add card, its files fetched from where the app copied them;
+ * and why each of the others is not there. */
+export async function takeShared(): Promise<{ text: string; files: File[]; errors: string[] }> {
+  const { text = "", files = [] } = await NextTodo.takeShared(sizeLimit());
+  const fetched: File[] = [];
+  const errors: string[] = [];
+  for (const f of files) {
+    if ("error" in f) errors.push(f.error);
+    else if ("tooLarge" in f) errors.push(tooLarge(f.name));
+    else {
+      try {
+        const r = await window.CapacitorWebFetch(Capacitor.convertFileSrc(f.path));
+        if (!r.ok) throw new Error(`${r.status}`);
+        fetched.push(new File([await r.blob()], f.name, { type: f.type }));
+      } catch (e) {
+        errors.push(forUser(`读取“${f.name}”`, e));
+      }
+    }
+  }
+  return { text, files: fetched, errors };
+}
 
 /** How much of a file goes over the bridge at a time. */
 const PIECE = 512 * 1024;
@@ -244,6 +282,16 @@ export const calendarEvents = (board: Board, folders: (FolderId | null)[]) =>
  * asked of a session that has ended, such as while the permission prompt waited, writes its tasks. */
 let writeCalendar: (() => Promise<void>) | undefined;
 
+/** Runs the session's update waiting to settle, if one is. */
+let updateNow: (() => void) | undefined;
+
+/** Brings the reminders, widgets and calendar up to date at once, not when the changes settle: the
+ * quick add card closes after adding, its page with it. */
+export async function settle() {
+  updateNow?.();
+  await queue;
+}
+
 /** Writes the tasks with a deadline to `target` from now on, or nowhere without one. */
 export const setCalendar = (target: CalendarTarget | undefined) =>
   inTurn(async () => {
@@ -297,12 +345,15 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
     inTurn(update).catch(failed);
     if (app === "android") inTurn(calendar).catch(failed);
   };
-  const changed = () => {
-    timer ??= setTimeout(() => {
-      timer = undefined;
-      run();
-    }, SETTLE_MS);
+  const now = () => {
+    clearTimeout(timer);
+    timer = undefined;
+    run();
   };
+  const changed = () => {
+    timer ??= setTimeout(now, SETTLE_MS);
+  };
+  const waiting = () => timer !== undefined && now();
   const shown = () => {
     if (document.visibilityState !== "visible") return;
     takeOver().catch(failed);
@@ -313,11 +364,13 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
   const unset = onRemindSettings(changed);
   document.addEventListener("visibilitychange", shown);
   if (app === "android") writeCalendar = calendar;
+  updateNow = waiting;
   takeOver().catch(failed);
   run();
   return async () => {
     // The next session may have started watching already.
     if (writeCalendar === calendar) writeCalendar = undefined;
+    if (updateNow === waiting) updateNow = undefined;
     unsubscribe();
     unpicked();
     unset();
@@ -348,13 +401,13 @@ export const clear = async (failed: (e: unknown) => void = () => {}) => {
 export const forget = () => NextTodo.forgetChanges();
 
 /** Opens what a notification or a widget points at: `nexttodo://task/<id>`, `nexttodo://home`,
- * `nexttodo://add`, quick add, or `nexttodo://calendar`. */
+ * or `nexttodo://calendar`; or the quick add card, `nexttodo://page/<path>`, another page. */
 function open(url: string) {
-  const [, kind, id] = /^nexttodo:\/\/(task|home|add|calendar)\/?(.*)$/.exec(url) ?? [];
+  const [, kind, id] = /^nexttodo:\/\/(task|home|calendar|page)\/?(.*)$/.exec(url) ?? [];
   if (kind === "task") navigate(`/?open=${id}`);
   else if (kind === "home") navigate("/");
-  else if (kind === "add") navigate("/?add");
   else if (kind === "calendar") navigate("/calendar");
+  else if (kind === "page") navigate(`/${id}`);
 }
 
 /** Listens for taps on notifications and the widget, and for Android's back button. The plugin keeps
@@ -362,6 +415,7 @@ function open(url: string) {
 export async function listen() {
   await App.addListener("appUrlOpen", (e) => open(e.url));
   await App.addListener("backButton", () => {
-    if (!back()) void App.minimizeApp();
+    // The quick add card's page closes it with a step of its own, once what was added is saved.
+    if (!back()) void (inCard ? NextTodo.closeCard() : App.minimizeApp());
   });
 }

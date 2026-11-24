@@ -38,7 +38,7 @@ export function hsvOfRgb([r, g, b]: Rgb): Hsv {
 const linear = (c: number) => (c / 255 <= 0.04045 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4);
 const encoded = (c: number, round: (n: number) => number) => round(255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055));
 /** Relative luminance, as WCAG has it. */
-const luminance = (hex: Hex) => {
+export const luminance = (hex: Hex) => {
   const [r, g, b] = rgbOf(hex).map(linear);
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };

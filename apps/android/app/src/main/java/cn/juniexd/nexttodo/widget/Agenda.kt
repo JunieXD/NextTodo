@@ -25,10 +25,10 @@ data class Entry(val id: String, val title: String, val folder: String, val due:
 data class Day(val date: LocalDate?, val entries: List<Entry>)
 
 /** What the agenda widget shows: the days with something due, the first tasks of them and how many
- * `more` there are; or that the app is signed out. Its text `scale`d as the user chose. As of `now`, to
+ * `more` there are; or that the app is signed out. With the `look` the user chose. As of `now`, to
  * the minute, which the days and what is late go by: a part of it, so that the widget is drawn again
  * as the time alone moves on. */
-data class Agendas(val signedIn: Boolean, val days: List<Day>, val more: Int, val scale: Float, val now: LocalDateTime)
+data class Agendas(val signedIn: Boolean, val days: List<Day>, val more: Int, val look: Look, val now: LocalDateTime)
 
 /** The agenda widget's data, the `agenda` tool's for the next `DAYS` days, kept in its own preferences:
  * written by the app, or fetched from the server, as the “接下来” widget's list is (`Widget`). */
@@ -128,7 +128,7 @@ object Agenda {
         // The first `MOST` tasks, and the days they are on.
         var left = MOST
         val listed = all.mapNotNull { day -> Day(day.date, day.entries.take(left)).also { left -= it.entries.size }.takeIf { it.entries.isNotEmpty() } }
-        return Agendas(Server.token(context) != null, listed, all.sumOf { it.entries.size } - MOST + left, Widget.scale(context), now)
+        return Agendas(Server.token(context) != null, listed, all.sumOf { it.entries.size } - MOST + left, Widget.look(context), now)
     }
 
     /** What is kept: the tasks overdue, and those due each day. */
@@ -144,7 +144,7 @@ object Agenda {
         Entry(t.getString("id"), t.getString("title"), t.getString("folder").removePrefix("/").replace("/", " / "), Due.from(t.getJSONObject("due")), t.optBoolean("later"))
     }
 
-    /** What to show, each time the data, the sign-in or the text size changes. */
+    /** What to show, each time the data, the sign-in or the look changes. */
     fun changes(context: Context): Flow<Agendas> = callbackFlow {
         val watched = listOf(prefs(context), Server.prefs(context), Widget.prefs(context))
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> trySend(shown(context)) }

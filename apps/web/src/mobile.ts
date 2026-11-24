@@ -16,10 +16,9 @@ import { digests, reminders } from "./domain/reminders";
 import { type Digest, dailyDigest, hideReminders, onRemindSettings } from "./remind-settings";
 import type { Started } from "./local";
 import type { Store } from "./sync/store";
+import type { WidgetLook } from "./domain/widget-look";
 import { back } from "./ui/back";
 import { nextFolders, onNextFolders, readyIn } from "./next-folders";
-
-export type WidgetTextSize = "small" | "standard" | "large";
 
 /** A calendar on the device the app may write to; `synced` unless it is on this device alone. */
 export interface DeviceCalendar {
@@ -79,9 +78,9 @@ interface NextTodoPlugin {
   /** Hands the agenda widget its data, as JSON in the shape of the `agenda` tool's, as of the change
    * `seq`; without one, as when signing out, it replaces whatever the widget has. */
   updateAgenda(o: { agenda: string; seq?: number }): Promise<void>;
-  /** How large the widget's text is, which it keeps. */
-  widgetTextSize(): Promise<{ size: WidgetTextSize }>;
-  setWidgetTextSize(o: { size: WidgetTextSize }): Promise<void>;
+  /** How the widgets look, which they keep. */
+  widgetLook(): Promise<WidgetLook>;
+  setWidgetLook(look: WidgetLook): Promise<void>;
   /** Where the tasks with a deadline are written in the system calendar, if anywhere
    * (docs/android.md#写进系统日历). */
   calendar(): Promise<{ target?: CalendarTarget }>;

@@ -5,10 +5,9 @@ import android.content.Intent
 import android.net.Uri
 import android.os.SystemClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.ColorFilter
@@ -32,11 +31,11 @@ import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.itemsIndexed
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
-import androidx.glance.color.ColorProvider
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.ColumnScope
+import androidx.glance.layout.ContentScale
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxHeight
@@ -46,14 +45,12 @@ import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
 import androidx.glance.layout.width
-import androidx.glance.text.FontWeight
 import androidx.glance.text.TextDecoration
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import cn.juniexd.nexttodo.Changes
 import cn.juniexd.nexttodo.MainActivity
 import cn.juniexd.nexttodo.Occurrence
-import cn.juniexd.nexttodo.Palette
 import cn.juniexd.nexttodo.Server
 import cn.juniexd.nexttodo.R
 import cn.juniexd.nexttodo.forUser
@@ -61,25 +58,24 @@ import java.time.LocalDateTime
 import kotlinx.coroutines.delay
 import org.json.JSONObject
 
-/** The palette's colours, light and dark. */
-internal object Colors {
-    private fun of(color: Palette.() -> Color) = ColorProvider(day = Palette.light.color(), night = Palette.dark.color())
-
-    val background = of { surface }
-    val text = of { onSurface }
-    val secondary = of { onSurfaceVariant }
-    val primary = of { primary }
-    val overdue = of { error }
-    val today = of { warn }
-    val onPrimary = of { onPrimary }
-    val done = of { outline }
-    val divider = of { divider }
+/** A widget's background, with `content` over it. An image, which rounds it before Android 12 too, where
+ * Glance's corners do nothing; from 12 on, they also clip what is drawn over it. The image's alpha makes
+ * it translucent: a tint takes that of the image, whatever its own. */
+@Composable
+internal fun Card(content: @Composable ColumnScope.() -> Unit) {
+    val colors = LocalColors.current
+    Box(GlanceModifier.fillMaxSize().cornerRadius(R.dimen.widget_radius)) {
+        Image(
+            ImageProvider(R.drawable.widget_card),
+            null,
+            alpha = colors.opacity,
+            modifier = GlanceModifier.fillMaxSize(),
+            contentScale = ContentScale.FillBounds,
+            colorFilter = ColorFilter.tint(colors.background),
+        )
+        Column(GlanceModifier.fillMaxSize(), content = content)
+    }
 }
-
-/** A widget's background. The image rounds it before Android 12 too, where Glance's corners do nothing;
- * from 12 on, they also clip what is drawn over them. */
-internal fun GlanceModifier.card() =
-    background(ImageProvider(R.drawable.widget_card), colorFilter = ColorFilter.tint(Colors.background)).cornerRadius(R.dimen.widget_radius)
 
 private val TaskKey = ActionParameters.Key<String>("task")
 private val TitleKey = ActionParameters.Key<String>("title")
@@ -102,7 +98,7 @@ class NextWidget : GlanceAppWidget() {
         // only recompose: what to show is read here, again on every change.
         provideContent {
             val shown by changes.collectAsState(Widget.shown(context))
-            Content(context, shown)
+            CompositionLocalProvider(LocalColors provides Colors(shown.look)) { Content(context, shown) }
         }
     }
 }
@@ -117,25 +113,16 @@ internal val COMPACT_BELOW = 260.dp
 internal val EDGE = 14.dp
 internal val TOP = 10.dp
 
-/** Below the header, and how tall it is with that and `TOP`. */
+/** Below the header. */
 internal val UNDER_HEADER = 4.dp
-internal val HEADER = TOP + 32.dp + UNDER_HEADER
 
 @Composable
 private fun Content(context: Context, shown: Shown) {
     val now = shown.now
+    val look = shown.look
     val compact = LocalSize.current.height < COMPACT_BELOW
-    Column(GlanceModifier.fillMaxSize().card()) {
-        Row(GlanceModifier.fillMaxWidth().height(HEADER), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                GlanceModifier.defaultWeight().fillMaxHeight().padding(start = EDGE, top = TOP, bottom = UNDER_HEADER).clickable(open(context, "nexttodo://home")),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                Text("接下来", style = TextStyle(color = Colors.text, fontSize = 17.sp * shown.scale, fontWeight = FontWeight.Bold))
-            }
-            Icon(R.drawable.ic_widget_refresh, "刷新", actionRunCallback<RefreshAction>(), 4.dp)
-            Icon(R.drawable.ic_add, "添加事项", open(context, "nexttodo://add"), EDGE)
-        }
+    Card {
+        Header(look, "接下来", open(context, "nexttodo://home"), actionRunCallback<RefreshAction>(), open(context, "nexttodo://add"))
         when {
             !shown.signedIn -> Note("打开 NextTodo 登录", open(context, "nexttodo://home"))
             shown.items.isEmpty() && shown.more == 0 -> Note("暂无可做的事项", open(context, "nexttodo://home"))
@@ -144,8 +131,8 @@ private fun Content(context: Context, shown: Shown) {
             else -> Box(GlanceModifier.defaultWeight().fillMaxWidth()) {
                 Box(GlanceModifier.fillMaxSize().clickable(open(context, "nexttodo://home"))) {}
                 LazyColumn(GlanceModifier.fillMaxWidth()) {
-                    itemsIndexed(shown.items) { i, item -> TaskItem(context, item, i == 0, item.id in shown.ticked, now, compact, shown.scale) }
-                    if (shown.more > 0) item { More(context, shown.more, shown.items.isEmpty(), shown.scale) }
+                    itemsIndexed(shown.items) { i, item -> TaskItem(context, item, i == 0, item.id in shown.ticked, now, compact, look.scale) }
+                    if (shown.more > 0) item { More(context, shown.more, shown.items.isEmpty(), look.scale) }
                 }
             }
         }
@@ -156,7 +143,7 @@ private fun Content(context: Context, shown: Shown) {
 @Composable
 private fun Divider() {
     Box(GlanceModifier.fillMaxWidth().padding(start = CIRCLE)) {
-        Spacer(GlanceModifier.fillMaxWidth().height(1.dp).background(Colors.divider))
+        Spacer(GlanceModifier.fillMaxWidth().height(1.dp).background(LocalColors.current.divider))
     }
 }
 
@@ -167,11 +154,12 @@ private fun Divider() {
  * the first in the item. */
 @Composable
 private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boolean, now: LocalDateTime, compact: Boolean, scale: Float) {
+    val colors = LocalColors.current
     Box(GlanceModifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
         Column(GlanceModifier.fillMaxWidth().padding(horizontal = EDGE).clickable(open(context, "nexttodo://task/${item.id}"))) {
             if (!first) Divider()
             val title = TextStyle(
-                color = if (ticked) Colors.done else Colors.text,
+                color = if (ticked) colors.done else colors.text,
                 fontSize = 15.sp * scale,
                 textDecoration = if (ticked) TextDecoration.LineThrough else null,
             )
@@ -180,12 +168,12 @@ private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boole
             // In a line, the folder gives way to the title.
             val meta = listOfNotNull(item.folder.takeIf { it.isNotEmpty() && !compact }, doneToday, item.due?.label(now)).joinToString(" · ")
             val color = when {
-                item.due?.overdue(now) == true -> Colors.overdue
-                item.due?.today(now) == true -> Colors.today
-                else -> Colors.secondary
+                item.due?.overdue(now) == true -> colors.overdue
+                item.due?.today(now) == true -> colors.today
+                else -> colors.secondary
             }
             val metaStyle = TextStyle(color = color, fontSize = 12.sp * scale)
-            val stepStyle = TextStyle(color = Colors.secondary, fontSize = 12.sp * scale)
+            val stepStyle = TextStyle(color = colors.secondary, fontSize = 12.sp * scale)
             if (compact) {
                 Row(GlanceModifier.fillMaxWidth().padding(start = CIRCLE, top = 7.dp * scale, bottom = 7.dp * scale), verticalAlignment = Alignment.CenterVertically) {
                     Text(item.title, GlanceModifier.defaultWeight(), style = title, maxLines = 1)
@@ -205,8 +193,8 @@ private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boole
         }
         if (ticked) {
             Box(GlanceModifier.width(EDGE + 26.dp).height(26.dp).padding(start = EDGE + 2.dp, top = 2.dp, end = 2.dp, bottom = 2.dp)) {
-                Image(ImageProvider(R.drawable.ic_widget_dot), "已完成", GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(Colors.primary))
-                Image(ImageProvider(R.drawable.ic_widget_tick), null, GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(Colors.onPrimary))
+                Image(ImageProvider(R.drawable.ic_widget_dot), "已完成", GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(colors.primary))
+                Image(ImageProvider(R.drawable.ic_widget_tick), null, GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(colors.onPrimary))
             }
         } else {
             val complete = listOfNotNull(TaskKey to item.id, TitleKey to item.title, item.occurrence?.let { OccurrenceKey to it.json().toString() })
@@ -216,7 +204,7 @@ private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boole
                 GlanceModifier.width(EDGE + CIRCLE).height(CIRCLE).padding(start = EDGE).cornerRadius(CIRCLE / 2).clickable(actionRunCallback<CompleteAction>(actionParametersOf(*complete.toTypedArray()))),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                Image(ImageProvider(R.drawable.ic_widget_check), "标为完成", GlanceModifier.size(26.dp).padding(2.dp), colorFilter = ColorFilter.tint(Colors.primary))
+                Image(ImageProvider(R.drawable.ic_widget_check), "标为完成", GlanceModifier.size(26.dp).padding(2.dp), colorFilter = ColorFilter.tint(colors.primary))
             }
         }
     }
@@ -226,30 +214,20 @@ private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boole
  * all done here say, with no line above it then. */
 @Composable
 private fun More(context: Context, more: Int, first: Boolean, scale: Float) {
+    val colors = LocalColors.current
     Column(GlanceModifier.fillMaxWidth().padding(horizontal = EDGE).clickable(open(context, "nexttodo://home"))) {
         if (!first) Divider()
-        Text("还有 $more 项", GlanceModifier.padding(start = CIRCLE, top = 8.dp * scale, bottom = 8.dp * scale), style = TextStyle(color = Colors.secondary, fontSize = 13.sp * scale))
+        Text("还有 $more 项", GlanceModifier.padding(start = CIRCLE, top = 8.dp * scale, bottom = 8.dp * scale), style = TextStyle(color = colors.secondary, fontSize = 13.sp * scale))
     }
 }
 
 /** Where the title starts: the circle, and the space after it. */
 private val CIRCLE = 36.dp
 
-/** An icon of the header, 22dp across, tapped anywhere in the header's height and `end` beyond it. */
-@Composable
-internal fun Icon(drawable: Int, label: String, onClick: Action, end: Dp) {
-    Image(
-        ImageProvider(drawable),
-        label,
-        GlanceModifier.width(32.dp + end).fillMaxHeight().padding(start = 5.dp, top = TOP + 5.dp, end = 5.dp + end, bottom = UNDER_HEADER + 5.dp).clickable(onClick),
-        colorFilter = ColorFilter.tint(Colors.secondary),
-    )
-}
-
 /** In place of the list, all the rest of the widget: tapped, it opens the app. */
 @Composable
 internal fun ColumnScope.Note(text: String, onClick: Action) {
-    Text(text, GlanceModifier.defaultWeight().fillMaxWidth().padding(horizontal = EDGE, vertical = 12.dp).clickable(onClick), style = TextStyle(color = Colors.secondary, fontSize = 14.sp))
+    Text(text, GlanceModifier.defaultWeight().fillMaxWidth().padding(horizontal = EDGE, vertical = 12.dp).clickable(onClick), style = TextStyle(color = LocalColors.current.secondary, fontSize = 14.sp))
 }
 
 /** Marks a task done (docs/android.md#原生发出的改动), and fetches the list again. The task shows as

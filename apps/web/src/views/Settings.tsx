@@ -1,6 +1,6 @@
 // The settings: a home page that lists the sections, each a page of its own (docs/ui.md#设置).
 
-import { Bell, ChevronRight, CirclePlus, Copy, HardDrive, History, Info, KeyRound, Lock, type LucideIcon, Mail, Monitor, Palette, Paperclip, Plus, Sparkles, SquareTerminal } from "lucide-react";
+import { Bell, ChevronRight, CirclePlus, Copy, HardDrive, History, Info, KeyRound, LayoutGrid, Lock, type LucideIcon, Mail, Monitor, Palette, Paperclip, Plus, Sparkles, SquareTerminal } from "lucide-react";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { useLocation } from "wouter";
 import { ApiError, api, app, desktopOs, phoneApp, serverUrl } from "../api/http";
@@ -14,7 +14,6 @@ import { fetchServerSettings, keepServerSettings, serverSettings } from "../atta
 import { ago } from "../domain/dates";
 import { type CliStatus, cli } from "../desktop";
 import { checkDisplayName, checkTokenName } from "../domain/text";
-import { NextTodo, type WidgetTextSize } from "../mobile";
 import * as local from "../local";
 import { usePrivacyLock } from "../lock";
 import { useServerVersions } from "../server-update";
@@ -37,6 +36,7 @@ import { DriveSyncDialog, syncLine, useDriveSync } from "./DriveSync";
 import { MAX_KEEP_DONE, setKeepDone, useKeepDone } from "./keep-done";
 import { LockPage } from "./Lock";
 import { LogPage } from "./Log";
+import { WidgetSettings } from "./WidgetSettings";
 import { FolderPicker } from "./pickers";
 import { type SettingsSection, settingsUrl } from "./nav";
 
@@ -50,6 +50,7 @@ const TITLES: Record<SettingsSection, string> = {
   log: "改动记录",
   lock: "隐私锁",
   appearance: "外观",
+  widget: "小组件",
   add: "快速添加",
   // iOS has nothing to allow for running in the background (docs/ios.md#设置), the web nothing to run.
   background: app === "ios" || !app ? "提醒" : "提醒和后台",
@@ -67,6 +68,7 @@ const ICONS: Record<Exclude<SettingsSection, "account">, LucideIcon> = {
   log: History,
   lock: Lock,
   appearance: Palette,
+  widget: LayoutGrid,
   add: CirclePlus,
   background: Bell,
   ai: Sparkles,
@@ -98,7 +100,10 @@ function useSections(): SettingsSection[][] {
   const { user } = useSession();
   const inLocal = local.inLocalMode();
   // Phones have a lock screen of their own (docs/design.md#隐私锁).
-  const groups: SettingsSection[][] = [[inLocal ? "local" : "account", "log", ...(phoneApp ? [] : (["lock"] as const))], ["appearance", "add", "background"]];
+  const groups: SettingsSection[][] = [
+    [inLocal ? "local" : "account", "log", ...(phoneApp ? [] : (["lock"] as const))],
+    ["appearance", ...(app === "android" ? (["widget"] as const) : []), "add", "background"],
+  ];
   groups.push(!inLocal || app === "desktop" ? ["ai", "agent"] : ["ai"]);
   // The server's own: its admin's, or in local mode the user's, who has it alone.
   const server: SettingsSection[] = [...(user.is_admin && !inLocal ? (["invites"] as const) : []), ...(user.is_admin || inLocal ? (["attachments"] as const) : [])];
@@ -195,6 +200,7 @@ export function SettingsPage({ section, onSignOut }: { section: SettingsSection;
     log: () => <LogPage />,
     lock: () => <LockPage />,
     appearance: () => <Appearance />,
+    widget: () => <WidgetSettings />,
     add: () => <AddTo />,
     background: () => (
       <>
@@ -424,7 +430,6 @@ function Appearance() {
         </div>
       </div>
       {app === "desktop" && <Zooms />}
-      {app === "android" && <WidgetText />}
     </>
   );
 }
@@ -501,41 +506,6 @@ function Zooms() {
             </div>
           </div>
         ))}
-      </div>
-    </>
-  );
-}
-
-/** How large the widget's text is: kept by the widget, which reads it. */
-function WidgetText() {
-  const { snack } = useFeedback();
-  const [size, setSize] = useState<WidgetTextSize | null>(null);
-  useEffect(() => {
-    NextTodo.widgetTextSize().then(
-      (r) => setSize(r.size),
-      (e) => snack(forUser("读取小组件的文字大小", e)),
-    );
-  }, [snack]);
-  if (!size) return null;
-  const change = (to: WidgetTextSize) =>
-    NextTodo.setWidgetTextSize({ size: to }).then(
-      () => setSize(to),
-      (e) => snack(forUser("设置小组件的文字大小", e)),
-    );
-  return (
-    <>
-      <h2 className="group-title">小组件文字</h2>
-      <div style={{ margin: "0 16px" }}>
-        <Seg<WidgetTextSize>
-          label="小组件文字"
-          items={[
-            ["small", "小"],
-            ["standard", "标准"],
-            ["large", "大"],
-          ]}
-          value={size}
-          onChange={change}
-        />
       </div>
     </>
   );

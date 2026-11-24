@@ -49,10 +49,10 @@ import org.json.JSONObject
 data class Item(val id: String, val title: String, val folder: String, val due: Due?, val lastDone: LocalDate?, val occurrence: Occurrence?, val step: String?)
 
 /** What the widget shows: the list with the tasks just ticked off in it, and how many `more` there are
- * past it; or that the app is signed out. Its text `scale`d as the user chose. As of `now`, to the
- * minute, which what it says of the time goes by: a part of it, so that the widget is drawn again as
- * the time alone moves on. */
-data class Shown(val signedIn: Boolean, val items: List<Item>, val more: Int, val ticked: Set<String>, val scale: Float, val now: LocalDateTime)
+ * past it; or that the app is signed out. With the `look` the user chose. As of `now`, to the minute,
+ * which what it says of the time goes by: a part of it, so that the widget is drawn again as the time
+ * alone moves on. */
+data class Shown(val signedIn: Boolean, val items: List<Item>, val more: Int, val ticked: Set<String>, val look: Look, val now: LocalDateTime)
 
 /** The widget's list, kept in its own preferences: written by the app, or fetched from the server. */
 object Widget {
@@ -78,10 +78,6 @@ object Widget {
     /** How many tasks there are past the list kept: those the server did not give. */
     private const val MORE = "more"
 
-    /** How large the text is, chosen in the app's settings (docs/android.md#小组件), and the scale of each. */
-    private const val TEXT_SIZE = "text_size"
-    private val SCALES = mapOf("small" to 0.88f, "standard" to 1f, "large" to 1.15f)
-
     /** The paths of the folders “接下来” lists on this phone, as a JSON array, which the widget's own
      * fetches ask for too (docs/android.md#小组件); none for all of them. */
     private const val FOLDERS = "folders"
@@ -98,14 +94,12 @@ object Widget {
         return (items.mapNotNull { it.due?.deadline } + now.toLocalDate().plusDays(1).atStartOfDay()).filter { it.isAfter(now) }.min()
     }
 
-    fun textSize(context: Context): String = prefs(context).getString(TEXT_SIZE, "standard")!!
+    /** How the widgets look (docs/android.md#小组件的设置). */
+    fun look(context: Context) = Look.read(prefs(context))
 
-    /** How much larger or smaller than standard the text of both widgets is. */
-    fun scale(context: Context): Float = SCALES.getValue(textSize(context))
-
-    suspend fun setTextSize(context: Context, size: String) {
+    suspend fun setLook(context: Context, look: Look) {
         update(context) {
-            it.edit().putString(TEXT_SIZE, size).apply()
+            look.write(it.edit()).apply()
             true
         }
         AgendaWidget().updateAll(context)
@@ -202,7 +196,7 @@ object Widget {
         val token = Server.token(context)
         val ticked = ticked.value.filterValues { it.token == token }
         val (items, more) = listed(prefs(context), ticked.values.map { it.row })
-        return Shown(token != null, items, more, ticked.keys, scale(context), LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES))
+        return Shown(token != null, items, more, ticked.keys, look(context), LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES))
     }
 
     /** Hides a task done in session `token`, its time `occurrence` should it repeat, by the change

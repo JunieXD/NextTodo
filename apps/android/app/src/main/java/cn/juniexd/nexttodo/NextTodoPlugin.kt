@@ -20,6 +20,7 @@ import androidx.core.view.WindowInsetsCompat
 import cn.juniexd.nexttodo.reminders.Card
 import cn.juniexd.nexttodo.reminders.Reminders
 import cn.juniexd.nexttodo.widget.Agenda
+import cn.juniexd.nexttodo.widget.Look
 import cn.juniexd.nexttodo.widget.Widget
 import com.getcapacitor.JSObject
 import com.getcapacitor.PermissionState
@@ -241,19 +242,16 @@ class NextTodoPlugin : Plugin() {
         }
     }
 
-    /** The widget's text size: `small`, `standard` or `large`. */
+    /** How the widgets look: see `Look`. */
     @PluginMethod
-    fun widgetTextSize(call: PluginCall) {
-        call.resolve(JSObject().put("size", Widget.textSize(context)))
+    fun widgetLook(call: PluginCall) {
+        call.resolve(JSObject.fromJSONObject(Widget.look(context).json()))
     }
 
     @PluginMethod
-    fun setWidgetTextSize(call: PluginCall) {
-        val size = call.getString("size")!!
-        work(call, "设置小组件的文字大小") {
-            Widget.setTextSize(context, size)
-            JSObject()
-        }
+    fun setWidgetLook(call: PluginCall) = work(call, "设置小组件的外观") {
+        Widget.setLook(context, Look.from(call.data))
+        JSObject()
     }
 
     /** Where the tasks with a deadline are written in the system calendar: `target`, `own` or the

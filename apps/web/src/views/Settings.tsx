@@ -1,19 +1,21 @@
 // The settings: a home page that lists the sections, each a page of its own (docs/ui.md#设置).
 
 import { Bell, ChevronRight, HardDrive, History, Info, KeyRound, LayoutGrid, ListChecks, Lock, type LucideIcon, Monitor, MonitorSmartphone, Palette, Paperclip, Plus, Server, Sparkles, SquareTerminal } from "lucide-react";
-import { type ReactNode, useEffect, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { v7 as uuidv7 } from "uuid";
 import { useLocation } from "wouter";
-import { ApiError, api, app, desktopOs, phoneApp, serverUrl } from "../api/http";
+import { ApiError, OFFLINE, api, app, desktopOs, fetchExport, phoneApp, serverUrl } from "../api/http";
 import type { CreatedToken } from "../api/types/CreatedToken";
+import type { ImportBackup } from "../api/types/ImportBackup";
 import type { Scope } from "../api/types/Scope";
 import type { TokenInfo } from "../api/types/TokenInfo";
 import type { User } from "../api/types/User";
-import { ago } from "../domain/dates";
+import { ago, isoDate } from "../domain/dates";
 import { type CliStatus, cli } from "../desktop";
 import { checkDisplayName, checkTokenName } from "../domain/text";
 import * as local from "../local";
 import { useServerVersions } from "../server-update";
-import { useSession, useView } from "../session";
+import { useSession, useUndo, useView } from "../session";
 import { type Preset, type Theme, hueOf, isPreset, primaryOf, setAccent, setTheme, startOwn, tuneAccent, useAccent, useDark, useTheme } from "../theme";
 import { type Zoom, type Zoomed, setZoom, useZoom } from "../zoom";
 import { ColorPicker } from "../ui/color-picker";
@@ -21,10 +23,12 @@ import { Copyable, Seg, Stepper, Swatch } from "../ui/controls";
 import { Modal, forUser, useFailure, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
 import { Icon } from "../ui/icons";
+import { readBackup, sendImport, uploadBackup } from "../transfer";
 import { newer, usePending } from "../updates";
 import { About } from "./About";
 import { fixAddTo, unfixAddTo, useAddTo, useFixedAddTo } from "./add-to";
 import { AiPage, useAiSummary } from "./AiSettings";
+import { saveFile } from "./attachments";
 import { NotificationSettings, SystemSettings } from "./Background";
 import { DesktopSystem } from "./DesktopSystem";
 import { RemindSettings } from "./RemindSettings";
@@ -281,12 +285,85 @@ function Account({ onSignOut }: { onSignOut(): void }) {
           <TokenRow key={t.id} icon={Monitor} title={t.name} sub={t.current ? "本机" : used(t, now)} action={t.current ? undefined : ["退出", () => revoke(t)]} />
         ))}
       </div>
+      <Backups />
       <div className="group danger" style={{ marginTop: 24 }}>
         <button className="row" onClick={onSignOut}>
           <div className="row-inner">退出登录</div>
         </button>
       </div>
       {password && <PasswordDialog onClose={() => setPassword(false)} />}
+    </>
+  );
+}
+
+/** The account's own data as a backup, and a backup added to it (docs/local.md#搬到服务器和搬回本机),
+ * each showing how it goes meanwhile. */
+function Backups() {
+  const { goingAsNow } = useSession();
+  const { confirm, snack } = useFeedback();
+  const undo = useUndo();
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState<string | null>(null);
+  const pick = useRef<HTMLInputElement>(null);
+  const exportData = async () => {
+    setExporting(true);
+    try {
+      const { name, file } = await fetchExport(isoDate(new Date()));
+      const said = await saveFile({ id: uuidv7(), name, type: "application/x-tar" }, file);
+      if (said) snack(said);
+    } catch (e) {
+      snack(forUser("导出备份", e));
+    } finally {
+      setExporting(false);
+    }
+  };
+  const importData = async (file: File) => {
+    let uploaded: ImportBackup;
+    const current = goingAsNow();
+    try {
+      const backup = await readBackup(file);
+      const body = "备份里的文件夹和事项会加进这个账号，放在根目录，账号里原有的不动；导入后可以撤销。";
+      if (!(await confirm({ title: "导入备份？", body, ok: "导入" }))) return;
+      setImporting("正在上传");
+      uploaded = await uploadBackup(backup, (done, all) => setImporting(`已上传 ${done}/${all}`), current);
+    } catch (e) {
+      setImporting(null);
+      return snack(forUser("导入备份", e));
+    }
+    await send(uploaded, current);
+  };
+  const send = async (uploaded: ImportBackup, current: () => boolean) => {
+    setImporting("正在导入");
+    try {
+      const made = await sendImport(uploaded, current);
+      snack({ text: `已导入 ${made.tasks} 个事项、${made.folders} 个文件夹`, action: "撤销", onAction: () => undo(uploaded.id) });
+    } catch (e) {
+      // Unanswered, it may have gone in: sent again as the same change, it goes in once.
+      const again = e instanceof ApiError && e.code === OFFLINE;
+      snack(again ? { text: forUser("导入备份", e), action: "重试", onAction: () => void send(uploaded, current) } : forUser("导入备份", e));
+    } finally {
+      setImporting(null);
+    }
+  };
+  return (
+    <>
+      <h2 className="group-title">备份</h2>
+      <div className="group">
+        <Action label="导出备份" value={exporting ? "正在导出" : undefined} onClick={() => !exporting && void exportData()} />
+        <Action label="导入备份" value={importing ?? undefined} onClick={() => importing === null && pick.current!.click()} />
+      </div>
+      <p className="group-note">导出的备份可以在本机模式里恢复，也可以导入别的账号。本机模式的备份也能导入这里。</p>
+      <input
+        ref={pick}
+        type="file"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          // Choosing the same file again is a change too.
+          e.target.value = "";
+          if (file) void importData(file);
+        }}
+      />
     </>
   );
 }

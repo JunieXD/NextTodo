@@ -17,6 +17,7 @@ pub mod start;
 pub mod store;
 pub mod sync;
 pub mod tools;
+pub mod transfer;
 pub mod upgrade;
 pub mod ws;
 
@@ -148,6 +149,8 @@ pub fn app(state: AppState) -> Router {
         .route("/sync", get(ws::sync))
         .route("/tools", get(tools::list_tools))
         .route("/files/{id}", get(attachments::get_file).put(attachments::put_file).layer(page_cors()))
+        .route("/export", get(transfer::export).layer(page_cors()))
+        .route("/import", post(transfer::import))
         .route("/settings", get(attachments::get_settings).put(attachments::put_settings))
         .route("/tools/{name}", post(tools::call_tool).layer(DefaultBodyLimit::max(tools::MAX_BODY)))
         .route("/ai/providers", get(ai::providers))
@@ -165,15 +168,17 @@ pub fn app(state: AppState) -> Router {
 }
 
 /// Lets the apps' pages, at `https://localhost` on Android and `capacitor://localhost` on iOS, call the
-/// server: in local mode everything, otherwise the files, which are too large for the bridge to native
-/// HTTP. They send the token in `Authorization`; no cookie (docs/api.md#附件). Nested, as in local
-/// mode, the inner layer's headers take the outer's place.
+/// server: in local mode everything, otherwise the files and the export, which are too large for the
+/// bridge to native HTTP, the export's name read too. They send the token in `Authorization`; no
+/// cookie (docs/api.md#附件). Nested, as in local mode, the inner layer's headers take the outer's
+/// place.
 pub(crate) fn page_cors() -> tower_http::cors::CorsLayer {
     use axum::http::{Method, header};
     tower_http::cors::CorsLayer::new()
         .allow_origin([HeaderValue::from_static("https://localhost"), HeaderValue::from_static("capacitor://localhost")])
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
         .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+        .expose_headers([header::CONTENT_DISPOSITION])
         .max_age(std::time::Duration::from_secs(3600))
 }
 

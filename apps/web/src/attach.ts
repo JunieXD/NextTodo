@@ -14,7 +14,7 @@ export const PICTURES = new Set(["image/png", "image/jpeg", "image/gif", "image/
 export const isPicture = (type: string) => PICTURES.has(type);
 
 /** The largest file an attachment can have: `MAX_FILE_SIZE` in crates/core/src/model.rs. */
-const MAX_FILE_SIZE = 20 * 1024 * 1024;
+export const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
 const SETTINGS = "nexttodo.serverSettings";
 

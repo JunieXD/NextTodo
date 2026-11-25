@@ -237,6 +237,7 @@ nexttodo skill install                   # 见 Skill
 - 环境变量 `NEXTTODO_URL`、`NEXTTODO_TOKEN` 优先于配置文件，可以给不同的 agent 用不同的令牌，改动记录里就能分清是谁做的。
 - `NEXTTODO_URL` 写 `local` 时，连这台电脑上[本机模式](local.md#agent-接入)的 App。
 - 网络出错时，写操作用同一个改动 ID 自动重试两次，不会重复生效；`--request-id` 指定改动 ID，见[重试](#重试)。
+- `nexttodo export [<文件>]` 把这个账号的数据下载成备份文件，默认存成当前目录下的 `NextTodo-<用户名>-<日期>.tar`，不覆盖已有的文件（先写 `.partial`，下完再改名；`.partial` 已经有了就停下，可能是另一个导出正在写）；`nexttodo import <备份文件>` 把本机模式的备份（或导出的文件）加进这个账号，输出加了多少和批次号，用 `nexttodo undo <批次>` 撤销；没收到回复时提示加上 `--request-id` 重发，不会导入两次。连本机模式时这两个命令提示用 App 的备份和恢复。见[搬到服务器和搬回本机](local.md#搬到服务器和搬回本机)。
 
 ## MCP
 

@@ -1,8 +1,9 @@
 //! `nexttodo`: the command line for NextTodo. Each command calls one tool on the server, which does
 //! all the work; this only sends the arguments and prints the result. See `docs/agent.md`.
 
+use std::collections::HashSet;
 use std::fs::File;
-use std::io::{IsTerminal, Read, Write};
+use std::io::{IsTerminal, Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
@@ -11,7 +12,7 @@ use anyhow::{Context, anyhow, bail};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use clap::{Parser, Subcommand};
-use nexttodo_core::model::{FileName, MAX_FILE_SIZE};
+use nexttodo_core::model::{AttachmentId, BACKUP_FORMAT, FileName, MAX_FILE_SIZE};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use ureq::http::StatusCode;
@@ -300,6 +301,16 @@ enum Command {
         #[arg(short, long, help = "存到哪个文件或目录，默认当前目录，用附件的名称")]
         output: Option<PathBuf>,
     },
+    #[command(about = "把这个账号自己的数据下载成备份文件：可以在本机模式里恢复，也可以导入别的账号")]
+    Export {
+        #[arg(value_name = "文件", help = "存到哪个文件，默认当前目录下的 NextTodo-<用户名>-<日期>.tar")]
+        file: Option<PathBuf>,
+    },
+    #[command(about = "把备份文件（本机模式的备份，或导出的文件）加进这个账号，原有的数据不动")]
+    Import {
+        #[arg(value_name = "备份文件")]
+        file: PathBuf,
+    },
     #[command(about = "按计划批量新建文件夹、事项和依赖")]
     Apply {
         #[arg(help = "YAML 计划文件，- 表示从标准输入读")]
@@ -474,6 +485,8 @@ struct Server {
 
 /// How long most requests may take; sending a file may take longer.
 const TIMEOUT: Duration = Duration::from_secs(30);
+/// How long an export or import may take: an account's files can be many.
+const TRANSFER_TIMEOUT: Duration = Duration::from_secs(3600);
 
 impl Server {
     fn new(url: &str) -> Self {
@@ -530,6 +543,27 @@ impl Server {
         }
         let mut res = req.send_json(body)?;
         Ok((res.status(), res.body_mut().read_to_string()?))
+    }
+
+    /// Gets `path`, the reply if it is a success, else the server's error message.
+    fn get(&self, path: &str, token: &str) -> anyhow::Result<ureq::http::Response<ureq::Body>> {
+        let req = self.agent.get(format!("{}{path}", self.url)).config().timeout_global(Some(self.timeout)).build();
+        let mut res = req.header("Authorization", format!("Bearer {token}")).call().map_err(|e| self.unreachable(e))?;
+        if !res.status().is_success() {
+            let text = res.body_mut().read_to_string().map_err(|e| self.unreachable(e))?;
+            reply(res.status(), &text)?;
+        }
+        Ok(res)
+    }
+
+    /// Uploads `bytes` as file `id`, of `media_type`.
+    fn put_file(&self, token: &str, id: &str, media_type: &str, bytes: &[u8]) -> anyhow::Result<()> {
+        let req = self.agent.put(format!("{}/api/v1/files/{id}", self.url)).config().timeout_global(Some(self.timeout)).build();
+        let req = req.header("Authorization", format!("Bearer {token}")).header("Content-Type", media_type);
+        let mut res = req.send(bytes).map_err(|e| self.unreachable(e))?;
+        let text = res.body_mut().read_to_string().map_err(|e| self.unreachable(e))?;
+        reply(res.status(), &text)?;
+        Ok(())
     }
 
     /// Posts JSON once and returns the reply, or the server's error message.
@@ -690,15 +724,8 @@ fn attach_one(server: &Server, token: &str, task: &str, file: &Path, name: Optio
 fn download(id: &str, output: Option<PathBuf>, json_out: bool) -> anyhow::Result<()> {
     let (mut server, token) = connect()?;
     server.timeout = Duration::from_secs(600);
-    let req = server.agent.get(format!("{}/api/v1/files/{id}", server.url)).config().timeout_global(Some(server.timeout)).build();
-    let mut res = req.header("Authorization", format!("Bearer {token}")).call().map_err(|e| server.unreachable(e))?;
-    if !res.status().is_success() {
-        let text = res.body_mut().read_to_string().map_err(|e| server.unreachable(e))?;
-        reply(res.status(), &text)?;
-    }
-    let disposition = res.headers().get("content-disposition").and_then(|v| v.to_str().ok()).unwrap_or_default();
-    let name = disposition.split_once("filename*=UTF-8''").and_then(|(_, n)| decode(n)).context("服务器回复缺少附件的名称")?;
-    let name = FileName::try_from(name).map_err(|e| anyhow!("附件的名称无效：{e}"))?;
+    let mut res = server.get(&format!("/api/v1/files/{id}"), &token)?;
+    let name = named(&res).context("服务器回复缺少附件的名称")?.map_err(|e| anyhow!("附件的名称无效：{e}"))?;
     let path = match output {
         Some(dir) if dir.is_dir() => dir.join(name.on_disk()),
         Some(p) => p,
@@ -717,6 +744,178 @@ fn download(id: &str, output: Option<PathBuf>, json_out: bool) -> anyhow::Result
         println!("{}", serde_json::to_string_pretty(&json!({ "id": id, "name": name.as_str(), "path": path }))?);
     } else {
         println!("{}", printable(&format!("已下载到 {}", path.display())));
+    }
+    Ok(())
+}
+
+/// The name a download is to be saved under, as the server gives it: none when it gives none, an error
+/// when the name won't do.
+fn named(res: &ureq::http::Response<ureq::Body>) -> Option<Result<FileName, String>> {
+    let disposition = res.headers().get("content-disposition").and_then(|v| v.to_str().ok()).unwrap_or_default();
+    disposition.split_once("filename*=UTF-8''").and_then(|(_, n)| decode(n)).map(FileName::try_from)
+}
+
+/// What to say where local mode has no export or import.
+const LOCAL_BACKUP: &str = "本机模式用 App 设置里的“备份”和“恢复”";
+
+/// Saves the account's own data as a backup to `file`, or here under the name the server gives it
+/// (docs/local.md#导出); written in full beside it first, and never over a file already there, nor
+/// over one another export is writing.
+fn export(file: Option<PathBuf>, json_out: bool) -> anyhow::Result<()> {
+    let (mut server, token) = connect()?;
+    if server.local {
+        bail!(LOCAL_BACKUP);
+    }
+    server.timeout = TRANSFER_TIMEOUT;
+    let mut res = server.get(&format!("/api/v1/export?today={}", chrono::Local::now().format("%Y-%m-%d")), &token)?;
+    let path = match file {
+        Some(p) => p,
+        None => PathBuf::from(named(&res).context("服务器回复缺少文件名")?.map_err(|e| anyhow!("文件名无效：{e}"))?.on_disk()),
+    };
+    if path.try_exists()? {
+        bail!("{} 已存在", path.display());
+    }
+    let mut partial = path.clone().into_os_string();
+    partial.push(".partial");
+    let partial = PathBuf::from(partial);
+    let mut out = match std::fs::OpenOptions::new().write(true).create_new(true).open(&partial) {
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            bail!("{} 已存在：可能另一个导出正在写它，或是上次中断时留下的，确认后删掉再试", partial.display())
+        }
+        opened => opened.with_context(|| format!("无法写入 {}", partial.display()))?,
+    };
+    let written = std::io::copy(&mut res.body_mut().as_reader(), &mut out).context("下载中断").and_then(|_| Ok(out.sync_all()?));
+    drop(out);
+    let published = written.and_then(|()| {
+        // Made meanwhile, by another export say: that one stays.
+        if path.try_exists()? {
+            bail!("{} 已存在", path.display());
+        }
+        Ok(std::fs::rename(&partial, &path)?)
+    });
+    if let Err(e) = published {
+        // Half a backup is no use.
+        let _ = std::fs::remove_file(&partial);
+        return Err(e);
+    }
+    if json_out {
+        println!("{}", serde_json::to_string_pretty(&json!({ "path": path }))?);
+    } else {
+        println!("{}", printable(&format!("已导出到 {}", path.display())));
+    }
+    Ok(())
+}
+
+const NOT_A_BACKUP: &str = "这不是 NextTodo 的备份，或者文件已损坏";
+const DATABASE_TOO_LARGE: &str = "备份里的数据库超过 20 MB，暂时导入不了";
+
+/// Checks the backup in `file` whole, as a restore checks it, before anything of it is sent
+/// (docs/local.md#导入): a tar of its manifest, then its attachments' files and database; or, `true`,
+/// a database alone, as backups were before there were attachments.
+fn check_backup(file: &mut File) -> anyhow::Result<bool> {
+    let mut head = [0; 16];
+    if file.read_exact(&mut head).is_ok() && &head == b"SQLite format 3\0" {
+        if file.metadata()?.len() > u64::from(MAX_FILE_SIZE) {
+            bail!(DATABASE_TOO_LARGE);
+        }
+        return Ok(true);
+    }
+    file.rewind()?;
+    let mut archive = tar::Archive::new(file);
+    // As they are: long names and extended headers, read in whole otherwise, are not a backup's.
+    let mut entries = archive.entries().context(NOT_A_BACKUP)?.raw(true);
+    let mut manifest = entries.next().context(NOT_A_BACKUP)?.context(NOT_A_BACKUP)?;
+    let plain = manifest.header().entry_type().is_file();
+    if !plain || manifest.path().context(NOT_A_BACKUP)?.to_str() != Some("backup.json") || manifest.size() > 1024 {
+        bail!(NOT_A_BACKUP);
+    }
+    let mut text = String::new();
+    manifest.read_to_string(&mut text).context(NOT_A_BACKUP)?;
+    let format = serde_json::from_str::<Value>(&text).ok().and_then(|m| m["format"].as_i64()).context(NOT_A_BACKUP)?;
+    if format > BACKUP_FORMAT {
+        bail!("备份来自更新版本的 NextTodo，请先更新命令行");
+    }
+    let (mut files, mut database) = (HashSet::new(), false);
+    for entry in entries {
+        let entry = entry.context(NOT_A_BACKUP)?;
+        let name = entry.path().context(NOT_A_BACKUP)?.to_str().context(NOT_A_BACKUP)?.to_owned();
+        let size = entry.size();
+        match name.strip_prefix("files/") {
+            _ if !entry.header().entry_type().is_file() => bail!(NOT_A_BACKUP),
+            Some(id) if attachment(id).is_some_and(|id| files.insert(id)) && size <= u64::from(MAX_FILE_SIZE) => {}
+            None if name == "nexttodo.db" && !database && size > u64::from(MAX_FILE_SIZE) => bail!(DATABASE_TOO_LARGE),
+            None if name == "nexttodo.db" && !database => database = true,
+            _ => bail!(NOT_A_BACKUP),
+        }
+    }
+    if !database {
+        bail!(NOT_A_BACKUP);
+    }
+    Ok(false)
+}
+
+/// The attachment a backup's `files/<id>` is the file of, one id however it is written.
+fn attachment(id: &str) -> Option<AttachmentId> {
+    uuid::Uuid::parse_str(id).ok().and_then(|u| AttachmentId::try_from(u).ok())
+}
+
+/// At most `MAX_FILE_SIZE` bytes of `from`: more is not what the backup was checked to have.
+fn read_up_to_limit(from: impl Read) -> anyhow::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    from.take(u64::from(MAX_FILE_SIZE) + 1).read_to_end(&mut bytes).context(NOT_A_BACKUP)?;
+    if bytes.len() > MAX_FILE_SIZE as usize {
+        bail!(NOT_A_BACKUP);
+    }
+    Ok(bytes)
+}
+
+/// Adds the backup at `file` to the account (docs/local.md#导入): checked whole, each of its files
+/// uploaded under a new id, made in their order, then the import asked for. What is checked is what
+/// is sent: read twice through the one opening of it.
+fn import(file: &Path, out: &Out) -> anyhow::Result<()> {
+    let (mut server, token) = connect()?;
+    if server.local {
+        bail!(LOCAL_BACKUP);
+    }
+    server.timeout = TRANSFER_TIMEOUT;
+    let mut opened = File::open(file).context("无法读取备份文件")?;
+    let bare = check_backup(&mut opened)?;
+    opened.rewind()?;
+    let (mut database, mut files) = (None, Map::new());
+    // The attachments' types come from the backup's database.
+    let mut upload = |old: Option<AttachmentId>, bytes: &[u8]| {
+        let id = uuid::Uuid::now_v7().to_string();
+        server.put_file(&token, &id, if old.is_some() { "application/octet-stream" } else { "application/vnd.sqlite3" }, bytes)?;
+        match old {
+            Some(old) => _ = files.insert(old.to_string(), id.into()),
+            None => database = Some(id),
+        }
+        anyhow::Ok(())
+    };
+    if bare {
+        upload(None, &read_up_to_limit(&mut opened)?)?;
+    } else {
+        let mut archive = tar::Archive::new(&mut opened);
+        for entry in archive.entries().context(NOT_A_BACKUP)?.raw(true).skip(1) {
+            let entry = entry.context(NOT_A_BACKUP)?;
+            let name = entry.path().context(NOT_A_BACKUP)?.to_string_lossy().into_owned();
+            let old = name.strip_prefix("files/").map(|id| attachment(id).context(NOT_A_BACKUP)).transpose()?;
+            upload(old, &read_up_to_limit(entry)?)?;
+        }
+    }
+    let change = out.change();
+    let body = json!({ "id": change, "database": database.context(NOT_A_BACKUP)?, "files": files });
+    let (status, text) = server
+        .send("/api/v1/import", Some(&token), None, &body)
+        .map_err(|e| anyhow!("{:#}；导入可能已经完成，重发时加上 --request-id {change}，不会重复导入", server.unreachable(e)))?;
+    let made = reply(status, &text)?;
+    if out.json {
+        println!("{}", serde_json::to_string_pretty(&made)?);
+    } else {
+        println!(
+            "已导入 {} 个事项、{} 个文件夹，批次 {}；撤销用 nexttodo undo {}",
+            made["tasks"], made["folders"], made["batch"], made["batch"]
+        );
     }
     Ok(())
 }
@@ -1024,6 +1223,8 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Attach { task, files, name } => attach(&task, &files, name, j),
         Command::Detach { attachments } => write("detach", json!({ "attachments": attachments }), j),
         Command::Download { id, output } => download(&id, output, j.json),
+        Command::Export { file } => export(file, j.json),
+        Command::Import { file } => import(&file, j),
         Command::Mv { items: mut list } => {
             let to = list.pop().expect("at least two arguments");
             let (tasks, folders) = items(&list);

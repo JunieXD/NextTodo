@@ -9,7 +9,7 @@ use std::io::{ErrorKind, Read, Seek};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
-use nexttodo_core::model::{AttachmentId, FileSize, MAX_FILE_SIZE};
+use nexttodo_core::model::{AttachmentId, BACKUP_FORMAT, FileSize, MAX_FILE_SIZE};
 use rusqlite::Connection;
 use uuid::Uuid;
 
@@ -26,10 +26,8 @@ pub(crate) const DB_FILE: &str = "nexttodo.db";
 const COPY: &str = "backup.part";
 /// What a backup is, first in it: `{"format": 1}`.
 const MANIFEST: &str = "backup.json";
-/// How this version of the app writes backups, and the newest it reads (docs/local.md#格式版本).
-const FORMAT: i64 = 1;
 
-const NOT_OURS: &str = "这不是 NextTodo 的备份，或者文件已损坏";
+pub(crate) const NOT_OURS: &str = "这不是 NextTodo 的备份，或者文件已损坏";
 
 /// Writes a backup of the data in `dir` to `to`, replacing what is there in one step: a tar of the
 /// files a consistent copy of the database lists, `files/<id>`, and of the copy, `nexttodo.db`.
@@ -54,31 +52,43 @@ pub(crate) fn write(dir: &Path, files: &Files, to: &Path) -> anyhow::Result<()> 
 fn pack(data: &Path, files: &Files, copy: &Path, to: &Path) -> anyhow::Result<()> {
     let name = copy.to_str().context("数据目录的路径无效")?;
     Connection::open(data.join(DB_FILE))?.execute("VACUUM INTO ?1", [name])?;
-    // All not cleared: those in use, and those undoing a deletion brings back (docs/local.md#备份).
+    tar(copy, files, to)
+}
+
+/// Writes to `to` a backup of the database at `copy`, which no one else has open: a tar of it and of
+/// the files it lists, which `files` has. An export from a server is one too (docs/local.md#导出).
+pub(crate) fn tar(copy: &Path, files: &Files, to: &Path) -> anyhow::Result<()> {
+    // All not cleared: those in use, and those undoing a deletion brings back (docs/local.md#备份). In
+    // the order they were added, which an import's new ids keep.
     let listed: Vec<(AttachmentId, FileSize, bool)> = Connection::open(copy)?
-        .prepare("SELECT id, size, unused_at IS NOT NULL FROM files WHERE NOT purged")?
+        .prepare("SELECT id, size, unused_at IS NOT NULL FROM files WHERE NOT purged ORDER BY id")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
         .collect::<Result<_, _>>()?;
     let mut tar = tar::Builder::new(File::create(to)?);
     tar.mode(tar::HeaderMode::Deterministic);
-    let manifest = serde_json::to_vec(&serde_json::json!({ "format": FORMAT })).expect("JSON");
-    let mut header = tar::Header::new_gnu();
-    header.set_size(manifest.len() as u64);
-    header.set_mode(0o644);
-    tar.append_data(&mut header, MANIFEST, manifest.as_slice())?;
+    let manifest = serde_json::to_vec(&serde_json::json!({ "format": BACKUP_FORMAT })).expect("JSON");
+    append(&mut tar, MANIFEST, &manifest)?;
     for (id, size, unused) in listed {
         // Syncing through a drive, another device's may not be here yet.
         files.fetch(id, size).context("部分附件的文件尚未从网盘下载，请稍后重试")?;
-        match tar.append_path_with_name(data.join(files::DIR).join(id.to_string()), format!("{}/{id}", files::DIR)) {
+        match files.here(id).with_context(|| format!("无法读取附件的文件 {id}"))? {
+            Some(bytes) => append(&mut tar, &format!("{}/{id}", files::DIR), &bytes)?,
             // Deleted by the daily clearing since the copy was taken: no one used it then already.
-            Err(e) if unused && e.kind() == ErrorKind::NotFound => {}
-            appended => appended.with_context(|| format!("无法读取附件的文件 {id}"))?,
+            None if unused => {}
+            None => bail!("无法读取附件的文件 {id}"),
         }
     }
     // Last, so that a backup cut short at an entry's end, which reads as a whole tar, has none.
     tar.append_path_with_name(copy, DB_FILE)?;
     tar.into_inner()?.sync_all()?;
     Ok(())
+}
+
+fn append(tar: &mut tar::Builder<File>, name: &str, bytes: &[u8]) -> std::io::Result<()> {
+    let mut header = tar::Header::new_gnu();
+    header.set_size(bytes.len() as u64);
+    header.set_mode(0o644);
+    tar.append_data(&mut header, name, bytes)
 }
 
 /// Prepares the backup at `from` to replace the data in `dir`: on a copy, checked and made the local
@@ -138,7 +148,7 @@ fn unpack(from: &Path, part: &Path) -> anyhow::Result<Option<HashMap<AttachmentI
     }
     let mut bytes = Vec::new();
     manifest.read_to_end(&mut bytes)?;
-    if serde_json::from_slice::<Manifest>(&bytes).context(NOT_OURS)?.format > FORMAT {
+    if serde_json::from_slice::<Manifest>(&bytes).context(NOT_OURS)?.format > BACKUP_FORMAT {
         return Err(db::Newer.into());
     }
     for entry in entries {

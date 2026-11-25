@@ -191,7 +191,7 @@ const base64 = (b: Blob) =>
 let handing = Promise.resolve();
 
 /** Hands attachment `a`'s file to the app, a piece at a time, to open or save. */
-export function writeAttachment(a: Attachment, file: Blob): Promise<void> {
+export function writeAttachment(a: Pick<Attachment, "id" | "name">, file: Blob): Promise<void> {
   const done = handing.then(async () => {
     for (let at = 0; at === 0 || at < file.size; at += PIECE) {
       const data = await base64(file.slice(at, at + PIECE));

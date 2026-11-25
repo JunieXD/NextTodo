@@ -41,6 +41,12 @@ pub struct Part {
     pub size: u32,
 }
 
+impl Part {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
 impl Drop for Part {
     fn drop(&mut self) {
         // Gone once published; one that can't be deleted now is left to the sweep.
@@ -83,6 +89,12 @@ impl Files {
     fn part(&self) -> io::Result<PathBuf> {
         std::fs::create_dir_all(&self.dir)?;
         Ok(self.dir.join(format!("{PART}{}", Uuid::now_v7())))
+    }
+
+    /// A place for a file of the server's own for a while, such as an export being packed: deleted
+    /// when dropped, or by the sweep when the server stopped first.
+    pub fn scratch(&self) -> io::Result<Part> {
+        Ok(Part { path: self.part()?, size: 0 })
     }
 
     /// Writes `body` to a part as it comes, at most `MAX_FILE_SIZE` bytes.

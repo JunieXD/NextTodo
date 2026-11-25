@@ -78,14 +78,14 @@ export const hidePanel = () => invoke<void>("hide_panel");
 
 /** Hands attachment `a`'s file to the app (`src-tauri/src/attachments.rs`): the body is the file, not
  * JSON. */
-const handOver = async <T>(command: string, a: Attachment, file: Blob) =>
+const handOver = async <T>(command: string, a: Pick<Attachment, "id" | "name">, file: Blob) =>
   invoke<T>(command, new Uint8Array(await file.arrayBuffer()), { headers: { "x-id": a.id, "x-name": encodeURIComponent(a.name) } });
 
 /** Opens the file with the system's default app. */
 export const openAttachment = (a: Attachment, file: Blob) => handOver<void>("open_attachment", a, file);
 
 /** Asks where to save the file; where it went, nothing when the user cancelled. */
-export const saveAttachment = (a: Attachment, file: Blob) => handOver<string | null>("save_attachment", a, file);
+export const saveAttachment = (a: Pick<Attachment, "id" | "name">, file: Blob) => handOver<string | null>("save_attachment", a, file);
 
 /** Listens in the panel for being opened, to quick add; in the main window for what to show, from
  * the panel or a click on a reminder, and for the menu's 锁定, which with no lock set opens its

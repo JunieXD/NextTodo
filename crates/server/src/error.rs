@@ -63,6 +63,14 @@ impl ApiError {
         Self::new(StatusCode::NOT_FOUND, "file_missing", "附件的文件不在服务器上，请重新上传")
     }
 
+    /// Some of a backup's attachments' files were not uploaded for its import (docs/local.md#导入),
+    /// or not as the backup has them: `names`.
+    pub fn not_uploaded(names: &[&str]) -> Self {
+        let shown = names.iter().take(5).copied().collect::<Vec<_>>().join("、");
+        let more = if names.len() > 5 { format!(" 等 {} 个", names.len()) } else { String::new() };
+        Self::invalid(format!("这些附件的文件没有上传成功：{shown}{more}"), Some("files".into()))
+    }
+
     pub fn too_large() -> Self {
         Self::new(StatusCode::PAYLOAD_TOO_LARGE, "too_large", "文件不能超过 20 MB")
     }

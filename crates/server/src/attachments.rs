@@ -183,7 +183,7 @@ pub async fn get_file(State(st): State<AppState>, auth: Auth, Path(id): Path<Str
 }
 
 /// `s` percent-encoded as RFC 8187 has it, for `filename*`.
-fn encode(s: &str) -> String {
+pub(crate) fn encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         if b.is_ascii_alphanumeric() || b"!#$&+-.^_`|~".contains(&b) {

@@ -294,6 +294,14 @@ export class Session {
     else this.setUser(me);
   }
 
+  /** A check, for what is sent from now on, that it still goes as this session's user, as it does now:
+   * the session has not ended, and the device has not signed in again since, in another tab say, which
+   * the browser's cookie would be then. */
+  goingAsNow = () => {
+    const now = cachedLogin();
+    return () => !this.ended && now?.user.id === this.user.id && cachedLogin()?.id === now.id;
+  };
+
   /** Ends the session here, and forgets the user's data on this device unless `keep`. When the device
    * has signed in as the same user again since, here or in another tab, the data is that sign-in's
    * now: only this session's copy goes. */

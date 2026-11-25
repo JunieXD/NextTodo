@@ -1,7 +1,7 @@
 //! Reading and writing entities. Lookups by id find whatever has it; who can see it is for the caller
 //! to decide, by its owner and the folder it is in (docs/design.md#共享). Lists are those of a user.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use nexttodo_core::board::Snapshot;
 use nexttodo_core::model::{
@@ -213,6 +213,11 @@ pub fn folder_name_taken(c: &Connection, owner: &str, f: &Folder) -> rusqlite::R
         params![owner, f.parent_id, f.name, f.id],
         |r| r.get(0),
     )
+}
+
+/// The names of `owner`'s folders at the root.
+pub fn root_folder_names(c: &Connection, owner: &str) -> rusqlite::Result<HashSet<String>> {
+    c.prepare("SELECT name FROM folders WHERE owner_id = ?1 AND parent_id IS NULL")?.query_map([owner], |r| r.get(0))?.collect()
 }
 
 pub fn folder_id_taken(c: &Connection, id: FolderId) -> rusqlite::Result<bool> {
@@ -644,6 +649,12 @@ pub fn insert_file(c: &Connection, id: AttachmentId, f: &StoredFile, now: i64, s
         "INSERT INTO files (id, owner_id, type, size, created_at, unused_at, staged) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6)",
         params![id, f.owner, f.media_type, f.size, now, staged],
     )?;
+    Ok(())
+}
+
+/// Gives file `id` the type `media_type`, for what its bytes were uploaded without one.
+pub fn set_file_type(c: &Connection, id: AttachmentId, media_type: &MediaType) -> rusqlite::Result<()> {
+    c.execute("UPDATE files SET type = ?2 WHERE id = ?1", params![id, media_type])?;
     Ok(())
 }
 

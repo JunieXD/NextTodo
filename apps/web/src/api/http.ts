@@ -168,26 +168,44 @@ export async function fetchServer(path: string, init?: RequestInit): Promise<Res
 /** How long sending or fetching a file may take: 20 MB over a slow line. */
 const FILE_TIMEOUT_MS = 10 * 60_000;
 
-/** Sends or fetches an attachment's file (docs/web.md#附件), the whole of it within the time allowed:
- * the server's answer. The phone apps' goes by the WebView's own fetch, which the server allows across
- * origins: CapacitorHttp would pass the whole file over the bridge. Throws `ApiError`: the server's
- * refusal, or `OFFLINE` when it cannot be reached, the transfer breaks off or takes too long, or `stop`
- * aborts it. What is put is `blob`, or a copy of attachment `from`'s file, which the server makes. */
+/** How long an export may take: an account's files can be many. */
+const EXPORT_TIMEOUT_MS = 60 * 60_000;
+
+/** Sends or fetches an attachment's file (docs/web.md#附件): the server's answer. What is put is `blob`,
+ * or a copy of attachment `from`'s file, which the server makes. */
 export async function fileRequest(method: "GET" | "PUT", id: string, stop: AbortSignal, body?: { blob: Blob; type: string } | { from: string }): Promise<Blob> {
-  const headers: Record<string, string> = body && "blob" in body ? { "Content-Type": body.type } : {};
+  const path = `/api/v1/files/${id}${body && "from" in body ? `?from=${body.from}` : ""}`;
+  return (await bulk(method, path, stop, FILE_TIMEOUT_MS, body && "blob" in body ? body : undefined)).answer;
+}
+
+/** The user's own data as a backup (docs/local.md#导出), as of `today` here: the file, and the name
+ * the server gives it. */
+export async function fetchExport(today: string): Promise<{ name: string; file: Blob }> {
+  const { answer, headers } = await bulk("GET", `/api/v1/export?today=${today}`, new AbortController().signal, EXPORT_TIMEOUT_MS);
+  const name = headers.get("Content-Disposition")?.split("filename*=UTF-8''")[1];
+  if (!name) throw new Error("服务器回复缺少文件名");
+  return { name: decodeURIComponent(name), file: answer };
+}
+
+/** Sends or fetches a file at `path`, the whole of it within `timeoutMs`: the server's answer. The
+ * phone apps' goes by the WebView's own fetch, which the server allows across origins: CapacitorHttp
+ * would pass the whole file over the bridge. Throws `ApiError`: the server's refusal, or `OFFLINE` when
+ * it cannot be reached, the transfer breaks off or takes too long, or `stop` aborts it. */
+async function bulk(method: "GET" | "PUT", path: string, stop: AbortSignal, timeoutMs: number, body?: { blob: Blob; type: string }): Promise<{ answer: Blob; headers: Headers }> {
+  const headers: Record<string, string> = body ? { "Content-Type": body.type } : {};
   if (server.token) headers.Authorization = `Bearer ${server.token}`;
   const send = app === "desktop" ? tauriFetch : phoneApp ? window.CapacitorWebFetch : fetch;
   const abort = new AbortController();
   const stopped = () => abort.abort();
   stop.addEventListener("abort", stopped);
   if (stop.aborted) stopped();
-  const timer = setTimeout(stopped, FILE_TIMEOUT_MS);
+  const timer = setTimeout(stopped, timeoutMs);
   let res: Response;
   let answer: Blob;
   try {
-    const init = { method, headers, body: body && "blob" in body ? body.blob : undefined, signal: abort.signal, ...(app === "desktop" && server.local && DIRECT) };
+    const init = { method, headers, body: body?.blob, signal: abort.signal, ...(app === "desktop" && server.local && DIRECT) };
     await reachable(abort.signal);
-    res = await send(`${server.url}/api/v1/files/${id}${body && "from" in body ? `?from=${body.from}` : ""}`, init);
+    res = await send(`${server.url}${path}`, init);
     answer = await res.blob();
   } catch {
     throw new ApiError(0, OFFLINE, server.local ? "无法连接 App 内置的服务端，请重试" : "无法连接服务器，请检查网络后重试");
@@ -195,7 +213,7 @@ export async function fileRequest(method: "GET" | "PUT", id: string, stop: Abort
     clearTimeout(timer);
     stop.removeEventListener("abort", stopped);
   }
-  if (res.ok) return answer;
+  if (res.ok) return { answer, headers: res.headers };
   const error = parseError(await answer.text());
   throw new ApiError(res.status, error.code ?? "error", error.message ?? `服务器错误（${res.status}），请稍后重试`);
 }

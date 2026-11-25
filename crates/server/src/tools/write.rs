@@ -783,7 +783,7 @@ pub fn style(w: &WriteCx, a: StyleArgs) -> Result<Write, ApiError> {
 /// What a copy of a folder named `name` is called where `taken` says which names are in use: its
 /// own name, else "名字 副本", "名字 副本 2" and on (docs/design.md#文件夹). As `copyName` in
 /// apps/web/src/domain/copy.ts.
-fn copy_name(name: &str, taken: impl Fn(&str) -> bool) -> String {
+pub(crate) fn copy_name(name: &str, taken: impl Fn(&str) -> bool) -> String {
     // A long name is cut short to leave room for what tells the copy apart.
     let copy = |mark: String| name.chars().take(MAX_NAME - mark.chars().count()).chain(mark.chars()).collect::<String>();
     [name.to_owned(), copy(" 副本".into())]

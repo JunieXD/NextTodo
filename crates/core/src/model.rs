@@ -964,6 +964,9 @@ impl From<Due> for DueFields {
 /// The largest file an attachment can have: 20 MB.
 pub const MAX_FILE_SIZE: u32 = 20 * 1024 * 1024;
 
+/// How this version of NextTodo writes backups, and the newest it reads (docs/local.md#格式版本).
+pub const BACKUP_FORMAT: i64 = 1;
+
 /// How many bytes a file has: 1 to `MAX_FILE_SIZE`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(try_from = "u32", into = "u32")]

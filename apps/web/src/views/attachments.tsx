@@ -90,6 +90,21 @@ function useFileUrl(id: string, type: string) {
   return { url: shown.url, failed: !!shown.failed, unreadable: () => setShown({ failed: "unreadable" }) };
 }
 
+/** Saves `file`, what `as` says it is: in the apps where the user picks, in a browser as a download.
+ * What to say of where it went; nothing when the user cancelled, or when the browser has it. */
+export async function saveFile(as: Pick<Attachment, "id" | "name" | "type">, file: Blob): Promise<string | undefined> {
+  if (phoneApp) {
+    await writeAttachment(as, file);
+    const { saved } = await NextTodo.saveAttachment({ id: as.id, name: as.name, type: as.type });
+    return saved && `已保存“${saved}”`;
+  }
+  if (app === "desktop") {
+    const to = await desktop.saveAttachment(as, file);
+    return to ? `已保存到 ${to}` : undefined;
+  }
+  download(as.name, file);
+}
+
 function download(name: string, b: Blob) {
   const url = URL.createObjectURL(b);
   const link = document.createElement("a");
@@ -134,20 +149,10 @@ function useFileActions() {
       );
     },
     save(a: Attachment) {
-      if (phoneApp) {
-        return void files
-          .blob(a)
-          .then((b) => writeAttachment(a, b))
-          .then(() => NextTodo.saveAttachment({ id: a.id, name: a.name, type: a.type }))
-          .then(({ saved }) => saved && snack(`已保存“${saved}”`), failed("保存附件"));
-      }
-      if (app === "desktop") {
-        return void files
-          .blob(a)
-          .then((b) => desktop.saveAttachment(a, b))
-          .then((to) => to && snack(`已保存到 ${to}`), failed("保存附件"));
-      }
-      files.blob(a).then((b) => download(a.name, b), failed("下载附件"));
+      files
+        .blob(a)
+        .then((b) => saveFile(a, b))
+        .then((said) => said && snack(said), failed(app ? "保存附件" : "下载附件"));
     },
     copy(a: Attachment) {
       // Written now, while the click or key still allows it, with the picture to come.

@@ -15,7 +15,7 @@ use nexttodo_core::board::{Now, comes_round, holds_up};
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
     AiJob, AiJobId, Attachment, AttachmentId, Change, Completion, Completions, Dependency, Due, DueAfter, Effect, Folder, FolderId, Holder,
-    JobKind, JobState, JobText, Link, MutationId, Person, Share, SortKey, Task, TaskId,
+    JobKind, JobState, JobText, Link, MutationId, Name, NoteText, Person, Share, SortKey, Task, TaskId,
 };
 use nexttodo_core::ops::{MAX_OPS, Mutation, Op};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -25,6 +25,7 @@ use uuid::Uuid;
 
 use crate::error::ApiError;
 use crate::store;
+use crate::tools::write::copy_name;
 
 /// Who is making the change.
 pub struct Actor<'a> {
@@ -200,6 +201,82 @@ pub fn renamed(c: &Connection, actor: &Actor, before: Person, after: Person, now
     let side = Side { users, root_of: None };
     done.seen.push(Seen { effect: Effect::Person(Change::Updated { before, after }), before: side.clone(), after: side, kept: false });
     record(c, actor, MutationId(Uuid::now_v7()), &[], &done, now)
+}
+
+/// What an import adds to a user's data (docs/local.md#导入): all of it new here, with ids of its own,
+/// each folder after the one it is in, the tasks in the order to number them, the dependencies in no
+/// circle.
+pub struct Import {
+    pub folders: Vec<Folder>,
+    pub tasks: Vec<Task>,
+    pub dependencies: Vec<Dependency>,
+    pub completions: Vec<Completion>,
+    pub jobs: Vec<AiJob>,
+    pub attachments: Vec<Attachment>,
+    pub notes: Vec<(Option<FolderId>, NoteText)>,
+}
+
+/// Adds `import` to the actor's data as change `id`, made and undone as one: the tasks numbered after
+/// theirs, a folder at the root whose name is taken called as a copy would be, each attachment taking
+/// the file uploaded for it, as the backup has it, or none is. Made already, it is what it did then. The notes are not part of the
+/// change, as they never are; a global one already there stays.
+pub fn import(conn: &mut Connection, actor: &Actor, id: MutationId, import: Import, now: i64) -> Result<(Applied, Vec<String>), ApiError> {
+    let tx = conn.transaction()?;
+    if let Some(applied) = earlier(&tx, actor, id)? {
+        return Ok((applied, Vec::new()));
+    }
+    let user = actor.user;
+    let mut cx = Cx::new(&tx, actor, now);
+    let mut roots = store::root_folder_names(&tx, user)?;
+    for mut f in import.folders {
+        if f.parent_id.is_none() {
+            f.name = Name::try_from(copy_name(f.name.as_str(), |n| roots.contains(n))).expect("cut short to fit");
+            roots.insert(f.name.as_str().to_owned());
+        }
+        cx.create_folder(f, user)?;
+    }
+    for mut t in import.tasks {
+        t.number = store::take_task_number(&tx, user)?;
+        (t.created_by, t.updated_by) = (user.to_owned(), user.to_owned());
+        (t.created_via, t.updated_via) = (cx.via.clone(), cx.via.clone());
+        cx.create_task(t, user)?;
+    }
+    // Between tasks new here, which no one else sees: none closes a circle with those already here, and
+    // the caller found none among them.
+    let side = cx.space(user, None)?.side();
+    for d in import.dependencies {
+        store::insert_dependency(&tx, user, &d)?;
+        cx.push(Effect::Dependency(Link::Added(d)), Side::default(), side.clone(), false);
+    }
+    for r in import.completions {
+        cx.record_completion(r)?;
+    }
+    for j in import.jobs {
+        cx.create_job(j)?;
+    }
+    let mut not_uploaded = Vec::new();
+    for a in &import.attachments {
+        match store::load_file(&tx, a.id)? {
+            Some(f) if f.owner == user && f.size == a.size && !store::attachment_id_taken(&tx, a.id)? => {
+                // Uploaded as bytes alone: what they are is what the backup says.
+                store::set_file_type(&tx, a.id, &a.media_type)?;
+                let side = cx.holder_side(a.holder)?;
+                cx.create_attachment(a.clone(), side)?;
+            }
+            _ => not_uploaded.push(a.name.as_str()),
+        }
+    }
+    if !not_uploaded.is_empty() {
+        return Err(ApiError::not_uploaded(&not_uploaded));
+    }
+    let had = store::ai_notes(&tx, user)?;
+    for (folder, text) in import.notes.into_iter().filter(|(folder, _)| folder.is_some() || !had.contains_key(&None)) {
+        store::set_ai_note(&tx, user, folder, &text, now)?;
+    }
+    let done = cx.done;
+    let recorded = record(&tx, actor, id, &[], &done, now)?;
+    tx.commit()?;
+    Ok((Applied { seq: recorded.seq, effects: done.view(user) }, recorded.to))
 }
 
 /// What a change did, and who sees each part of it.

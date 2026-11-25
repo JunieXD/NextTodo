@@ -12,6 +12,7 @@ import androidx.glance.ColorFilter
 import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
+import androidx.glance.LocalSize
 import androidx.glance.action.Action
 import androidx.glance.action.clickable
 import androidx.glance.color.ColorProvider
@@ -186,7 +187,7 @@ internal val LocalColors = staticCompositionLocalOf { Colors(Look()) }
 @Composable
 internal fun Header(look: Look, title: String, onTitle: Action, refresh: Action, add: Action?) {
     val adding = add != null && look.add
-    if (!look.title && !look.refresh && !adding) {
+    if (LocalSize.current.height < NO_HEADER_BELOW || LocalSize.current.width < TINY_BELOW || (!look.title && !look.refresh && !adding)) {
         Box(GlanceModifier.fillMaxWidth().height(TOP).clickable(onTitle)) {}
         return
     }
@@ -220,3 +221,7 @@ private fun Icon(drawable: Int, label: String, onClick: Action, top: Dp, bottom:
 
 /** How far the buttons keep from the top in a header without the title. */
 private val LOW_TOP = 4.dp
+
+/** Lower than this, about a cell, there is no header, whatever the settings say: no room for it; nor
+ * in a widget `TINY_BELOW` wide. */
+private val NO_HEADER_BELOW = 110.dp

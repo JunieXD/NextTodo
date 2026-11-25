@@ -59,6 +59,7 @@ private fun AgendaContent(context: Context, shown: Agendas) {
     val now = shown.now
     val look = shown.look
     val compact = LocalSize.current.height < COMPACT_BELOW
+    val narrow = LocalSize.current.width < NARROW_BELOW
     val calendar = open(context, "nexttodo://calendar")
     Card {
         Header(look, "日程", calendar, actionRunCallback<AgendaRefreshAction>(), null)
@@ -71,7 +72,7 @@ private fun AgendaContent(context: Context, shown: Agendas) {
                 LazyColumn(GlanceModifier.fillMaxWidth()) {
                     for (day in shown.days) {
                         item { DayTitle(context, day.date, now.toLocalDate(), look.scale) }
-                        itemsIndexed(day.entries) { i, entry -> EntryItem(context, entry, i == 0, day.date == null, now, compact, look.scale) }
+                        itemsIndexed(day.entries) { i, entry -> EntryItem(context, entry, i == 0, day.date == null, now, compact, narrow, look.scale) }
                     }
                     if (shown.more > 0) item { AgendaMore(context, shown.more, look.scale) }
                 }
@@ -95,13 +96,14 @@ internal fun DayTitle(context: Context, date: LocalDate?, today: LocalDate, scal
         title,
         GlanceModifier.fillMaxWidth().padding(start = EDGE, end = EDGE, top = 10.dp * scale, bottom = 2.dp).clickable(open(context, "nexttodo://calendar")),
         style = TextStyle(color = color, fontSize = 12.sp * scale, fontWeight = FontWeight.Bold),
+        maxLines = 1,
     )
 }
 
 /** A task due on its day, and when; an `overdue` one says which day. It opens the task, the line above
  * it too. */
 @Composable
-private fun EntryItem(context: Context, entry: Entry, first: Boolean, overdue: Boolean, now: LocalDateTime, compact: Boolean, scale: Float) {
+private fun EntryItem(context: Context, entry: Entry, first: Boolean, overdue: Boolean, now: LocalDateTime, compact: Boolean, narrow: Boolean, scale: Float) {
     val colors = LocalColors.current
     Column(GlanceModifier.fillMaxWidth().padding(horizontal = EDGE).clickable(open(context, "nexttodo://task/${entry.id}"))) {
         if (!first) Spacer(GlanceModifier.fillMaxWidth().height(1.dp).background(colors.divider))
@@ -113,8 +115,8 @@ private fun EntryItem(context: Context, entry: Entry, first: Boolean, overdue: B
         Column(GlanceModifier.fillMaxWidth().padding(top = (if (compact) 6.dp else 8.dp) * scale, bottom = (if (compact) 6.dp else 8.dp) * scale)) {
             Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(entry.title, GlanceModifier.defaultWeight(), style = title, maxLines = 1)
-                if (entry.later) Text("以后的一次", GlanceModifier.padding(start = 6.dp), style = faint, maxLines = 1)
-                if (time != null) Text(time, GlanceModifier.padding(start = 8.dp), style = timeStyle, maxLines = 1)
+                if (entry.later && !narrow) Text("以后的一次", GlanceModifier.padding(start = 6.dp), style = faint, maxLines = 1)
+                if (time != null && !narrow) Text(time, GlanceModifier.padding(start = 8.dp), style = timeStyle, maxLines = 1)
             }
             if (!compact && entry.folder.isNotEmpty()) Text(entry.folder, style = faint, maxLines = 1)
         }
@@ -128,6 +130,7 @@ internal fun AgendaMore(context: Context, more: Int, scale: Float) {
         "还有 $more 项",
         GlanceModifier.fillMaxWidth().padding(horizontal = EDGE, vertical = 8.dp * scale).clickable(open(context, "nexttodo://calendar")),
         style = TextStyle(color = LocalColors.current.secondary, fontSize = 13.sp * scale),
+        maxLines = 1,
     )
 }
 

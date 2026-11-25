@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.ColorFilter
@@ -108,6 +109,14 @@ class NextWidget : GlanceAppWidget() {
  * which the 4×2 the widget starts as is. */
 internal val COMPACT_BELOW = 260.dp
 
+/** Narrower than this, two cells on most phones, the title has the line to itself: what is to its
+ * right would leave it a character or two. */
+internal val NARROW_BELOW = 220.dp
+
+/** Narrower than this, a cell on most phones, a title leaves a few characters: too few to tell which
+ * task a circle would complete, or to fit a header. A row is the title alone, which opens the task. */
+internal val TINY_BELOW = 130.dp
+
 /** How far the content keeps from the widget's sides, and from its top. Inside what is tapped there:
  * the widget leaves no gap, which HyperOS's launcher would give to whichever action it picks
  * (docs/android.md#小组件). */
@@ -121,7 +130,9 @@ internal val UNDER_HEADER = 4.dp
 private fun Content(context: Context, shown: Shown) {
     val now = shown.now
     val look = shown.look
-    val compact = LocalSize.current.height < COMPACT_BELOW
+    val tiny = LocalSize.current.width < TINY_BELOW
+    val compact = tiny || LocalSize.current.height < COMPACT_BELOW
+    val narrow = LocalSize.current.width < NARROW_BELOW
     Card {
         Header(look, "接下来", open(context, "nexttodo://home"), actionRunCallback<RefreshAction>(), actionStartActivity(Intent(context, QuickAddActivity::class.java)))
         when {
@@ -132,18 +143,18 @@ private fun Content(context: Context, shown: Shown) {
             else -> Box(GlanceModifier.defaultWeight().fillMaxWidth()) {
                 Box(GlanceModifier.fillMaxSize().clickable(open(context, "nexttodo://home"))) {}
                 LazyColumn(GlanceModifier.fillMaxWidth()) {
-                    itemsIndexed(shown.items) { i, item -> TaskItem(context, item, i == 0, (item.id to item.occurrence) in shown.ticked, now, compact, look.scale) }
-                    if (shown.more > 0) item { More(context, shown.more, shown.items.isEmpty(), look.scale) }
+                    itemsIndexed(shown.items) { i, item -> TaskItem(context, item, i == 0, (item.id to item.occurrence) in shown.ticked, now, compact, narrow, tiny, look.scale) }
+                    if (shown.more > 0) item { More(context, shown.more, shown.items.isEmpty(), if (tiny) 0.dp else CIRCLE, look.scale) }
                 }
             }
         }
     }
 }
 
-/** A line between tasks, from where the titles start, as in the app's lists. */
+/** A line between tasks, from where the titles start, `indent` in, as in the app's lists. */
 @Composable
-internal fun Divider() {
-    Box(GlanceModifier.fillMaxWidth().padding(start = CIRCLE)) {
+internal fun Divider(indent: Dp = CIRCLE) {
+    Box(GlanceModifier.fillMaxWidth().padding(start = indent)) {
         Spacer(GlanceModifier.fillMaxWidth().height(1.dp).background(LocalColors.current.divider))
     }
 }
@@ -152,13 +163,14 @@ internal fun Divider() {
  * rest of the item, the line above it too, opens it. The two are side by side in the tree, the circle
  * drawn over the start of the other, which comes first and leaves no gap: HyperOS's launcher takes a
  * tap on a clickable with another inside as a tap on the inner one, and a tap on none as a tap on
- * the first in the item. */
+ * the first in the item. Too narrow to tell which task it is, `tiny`, it has no circle. */
 @Composable
-private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boolean, now: LocalDateTime, compact: Boolean, scale: Float) {
+private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boolean, now: LocalDateTime, compact: Boolean, narrow: Boolean, tiny: Boolean, scale: Float) {
     val colors = LocalColors.current
+    val indent = if (tiny) 0.dp else CIRCLE
     Box(GlanceModifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
         Column(GlanceModifier.fillMaxWidth().padding(horizontal = EDGE).clickable(open(context, "nexttodo://task/${item.id}"))) {
-            if (!first) Divider()
+            if (!first) Divider(indent)
             val title = TextStyle(
                 color = if (ticked) colors.done else colors.text,
                 fontSize = 15.sp * scale,
@@ -176,23 +188,23 @@ private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boole
             val metaStyle = TextStyle(color = color, fontSize = 12.sp * scale)
             val stepStyle = TextStyle(color = colors.secondary, fontSize = 12.sp * scale)
             if (compact) {
-                Row(GlanceModifier.fillMaxWidth().padding(start = CIRCLE, top = 7.dp * scale, bottom = 7.dp * scale), verticalAlignment = Alignment.CenterVertically) {
+                Row(GlanceModifier.fillMaxWidth().padding(start = indent, top = 7.dp * scale, bottom = 7.dp * scale), verticalAlignment = Alignment.CenterVertically) {
                     Text(item.title, GlanceModifier.defaultWeight(), style = title, maxLines = 1)
-                    if (item.step != null) Text(item.step, GlanceModifier.padding(start = 6.dp), style = stepStyle, maxLines = 1)
-                    if (meta.isNotEmpty()) Text(meta, GlanceModifier.padding(start = 8.dp), style = metaStyle, maxLines = 1)
+                    if (item.step != null && !narrow) Text(item.step, GlanceModifier.padding(start = 6.dp), style = stepStyle, maxLines = 1)
+                    if (meta.isNotEmpty() && !narrow) Text(meta, GlanceModifier.padding(start = 8.dp), style = metaStyle, maxLines = 1)
                 }
             } else {
-                Column(GlanceModifier.fillMaxWidth().padding(start = CIRCLE, top = 8.dp * scale, bottom = 8.dp * scale)) {
+                Column(GlanceModifier.fillMaxWidth().padding(start = indent, top = 8.dp * scale, bottom = 8.dp * scale)) {
                     // The step whole, however long the title.
                     Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(item.title, GlanceModifier.defaultWeight(), style = title, maxLines = 1)
-                        if (item.step != null) Text(item.step, GlanceModifier.padding(start = 6.dp), style = stepStyle, maxLines = 1)
+                        if (item.step != null && !narrow) Text(item.step, GlanceModifier.padding(start = 6.dp), style = stepStyle, maxLines = 1)
                     }
                     if (meta.isNotEmpty()) Text(meta, style = metaStyle, maxLines = 1)
                 }
             }
         }
-        Tick(item.id, item.title, item.occurrence, ticked)
+        if (!tiny) Tick(item.id, item.title, item.occurrence, ticked)
     }
 }
 
@@ -220,13 +232,13 @@ internal fun Tick(task: String, title: String, occurrence: Occurrence?, ticked: 
 }
 
 /** Past the tasks listed, how many more there are, which opens the app; `first` when none are listed,
- * all done here say, with no line above it then. */
+ * all done here say, with no line above it then. `indent` in, as the titles are. */
 @Composable
-private fun More(context: Context, more: Int, first: Boolean, scale: Float) {
+private fun More(context: Context, more: Int, first: Boolean, indent: Dp, scale: Float) {
     val colors = LocalColors.current
     Column(GlanceModifier.fillMaxWidth().padding(horizontal = EDGE).clickable(open(context, "nexttodo://home"))) {
-        if (!first) Divider()
-        Text("还有 $more 项", GlanceModifier.padding(start = CIRCLE, top = 8.dp * scale, bottom = 8.dp * scale), style = TextStyle(color = colors.secondary, fontSize = 13.sp * scale))
+        if (!first) Divider(indent)
+        Text("还有 $more 项", GlanceModifier.padding(start = indent, top = 8.dp * scale, bottom = 8.dp * scale), style = TextStyle(color = colors.secondary, fontSize = 13.sp * scale), maxLines = 1)
     }
 }
 

@@ -1,6 +1,6 @@
 // The graph view of a folder: tasks laid out by ELK, dependencies as curves. React Flow pans and
 // zooms; picking a task highlights the chain through it; 连线 links two tasks; tapping a dependency
-// offers to delete it.
+// offers to delete it. The folder's quick add bar adds to it there too.
 
 import {
   Background,
@@ -30,8 +30,10 @@ import { useBack } from "../ui/back";
 import { useFeedback } from "../ui/feedback";
 import { Icon, Inbound } from "../ui/icons";
 import { useTaskActions } from "./actions";
+import { useBatch } from "./batch";
 import { type Layout, type Size, edgeKey, layout, widest } from "./graph-layout";
-import { useMarks } from "./marks";
+import { QuickAdd } from "./lists";
+import { useMarking, useMarks } from "./marks";
 import { useSelection } from "./nav";
 import { dueClass } from "./rows";
 import { Avatars } from "./share";
@@ -57,6 +59,8 @@ export default function Graph(props: { folder: FolderId | null; across: boolean;
 function Canvas({ folder, across, now }: { folder: FolderId | null; across: boolean; now: Date }) {
   const { board } = useView();
   const { flash } = useMarks();
+  const marking = useMarking();
+  const batch = useBatch();
   const actions = useTaskActions();
   const { selected } = useSelection();
   const { confirm } = useFeedback();
@@ -105,6 +109,33 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
       current = false;
     };
   }, [shape, across, flow]);
+
+  // A task just added with the bar: once a layout has it, it flashes and, out of view, is brought
+  // into it, clear of what floats over the bottom of the graph on phones: the bar and 连线, and the
+  // snackbar saying it was added, which in a short view (the keyboard up) is over the middle. Gone
+  // from the graph before then, turned down say, it is let go.
+  const added = useRef<TaskId | null>(null);
+  const bottom = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const id = added.current;
+    if (!id) return;
+    if (!s.tasks.some((t) => t.id === id)) return void (added.current = null);
+    const at = laid?.at.get(id);
+    if (!at) return;
+    added.current = null;
+    marking.flash([id]);
+    const { x, y, zoom } = flow.getViewport();
+    const el = wrap.current!;
+    const box = el.getBoundingClientRect();
+    const over = bottom.current && [bottom.current, document.querySelector(".snackbar")].flatMap((e) => (e ? [e.getBoundingClientRect().top] : []));
+    const covered = over ? Math.max(0, box.bottom - Math.min(...over)) * (el.clientHeight / box.height) : 0;
+    const [w, h] = [el.clientWidth, el.clientHeight - covered];
+    const { width, height } = laid!.node;
+    const [left, top] = [at.x * zoom + x, at.y * zoom + y];
+    if (left >= 0 && top >= 0 && left + width * zoom <= w && top + height * zoom <= h) return;
+    // At the same zoom all the way, not out and back in as a long move would.
+    void flow.setViewport({ x: w / 2 - (at.x + width / 2) * zoom, y: h / 2 - (at.y + height / 2) * zoom, zoom }, { duration: 300, interpolate: "linear" });
+  }, [s, laid, flow, marking]);
 
   const hl = picked && s.tasks.some((t) => t.id === picked) ? picked : null;
   const chain = hl ? lineage(s.edges, hl) : null;
@@ -203,9 +234,20 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
     setPicked(null);
   };
   const from = source ? board.task(source) : undefined;
+  // Put away while linking or choosing, with what was written in it kept.
+  const add = (
+    <QuickAdd
+      folder={folder}
+      hide={connect !== null || batch.on}
+      onSent={(sent) => {
+        if (sent.task) added.current = sent.task;
+      }}
+    />
+  );
   return (
     <>
       <div className="graph-area">
+        {across && add}
         <div className="graph-tools">
           {chip(done, setDone, "显示已完成")}
           {board.subfolders(folder).length > 0 && chip(sub, setSub, "包含子文件夹")}
@@ -261,10 +303,14 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
         </div>
       </div>
       {!across && (
-        <button className={`fab${connect ? " on" : ""}`} onClick={toggleConnect}>
-          <Icon of={connect ? CheckIcon : Link} />
-          {connect ? "完成" : "连线"}
-        </button>
+        // On phones, above the bar, out of each other's way.
+        <div className="graph-bottom" ref={bottom}>
+          <button className={`fab${connect ? " on" : ""}`} onClick={toggleConnect}>
+            <Icon of={connect ? CheckIcon : Link} />
+            {connect ? "完成" : "连线"}
+          </button>
+          {add}
+        </div>
       )}
     </>
   );

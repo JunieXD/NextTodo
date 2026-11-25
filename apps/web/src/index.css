@@ -372,6 +372,15 @@ label.row { cursor: pointer; }
 .fab { position: absolute; z-index: 4; right: 16px; bottom: calc(var(--tabbar-h) + 16px); height: 56px; border-radius: 16px; padding: 0 20px 0 16px; display: inline-flex; align-items: center; gap: 8px;
   background: var(--primary-container); color: var(--on-primary-container); font-size: 15px; font-weight: 600; box-shadow: var(--shadow-3); }
 .fab.on { background: var(--primary); color: var(--on-primary); }
+/* On phones the graph's 连线 stands over its quick add bar (docs/ui.md#关系图): the two in one column
+   at the bottom, out of each other's way however tall the bar grows. */
+.graph-bottom { position: absolute; z-index: 4; left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 10px); display: flex; flex-direction: column; align-items: flex-end; gap: 12px; pointer-events: none; }
+.graph-bottom > * { pointer-events: auto; }
+.graph-bottom .fab, .graph-bottom .quick-add { position: static; }
+.graph-bottom .fab { margin-right: 4px; }
+.graph-bottom .quick-add { align-self: stretch; }
+/* And the snackbar over both, where it isn't over the button: but for Chromium 99, which lacks `:has()`. */
+.app:has(.graph-bottom .quick-add:not([hidden])) .snackbar { bottom: calc(var(--tabbar-h) + 140px); }
 
 /* graph */
 .graph-area { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }

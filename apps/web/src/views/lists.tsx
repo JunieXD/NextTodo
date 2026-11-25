@@ -15,6 +15,7 @@ import type { FolderId } from "../api/types/FolderId";
 import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
+import type { TaskId } from "../api/types/TaskId";
 import { lastKey } from "../domain/apply";
 import { matches } from "../domain/board";
 import { aiReady, setAiMode, useAiMode, useAiVision } from "../ai";
@@ -341,11 +342,8 @@ function due(date: string): Due {
   return { date, ...(reminders.length > 0 && { reminders }) };
 }
 
-/** What a quick add sent: its changes, and the AI job it asked for, if it did. */
-export interface Sent {
-  changes: MutationId[];
-  job?: AiJobId;
-}
+/** What a quick add sent: its changes, and the task it added or the AI job it asked for. */
+export type Sent = { changes: MutationId[] } & ({ task: TaskId; job?: never } | { job: AiJobId; task?: never });
 
 /** Where the quick add bar keeps its draft and files: one in the calendar, one in each folder, and one
  * for what is next, which adds to a folder picked beside it. */
@@ -531,7 +529,7 @@ export function QuickAdd({ folder, on, hide = false, onSent }: { folder?: Folder
     stage([]);
     if (folder === undefined) addedTo(user.id, into);
     snack(`已添加“${c.value}”`);
-    onSent?.({ changes });
+    onSent?.({ changes, task: id });
   };
 
   // A title is one line, so Enter adds it; AI organizing's text has many, so Enter starts one and

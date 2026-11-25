@@ -43,6 +43,8 @@ pub enum Status {
         not_started: bool,
     },
     Done,
+    /// Given up (docs/design.md#放弃): ended as done is.
+    Dropped,
 }
 
 /// When a board is as of: the user's today, and the time of day there when known. Without the time,
@@ -281,7 +283,7 @@ impl<'a> Board<'a> {
 
     pub fn status(&self, t: &Task) -> Status {
         if t.done_at.is_some() {
-            return Status::Done;
+            return if t.dropped { Status::Dropped } else { Status::Done };
         }
         let on = self.before.get(&t.id).into_iter().flatten().filter(|id| self.holds_up(self.tasks[*id])).count();
         let not_started = t.start.as_ref().is_some_and(|s| self.now.before(s, t.start_time.as_ref()));
@@ -304,6 +306,22 @@ impl<'a> Board<'a> {
     }
 
     /// Tasks that become ready once this one is done.
+    /// The tasks after `t` still open and theirs, not past one ended: those giving it up can give up
+    /// with it (docs/design.md#放弃).
+    pub fn open_after(&self, t: &Task) -> Vec<&'a Task> {
+        let mut found = Vec::new();
+        let mut seen = HashSet::from([t.id]);
+        let mut todo = self.after(t);
+        while let Some(a) = todo.pop() {
+            if a.done_at.is_none() && seen.insert(a.id) {
+                found.push(a);
+                todo.extend(self.after(a));
+            }
+        }
+        self.sort(&mut found);
+        found
+    }
+
     pub fn unlocks(&self, t: &Task) -> Vec<&'a Task> {
         if !self.holds_up(t) || self.held_again(t) {
             return Vec::new();

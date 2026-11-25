@@ -45,7 +45,8 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `edit` | `edit <事项> [--title] [-d 描述 \| --replace 原文 新文… \| --append 文本] [--start \| --no-start] [--due \| --due-after \| --no-due] [--remind \| --no-remind] [--repeat [--repeat-from] [--repeat-until] \| --no-repeat] [--assign 用户名…] [--unassign 用户名…]` | `task`、`title?`、`description?`、`replace?`、`append?`、`start?`、`due?`、`due_after?`、`remind?`、`repeat?`、`repeat_from?`、`repeat_until?`、`assign?`、`unassign?` | 修改事项；`due`、`due_after`、`remind`、`repeat` 给 `null` 表示清除；描述的改法见[同时修改](#同时修改)；负责人在现有的上面加、减 |
 | `done` | `done <事项…> [--end-repeat]` | `tasks`、`today?`、`end_repeat?` | 标为完成，输出因此变成可做的事项；重复的事项改为顺延，输出下一次的截止时间；做的是 `repeat_until` 前的最后一次的，直接完成。有重复的事项时必须给 `today`（用户当地的当天日期），命令行自动带上本机日期。`end_repeat` 让重复的事项结束重复、直接完成，用于打卡的长期事项全部做完时，见[总体设计](design.md#重复) |
 | `skip` | `skip <事项…>` | `tasks`、`today` | 跳过重复事项的这一次：和完成一样顺延到下一次，但不算完成，见[总体设计](design.md#重复)。已是最后一次的报错，用 `done --end-repeat`；不重复的事项报错。命令行自动带上本机日期 |
-| `reopen` | `reopen <事项…>` | `tasks` | 重新打开 |
+| `drop` | `drop <事项…> [--with-after]` | `tasks`、`with_after?` | [放弃](design.md#放弃)：不做了，和完成一样不再挡着后续，输出因此变成可做的事项；重复的事项整个结束，只是这次不做用 `skip`。`with_after` 连同还没结束的后续（后续的后续也算）一起放弃。已经结束的报错 |
+| `reopen` | `reopen <事项…>` | `tasks` | 重新打开已完成或放弃的事项 |
 | `mkdir` | `mkdir <路径>` | `path` | 新建文件夹，路径上缺的层级一起建；已存在时报错 |
 | `rename` | `rename <文件夹> <新名字>`、`rename --attachment <附件 ID> <新名字>` | `folder?`、`attachment?`、`name` | 文件夹或附件改名，`folder` 和 `attachment` 正好给一个 |
 | `move` | `mv <事项或文件夹…> <目标文件夹>` | `tasks?`、`folders?`、`to` | 移动到已有的文件夹，`/` 是根目录；移进、移出共享的文件夹时去掉连到外面的依赖和看不到的负责人，并换成新主人的编号，输出里写明 |
@@ -163,7 +164,7 @@ $ nexttodo graph 工作
 
 | 工具 | 数据 |
 |---|---|
-| 事项 | `{id, number, title, status, folder}`；`status` 是 `ready`、`waiting`、`done`，`folder` 是路径；别人共享给我的文件夹里的事项另有 `owner`（共享人的用户名，引用写成 `@owner#number`），有负责人时另有 `assignees`（用户名）；`waiting_on`（还在等的前置数）、`unlocks`（解锁数）不为 0 时才有，`start`、`due`、`due_after`（同 API 的写法 `{days, time, reminders}`）、`done_at`、`completions`（`{count, last}`，重复的事项完成过时）有值时才有 |
+| 事项 | `{id, number, title, status, folder}`；`status` 是 `ready`、`waiting`、`done`、`dropped`，`folder` 是路径；别人共享给我的文件夹里的事项另有 `owner`（共享人的用户名，引用写成 `@owner#number`），有负责人时另有 `assignees`（用户名）；`waiting_on`（还在等的前置数）、`unlocks`（解锁数）不为 0 时才有，`start`、`due`、`due_after`（同 API 的写法 `{days, time, reminders}`）、`done_at`、`completions`（`{count, last}`，重复的事项完成过时）有值时才有 |
 | `tree` | `[{path, name, depth, pending, ready}]`，先序排列，第一项是根目录，别人共享给我的文件夹在最后；共享的文件夹另有 `owner` 和 `members`（用户名），设了颜色或图标的另有 `color`、`icon` |
 | `list` | `{folder, folders: [{path, name, pending, ready}], tasks: [事项], total}`，`total` 是没截断时的事项数；有 AI 整理请求时另有 `jobs: {waiting, running, failed, ready}`，只含不为 0 的；在共享的文件夹里时另有 `owner` 和 `members` |
 | `next` | `{tasks: [事项], total}`；有前置或后续的事项另有 `step: [2, 5]`（第几步、共几步）；我的事项里有还没到开始时间的，或者等的[重复事项](design.md#重复)这一次还没开始的，另有 `next_start`：其中最早的那个时刻（`2026-11-14` 或 `2026-11-14 09:30`），到时列表可能变，可以再取一次；它不受 `folders` 和 `limit` 限制 |
@@ -185,7 +186,7 @@ $ nexttodo graph 工作
 | `folder_renamed` | `folder`：原路径；`name`：新名字 |
 | `folder_styled` | `folder`：路径；`color`、`icon`：改成的值，改回默认的是 `null`，没改的没有 |
 | `folder_moved` | `folder`：原路径；`to`：新路径 |
-| `task_created`、`task_done`、`task_reopened`、`task_deleted` | `task`：编号 |
+| `task_created`、`task_done`、`task_dropped`、`task_reopened`、`task_deleted` | `task`：编号 |
 | `task_moved` | `task`；`to`：文件夹路径；换了编号时另有 `number`：新编号 |
 | `task_repeated` | `task`；`due`：重复事项完成或跳过后顺延到的截止日期；按完成日算的提前完成时，可能和原来同一天或更早 |
 | `task_edited` | `task`；`fields`：改了的字段，`title`、`description`、`start`（开始日期或时刻）、`due`、`completions`（重复事项完成的次数，撤销一次完成时会变）、`assignees`、`order`（在同一文件夹里的顺序） |

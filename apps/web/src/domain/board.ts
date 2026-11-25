@@ -14,7 +14,7 @@ import type { TaskId } from "../api/types/TaskId";
 import { isoDate, isoTime } from "./dates";
 import { nextDue, shifted } from "./repeat";
 
-export type Status = "ready" | "waiting" | "done";
+export type Status = "ready" | "waiting" | "done" | "dropped";
 
 /** Folder rank in the tree, manual order, id. */
 type Key = [number, string, string];
@@ -212,12 +212,26 @@ export class Board {
     return this.linked(this.dependents, t);
   }
 
+  /** The tasks after `t` still open and theirs, not past one ended: those giving it up can give up
+   * with it (docs/design.md#放弃). */
+  openAfter(t: Task): Task[] {
+    const found = new Map<TaskId, Task>();
+    const todo = this.after(t);
+    for (let a = todo.pop(); a; a = todo.pop()) {
+      if (a.done_at === null && a.id !== t.id && !found.has(a.id)) {
+        found.set(a.id, a);
+        todo.push(...this.after(a));
+      }
+    }
+    return this.sort([...found.values()]);
+  }
+
   private linked(edges: Map<TaskId, TaskId[]>, t: Task): Task[] {
     return this.sort((edges.get(t.id) ?? []).map((id) => this.tasks.get(id)!));
   }
 
   status(t: Task): Status {
-    if (t.done_at !== null) return "done";
+    if (t.done_at !== null) return t.dropped ? "dropped" : "done";
     return this.waitingOn(t) === 0 && !this.notStarted(t) ? "ready" : "waiting";
   }
 

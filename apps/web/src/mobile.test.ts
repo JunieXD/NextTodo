@@ -7,7 +7,7 @@ import { deviceReminders, widgetAgenda } from "./mobile";
 const ME = "019a4b2c-0000-7000-8000-0000000000ee";
 const id = (n: number) => `019a4b2c-0000-7000-8000-${String(n).padStart(12, "0")}`;
 const task = (n: number, title: string, extra: Partial<Task>): Task => ({
-  id: id(n), number: n, folder_id: null, title, description: "", done_at: null, start: null, due: null, sort_key: `a${n}`,
+  id: id(n), number: n, folder_id: null, title, description: "", done_at: null, dropped: false, start: null, due: null, sort_key: `a${n}`,
   created_at: 0, updated_at: 0, assignees: [], created_by: ME, updated_by: ME, created_via: null, updated_via: null, ...extra,
 });
 

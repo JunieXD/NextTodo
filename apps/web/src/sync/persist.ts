@@ -114,7 +114,8 @@ export async function unqueue(userId: string, id: MutationId) {
 const dueOf = ({ remind_before, ...due }: Due & { remind_before?: number }): Due =>
   remind_before === undefined ? due : { ...due, reminders: [{ before: remind_before }] };
 
-const taskOf = (t: Task): Task => (t.due ? { ...t, due: dueOf(t.due) } : t);
+type SavedTask = Omit<Task, "dropped"> & Partial<Pick<Task, "dropped">>;
+const taskOf = (t: SavedTask): Task => ({ ...t, dropped: t.dropped ?? false, ...(t.due && { due: dueOf(t.due) }) });
 const wasOf = (w: Was): Was => (w.due ? { ...w, due: dueOf(w.due) } : w);
 
 function suggestionOf(s: Suggestion): Suggestion {
@@ -135,11 +136,12 @@ const pendingOf = (p: Pending): Pending => ({
 type SavedFolder = Omit<Folder, "color" | "icon"> & Partial<Pick<Folder, "color" | "icon">>;
 type SavedCompletion = Omit<Completion, "again"> & Partial<Pick<Completion, "again">>;
 type SavedEffect =
-  | Exclude<Effect, { kind: "folder" | "completion" }>
+  | Exclude<Effect, { kind: "folder" | "completion" | "task" }>
+  | ({ kind: "task" } & Change<SavedTask>)
   | ({ kind: "folder" } & Change<SavedFolder>)
   | ({ kind: "completion" } & Link<SavedCompletion>);
-type SavedBase = Omit<Copy["base"], "folders" | "attachments" | "completions" | "ai_jobs"> &
-  Partial<Pick<Copy["base"], "attachments" | "ai_jobs">> & { folders: SavedFolder[]; completions?: SavedCompletion[] };
+type SavedBase = Omit<Copy["base"], "tasks" | "folders" | "attachments" | "completions" | "ai_jobs"> &
+  Partial<Pick<Copy["base"], "attachments" | "ai_jobs">> & { tasks: SavedTask[]; folders: SavedFolder[]; completions?: SavedCompletion[] };
 
 /** A copy as an earlier version may have saved it: without what came later. */
 type SavedCopy = Omit<Copy, "base" | "log"> & {
@@ -147,7 +149,7 @@ type SavedCopy = Omit<Copy, "base" | "log"> & {
   base:
     | SavedBase
     | (Omit<SavedBase, "tasks" | "shares" | "people"> & {
-        tasks: Omit<Task, "assignees" | "created_by" | "updated_by">[];
+        tasks: Omit<SavedTask, "assignees" | "created_by" | "updated_by">[];
         shares?: undefined;
         people?: undefined;
       });
@@ -158,7 +160,8 @@ type SavedCopy = Omit<Copy, "base" | "log"> & {
  * every task was the user's, and the user was the only one in it; its log of changes goes, being of
  * tasks as they were then. Before AI organizing there were no jobs, before attachments none, before
  * completion records none, and before folders had colours and icons, none of those: neither for
- * folders kept nor for those its log of changes brings back when one is undone. A record kept while a
+ * folders kept nor for those its log of changes brings back when one is undone; nor was a task given
+ * up, in the log too. A record kept while a
  * time had only its latest is that time's first, in the log too. Due dates, of tasks and AI's
  * suggestions, in the log too, are as they are now. */
 function current(saved: SavedCopy, { id, username, display_name }: User): Copy {

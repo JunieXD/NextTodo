@@ -33,6 +33,8 @@ struct Expect {
     #[serde(default)]
     unlocks: HashMap<String, Vec<String>>,
     #[serde(default)]
+    open_after: HashMap<String, Vec<String>>,
+    #[serde(default)]
     order: HashMap<String, Vec<String>>,
     #[serde(default)]
     next: Vec<String>,
@@ -95,7 +97,7 @@ fn snapshot(case: &Case, names: &mut Names) -> Snapshot {
             json!({
                 "id": names.id(t["id"].as_str().unwrap()), "number": i + 1,
                 "folder_id": s(&t["folder"]).map(|f| names.id(&f)),
-                "title": t["id"], "description": "", "done_at": t["done_at"], "start": t["start"], "start_time": t["start_time"], "due": t["due"], "completions": t["completions"], "sort_key": t["key"],
+                "title": t["id"], "description": "", "done_at": t["done_at"], "dropped": t["dropped"].as_bool().unwrap_or(false), "start": t["start"], "start_time": t["start_time"], "due": t["due"], "completions": t["completions"], "sort_key": t["key"],
                 "assignees": people(names, &t["assignees"]),
                 "created_at": 0, "updated_at": 0, "created_by": names.id("me"), "updated_by": names.id("me"), "created_via": null, "updated_via": null,
             })
@@ -150,12 +152,17 @@ fn board_matches_fixtures() {
                 Status::Waiting { on: 0, not_started: true } => "not started".to_owned(),
                 Status::Waiting { on, not_started: true } => format!("waiting {on}, not started"),
                 Status::Done => "done".to_owned(),
+                Status::Dropped => "dropped".to_owned(),
             };
             assert_eq!(&got, want, "{c}: status of {n}");
         }
         for (n, want) in &case.expect.unlocks {
             let t = task(&mut names, n);
             assert_eq!(&list(&names, board.unlocks(t)), want, "{c}: unlocks of {n}");
+        }
+        for (n, want) in &case.expect.open_after {
+            let t = task(&mut names, n);
+            assert_eq!(&list(&names, board.open_after(t)), want, "{c}: open after {n}");
         }
         for (f, want) in &case.expect.order {
             let f = folder(&mut names, f);

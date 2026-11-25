@@ -77,7 +77,8 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 { "id": "…", "parent_id": null, "name": "毕业论文", "sort_key": "a0", "color": "blue", "icon": "graduation-cap", "created_at": 1730000000000, "updated_at": 1730000000000 }
 // color、icon 没选时为 null，取值见 data-model.md 的 folders
 // 事项
-{ "id": "…", "number": 5, "folder_id": "…", "title": "设计问卷", "description": "…", "done_at": null, "start": "2026-10-30", "start_time": "09:00",
+{ "id": "…", "number": 5, "folder_id": "…", "title": "设计问卷", "description": "…", "done_at": null, "dropped": false, "start": "2026-10-30", "start_time": "09:00",
+  // done_at 是结束的时间，待办为 null；dropped 是[放弃](design.md#放弃)了，这时 done_at 是放弃的时间
   // 开始时间的日期和几点几分：没设时 start 为 null，只有日期时没有 start_time，见 design.md#开始时间
   "due": { "date": "2026-11-02", "time": "18:00", "reminders": [{ "days": 1, "time": "20:00" }, { "before": 60 }], "repeat": { "every": 1, "unit": "week", "from": "due" } },
   // 没有截止时间时为 null；time、reminders、repeat 可省略；reminders 是提醒：{"before": 分钟} 提前多久（0 是截止时，要有 time，最多 43200），{"days": 天数, "time": "20:00"} 截止那天（0）或提前几天（最多 30）的几点，按到点的先后排、不重复，最多 100 个；旧版本写的 remind_before（提前多少分钟）读入时换成一个提前多久的提醒，不再写出；按周的 repeat 可以带 "days": [1, 3, 5]，在周几（1 是周一，7 是周日）；按月的 days 是几号（1–31）。每年是 every 12、unit month。repeat 可以带 "until": "2026-12-19"，重复到哪天（含这天）。按农历的按月 repeat 带 "lunar": true，这时一定有 days，是农历的几号（1–30，初一到三十），见[重复](design.md#重复)
@@ -125,7 +126,8 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | `folder.update` | `id`，可选 `name`、`parent_id`、`sort_key`、`color`、`icon` | `parent_id: null` 表示移到根目录；`color`、`icon` 给 `null` 表示改回默认 |
 | `folder.delete` | `id` | 连同子文件夹、事项和相关依赖 |
 | `task.create` | `id`、`title`，可选 `folder_id`、`description`、`start`、`start_time`、`due` 或 `due_after`、`sort_key`、`done`、`assignees` | `assignees` 是负责人的用户 ID |
-| `task.update` | `id`，可选 `folder_id`、`title`、`description`、`start`、`start_time`、`due` 或 `due_after`、`sort_key`、`done`、`today`、`occurrence`、`assign`、`unassign` | 只带要改的字段；`start: null` 清除开始时间（连同几点）；只给 `start` 时几点不变，`start_time: null` 只清除几点；有 `start_time` 就要有开始日期；`due: null` 清除截止时间（连同重复和 `due_after`），给了日期就不再是前置完成后的；`due_after: null` 清除它和它给的截止日期；`done: true/false` 完成或重新打开；`assign`、`unassign` 是要加上、去掉的负责人，两个人同时指派时都算数 |
+| `task.update` | `id`，可选 `folder_id`、`title`、`description`、`start`、`start_time`、`due` 或 `due_after`、`sort_key`、`done`、`today`、`occurrence`、`assign`、`unassign` | 只带要改的字段；`start: null` 清除开始时间（连同几点）；只给 `start` 时几点不变，`start_time: null` 只清除几点；有 `start_time` 就要有开始日期；`due: null` 清除截止时间（连同重复和 `due_after`），给了日期就不再是前置完成后的；`due_after: null` 清除它和它给的截止日期；`done: true/false` 完成或重新打开，放弃了的完成时改成完成、结束的时间不变；`assign`、`unassign` 是要加上、去掉的负责人，两个人同时指派时都算数 |
+| `task.drop` | `id` | [放弃](design.md#放弃)：结束并标为放弃，重复的事项去掉重复，不记完成；已完成的改成放弃、结束的时间不变，已经放弃的不变。连同后续一起放弃是一个改动里的几个 `task.drop` |
 | `task.delete` | `id` | 连同相关依赖 |
 | `dep.add` | `before`、`after` | |
 | `dep.remove` | `before`、`after` | |
@@ -137,7 +139,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | `share.remove` | `folder_id`、`user_id` | 共享人移除成员，或成员自己退出。最后一个成员离开时文件夹回到私人的 |
 | `undo` | `mutation` | 撤销一个改动：按相反顺序把它的变化恢复回去，恢复时同样要通过所有规则。要改回去的东西已经不存在的跳过；要恢复的事项或文件夹原来所在的文件夹、要恢复的依赖连着的事项已经被删除时，整个撤销不生效 |
 
-`task.update` 把有[重复](design.md#重复)的事项标为完成（`done: true`）时不记完成时间，而是按 `today`（发出改动的设备上的当天，`YYYY-MM-DD`）把截止日期顺延到下一次，`completions` 的次数加一、日期记为 `today`；这时缺了 `today` 返回 400。顺延出的下一次晚于重复的 `until` 时，这次就是最后一次：次数同样加一、日期记为 `today`，然后去掉重复、记完成时间。同一个改动里的 `due` 先生效，所以去掉重复的同时 `done: true` 就是结束重复并完成：记完成时间，不动 `completions`，也不看 `today`。别的事项只用 `today` 定下[前置完成后的截止](#前置完成后的截止)。带上 `occurrence`（要完成的那一次：`{due, completions}`，它的截止日期和那时完成过的次数）时，重复的事项现在已经不是这一次的，这次完成不生效，改动照样成功：那一次已经在别处完成、跳过或改了日期，再完成就会把下一次也完成掉。只看日期不够：从完成那天算的提前完成了，下一次可能还是同一天截止。App 和网页上勾选完成（包括批量完成）、手机的通知、提醒卡片和小组件上的“完成”都给重复的事项带着它：列表可能过时，几台设备也可能离线时各自完成了同一次；结束重复并完成不带；不重复的事项不看 `occurrence`。已完成的事项不能有重复，截止日期不能晚于重复的 `until`，新建或修改出这样的事项返回 400。
+`task.update` 把有[重复](design.md#重复)的事项标为完成（`done: true`）时不记完成时间，而是按 `today`（发出改动的设备上的当天，`YYYY-MM-DD`）把截止日期顺延到下一次，`completions` 的次数加一、日期记为 `today`；这时缺了 `today` 返回 400。顺延出的下一次晚于重复的 `until` 时，这次就是最后一次：次数同样加一、日期记为 `today`，然后去掉重复、记完成时间。同一个改动里的 `due` 先生效，所以去掉重复的同时 `done: true` 就是结束重复并完成：记完成时间，不动 `completions`，也不看 `today`。别的事项只用 `today` 定下[前置完成后的截止](#前置完成后的截止)。带上 `occurrence`（要完成的那一次：`{due, completions}`，它的截止日期和那时完成过的次数）时，重复的事项现在已经不是这一次的，这次完成不生效，改动照样成功：那一次已经在别处完成、跳过或改了日期，再完成就会把下一次也完成掉。只看日期不够：从完成那天算的提前完成了，下一次可能还是同一天截止。App 和网页上勾选完成（包括批量完成）、手机的通知、提醒卡片和小组件上的“完成”都给重复的事项带着它：列表可能过时，几台设备也可能离线时各自完成了同一次；结束重复并完成不带；不重复的事项不看 `occurrence`。[放弃](design.md#放弃)了的事项不再有下一次，带 `occurrence` 的完成对它不生效，不带的把它改成完成。已结束（完成或放弃）的事项不能有重复，截止日期不能晚于重复的 `until`，新建或修改出这样的事项返回 400。
 
 ### 前置完成后的截止
 

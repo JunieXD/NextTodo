@@ -5,7 +5,7 @@ import { Check as CheckIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRef, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { completionKey } from "../domain/apply";
-import { type DoneOn, type DueOn, doneByDay, dueBetween, heat, lateness, overdue } from "../domain/calendar";
+import { type DoneOn, type DueOn, doneByDay, droppedByDay, dueBetween, heat, lateness, overdue } from "../domain/calendar";
 import { day, dueKind, formatToday, isoDate, monthGrid } from "../domain/dates";
 import type { Task } from "../api/types/Task";
 import { lunarDate, lunarLabel, lunarText } from "../domain/lunar";
@@ -80,6 +80,7 @@ export function CalendarBody({ now, picked, setPicked }: { now: Date; picked: st
   // The year shows only what was done.
   const due = view === "year" ? new Map<string, DueOn[]>() : dueBetween(board, isoDays[0], isoDays[isoDays.length - 1]);
   const done = doneByDay(board);
+  const dropped = view === "year" ? new Map<string, Task[]>() : droppedByDay(board);
   const turn = (by: number) => setPicked(turned(picked, view, by));
   const current = view === "year" ? picked.slice(0, 4) === today.slice(0, 4) : view === "week" ? isoDays.includes(today) : picked.slice(0, 7) === today.slice(0, 7);
   // The arrow keys move the day picked, which takes the focus, to another month, week or year too.
@@ -182,7 +183,7 @@ export function CalendarBody({ now, picked, setPicked }: { now: Date; picked: st
           </>
         )}
       </div>
-      {view !== "year" && <DayList date={picked} now={now} overdue={picked === today ? overdue(board, today) : []} due={due.get(picked) ?? []} done={done.get(picked) ?? []} />}
+      {view !== "year" && <DayList date={picked} now={now} overdue={picked === today ? overdue(board, today) : []} due={due.get(picked) ?? []} dropped={dropped.get(picked) ?? []} done={done.get(picked) ?? []} />}
     </div>
   );
 }
@@ -233,8 +234,9 @@ function Year(p: {
   );
 }
 
-/** What is due and done on `date`, and for today, what is `overdue`. */
-function DayList({ date, now, overdue, due, done }: { date: string; now: Date; overdue: Task[]; due: DueOn[]; done: DoneOn[] }) {
+/** What is due and done on `date`, and for today, what is `overdue`; given up, what was `dropped`
+ * though due then. */
+function DayList({ date, now, overdue, due, dropped, done }: { date: string; now: Date; overdue: Task[]; due: DueOn[]; dropped: Task[]; done: DoneOn[] }) {
   const { board } = useView();
   const { selected } = useSelection();
   const actions = useTaskActions();
@@ -243,7 +245,7 @@ function DayList({ date, now, overdue, due, done }: { date: string; now: Date; o
   return (
     <section className="cal-day">
       <h2 className="cal-date">{title}</h2>
-      {!overdue.length && !due.length && !done.length && <p className="empty">这天没有事项</p>}
+      {!overdue.length && !due.length && !dropped.length && !done.length && <p className="empty">这天没有事项</p>}
       {overdue.length > 0 && (
         <>
           <h3 className="group-title overdue">已逾期</h3>
@@ -254,7 +256,7 @@ function DayList({ date, now, overdue, due, done }: { date: string; now: Date; o
           </div>
         </>
       )}
-      {due.length > 0 && (
+      {due.length + dropped.length > 0 && (
         <>
           <h3 className="group-title">截止</h3>
           <div className="group">
@@ -265,6 +267,9 @@ function DayList({ date, now, overdue, due, done }: { date: string; now: Date; o
                 <TaskRow key={task.id} task={task} board={board} now={now} path selected={selected === task.id} actions={actions} />
               ),
             )}
+            {dropped.map((task) => (
+              <TaskRow key={task.id} task={task} board={board} now={now} path selected={selected === task.id} actions={actions} />
+            ))}
           </div>
         </>
       )}

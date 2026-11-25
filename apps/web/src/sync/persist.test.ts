@@ -6,7 +6,7 @@ import { draft, keepDraft, stagedFiles, withdraw, withdrawn } from "./drafts";
 import { COPY_FORMAT, forget, forgetCopy, forgetOthers, load, saver } from "./persist";
 import { type Copy, Store } from "./store";
 
-const user = (n: number) => `019a4b2c-0000-7000-8000-00000000000${n}`;
+const user = (n: number) => `019a4b2c-0000-7000-8000-${String(n).padStart(12, "0")}`;
 const someone = (id: string) => ({ id, username: "alice", display_name: "Alice", is_admin: false });
 const pending = (n: number) => ({ mutation: { id: `019a4b2c-0000-7000-8000-00000000010${n}`, ops: [] }, at: n });
 const copy = (seq: number): Copy => ({ ...Store.empty(), seq });
@@ -151,8 +151,21 @@ test("a reminder saved before tasks could have several is the one of a list, whe
   expect(base.tasks[0].due).toEqual(now);
   expect(base.ai_jobs[0].suggestions).toEqual([{ ...edit, due: now, was: { ...edit.was, due: now } }, { ...create, due: now }]);
   // Undoing the change here brings the reminder back.
-  expect(log[0][1][0]).toEqual({ kind: "task", before: { ...task, due: now }, after: { ...task, due: { date: "2026-12-08" } } });
+  expect(log[0][1][0]).toEqual({ kind: "task", before: { ...task, dropped: false, due: now }, after: { ...task, dropped: false, due: { date: "2026-12-08" } } });
   expect(outbox[0].mutation.ops).toEqual([{ op: "task.update", id: "t", due: now }]);
+});
+
+test("tasks saved before they could be given up were not, in the log too", async () => {
+  const u = user(10);
+  await load(someone(u), "here");
+  const task = { id: "t", title: "订票", done_at: 1, due: null };
+  const m = pending(1).mutation.id;
+  const saved = { ...copy(5), base: { ...Store.empty().base, tasks: [task] }, log: [[m, [{ kind: "task", before: { ...task, done_at: null }, after: task }]]] };
+  await (await raw()).put("copies", saved, [u, "here"]);
+  const { base, log } = (await load(someone(u), "here"))!;
+  expect(base.tasks).toEqual([{ ...task, dropped: false }]);
+  // Undoing it here reopens a task done, not given up.
+  expect(log).toEqual([[m, [{ kind: "task", before: { ...task, done_at: null, dropped: false }, after: { ...task, dropped: false } }]]]);
 });
 
 test("a completion record saved while a time kept only its latest is that time's first, in the log too", async () => {

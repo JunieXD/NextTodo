@@ -153,6 +153,16 @@ impl World {
             .map(|t| (self.names[t["id"].as_str().unwrap()].clone(), t["due"]["date"].clone()))
             .collect();
         seen.insert("due".into(), due.into());
+        let ended: Map<String, Value> = all("tasks")
+            .iter()
+            .filter(|t| !t["done_at"].is_null())
+            .map(|t| (self.names[t["id"].as_str().unwrap()].clone(), json!(if t["dropped"] == true { "dropped" } else { "done" })))
+            .collect();
+        seen.insert("ended".into(), ended.into());
+        let mut repeating: Vec<String> =
+            all("tasks").iter().filter(|t| !t["due"]["repeat"].is_null()).map(|t| self.names[t["id"].as_str().unwrap()].clone()).collect();
+        repeating.sort();
+        seen.insert("repeating".into(), repeating.into());
         seen
     }
 }

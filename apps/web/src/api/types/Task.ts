@@ -10,7 +10,15 @@ import type { TaskId } from "./TaskId";
 import type { Time } from "./Time";
 import type { Title } from "./Title";
 
-export type Task = { id: TaskId, number: number, folder_id: FolderId | null, title: Title, description: Description, done_at: number | null, 
+export type Task = { id: TaskId, number: number, folder_id: FolderId | null, title: Title, description: Description, 
+/**
+ * When it ended: done, or given up if `dropped`.
+ */
+done_at: number | null, 
+/**
+ * Given up rather than done (docs/design.md#放弃); only once it has ended.
+ */
+dropped: boolean, 
 /**
  * The day it can start: it waits until then (docs/design.md#开始时间). Not after the due date.
  */

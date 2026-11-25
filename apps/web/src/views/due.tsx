@@ -48,8 +48,8 @@ const UNITS: [RepeatUnit, string][] = [
 ];
 const AHEAD = (["minute", "hour", "day"] as const).map((u): [RemindUnit, string] => [u, REMIND_UNITS[u].name]);
 
-/** Sets or clears the due date, its time, the reminder and how it repeats; a task `done` doesn't
- * repeat. Not before the task's `start`, at `startTime`. Or the due date some days after the task's
+/** Sets or clears the due date, its time, the reminder and how it repeats; a task `endedAs`
+ * “已完成” or “已放弃” doesn't repeat. Not before the task's `start`, at `startTime`. Or the due date some days after the task's
  * prerequisites are done, `dueAfter`, of which `due` is then the date given once they were
  * (docs/design.md#前置完成后的截止). */
 export function DueEditor({
@@ -57,7 +57,7 @@ export function DueEditor({
   dueAfter,
   start,
   startTime,
-  done,
+  endedAs,
   onSave,
   onClose,
 }: {
@@ -65,7 +65,7 @@ export function DueEditor({
   dueAfter?: DueAfter;
   start: string | null;
   startTime?: string;
-  done: boolean;
+  endedAs: string | null;
   onSave(change: { due: Due | null } | { due_after: DueAfter }): void;
   onClose(): void;
 }) {
@@ -233,7 +233,7 @@ export function DueEditor({
           label="重复"
           row
           items={[
-            ["off", done ? "已完成的事项不能重复" : "不重复"],
+            ["off", endedAs ? `${endedAs}的事项不能重复` : "不重复"],
             ["day", "每天"],
             ["workdays", "每个工作日"],
             ["week", "每周"],
@@ -243,7 +243,7 @@ export function DueEditor({
             ["custom", "自定义"],
           ]}
           value={menu}
-          disabled={done}
+          disabled={endedAs !== null}
           onChange={(k) => {
             // For the type: "days" is listed only while it is the value, which isn't picked anew.
             if (k === "days") return;

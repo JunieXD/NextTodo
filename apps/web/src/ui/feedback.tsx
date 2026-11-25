@@ -60,6 +60,13 @@ interface Confirm {
   danger?: boolean;
 }
 
+/** A question with more than one way to go on, and cancel. */
+interface Choose {
+  title: string;
+  body: string;
+  options: string[];
+}
+
 interface Prompt {
   title: string;
   label: string;
@@ -80,6 +87,8 @@ interface Feedback {
    * being the last. */
   committed(): void;
   confirm(c: Confirm): Promise<boolean>;
+  /** Which of the options, by index; `null` when cancelled. */
+  choose(c: Choose): Promise<number | null>;
   prompt(p: Prompt): Promise<string | null>;
 }
 
@@ -87,7 +96,10 @@ const FeedbackContext = createContext<Feedback>(null!);
 
 export const useFeedback = () => useContext(FeedbackContext);
 
-type Open = (Confirm & { kind: "confirm"; resolve(ok: boolean): void }) | (Prompt & { kind: "prompt"; resolve(value: string | null): void });
+type Open =
+  | (Confirm & { kind: "confirm"; resolve(ok: boolean): void })
+  | (Choose & { kind: "choose"; resolve(chosen: number | null): void })
+  | (Prompt & { kind: "prompt"; resolve(value: string | null): void });
 
 /** `outside`: the app has been opened from outside, to quick add or to a task. */
 export function FeedbackProvider({ outside, children }: { outside: boolean; children: ReactNode }) {
@@ -112,6 +124,13 @@ export function FeedbackProvider({ outside, children }: { outside: boolean; chil
           if (away.current) return resolve(false);
           cancel.current = () => resolve(false);
           setOpen({ ...c, kind: "confirm", resolve });
+        }),
+      choose: (c) =>
+        new Promise((resolve) => {
+          cancel.current?.();
+          if (away.current) return resolve(null);
+          cancel.current = () => resolve(null);
+          setOpen({ ...c, kind: "choose", resolve });
         }),
       prompt: (p) =>
         new Promise((resolve) => {
@@ -140,6 +159,7 @@ export function FeedbackProvider({ outside, children }: { outside: boolean; chil
       {children}
       {snack && <Snackbar key={snack.key} text={snack.text} action={snack.action} ms={snack.ms ?? (snack.action ? 5000 : 3000)} onAction={act} onClose={close} />}
       {open?.kind === "confirm" && <ConfirmDialog {...open} close={(ok) => (setOpen(null), open.resolve(ok))} />}
+      {open?.kind === "choose" && <ChooseDialog {...open} close={(chosen) => (setOpen(null), open.resolve(chosen))} />}
       {open?.kind === "prompt" && <PromptDialog {...open} close={(value) => (setOpen(null), open.resolve(value))} />}
     </FeedbackContext>
   );
@@ -282,6 +302,25 @@ function ConfirmDialog({ title, body, detail, ok, cancel = "取消", danger, clo
         </button>
         <button className={`text-btn${danger ? " danger-text" : ""}`} onClick={() => close(true)}>
           {ok}
+        </button>
+      </div>
+    </DialogFrame>
+  );
+}
+
+/** Its answers stacked, for they say more than a word each. */
+function ChooseDialog({ title, body, options, close }: Choose & { close(chosen: number | null): void }) {
+  return (
+    <DialogFrame title={title} close={() => close(null)}>
+      <p>{body}</p>
+      <div className="dialog-actions stacked">
+        {options.map((o, i) => (
+          <button key={o} className="text-btn" onClick={() => close(i)}>
+            {o}
+          </button>
+        ))}
+        <button className="text-btn" onClick={() => close(null)}>
+          取消
         </button>
       </div>
     </DialogFrame>

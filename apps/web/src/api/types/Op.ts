@@ -79,7 +79,7 @@ occurrence?: Occurrence,
  * User ids to add to its assignees and to take off them, those it has then: two people
  * assigning at once both count.
  */
-assign?: Array<string>, unassign?: Array<string>, } | { "op": "task.delete", id: TaskId, } | { "op": "dep.add", before: TaskId, after: TaskId, } | { "op": "dep.remove", before: TaskId, after: TaskId, } | { "op": "attachment.add", id: AttachmentId, name: FileName, type: MediaType, size: FileSize, task_id?: TaskId, job_id?: AiJobId, } | { "op": "attachment.update", id: AttachmentId, name?: FileName, task_id?: TaskId, } | { "op": "attachment.delete", id: AttachmentId, } | { "op": "ai_job.create", id: AiJobId, 
+assign?: Array<string>, unassign?: Array<string>, } | { "op": "task.drop", id: TaskId, } | { "op": "task.delete", id: TaskId, } | { "op": "dep.add", before: TaskId, after: TaskId, } | { "op": "dep.remove", before: TaskId, after: TaskId, } | { "op": "attachment.add", id: AttachmentId, name: FileName, type: MediaType, size: FileSize, task_id?: TaskId, job_id?: AiJobId, } | { "op": "attachment.update", id: AttachmentId, name?: FileName, task_id?: TaskId, } | { "op": "attachment.delete", id: AttachmentId, } | { "op": "ai_job.create", id: AiJobId, 
 /**
  * Organizing when not given.
  */

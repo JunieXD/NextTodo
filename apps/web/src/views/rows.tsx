@@ -1,6 +1,6 @@
 // Rows in lists: tasks, folders, and the folder view's tasks with the dependency rail on the left.
 
-import { ArrowUpRight, CalendarClock, CheckCheck, ChevronRight, Clock, FolderInput, Check as CheckIcon, PanelRightOpen, Paperclip, Repeat, RotateCcw, SkipForward, Trash2 } from "lucide-react";
+import { ArrowUpRight, Ban, CalendarClock, CheckCheck, ChevronRight, Clock, FolderInput, Check as CheckIcon, PanelRightOpen, Paperclip, Repeat, RotateCcw, SkipForward, Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FolderId } from "../api/types/FolderId";
 import type { Op } from "../api/types/Op";
@@ -37,6 +37,8 @@ export interface RowActions {
   endRepeat(t: Task): void;
   /** Moves a repeating task on to its next time without counting it done. */
   skip(t: Task): void;
+  /** Gives it up (docs/design.md#放弃). */
+  drop(t: Task): void;
   move(t: Task, folder: FolderId | null): void;
   remove(t: Task): void;
 }
@@ -80,6 +82,7 @@ export function TaskRow({
   const status = board.status(t);
   const unlocks = status === "ready" ? board.unlocks(t).length : 0;
   const meta: ReactNode[] = [];
+  if (status === "dropped") meta.push(<span key="dropped">已放弃</span>);
   if (path && t.folder_id) meta.push(<PathMeta key="path" board={board} folder={t.folder_id} />);
   if (t.done_at === null && doneToday(t, isoDate(now))) {
     meta.push(
@@ -155,6 +158,7 @@ export function TaskRow({
     t.done_at === null ? { icon: CheckIcon, label: "标为完成", onSelect: () => actions.toggle(t) } : { icon: RotateCcw, label: "重新打开", onSelect: () => actions.toggle(t) },
     ...(skippable(t, isoDate(now)) ? [{ icon: SkipForward, label: "跳过这一次", onSelect: () => actions.skip(t) }] : []),
     ...(t.due?.repeat ? [{ icon: CheckCheck, label: "结束重复并完成", onSelect: () => actions.endRepeat(t) }] : []),
+    ...(t.done_at === null ? [{ icon: Ban, label: "放弃", onSelect: () => actions.drop(t) }] : []),
     { icon: FolderInput, label: "移动到…", onSelect: () => setMoving(true) },
     { icon: Trash2, label: "删除", danger: true, onSelect: () => actions.remove(t) },
   ];

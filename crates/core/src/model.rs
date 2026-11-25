@@ -1094,7 +1094,11 @@ pub struct Task {
     pub folder_id: Option<FolderId>,
     pub title: Title,
     pub description: Description,
+    /// When it ended: done, or given up if `dropped`.
     pub done_at: Option<i64>,
+    /// Given up rather than done (docs/design.md#放弃); only once it has ended.
+    #[serde(default)]
+    pub dropped: bool,
     /// The day it can start: it waits until then (docs/design.md#开始时间). Not after the due date.
     #[serde(default)]
     pub start: Option<Date>,

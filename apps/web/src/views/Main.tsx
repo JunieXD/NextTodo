@@ -205,7 +205,8 @@ function concerning(entry: LogEntry, board: Board): { text: string; open: TaskId
       .map((t) => [t.id, t]),
   );
   const unlocked = [...ready.values()];
-  return unlocked.length ? { text: `${who} 完成了${which(done)}，解锁了${which(unlocked)}`, open: open(unlocked) } : null;
+  const did = done.every((t) => t.dropped) ? "放弃" : "完成";
+  return unlocked.length ? { text: `${who} ${did}了${which(done)}，解锁了${which(unlocked)}`, open: open(unlocked) } : null;
 }
 
 /** `Claude Code 在“求职”中添加了 4 项` */
@@ -219,7 +220,9 @@ function describe(entry: LogEntry, board: Board): string {
     const where = folders.size > 1 ? "" : `在“${only ? (board.folder(only)?.name ?? "文件夹") : board.folderName(null)}”中`;
     return `${entry.actor} ${where}添加了 ${created.length} 项`;
   }
-  const done = tasks.filter((e) => e.before && e.after && e.before.done_at === null && e.after.done_at !== null);
+  const ended = tasks.filter((e) => e.before && e.after && e.before.done_at === null && e.after.done_at !== null);
+  const [dropped, done] = [ended.filter((e) => e.after!.dropped), ended.filter((e) => !e.after!.dropped)];
   if (done.length && done.length === tasks.length) return `${entry.actor} 完成了 ${done.length} 项`;
+  if (dropped.length && dropped.length === tasks.length) return `${entry.actor} 放弃了 ${dropped.length} 项`;
   return `${entry.actor} 进行了 ${entry.effects.length} 处改动`;
 }

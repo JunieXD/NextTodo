@@ -271,6 +271,16 @@ pub struct DoneArgs {
 
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct DropArgs {
+    #[schemars(description = "事项编号", length(min = 1))]
+    pub tasks: Vec<TaskRef>,
+    #[schemars(description = "连同还没结束的后续（后续的后续也算）一起放弃；默认 false")]
+    #[serde(default)]
+    pub with_after: bool,
+}
+
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct MkdirArgs {
     #[schemars(description = "文件夹路径，如 /工作/网站改版")]
     pub path: String,

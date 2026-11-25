@@ -92,6 +92,42 @@
     }
   },
   {
+    "name": "放弃的事项和完成的一样算结束：不再挡着后续，排在已完成里，关联进度照常算它一步",
+    "folders": [],
+    "tasks": [
+      { "id": "a", "key": "a0", "done_at": 100, "dropped": true },
+      { "id": "b", "key": "a1" },
+      { "id": "c", "key": "a2" },
+      { "id": "x", "key": "a3", "done_at": 200 }
+    ],
+    "deps": [["a", "b"], ["b", "c"]],
+    "expect": {
+      "status": { "a": "dropped", "b": "ready", "c": "waiting 1", "x": "done" },
+      "unlocks": { "a": [], "b": ["c"] },
+      "order": { "/": ["b", "c", "x", "a"] },
+      "next": ["b"],
+      "steps": { "a": [1, 3], "b": [2, 3], "c": [3, 3] }
+    }
+  },
+  {
+    "name": "放弃时可以连同的后续：还没结束的后续和它们的后续，不经过已经结束的",
+    "folders": [],
+    "tasks": [
+      { "id": "a", "key": "a0" },
+      { "id": "g", "key": "a1" },
+      { "id": "b", "key": "a2" },
+      { "id": "c", "key": "a3" },
+      { "id": "f", "key": "a4" },
+      { "id": "d", "key": "a5", "done_at": 1 },
+      { "id": "e", "key": "a6" }
+    ],
+    "deps": [["a", "b"], ["b", "c"], ["g", "c"], ["c", "f"], ["a", "d"], ["d", "e"]],
+    "expect": {
+      "open_after": { "a": ["b", "c", "f"], "g": ["c", "f"], "f": [], "d": ["e"] },
+      "next": ["a", "g", "e"]
+    }
+  },
+  {
     "name": "一个后续有多个前置时，做完其中一个不算解锁",
     "folders": [],
     "tasks": [

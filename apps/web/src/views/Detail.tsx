@@ -34,7 +34,7 @@ import { dueClass } from "./rows";
 import { AssigneePicker, Avatars, namesOf } from "./share";
 import { startTipSeen } from "./start-tip";
 
-const STATUS = { ready: "可做", waiting: "等待中", done: "已完成" };
+const STATUS = { ready: "可做", waiting: "等待中", done: "已完成", dropped: "已放弃" };
 
 type Panel = "folder" | "assignees" | "start" | "due" | "pred" | "succ" | "completions" | null;
 
@@ -141,8 +141,9 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
   const countdown = t.due && t.done_at === null ? dueIn(t.due, now) : null;
   const found = t.completions && store.completedAt(t.id, t.completions.count);
   // While it repeats, or done for good by that last time itself; not once the repeat ended otherwise,
-  // or it was reopened and done again, which taking back an earlier time would undo too.
-  const takesBack = t.done_at === null ? t.due?.repeat !== undefined : found !== undefined && found === store.doneBy(t.id);
+  // it was given up, or it was reopened and done again, which taking back an earlier time would undo
+  // too.
+  const takesBack = t.done_at === null ? t.due?.repeat !== undefined : !t.dropped && found !== undefined && found === store.doneBy(t.id);
   const lastDone = takesBack ? found : undefined;
   const undoLastDone = (m: MutationId) => {
     const r = commit([{ op: "undo", mutation: m }]);
@@ -315,6 +316,11 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
             <div className="row-inner">结束重复并完成</div>
           </button>
         )}
+        {t.done_at === null && (
+          <button className="row end-repeat" onClick={() => actions.drop(t)}>
+            <div className="row-inner">放弃事项</div>
+          </button>
+        )}
         <button className="row danger" onClick={() => actions.remove(t)}>
           <div className="row-inner">删除事项</div>
         </button>
@@ -355,7 +361,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
           dueAfter={t.due_after}
           start={t.start}
           startTime={t.start_time}
-          done={t.done_at !== null}
+          endedAs={status === "done" || status === "dropped" ? STATUS[status] : null}
           onSave={update}
           onClose={() => setPanel(null)}
         />

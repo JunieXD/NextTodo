@@ -10,13 +10,14 @@ interface Case {
   today?: string;
   time?: string;
   folders: { id: string; parent?: string; name: string; key: string }[];
-  tasks: { id: string; folder?: string; key: string; done_at?: number; start?: string; start_time?: string; due?: Task["due"]; completions?: Task["completions"]; assignees?: string[] }[];
+  tasks: { id: string; folder?: string; key: string; done_at?: number; dropped?: boolean; start?: string; start_time?: string; due?: Task["due"]; completions?: Task["completions"]; assignees?: string[] }[];
   deps: [string, string][];
   /** People by username; the user is `me`. */
   shares?: { folder: string; owner: string; members: string[] }[];
   expect: {
     status?: Record<string, string>;
     unlocks?: Record<string, string[]>;
+    open_after?: Record<string, string[]>;
     order?: Record<string, string[]>;
     next?: string[];
     paths?: Record<string, string>;
@@ -60,6 +61,7 @@ function snapshot(c: Case, id: (name: string) => string): Snapshot {
     title: t.id,
     description: "",
     done_at: t.done_at ?? null,
+    dropped: t.dropped ?? false,
     start: t.start ?? null,
     start_time: t.start_time,
     due: t.due ?? null,
@@ -97,6 +99,9 @@ describe.each(cases as unknown as Case[])("$name", (c) => {
   });
   test("unlocks", () => {
     for (const [n, want] of Object.entries(c.expect.unlocks ?? {})) expect(titles(board.unlocks(task(n))), n).toEqual(want);
+  });
+  test("open after", () => {
+    for (const [n, want] of Object.entries(c.expect.open_after ?? {})) expect(titles(board.openAfter(task(n))), n).toEqual(want);
   });
   test("order", () => {
     for (const [f, want] of Object.entries(c.expect.order ?? {})) expect(titles(board.tasksIn(folder(f))), f).toEqual(want);

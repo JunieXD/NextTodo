@@ -17,9 +17,9 @@ use serde_json::json;
 use uuid::Uuid;
 
 use super::args::{
-    AddArgs, ApplyArgs, AttachArgs, CopyArgs, DeleteArgs, DepArgs, DetachArgs, DoneArgs, DueAfterText, EditArgs, MkdirArgs, MoveArgs, Plan,
-    PlanRef, PlanTask, RemindText, RenameArgs, RepeatText, Replace, ShareArgs, StyleArgs, TaskRef, TasksArgs, UndoArgs, UnshareArgs,
-    WhenText, task_ref,
+    AddArgs, ApplyArgs, AttachArgs, CopyArgs, DeleteArgs, DepArgs, DetachArgs, DoneArgs, DropArgs, DueAfterText, EditArgs, MkdirArgs,
+    MoveArgs, Plan, PlanRef, PlanTask, RemindText, RenameArgs, RepeatText, Replace, ShareArgs, StyleArgs, TaskRef, TasksArgs, UndoArgs,
+    UnshareArgs, WhenText, task_ref,
 };
 use super::text::{self, Names, task_view};
 use super::{Output, WriteFn, find_folder, find_task, person};
@@ -630,6 +630,29 @@ pub fn done(w: &WriteCx, a: DoneArgs) -> Result<Write, ApiError> {
 pub fn reopen(w: &WriteCx, a: TasksArgs) -> Result<Write, ApiError> {
     let b = w.board;
     set_done(b, a.tasks, false, None, false)
+}
+
+/// Gives up `tasks`, with `with_after` those after them not ended yet, theirs too (docs/design.md#放弃).
+pub fn drop_tasks(w: &WriteCx, a: DropArgs) -> Result<Write, ApiError> {
+    if a.tasks.is_empty() {
+        return Err(ApiError::invalid("至少需要指定一个事项", Some("tasks".into())));
+    }
+    let b = w.board;
+    let mut seen = HashSet::new();
+    let mut ops = Vec::new();
+    for r in &a.tasks {
+        let t = find_task(b, r)?;
+        if t.done_at.is_some() {
+            return Err(ApiError::conflict(format!("事项 {r} 已经{}了", if t.dropped { "放弃" } else { "完成" })));
+        }
+        let after = if a.with_after { b.open_after(t) } else { Vec::new() };
+        for t in std::iter::once(t).chain(after) {
+            if seen.insert(t.id) {
+                ops.push(Op::TaskDrop { id: t.id });
+            }
+        }
+    }
+    Ok(ops.into())
 }
 
 /// Moves repeating tasks on to their next time without counting them done (docs/design.md#重复).

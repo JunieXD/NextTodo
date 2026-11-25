@@ -321,5 +321,48 @@
     ],
     "today": "0050-03-10",
     "expect": { "due": { "早": "0050-03-11", "晚": "9999-12-31" } }
+  },
+  {
+    "name": "放弃事项：结束并标为放弃，不记完成；重复的整个结束，不再有下一次",
+    "tasks": [["日记", null]],
+    "ops": [
+      { "op": "task.create", "id": "打卡", "title": "打卡", "due": { "date": "2026-11-20", "repeat": { "every": 1, "unit": "day", "from": "due" } } },
+      { "op": "task.drop", "id": "打卡" },
+      { "op": "task.drop", "id": "日记" }
+    ],
+    "expect": { "ended": { "打卡": "dropped", "日记": "dropped" }, "repeating": [], "due": { "打卡": "2026-11-20" } }
+  },
+  {
+    "name": "放弃的前置不再挡着后续：前置完成后几天内的事项从那天起定下截止日期",
+    "tasks": [["发票", null]],
+    "ops": [
+      { "op": "task.create", "id": "报销", "title": "报销", "due_after": { "days": 30 } },
+      { "op": "dep.add", "before": "发票", "after": "报销" },
+      { "op": "task.drop", "id": "发票" }
+    ],
+    "today": "2026-11-20",
+    "expect": { "due": { "报销": "2026-12-20" }, "ended": { "发票": "dropped" } }
+  },
+  {
+    "name": "放弃了的标为完成就改成完成，重新打开就不再是放弃；完成了的放弃就改成放弃",
+    "tasks": [["订票", null], ["退票", null], ["买药", null]],
+    "ops": [
+      { "op": "task.drop", "id": "订票" },
+      { "op": "task.update", "id": "订票", "done": true },
+      { "op": "task.drop", "id": "退票" },
+      { "op": "task.update", "id": "退票", "done": false },
+      { "op": "task.update", "id": "买药", "done": true },
+      { "op": "task.drop", "id": "买药" }
+    ],
+    "expect": { "ended": { "订票": "done", "买药": "dropped" } }
+  },
+  {
+    "name": "放弃了的重复事项，旧列表上完成的那一次补发过来不生效，还是放弃",
+    "ops": [
+      { "op": "task.create", "id": "打卡", "title": "打卡", "due": { "date": "2026-11-20", "repeat": { "every": 1, "unit": "day", "from": "due" } } },
+      { "op": "task.drop", "id": "打卡" },
+      { "op": "task.update", "id": "打卡", "done": true, "today": "2026-11-20", "occurrence": { "due": "2026-11-20", "completions": 0 } }
+    ],
+    "expect": { "ended": { "打卡": "dropped" }, "repeating": [] }
   }
 ]

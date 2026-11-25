@@ -221,7 +221,14 @@ enum Command {
         #[arg(long, help = "重复的事项结束重复、直接完成，如读完一本书时")]
         end_repeat: bool,
     },
-    #[command(about = "重新打开")]
+    #[command(about = "放弃：不做了，和完成一样不再挡着后续；重复的事项整个结束")]
+    Drop {
+        #[arg(required = true, value_parser = task, help = TASK)]
+        tasks: Vec<String>,
+        #[arg(long, help = "连同还没结束的后续（后续的后续也算）一起放弃")]
+        with_after: bool,
+    },
+    #[command(about = "重新打开已完成或放弃的事项")]
     Reopen {
         #[arg(required = true, value_parser = task, help = TASK)]
         tasks: Vec<String>,
@@ -1215,6 +1222,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             write("edit", args.into(), j)
         }
         Command::Done { tasks, end_repeat } => write("done", json!({ "tasks": tasks, "end_repeat": end_repeat }), j),
+        Command::Drop { tasks, with_after } => write("drop", json!({ "tasks": tasks, "with_after": with_after }), j),
         Command::Reopen { tasks } => write("reopen", json!({ "tasks": tasks }), j),
         Command::Skip { tasks } => write("skip", json!({ "tasks": tasks }), j),
         Command::Mkdir { path } => write("mkdir", json!({ "path": path }), j),

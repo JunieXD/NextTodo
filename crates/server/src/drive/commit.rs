@@ -11,8 +11,9 @@ use uuid::Uuid;
 /// calendar, a folder has a colour and an icon, and each time a repeating task is done is recorded. 3:
 /// several reminders. 4: a time of a repeating task done again keeps a record of each. 5: a folder's
 /// colour may be one of the user's own, and there are more presets. 6: an AI job has the asking device's
-/// default reminders, and a task may be due some days after its prerequisites are done.
-pub(crate) const FORMAT: i64 = 6;
+/// default reminders, and a task may be due some days after its prerequisites are done. 7: a task may be
+/// given up.
+pub(crate) const FORMAT: i64 = 7;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct Commit {

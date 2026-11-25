@@ -24,6 +24,7 @@ function board(tasks: { key: string; done?: boolean; other?: boolean }[], deps: 
       title: `t${i}`,
       description: "",
       done_at: t.done ? 1 : null,
+      dropped: false,
       start: null,
       due: null,
       sort_key: t.key,

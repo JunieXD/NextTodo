@@ -120,7 +120,8 @@ tools! {
     Write "add"(AddArgs) => write::add, "添加一个事项；文件夹不存在时一起新建。一次加多个、带依赖的事项时用 apply。";
     Write "edit"(EditArgs) => write::edit, "修改事项的标题、描述、截止时间、提醒或负责人；只改给出的字段，due、remind 给 null 表示清除，assign、unassign 在现有的负责人上加、减。改描述中的一段用 replace、加内容用 append，不要读出整段再整段写回，以免盖掉用户同时做的修改。";
     Write "done"(DoneArgs) => write::done, "把事项标为完成，结果里会列出因此变成可做的事项。重复的事项不会完成，而是把截止时间顺延到下一次，这时要给 today；打卡的长期事项全部做完时用 end_repeat 结束重复并完成。";
-    Write "reopen"(TasksArgs) => write::reopen, "重新打开已完成的事项。";
+    Write "drop"(DropArgs) => write::drop_tasks, "放弃事项：不做了，和完成一样结束、不再挡着后续，结果里会列出因此变成可做的事项；重复的事项整个结束，只是这一次不做用 skip。with_after 连同还没结束的后续一起放弃。";
+    Write "reopen"(TasksArgs) => write::reopen, "重新打开已完成或放弃的事项。";
     Write "skip"(TasksArgs) => write::skip, "跳过重复事项的这一次：截止时间顺延到下一次，但不算完成，要给 today。已是最后一次的不能跳过，不再做了用 done 的 end_repeat。";
     Write "mkdir"(MkdirArgs) => write::mkdir, "新建文件夹，路径上缺的层级一起建。";
     Write "rename"(RenameArgs) => write::rename, "给文件夹或附件改名。";

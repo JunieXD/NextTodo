@@ -255,7 +255,7 @@ pub fn show(c: &Connection, cx: &Cx, a: ShowArgs) -> Result<Output, ApiError> {
         lines.push(format!("截止：{deadline}{remind}"));
     }
     if let Some(done_at) = t.done_at {
-        lines.push(format!("完成：{}", ago(cx.now, done_at)));
+        lines.push(format!("{}：{}", if t.dropped { "放弃" } else { "完成" }, ago(cx.now, done_at)));
     }
     if let Some(c) = &t.completions {
         lines.push(format!("完成次数：{}，最近 {}", c.count, c.last.as_str()));
@@ -449,7 +449,7 @@ fn mermaid(b: &Board, nodes: &[&Task], edges: &[(&Task, &Task)], scope: Option<F
         let class = match b.status(t) {
             Status::Ready => "ready",
             Status::Waiting { .. } => "waiting",
-            Status::Done => "done",
+            Status::Done | Status::Dropped => "done",
         };
         let mut label = format!("{} {}", b.label(t), escape(t.title.as_str()));
         if t.folder_id != scope {

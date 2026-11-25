@@ -490,7 +490,8 @@ fn still_last<T: PartialEq>(before: &T, after: &T, later: Vec<(T, T)>) -> bool {
 /// a due date without a time lasting all day (docs/design.md#开始时间).
 fn check_task(t: &Task) -> Result<(), ApiError> {
     if t.done_at.is_some() && t.due.as_ref().is_some_and(|d| d.repeat.is_some()) {
-        return Err(ApiError::invalid(format!("“{}”已完成，不能设置重复，请先重新打开", t.title.as_str()), Some("due".into())));
+        let ended = if t.dropped { "放弃" } else { "完成" };
+        return Err(ApiError::invalid(format!("“{}”已{ended}，不能设置重复，请先重新打开", t.title.as_str()), Some("due".into())));
     }
     if let Some(d) = &t.due
         && let Some(m) = d.repeat.as_ref().and_then(|r| r.misfit(&d.date))
@@ -724,6 +725,7 @@ impl<'a> Cx<'a> {
                     title: title.clone(),
                     description: description.clone(),
                     done_at: done.then_some(self.now),
+                    dropped: false,
                     start: start.clone(),
                     start_time: start_time.clone(),
                     due_after: due_after.clone(),
@@ -809,10 +811,15 @@ impl<'a> Cx<'a> {
                 // Done from a list behind the task: that time of a repeating one is done already, or
                 // gone (docs/api.md#改动).
                 let behind = occurrence.as_ref().is_some_and(|o| t.occurrence().is_some_and(|now| now != *o));
-                if let Some(done) = done
+                // Done once given up, it was done after all, ending when it did; not a time of a
+                // repeating one a list behind showed, which giving it up ended (docs/api.md#改动).
+                if *done == Some(true) && t.dropped && occurrence.is_none() {
+                    t.dropped = false;
+                } else if let Some(done) = done
                     && *done != t.done_at.is_some()
                     && !(*done && behind)
                 {
+                    t.dropped = false;
                     match t.due.as_mut().map(|d| (d.repeat.clone(), d)) {
                         // Done, a repeating task stays open, due next time; done the last time, it is
                         // done (docs/design.md#重复).
@@ -844,6 +851,18 @@ impl<'a> Cx<'a> {
                     Some(r) => self.record_completion(r),
                     None => Ok(()),
                 }
+            }
+            Op::TaskDrop { id } => {
+                let (before, owner) = self.task(*id)?;
+                let mut t = before.clone();
+                // Done already, it ends given up as it did.
+                t.done_at = t.done_at.or(Some(self.now));
+                t.dropped = true;
+                // Given up for good, it has no next time (docs/design.md#放弃).
+                if let Some(d) = &mut t.due {
+                    d.repeat = None;
+                }
+                self.update_task(before, &owner, t, None)
             }
             Op::TaskDelete { id } => {
                 self.task(*id)?;
@@ -1627,6 +1646,7 @@ impl<'a> Cx<'a> {
                             title,
                             description,
                             done_at,
+                            dropped,
                             start,
                             start_time,
                             due_after,
@@ -1635,9 +1655,11 @@ impl<'a> Cx<'a> {
                             sort_key
                         );
                         // A time without its date, which was cleared since, goes too; so does the day
-                        // prerequisites were done, without a due date counting from it.
+                        // prerequisites were done, without a due date counting from it, and giving up
+                        // one open since.
                         restored.start_time = restored.start_time.filter(|_| restored.start.is_some());
                         restored.unlocked_on = restored.unlocked_on.filter(|_| restored.due_after.is_some());
+                        restored.dropped &= restored.done_at.is_some();
                         // A due date `due_after` gave is given again.
                         let set = |t: &Task| t.due.clone().filter(|_| t.due_after.is_none());
                         restored.due = restore_due(&set(&cur), &set(&b), &set(&a));

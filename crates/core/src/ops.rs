@@ -185,6 +185,9 @@ pub enum Op {
         #[ts(as = "Option<Vec<String>>", optional)]
         unassign: Vec<String>,
     },
+    /// Ends the task given up, a repeating one for good (docs/design.md#放弃).
+    #[serde(rename = "task.drop")]
+    TaskDrop { id: TaskId },
     #[serde(rename = "task.delete")]
     TaskDelete { id: TaskId },
     #[serde(rename = "dep.add")]

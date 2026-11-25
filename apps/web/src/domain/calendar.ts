@@ -49,6 +49,14 @@ export function dueBetween(board: Board, from: string, to: string): Map<string, 
   return days;
 }
 
+/** The user's tasks given up, by the day they were due, in folder order and manual order: listed
+ * with what is due then (docs/design.md#放弃). */
+export function droppedByDay(board: Board): Map<string, Task[]> {
+  const days = new Map<string, Task[]>();
+  for (const task of board.sort(board.snapshot.tasks.filter((t) => t.dropped && board.mine(t)))) if (task.due) add(days, task.due.date, task);
+  return days;
+}
+
 /** The user's open tasks due before `today`, in the order of `Board.byDue`. */
 export const overdue = (board: Board, today: string) =>
   board.byDue(board.snapshot.tasks.filter((t) => t.done_at === null && t.due !== null && t.due.date < today && board.mine(t)));
@@ -63,7 +71,7 @@ export function agenda(board: Board, days: number) {
 }
 
 /** What the user did, by day: the tasks done, on the day they were here, and the times repeating tasks
- * were done. A task done for good the last time it repeated is there once, as the task, on the day
+ * were done, those given up since too. A task done for good the last time it repeated is there once, as the task, on the day
  * of that time's record: its due date stays that time's, and `done_at` is when the server took it,
  * which may be a day later for one done offline. That time done more than once, the record is the
  * latest. */
@@ -71,7 +79,8 @@ export function doneByDay(board: Board): Map<string, DoneOn[]> {
   const days = new Map<string, DoneOn[]>();
   const last = new Set<Completion>();
   for (const task of board.snapshot.tasks) {
-    if (task.done_at === null || !board.mine(task)) continue;
+    // Given up, it was not done; the times it was done before were.
+    if (task.done_at === null || task.dropped || !board.mine(task)) continue;
     const record = board.completions(task.id).reduce<Completion | undefined>((l, r) => (r.due === task.due?.date && (!l || r.again > l.again) ? r : l), undefined);
     if (record) last.add(record);
     add(days, record?.done ?? isoDate(new Date(task.done_at)), { task });

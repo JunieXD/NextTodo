@@ -441,6 +441,49 @@ async fn a_time_skipped_moves_on_without_counting_as_done() {
 }
 
 #[tokio::test]
+async fn a_task_given_up_ends_and_lets_go_of_those_after_it_or_takes_them_along() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({ "title": "办签证" })).await;
+    t.ok(&s, "add", json!({ "title": "订机票", "after": [1] })).await;
+    t.ok(&s, "add", json!({ "title": "订酒店", "after": [2] })).await;
+    t.ok(&s, "add", json!({ "title": "打卡", "due": "2026-11-16", "repeat": "1d" })).await;
+    t.ok(&s, "add", json!({ "title": "写游记", "after": [3] })).await;
+    t.ok(&s, "done", json!({ "tasks": [5] })).await;
+
+    // Given up alone, it no longer holds up the next one, which says so.
+    let dropped = t.ok(&s, "drop", json!({ "tasks": [1] })).await;
+    assert!(text(&dropped).starts_with("放弃 #1 办签证") && text(&dropped).contains("解锁 #2 订机票"), "{}", text(&dropped));
+    let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
+    assert_eq!(shown["data"]["status"], "dropped");
+    assert!(text(&shown).contains("[已放弃]") && text(&shown).contains("放弃："), "{}", text(&shown));
+    assert_eq!(t.tool(&s, "drop", json!({ "tasks": [1] })).await.status, StatusCode::CONFLICT);
+    assert_eq!(dropped["data"]["changes"][0]["kind"], "task_dropped", "{}", dropped["data"]);
+    t.ok(&s, "undo", json!({ "batch": dropped["data"]["batch"] })).await;
+    assert_eq!(t.ok(&s, "show", json!({ "task": 2 })).await["data"]["status"], "waiting");
+
+    // With those after it still open, theirs too, in one batch, which undoing takes back whole.
+    let all = t.ok(&s, "drop", json!({ "tasks": [1], "with_after": true })).await;
+    let statuses = |v: Value| {
+        v["data"]["tasks"].as_array().unwrap().iter().map(|t| (t["number"].as_i64().unwrap(), t["status"].clone())).collect::<Vec<_>>()
+    };
+    let listed = statuses(t.ok(&s, "list", json!({ "folder": "/", "all": true })).await);
+    for (n, want) in [(1, "dropped"), (2, "dropped"), (3, "dropped"), (5, "done")] {
+        assert!(listed.contains(&(n, json!(want))), "#{n}: {listed:?}");
+    }
+    t.ok(&s, "undo", json!({ "batch": all["data"]["batch"] })).await;
+    assert_eq!(t.ok(&s, "show", json!({ "task": 3 })).await["data"]["status"], "waiting");
+
+    // A repeating one ends for good, without counting as done; reopened, it is open, not repeating.
+    t.ok(&s, "drop", json!({ "tasks": [4] })).await;
+    let shown = t.ok(&s, "show", json!({ "task": 4 })).await;
+    assert_eq!((shown["data"]["status"].as_str(), &shown["data"]["due"]), (Some("dropped"), &json!({ "date": "2026-11-16" })));
+    assert_eq!(shown["data"]["completions"], Value::Null);
+    t.ok(&s, "reopen", json!({ "tasks": [4] })).await;
+    assert_eq!(t.ok(&s, "show", json!({ "task": 4 })).await["data"]["status"], "ready");
+}
+
+#[tokio::test]
 async fn a_repeat_by_the_lunar_calendar_moves_on_by_it_and_says_so() {
     let t = TestApp::new();
     let s = t.admin().await;

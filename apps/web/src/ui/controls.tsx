@@ -1,4 +1,4 @@
-import { Check as CheckIcon, ChevronsUpDown, Copy, type LucideIcon, Minus, Plus } from "lucide-react";
+import { Check as CheckIcon, ChevronsUpDown, Copy, type LucideIcon, Minus, Plus, X } from "lucide-react";
 import { Select as Choice, DropdownMenu, RadioGroup, Switch as Toggle } from "radix-ui";
 import { type ReactNode, useContext, useState } from "react";
 import type { Status } from "../domain/board";
@@ -7,19 +7,20 @@ import { useCopy } from "./clipboard";
 import { RootContext, Tip } from "./feedback";
 import { Icon } from "./icons";
 
-/** The round check box of a task: solid ring when ready, dashed while waiting, filled when done. */
+/** The round check box of a task: solid ring when ready, dashed while waiting, filled when done, and
+ * crossed when given up. */
 export function Check({ status, large, pop, left, onToggle }: { status: Status; large?: boolean; pop?: boolean; left?: number; onToggle(): void }) {
   return (
     <button
       className={`check ${status}${large ? " lg" : ""}${pop ? " pop" : ""}`}
       style={left === undefined ? undefined : { left }}
-      aria-label={status === "done" ? "标为待办" : "标为完成"}
+      aria-label={status === "done" || status === "dropped" ? "标为待办" : "标为完成"}
       onClick={(e) => {
         e.stopPropagation();
         onToggle();
       }}
     >
-      <Icon of={CheckIcon} size={large ? 18 : 15} width={2.6} />
+      <Icon of={status === "dropped" ? X : CheckIcon} size={large ? 18 : 15} width={2.6} />
     </button>
   );
 }

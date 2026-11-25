@@ -28,7 +28,7 @@ export function useTaskActions(): RowActions & {
   const { store } = useSession();
   const commit = useCommit();
   const undo = useUndo();
-  const { snack, confirm } = useFeedback();
+  const { snack, confirm, choose } = useFeedback();
   const marking = useMarking();
   const { selected, select, close } = useSelection();
   const [location, navigate] = useLocation();
@@ -115,6 +115,40 @@ export function useTaskActions(): RowActions & {
 
     toggle: (t) => setDone(t, false),
     endRepeat: (t) => setDone(t, true),
+
+    /** Gives the task up, asking first whether those after it still open go too: one change
+     * (docs/design.md#放弃). */
+    async drop(task) {
+      const t = board().task(task.id);
+      if (!t || t.done_at !== null) return;
+      const after = board().openAfter(t);
+      let along = false;
+      if (after.length) {
+        const chosen = await choose({
+          title: `放弃“${t.title}”？`,
+          body: `它还有 ${after.length} 项后续没结束。`,
+          options: ["只放弃这一项", `连同 ${after.length} 项后续一起放弃`],
+        });
+        if (chosen === null) return;
+        along = chosen === 1;
+      }
+      // As things are once answered: done meanwhile elsewhere, it or one after it is left as it is.
+      const now = board().task(t.id);
+      if (!now || now.done_at !== null) return;
+      const going = along ? [now, ...board().openAfter(now)] : [now];
+      const readyBefore = new Set(board().next().map((x) => x.id));
+      const r = commit(going.map((x) => ({ op: "task.drop", id: x.id })));
+      if (!r) return;
+      const unlocked = board()
+        .next()
+        .filter((x) => !readyBefore.has(x.id));
+      marking.completed(
+        t.id,
+        unlocked.map((x) => x.id),
+      );
+      const text = [going.length > 1 ? `已放弃 ${going.length} 项` : `已放弃“${t.title}”`, unlocking(unlocked)].filter(Boolean).join("，");
+      snack({ text, action: "撤销", onAction: () => undo(r.id) });
+    },
 
     skip(task) {
       const t = board().task(task.id);

@@ -35,6 +35,7 @@ function given(c: Case): Data {
       title: id,
       description: "",
       done_at: null,
+      dropped: false,
       start: null,
       due: null,
       sort_key: keys[i],
@@ -85,6 +86,8 @@ const seen = (d: Data) => ({
   attachments: Object.fromEntries([...d.attachments.values()].map((a) => [a.id, a.task_id ?? a.job_id])),
   jobs: Object.fromEntries([...d.jobs.values()].map((j) => [j.id, j.state])),
   due: Object.fromEntries([...d.tasks.values()].flatMap((t) => (t.due ? [[t.id, t.due.date]] : []))),
+  ended: Object.fromEntries([...d.tasks.values()].flatMap((t) => (t.done_at === null ? [] : [[t.id, t.dropped ? "dropped" : "done"]]))),
+  repeating: [...d.tasks.values()].filter((t) => t.due?.repeat).map((t) => t.id).toSorted(),
 });
 
 test.each(cases as Case[])("changes go as the fixtures say: $name", (c) => {

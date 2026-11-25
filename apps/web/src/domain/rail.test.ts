@@ -19,6 +19,7 @@ function board(n: number, deps: [number, number][]) {
       title: `t${i}`,
       description: "",
       done_at: null,
+      dropped: false,
       start: null,
       due: null,
       sort_key: `a${String(i).padStart(3, "0")}`,

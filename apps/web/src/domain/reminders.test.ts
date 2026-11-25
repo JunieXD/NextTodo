@@ -17,6 +17,7 @@ function task(n: number, extra: Partial<Task>): Task {
     title: `t${n}`,
     description: "",
     done_at: null,
+    dropped: false,
     start: null,
     due: null,
     sort_key: `a${n}`,

@@ -15,7 +15,7 @@ use ts_rs::TS;
 /// How much of a title is shown where a task is only mentioned, not listed.
 const SHORT: usize = 30;
 
-/// `[可做]`, `[等 2 项]`, `[2026-11-14 09:30 开始]`, both `[等 2 项，2026-11-14 开始]`, or `[已完成]`.
+/// `[可做]`, `[等 2 项]`, `[2026-11-14 09:30 开始]`, both `[等 2 项，2026-11-14 开始]`, `[已完成]` or `[已放弃]`.
 pub fn status_tag(b: &Board, t: &Task) -> String {
     let start = || format!("{} 开始", start(t).expect("a start to wait for"));
     match b.status(t) {
@@ -24,6 +24,7 @@ pub fn status_tag(b: &Board, t: &Task) -> String {
         Status::Waiting { on: 0, not_started: true } => format!("[{}]", start()),
         Status::Waiting { on, not_started: true } => format!("[等 {on} 项，{}]", start()),
         Status::Done => "[已完成]".into(),
+        Status::Dropped => "[已放弃]".into(),
     }
 }
 
@@ -177,7 +178,7 @@ pub fn task_view(b: &Board, t: &Task) -> Value {
     let status = b.status(t);
     let mut v = json!({
         "id": t.id, "number": t.number, "title": t.title, "folder": b.path(t.folder_id),
-        "status": match status { Status::Ready => "ready", Status::Waiting { .. } => "waiting", Status::Done => "done" },
+        "status": match status { Status::Ready => "ready", Status::Waiting { .. } => "waiting", Status::Done => "done", Status::Dropped => "dropped" },
     });
     if let Some(owner) = foreign(b, t) {
         v["owner"] = owner.into();
@@ -417,6 +418,7 @@ enum Kind {
     FolderDeleted,
     TaskCreated,
     TaskDone,
+    TaskDropped,
     TaskReopened,
     TaskRepeated,
     TaskMoved,
@@ -451,6 +453,7 @@ impl Kind {
             Kind::FolderDeleted => ("删除文件夹", "删除", "个文件夹"),
             Kind::TaskCreated => ("添加", "添加", "项"),
             Kind::TaskDone => ("完成", "完成", "项"),
+            Kind::TaskDropped => ("放弃", "放弃", "项"),
             Kind::TaskReopened => ("重新打开", "重新打开", "项"),
             Kind::TaskRepeated => ("顺延", "顺延", "项"),
             Kind::TaskMoved => ("移动", "移动", "项"),
@@ -491,6 +494,7 @@ impl Kind {
             | Kind::FolderSorted
             | Kind::FolderStyled
             | Kind::TaskDone
+            | Kind::TaskDropped
             | Kind::TaskReopened
             | Kind::TaskRepeated
             | Kind::TaskMoved
@@ -516,6 +520,7 @@ impl Kind {
             Kind::FolderDeleted => "folder_deleted",
             Kind::TaskCreated => "task_created",
             Kind::TaskDone => "task_done",
+            Kind::TaskDropped => "task_dropped",
             Kind::TaskReopened => "task_reopened",
             Kind::TaskRepeated => "task_repeated",
             Kind::TaskMoved => "task_moved",
@@ -577,7 +582,8 @@ fn only_date(before: &Due, after: &Due) -> bool {
     *after == Due { date: after.date.clone(), ..before.clone() }
 }
 
-/// Whether a repeating task was done for good, the repeat ending with it: the last time, or ended.
+/// Whether a repeating task was done or given up for good, the repeat ending with it: the last time,
+/// or ended.
 fn ended(before: &Task, after: &Task) -> bool {
     match (&before.due, &after.due) {
         (Some(b), Some(a)) => after.done_at.is_some() && b.repeat.is_some() && *a == Due { repeat: None, ..b.clone() },
@@ -659,8 +665,12 @@ fn describe(e: &Effect, n: &Names) -> Vec<(Kind, String, Value)> {
                 v[key] = value;
                 v
             };
-            match (before.done_at, t.done_at) {
-                (None, Some(_)) => found.push((Kind::TaskDone, n.item(t), n.task(t))),
+            // Whether it has ended, and given up.
+            let end = |t: &Task| t.done_at.map(|_| t.dropped);
+            match (end(before), end(t)) {
+                (b, Some(dropped)) if b != Some(dropped) => {
+                    found.push((if dropped { Kind::TaskDropped } else { Kind::TaskDone }, n.item(t), n.task(t)))
+                }
                 (Some(_), None) => found.push((Kind::TaskReopened, n.item(t), n.task(t))),
                 _ => {}
             }

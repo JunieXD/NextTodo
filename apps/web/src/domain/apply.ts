@@ -267,6 +267,7 @@ class Applier {
           title: op.title,
           description: op.description ?? "",
           done_at: op.done ? now : null,
+          dropped: false,
           start: op.start ?? null,
           start_time: op.start_time,
           due_after: op.due_after,
@@ -321,7 +322,13 @@ class Applier {
         // (docs/api.md#改动).
         const time = occurrence(t);
         const behind = !!op.occurrence && !!time && (op.occurrence.due !== time.due || op.occurrence.completions !== time.completions);
-        if (op.done !== undefined && op.done !== (t.done_at !== null) && !(op.done && behind)) {
+        // Done once given up, it was done after all, ending when it did; not a time of a repeating one
+        // a list behind showed, which giving it up ended (docs/api.md#改动).
+        if (op.done && t.dropped) {
+          if (!op.occurrence) t.dropped = false;
+        }
+        else if (op.done !== undefined && op.done !== (t.done_at !== null) && !(op.done && behind)) {
+          t.dropped = false;
           const repeat = t.due?.repeat;
           // Done, a repeating task stays open, due next time; done the last time, it is done
           // (docs/design.md#重复).
@@ -343,6 +350,17 @@ class Applier {
         }
         this.updateTask(before, t);
         if (record) this.recordCompletion(record);
+        return;
+      }
+      case "task.drop": {
+        const before = this.task(op.id);
+        // Done already, it ends given up as it did; for good, with no next time (docs/design.md#放弃).
+        const t = { ...before, done_at: before.done_at ?? now, dropped: true };
+        if (t.due?.repeat) {
+          const { repeat, ...rest } = t.due;
+          t.due = rest;
+        }
+        this.updateTask(before, t);
         return;
       }
       case "task.delete":
@@ -839,7 +857,7 @@ class Applier {
           this.createTask({ ...t, updated_at: now, updated_by: this.cx.me, updated_via: null });
         } else {
           const cur = this.d.tasks.get(e.before.id);
-          const fields = ["folder_id", "title", "description", "done_at", "start", "start_time", "due_after", "unlocked_on", "completions", "sort_key"] as const;
+          const fields = ["folder_id", "title", "description", "done_at", "dropped", "start", "start_time", "due_after", "unlocked_on", "completions", "sort_key"] as const;
           // Done again or taken back since, maybe to the same count on the same day: setting the count
           // back would undo that too.
           const { before, after } = e;
@@ -857,9 +875,11 @@ class Applier {
             this.updateTask(cur, {
               ...restored,
               // A time without its date, which was cleared since, goes too; so does the day
-              // prerequisites were done, without a due date counting from it.
+              // prerequisites were done, without a due date counting from it, and giving up one open
+              // since.
               start_time: restored.start ? restored.start_time : undefined,
               unlocked_on: restored.due_after ? restored.unlocked_on : undefined,
+              dropped: restored.dropped && restored.done_at !== null,
               due: restoreDue(set(cur), set(e.before), set(e.after)),
               assignees: restorePeople(cur.assignees, e.before.assignees, e.after.assignees),
             });
@@ -1006,7 +1026,7 @@ function dueAfter(t: Task): Task {
 
 /** What the server rejects too, so that a change it would refuse isn't applied here meanwhile. */
 function checkTask(t: Task) {
-  if (t.done_at !== null && t.due?.repeat) throw new Rejected("invalid", `“${t.title}”已完成，不能设置重复，请先重新打开`);
+  if (t.done_at !== null && t.due?.repeat) throw new Rejected("invalid", `“${t.title}”已${t.dropped ? "放弃" : "完成"}，不能设置重复，请先重新打开`);
   checkRepeat(t.title, t.due);
   if (!t.start) {
     if (t.start_time) throw new Rejected("invalid", "设置开始时刻须先有开始日期");

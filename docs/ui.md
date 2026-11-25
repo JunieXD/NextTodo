@@ -40,12 +40,13 @@
 
 主题色可选 7 种：翡翠绿（默认，即上表）、草绿、青、蓝、靛蓝、紫、粉（HCT 色相 120、210、260、285、310、350）。
 
-- 每种由色相按 Material 3 的 Tonal Spot 配色生成整套颜色：主色调色板色度 36，次色 16，中性 6，中性变体 8。各角色取的色调和翡翠绿相同：
+- 翡翠绿是手调的（上表）；其余 6 种按各自的色相，用 Material 3 的 Tonal Spot 配色生成整套颜色：主色调色板色度 36，次色 16，中性 6，中性变体 8。各角色取的色调和翡翠绿相同：
   - 浅色：primary 40，primary-container 90 / on 10，inverse-primary 80；secondary-container 90 / on 10；surface 98，surface-low 96，surface-container 94，surface-high 92，surface-highest 90，on-surface 10，inverse-surface 20 / on 95；on-surface-variant 30，outline 50，outline-variant 和 rail 80。group、seg-on 是白色。
   - 深色：primary 80 / on 20，primary-container 30 / on 90，inverse-primary 40；secondary-container 30 / on 90；surface 6，group 12，surface-low 10，surface-container 15.5，surface-high 19，surface-highest 24，seg-on 26.5，on-surface 90，inverse-surface 90 / on 20；on-surface-variant 80，outline 60，outline-variant 30，rail 40。
   - 按下和悬停的底色、浅色下的阴影用各自的 on-surface 加透明度，深色下的阴影是黑色，和翡翠绿相同。
-- error、warn 不变。没有红、橙、琥珀、黄：主色表示“可做”，不能和逾期、今天到期混淆。
-- 在设置的“外观”里选，一排 7 个圆点，选中的带对勾，点了立即生效，和换主题一样整页淡入淡出。存在各自的设备上。
+- error、warn 不变。预设里没有红、橙、琥珀、黄：主色表示“可做”，不能和逾期、今天到期混淆。
+- 也可以自定义：取调出的颜色的 HCT 色相，按上面同样的规则生成整套颜色。所以只有色相起作用，各角色用和预设同一组目标色度和色调，对比度有保证；调出的颜色本身不会原样成为主色。
+- 在设置的“外观”里选，一排 8 个圆点：7 种预设，最后是“自定义”（彩虹色的圆，选了自定义时是生成的主色），选中的带对勾，点了立即生效，和换主题一样整页淡入淡出。点“自定义”在下面展开调色，同[文件夹颜色](#文件夹的颜色和图标)的自定义，但没有饱和度和亮度的方块（不起作用），只有色相条和十六进制、R、G、B 输入框，边调边生效；从当前的主题色开始。色相落在红到黄之间（HCT 色相 10–100）时，下面一行小字“和逾期的红色、今天到期的琥珀色相近，可能分不清”，不拦着。存在各自的设备上，自定义的存调出的颜色。
 - 小组件、通知、提醒弹窗这些由系统绘制的部分不跟着变，仍用翡翠绿。
 
 ## 字体和字号

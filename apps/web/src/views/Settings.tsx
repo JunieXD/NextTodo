@@ -14,8 +14,9 @@ import { checkDisplayName, checkTokenName } from "../domain/text";
 import * as local from "../local";
 import { useServerVersions } from "../server-update";
 import { useSession, useView } from "../session";
-import { type Accent, type Theme, setAccent, setTheme, useAccent, useTheme } from "../theme";
+import { type Preset, type Theme, hueOf, isPreset, primaryOf, setAccent, setTheme, startOwn, tuneAccent, useAccent, useDark, useTheme } from "../theme";
 import { type Zoom, type Zoomed, setZoom, useZoom } from "../zoom";
+import { ColorPicker } from "../ui/color-picker";
 import { Copyable, Seg, Stepper, Swatch } from "../ui/controls";
 import { Modal, forUser, useFailure, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
@@ -79,7 +80,7 @@ const THEMES: [Theme, string][] = [
   ["dark", "深色"],
 ];
 
-const ACCENTS: [Accent, string][] = [
+const ACCENTS: ["emerald" | Preset, string][] = [
   ["emerald", "翡翠绿"],
   ["lime", "草绿"],
   ["cyan", "青"],
@@ -359,6 +360,11 @@ function Action({ label, value, onClick }: { label: string; value?: string; onCl
 function Appearance() {
   const theme = useTheme();
   const accent = useAccent();
+  const dark = useDark();
+  const own = accent === "emerald" || isPreset(accent) ? null : accent;
+  // HCT hues from the red of what is overdue to the amber of what is due today.
+  const hue = own && hueOf(own);
+  const [picking, setPicking] = useState(false);
   return (
     <>
       <h2 className="group-title">主题</h2>
@@ -368,9 +374,28 @@ function Appearance() {
       <h2 className="group-title">主题色</h2>
       <div className="color-choices accents">
         {ACCENTS.map(([a, name]) => (
-          <Swatch key={a} label={name} color={`var(--accent-${a})`} chosen={a === accent} onChoose={() => setAccent(a)} />
+          <Swatch
+            key={a}
+            label={name}
+            color={a === "emerald" ? "var(--accent-emerald)" : primaryOf(a, dark)}
+            chosen={a === accent}
+            onChoose={() => (setAccent(a), setPicking(false))}
+          />
         ))}
+        <Swatch
+          label="自定义"
+          color={own ? primaryOf(own, dark) : undefined}
+          rainbow
+          chosen={own !== null}
+          onChoose={() => (own ? setPicking(!picking) : (setAccent(startOwn()), setPicking(true)))}
+        />
       </div>
+      {own && (
+        <div hidden={!picking}>
+          <ColorPicker value={own} onChange={tuneAccent} hueOnly />
+          {hue !== null && hue >= 10 && hue <= 100 && <p className="group-note">和逾期的红色、今天到期的琥珀色相近，可能分不清</p>}
+        </div>
+      )}
       {app === "desktop" && <Zooms />}
     </>
   );

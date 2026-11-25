@@ -74,7 +74,8 @@ function kept([h, s]: Hsv, hex: Hex): Hsv {
   return [ts && tv ? th : h, tv ? ts : s, tv];
 }
 
-export function ColorPicker({ value, onChange }: { value: Hex; onChange(hex: Hex): void }) {
+/** `hueOnly` leaves out the square, for a colour of which only the hue counts. */
+export function ColorPicker({ value, onChange, hueOnly = false }: { value: Hex; onChange(hex: Hex): void; hueOnly?: boolean }) {
   // Hue and saturation are kept apart from the colour: grey or black has none, and they stay where they
   // were dragged to.
   const [hsv, setHsv] = useState<Hsv>(() => hsvOfRgb(rgbOf(value)));
@@ -109,16 +110,18 @@ export function ColorPicker({ value, onChange }: { value: Hex; onChange(hex: Hex
   };
   return (
     <div className="picker">
-      <Pad
-        className="picker-sv"
-        style={{ "--hue": h, "--thumb": value }}
-        label="饱和度和亮度"
-        text={`饱和度 ${Math.round(s * 100)}%，亮度 ${Math.round(v * 100)}%`}
-        now={Math.round(s * 100)}
-        max={100}
-        at={[s, 1 - v]}
-        onAt={(x, y) => drag([h, x, 1 - y])}
-      />
+      {!hueOnly && (
+        <Pad
+          className="picker-sv"
+          style={{ "--hue": h, "--thumb": value }}
+          label="饱和度和亮度"
+          text={`饱和度 ${Math.round(s * 100)}%，亮度 ${Math.round(v * 100)}%`}
+          now={Math.round(s * 100)}
+          max={100}
+          at={[s, 1 - v]}
+          onAt={(x, y) => drag([h, x, 1 - y])}
+        />
+      )}
       <Pad
         className="picker-hue"
         style={{ "--thumb": `hsl(${h} 100% 50%)` }}
@@ -128,7 +131,8 @@ export function ColorPicker({ value, onChange }: { value: Hex; onChange(hex: Hex
         max={360}
         at={[h / 360, 0.5]}
         line
-        onAt={(x) => drag([x * 360, s, v])}
+        // Of the colour under the thumb, when only the hue counts: grey has none to move.
+        onAt={(x) => drag([x * 360, hueOnly ? 1 : s, hueOnly ? 1 : v])}
       />
       <div className="picker-fields">
         <label>

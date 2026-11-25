@@ -5,13 +5,15 @@ import type { FolderId } from "../api/types/FolderId";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import { v7 as uuidv7 } from "uuid";
+import { useLocation } from "wouter";
 import { lastKey } from "../domain/apply";
 import { formatDue, isoDate } from "../domain/dates";
 import { occurrence, shifted, skipTo } from "../domain/repeat";
 import { useCommit, useSession, useUndo } from "../session";
 import { useFeedback } from "../ui/feedback";
+import { useWide } from "../ui/hooks";
 import { useMarking } from "./marks";
-import { useSelection } from "./nav";
+import { folderUrl, useSelection } from "./nav";
 import type { RowActions } from "./rows";
 import { lost } from "./share";
 
@@ -29,6 +31,8 @@ export function useTaskActions(): RowActions & {
   const { snack, confirm } = useFeedback();
   const marking = useMarking();
   const { selected, select, close } = useSelection();
+  const [location, navigate] = useLocation();
+  const wide = useWide();
   const board = () => store.getView().board;
 
   /** Completes the task or reopens it; `endRepeat` stops a repeating one so that it is done, rather
@@ -99,6 +103,15 @@ export function useTaskActions(): RowActions & {
   return {
     // Opening the open task again closes it.
     open: (t) => (selected === t.id ? close() : select(t.id)),
+
+    /** On a computer the middle column turns to the folder, with the details as they are; on a phone
+     * the folder's page takes the place of the details. The same page again is no step back. */
+    reveal(t) {
+      const to = folderUrl(t.folder_id);
+      const url = wide && selected ? `${to}?t=${selected}` : to;
+      if (location === to) navigate(url, { replace: true, state: { ...history.state, reveal: t.id } });
+      else navigate(url, { replace: !wide && history.state?.sheet === true, state: { reveal: t.id } });
+    },
 
     toggle: (t) => setDone(t, false),
     endRepeat: (t) => setDone(t, true),

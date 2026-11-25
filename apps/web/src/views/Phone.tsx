@@ -21,7 +21,7 @@ import { FolderTile, styled } from "./folder-look";
 import { SharedWith, sharer } from "./share";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, NextFilter, QuickAdd, SearchResults } from "./lists";
 import { readyIn, useNextFolders } from "../next-folders";
-import { folderUrl, type SettingsSection, settingsUrl, useFolderView, useSelection } from "./nav";
+import { folderUrl, type SettingsSection, settingsUrl, useFolderView, useRevealRequest, useSelection } from "./nav";
 import { SettingsHome, SettingsPage, settingsTitle, useSectionAt } from "./Settings";
 import { ConnectionNote } from "./status";
 
@@ -222,6 +222,14 @@ function FolderScreen({ folder, anim, now }: { folder: FolderId | null; anim: st
   const { board } = useView();
   const [view] = useFolderView();
   const [query, setQuery] = useState("");
+  // A task to show is on the root's list, which the search covers: ended each time it is asked, a
+  // search made while it waits staying.
+  const request = useRevealRequest();
+  const [asked, setAsked] = useState(request);
+  if (request !== asked) {
+    setAsked(request);
+    if (request) setQuery("");
+  }
   const f = folder ? board.folder(folder)! : null;
   const title = f ? f.name : "文件夹";
   const nav = f && <Back to={folderUrl(f.parent_id)} label={f.parent_id ? board.folderName(f.parent_id) : "文件夹"} />;

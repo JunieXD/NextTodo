@@ -22,7 +22,7 @@ import { CalendarBody, CalendarViewSeg, useCalendarView } from "./calendar";
 import { setFolderClosed, useClosedFolders } from "./closed-folders";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, NextFilter, QuickAdd, SearchResults } from "./lists";
 import { readyIn, useNextFolders } from "../next-folders";
-import { folderUrl, settingsUrl, useFolderView, useSelection } from "./nav";
+import { folderUrl, settingsUrl, useFolderView, useRevealRequest, useSelection } from "./nav";
 import { SettingsHome, SettingsPage, settingsTitle, useSectionAt } from "./Settings";
 import { FolderGlyph, FolderTile, styled } from "./folder-look";
 import { FolderName, SharedWith, sharer } from "./share";
@@ -50,6 +50,13 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
   // Quick add (`/?add`) is on the page of what to do next, which a search covers.
   const [params] = useSearchParams();
   if (params.has("add") && query) setQuery("");
+  // And a task to show, on its folder's: each time it is asked, a search made while it waits staying.
+  const request = useRevealRequest();
+  const [asked, setAsked] = useState(request);
+  if (request !== asked) {
+    setAsked(request);
+    if (request) setQuery("");
+  }
   const [view] = useFolderView();
   const folder = location.match(/^\/folders\/([^/]+)$/)?.[1] ?? null;
   const section = useSectionAt(location);

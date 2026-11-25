@@ -1,10 +1,14 @@
 // Where the user is. The selected task is `?t=<id>` on top of the page's address, so that the back
 // button (Android's too) closes its details.
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { useLocation, useSearchParams } from "wouter";
+import { useHistoryState } from "wouter/use-browser-location";
+import type { FolderId } from "../api/types/FolderId";
+import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import { inPanel, openMain } from "../desktop";
+import { useView } from "../session";
 
 /** A section of the settings, a page of its own (views/Settings.tsx). */
 export type SettingsSection = "account" | "local" | "log" | "lock" | "appearance" | "lists" | "reminders" | "widget" | "system" | "ai" | "agent" | "server" | "about";
@@ -31,6 +35,29 @@ export function useSelection(): { selected: TaskId | null; select(id: TaskId): v
 }
 
 export const folderUrl = (id: string | null) => (id ? `/folders/${id}` : "/folders");
+
+/** The history entry's state while it asks the page to show a task, “在文件夹中显示”
+ * (docs/ui.md#交互细节): in the entry, so that a page slow to load still gets it and it goes with the
+ * page; a new one each time it is asked, the same task again too. */
+export function useRevealRequest() {
+  const state = useHistoryState<{ reveal?: TaskId } | null>();
+  return state?.reveal ? state : null;
+}
+
+const shown = () => history.replaceState({ ...history.state, reveal: undefined }, "");
+
+/** The task to show in `folder`'s list or graph, and the call to say it has been. Moved away or
+ * deleted meanwhile, on another device say, there is none to show. */
+export function useShowing(folder: FolderId | null): [Task | null, () => void] {
+  const { board } = useView();
+  const id = useRevealRequest()?.reveal ?? null;
+  const t = id === null ? undefined : board.task(id);
+  const gone = id !== null && t?.folder_id !== folder;
+  useEffect(() => {
+    if (gone) shown();
+  }, [gone]);
+  return [gone ? null : (t ?? null), shown];
+}
 
 export type FolderView = "list" | "graph";
 

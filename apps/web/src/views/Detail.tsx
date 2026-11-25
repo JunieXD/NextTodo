@@ -1,8 +1,9 @@
 // A task's details: title, folder, who is to do it, due date, description, attachments, what it
 // waits for and what waits for it.
 
-import { Bell, Calendar, CalendarCheck, CalendarClock, Folder as FolderIcon, KeyRound, type LucideIcon, Plus, Repeat, User, Users, X } from "lucide-react";
+import { ArrowUpRight, Bell, Calendar, CalendarCheck, CalendarClock, Folder as FolderIcon, KeyRound, type LucideIcon, Plus, Repeat, User, Users, X } from "lucide-react";
 import { type ReactNode, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLocation } from "wouter";
 import type { Attachment } from "../api/types/Attachment";
 import type { Completion } from "../api/types/Completion";
 import type { MutationId } from "../api/types/MutationId";
@@ -18,6 +19,7 @@ import { checkDescription, checkTitle } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
 import { Check, Seg } from "../ui/controls";
 import { Modal, Tip, useFeedback } from "../ui/feedback";
+import { useWide } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { composing } from "../ui/keys";
 import { Description } from "../ui/lazy-markdown";
@@ -26,7 +28,7 @@ import { type Adding, useAddFiles, useAttachments } from "./attachments";
 import { DueEditor, StartEditor } from "./due";
 import { FolderGlyph, styled } from "./folder-look";
 import { useMarks } from "./marks";
-import { useSelection } from "./nav";
+import { folderUrl, useSelection } from "./nav";
 import { FolderPicker, TaskPicker } from "./pickers";
 import { dueClass } from "./rows";
 import { AssigneePicker, Avatars, namesOf } from "./share";
@@ -108,6 +110,8 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
   const { snack } = useFeedback();
   const { pop } = useMarks();
   const { select } = useSelection();
+  const [location] = useLocation();
+  const wide = useWide();
   const [panel, setPanel] = useState<Panel>(null);
   if (closing && panel) setPanel(null);
   const update = (fields: TaskFields) => commit([{ op: "task.update", id, ...fields }]);
@@ -179,6 +183,16 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
             </>
           }
           onClick={() => setPanel("folder")}
+          side={
+            // On a phone, not while the folder is the page under the details.
+            (wide || location !== folderUrl(t.folder_id)) && (
+              <Tip label="在文件夹中显示">
+                <button className="prop-side" onClick={() => actions.reveal(t)}>
+                  <Icon of={ArrowUpRight} size={18} />
+                </button>
+              </Tip>
+            )
+          }
         />
         {shared && (
           <Prop
@@ -385,15 +399,28 @@ function Completions({ records, count, now, onClose }: { records: Completion[]; 
   );
 }
 
-/** A property of the task; one without `onClick` is only shown. */
-function Prop({ icon, label, value, cls = "", onClick }: { icon: LucideIcon; label: string; value: ReactNode; cls?: string; onClick?(): void }) {
-  const inner = (
-    <div className="row-inner">
+/** A property of the task; one without `onClick` is only shown. `side` is a button of its own at the
+ * end, beside the part that takes the click. */
+function Prop({ icon, label, value, cls = "", onClick, side }: { icon: LucideIcon; label: string; value: ReactNode; cls?: string; onClick?(): void; side?: ReactNode }) {
+  const parts = (
+    <>
       <Icon of={icon} />
       <span className="row-name">{label}</span>
       <span className={`row-value long ${cls}`}>{value}</span>
-    </div>
+    </>
   );
+  if (side)
+    return (
+      <div className="row prop prop-split">
+        <div className="row-inner">
+          <button className="prop-main" onClick={onClick}>
+            {parts}
+          </button>
+          {side}
+        </div>
+      </div>
+    );
+  const inner = <div className="row-inner">{parts}</div>;
   return onClick ? (
     <button className="row prop" onClick={onClick}>
       {inner}

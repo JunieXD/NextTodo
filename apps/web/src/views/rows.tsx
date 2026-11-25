@@ -1,6 +1,6 @@
 // Rows in lists: tasks, folders, and the folder view's tasks with the dependency rail on the left.
 
-import { CalendarClock, CheckCheck, ChevronRight, Clock, FolderInput, Check as CheckIcon, PanelRightOpen, Paperclip, Repeat, RotateCcw, SkipForward, Trash2 } from "lucide-react";
+import { ArrowUpRight, CalendarClock, CheckCheck, ChevronRight, Clock, FolderInput, Check as CheckIcon, PanelRightOpen, Paperclip, Repeat, RotateCcw, SkipForward, Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FolderId } from "../api/types/FolderId";
 import type { Op } from "../api/types/Op";
@@ -12,6 +12,7 @@ import { dueAfterLabel, dueKind, formatDue, isoDate, startLabel } from "../domai
 import { plainRail, railLayout } from "../domain/rail";
 import { doneToday, skippable } from "../domain/repeat";
 import { range, rekey } from "../domain/reorder";
+import { inPanel } from "../desktop";
 import { useCommit } from "../session";
 import { useFeedback } from "../ui/feedback";
 import { useWide } from "../ui/hooks";
@@ -29,6 +30,8 @@ import { Avatars, FolderName } from "./share";
 
 export interface RowActions {
   open(t: Task): void;
+  /** Opens the task's folder and shows it there. */
+  reveal(t: Task): void;
   toggle(t: Task): void;
   /** Stops a repeating task so that it is done. */
   endRepeat(t: Task): void;
@@ -147,6 +150,8 @@ export function TaskRow({
   const [moving, setMoving] = useState(false);
   const menu: MenuItem[] = [
     ...(selected ? [] : [{ icon: PanelRightOpen, label: "打开", onSelect: () => actions.open(t) }]),
+    // In the lists of tasks from many folders; not in the menu bar panel, which shows them elsewhere.
+    ...(path && !inPanel ? [{ icon: ArrowUpRight, label: "在文件夹中显示", onSelect: () => actions.reveal(t) }] : []),
     t.done_at === null ? { icon: CheckIcon, label: "标为完成", onSelect: () => actions.toggle(t) } : { icon: RotateCcw, label: "重新打开", onSelect: () => actions.toggle(t) },
     ...(skippable(t, isoDate(now)) ? [{ icon: SkipForward, label: "跳过这一次", onSelect: () => actions.skip(t) }] : []),
     ...(t.due?.repeat ? [{ icon: CheckCheck, label: "结束重复并完成", onSelect: () => actions.endRepeat(t) }] : []),
@@ -165,7 +170,7 @@ export function TaskRow({
   return (
     <>
       <ContextMenu items={menu} off={choosing}>
-        <div ref={row} className={cls} onClick={tap}>
+        <div ref={row} className={cls} data-task={t.id} onClick={tap}>
           <div className="swipe-bg">
             <span>
               <Icon of={CheckIcon} size={18} />

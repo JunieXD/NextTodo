@@ -455,6 +455,12 @@ label.row { cursor: pointer; }
 .prop .row-inner { min-height: 50px; gap: 12px; }
 .prop svg { color: var(--on-surface-variant); }
 .prop .row-value .people { margin-right: 8px; vertical-align: middle; }
+/* A row with a button of its own at the end: the rest of the row is a button too, and the two share
+   the whole row, a finger's width for the one at the end. */
+.prop-split > .row-inner { padding: 0; gap: 0; }
+.prop-main { flex: 1; min-width: 0; align-self: stretch; display: flex; align-items: center; gap: 12px; padding: 10px 0 10px 16px; }
+.prop-side { flex: none; align-self: stretch; width: 52px; display: grid; place-items: center; }
+@media (hover: hover) { .prop-side:hover svg { color: var(--on-surface); } }
 .d-sec { margin: 22px 32px 8px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .d-sec h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--on-surface-variant); }
 .d-sec p { margin: 2px 0 0; font-size: 12px; color: var(--outline); }

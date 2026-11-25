@@ -34,7 +34,7 @@ import { useBatch } from "./batch";
 import { type Layout, type Size, edgeKey, layout, widest } from "./graph-layout";
 import { QuickAdd } from "./lists";
 import { useMarking, useMarks } from "./marks";
-import { useSelection } from "./nav";
+import { useSelection, useShowing } from "./nav";
 import { dueClass } from "./rows";
 import { Avatars } from "./share";
 
@@ -60,6 +60,7 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
   const { board } = useView();
   const { flash } = useMarks();
   const marking = useMarking();
+  const [showing, revealed] = useShowing(folder);
   const batch = useBatch();
   const actions = useTaskActions();
   const { selected } = useSelection();
@@ -68,6 +69,8 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
   const wrap = useRef<HTMLDivElement>(null);
   const placed = useRef(false);
   const [done, setDone] = useState(false);
+  // A completed task to show is shown with the others.
+  if (showing && showing.done_at !== null && !done) setDone(true);
   const [sub, setSub] = useState(false);
   const [picked, setPicked] = useState<TaskId | null>(null);
   const [connect, setConnect] = useState<{ from: TaskId | null } | null>(null);
@@ -110,32 +113,36 @@ function Canvas({ folder, across, now }: { folder: FolderId | null; across: bool
     };
   }, [shape, across, flow]);
 
-  // A task just added with the bar: once a layout has it, it flashes and, out of view, is brought
-  // into it, clear of what floats over the bottom of the graph on phones: the bar and 连线, and the
-  // snackbar saying it was added, which in a short view (the keyboard up) is over the middle. Gone
-  // from the graph before then, turned down say, it is let go.
+  // A task just added with the bar, and one to show: once a layout has it, it flashes and, out of
+  // view, is brought into it, clear of what floats over the bottom of the graph on phones: the bar and
+  // 连线, and the snackbar saying it was added, which in a short view (the keyboard up) is over the
+  // middle. Gone from the graph before then, turned down say, it is let go.
   const added = useRef<TaskId | null>(null);
+  const show = showing?.id;
   const bottom = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const id = added.current;
-    if (!id) return;
-    if (!s.tasks.some((t) => t.id === id)) return void (added.current = null);
-    const at = laid?.at.get(id);
-    if (!at) return;
-    added.current = null;
-    marking.flash([id]);
-    const { x, y, zoom } = flow.getViewport();
-    const el = wrap.current!;
-    const box = el.getBoundingClientRect();
-    const over = bottom.current && [bottom.current, document.querySelector(".snackbar")].flatMap((e) => (e ? [e.getBoundingClientRect().top] : []));
-    const covered = over ? Math.max(0, box.bottom - Math.min(...over)) * (el.clientHeight / box.height) : 0;
-    const [w, h] = [el.clientWidth, el.clientHeight - covered];
-    const { width, height } = laid!.node;
-    const [left, top] = [at.x * zoom + x, at.y * zoom + y];
-    if (left >= 0 && top >= 0 && left + width * zoom <= w && top + height * zoom <= h) return;
-    // At the same zoom all the way, not out and back in as a long move would.
-    void flow.setViewport({ x: w / 2 - (at.x + width / 2) * zoom, y: h / 2 - (at.y + height / 2) * zoom, zoom }, { duration: 300, interpolate: "linear" });
-  }, [s, laid, flow, marking]);
+    /** Whether `id` is done with: shown, or gone. */
+    const bring = (id: TaskId) => {
+      if (!s.tasks.some((t) => t.id === id)) return true;
+      const at = laid?.at.get(id);
+      if (!at) return false;
+      marking.flash([id]);
+      const { x, y, zoom } = flow.getViewport();
+      const el = wrap.current!;
+      const box = el.getBoundingClientRect();
+      const over = bottom.current && [bottom.current, document.querySelector(".snackbar")].flatMap((e) => (e ? [e.getBoundingClientRect().top] : []));
+      const covered = over ? Math.max(0, box.bottom - Math.min(...over)) * (el.clientHeight / box.height) : 0;
+      const [w, h] = [el.clientWidth, el.clientHeight - covered];
+      const { width, height } = laid!.node;
+      const [left, top] = [at.x * zoom + x, at.y * zoom + y];
+      // At the same zoom all the way, not out and back in as a long move would.
+      if (left < 0 || top < 0 || left + width * zoom > w || top + height * zoom > h)
+        void flow.setViewport({ x: w / 2 - (at.x + width / 2) * zoom, y: h / 2 - (at.y + height / 2) * zoom, zoom }, { duration: 300, interpolate: "linear" });
+      return true;
+    };
+    if (added.current && bring(added.current)) added.current = null;
+    if (show && bring(show)) revealed();
+  }, [s, laid, flow, marking, show, revealed]);
 
   const hl = picked && s.tasks.some((t) => t.id === picked) ? picked : null;
   const chain = hl ? lineage(s.edges, hl) : null;

@@ -42,8 +42,8 @@ import { useListed } from "./batch";
 import { type DueGroup, setGroupClosed, useClosedGroups } from "./closed-groups";
 import { useRowDrag } from "./drag";
 import { useNewFolder, usePlaceFolder } from "./FolderMenu";
-import { useMarks } from "./marks";
-import { folderUrl, settingsUrl, useFolderView, useSelection } from "./nav";
+import { useMarking, useMarks } from "./marks";
+import { folderUrl, settingsUrl, useFolderView, useSelection, useShowing } from "./nav";
 import { JobRows } from "./jobs";
 import { useKeepDone } from "./keep-done";
 import { FolderChecks, FolderPicker } from "./pickers";
@@ -159,6 +159,8 @@ export function NextFilter() {
 export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date }) {
   const { board } = useView();
   const { linger, leaving } = useMarks();
+  const marking = useMarking();
+  const [showing, revealed] = useShowing(folder);
   const keep = useKeepDone();
   const { selected } = useSelection();
   const actions = useTaskActions();
@@ -176,6 +178,15 @@ export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date
     (t) => t.done_at === null,
   );
   const done = finished.filter((t) => !shown.has(t.id));
+  // A task to show here: in the middle, flashing, out of the folded completed ones if it is one of them.
+  if (showing && !doneOpen && done.some((t) => t.id === showing.id)) setDoneOpen(true);
+  const show = showing?.id;
+  useEffect(() => {
+    if (!show) return;
+    document.querySelector(`[data-task="${show}"]`)?.scrollIntoView({ block: "center" });
+    marking.flash([show]);
+    revealed();
+  }, [show, marking, revealed]);
   const jobs = board.snapshot.ai_jobs.filter((j) => j.folder_id === folder);
   // On a computer, the folders others share are in the sidebar.
   const wide = useWide();
@@ -219,7 +230,7 @@ export function FolderBody({ folder, now }: { folder: FolderId | null; now: Date
                 </div>
               </button>
             )}
-            <Fold open={doneOpen}>
+            <Fold open={doneOpen} instant={showing !== null}>
               {done.map((t) => (
                 <TaskRow key={t.id} task={t} board={board} now={now} batchable selected={selected === t.id} actions={actions} />
               ))}

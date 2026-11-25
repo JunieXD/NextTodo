@@ -29,7 +29,7 @@ export function accent(): Accent {
   const a = localStorage.getItem(ACCENT) ?? "emerald";
   return isPreset(a) ? a : (parseHex(a) ?? "emerald");
 }
-const isDark = () => theme() === "dark" || (theme() === "system" && dark.matches);
+export const isDark = () => theme() === "dark" || (theme() === "system" && dark.matches);
 
 export const hueOf = (a: Preset | Hex) => (isPreset(a) ? PRESETS[a] : Hct.fromInt(argbFromHex(a)).hue);
 
@@ -157,11 +157,12 @@ addEventListener("storage", (e) => {
   if (e.key === KEY || e.key === ACCENT) changed();
 });
 
-const subscribe = (l: () => void) => {
+/** Calls `l` each time the theme or the accent changes; returns how to stop. */
+export const onThemeChange = (l: () => void) => {
   listeners.add(l);
   return () => void listeners.delete(l);
 };
 
-export const useTheme = () => useSyncExternalStore(subscribe, theme);
-export const useAccent = () => useSyncExternalStore(subscribe, accent);
-export const useDark = () => useSyncExternalStore(subscribe, isDark);
+export const useTheme = () => useSyncExternalStore(onThemeChange, theme);
+export const useAccent = () => useSyncExternalStore(onThemeChange, accent);
+export const useDark = () => useSyncExternalStore(onThemeChange, isDark);

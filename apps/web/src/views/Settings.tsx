@@ -104,7 +104,7 @@ function useSections(): SettingsSection[][] {
   const groups: SettingsSection[][] = [
     [inLocal ? "local" : "account", "log", ...(phoneApp ? [] : (["lock"] as const))],
     // Only the apps run on a system to set things of: the web has the browser's.
-    ["appearance", "lists", "reminders", ...(app === "android" ? (["widget"] as const) : []), ...(app === "android" || app === "desktop" ? (["system"] as const) : [])],
+    ["appearance", "lists", "reminders", ...(app === "android" || app === "desktop" ? (["widget", "system"] as const) : [])],
   ];
   groups.push(!inLocal || app === "desktop" ? ["ai", "agent"] : ["ai"]);
   // The server's own: its admin's, or in local mode the user's, who has it alone.

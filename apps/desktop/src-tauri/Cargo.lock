@@ -2920,6 +2920,7 @@ dependencies = [
  "base64 0.22.1",
  "nexttodo-core",
  "nexttodo-server",
+ "objc2",
  "objc2-app-kit",
  "open",
  "percent-encoding",
@@ -2937,6 +2938,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tracing",
  "tracing-subscriber",
+ "windows",
  "windows-registry",
 ]
 

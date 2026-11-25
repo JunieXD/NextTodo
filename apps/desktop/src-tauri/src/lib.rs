@@ -1,6 +1,7 @@
 //! The desktop app, for macOS and Windows: the web app in a window that closing only hides, a menu
-//! bar or tray icon and a global shortcut for the panel, deadline reminders while it runs, updates,
-//! the server inside it for local mode, and the command line it carries. See docs/desktop.md.
+//! bar or tray icon and a global shortcut for the panel, the desktop widget, deadline reminders while
+//! it runs, updates, the server inside it for local mode, and the command line it carries. See
+//! docs/desktop.md.
 
 mod attachments;
 mod cli;
@@ -9,6 +10,7 @@ mod panel;
 mod reminders;
 mod shortcut;
 mod updates;
+mod widget;
 
 use std::io::IsTerminal;
 
@@ -148,12 +150,15 @@ pub fn run() {
             cli::install_cli,
             shortcut::shortcut,
             shortcut::set_shortcut,
-            shortcut::pause_shortcut
+            shortcut::pause_shortcut,
+            widget::widget,
+            widget::set_widget
         ])
         .setup(|app| {
             attachments::clear();
             window(app.handle())?;
             panel::build(app.handle())?;
+            widget::start(app.handle());
             tray(app.handle())?;
             // A click on a reminder, or on its button, opens its task; on a daily digest, 接下来.
             let open = Action::builder(reminders::OPEN, "打开").build();
@@ -178,11 +183,15 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| match event {
-            // Closing a window keeps the app in the menu bar or tray, syncing and reminding.
+            // Closing a window keeps the app in the menu bar or tray, syncing and reminding. The widget,
+            // closed in the settings, stays.
             WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
-                let _ = window.hide();
+                if window.label() != widget::LABEL {
+                    let _ = window.hide();
+                }
             }
+            WindowEvent::Moved(_) | WindowEvent::Resized(_) if window.label() == widget::LABEL => widget::moved(window),
             WindowEvent::Focused(false) if window.label() == panel::LABEL => panel::blurred(window),
             WindowEvent::Focused(true) => local::focused(window.app_handle()),
             _ => {}

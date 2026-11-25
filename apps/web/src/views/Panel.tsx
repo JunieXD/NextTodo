@@ -1,12 +1,13 @@
 // The desktop app's menu bar or tray panel: what is next or a folder, ticked off and added to without
-// the main window (docs/desktop.md#菜单栏小窗).
+// the main window (docs/desktop.md#菜单栏小窗); the desktop widget too, which it does not close and which
+// is moved by its top row (docs/desktop.md#桌面小组件).
 
 import { AppWindow, Check, ChevronDown, CircleCheck, FolderRoot } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { type ReactNode, useContext, useEffect } from "react";
 import { Redirect, useLocation } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
-import { hidePanel, openMain } from "../desktop";
+import { hidePanel, inWidget, openMain } from "../desktop";
 import type { PrivacyLock } from "../lock";
 import { useConnection, useView } from "../session";
 import { LockScreen } from "./Lock";
@@ -20,8 +21,13 @@ import { FolderGlyph } from "./folder-look";
 import { FolderName } from "./share";
 import { ConnectionNote } from "./status";
 
-/** The page it shows, remembered on this device. */
-const PAGE = "nexttodo.panelPage";
+/** The page it shows, remembered on this device, the panel's apart from the widget's. */
+const PAGE = inWidget ? "nexttodo.widgetPage" : "nexttodo.panelPage";
+
+/** What closes the panel; the widget stays. */
+const close = () => {
+  if (!inWidget) void hidePanel();
+};
 
 /** Back on the page it showed last, before it first renders. */
 export const restorePage = () => history.replaceState(null, "", localStorage.getItem(PAGE) ?? "/");
@@ -44,12 +50,12 @@ export function Panel() {
   useEffect(() => {
     if (!elsewhere) localStorage.setItem(PAGE, location);
   }, [elsewhere, location]);
-  useEscape(() => (batch.on ? batch.end() : void hidePanel()));
+  useEscape(() => (batch.on ? batch.end() : close()));
   if (elsewhere) return null;
   if (folder && !board.folder(folder)) return <Redirect to="/" replace />;
   return (
     <>
-      <header className="panel-head">
+      <header className="panel-head" data-tauri-drag-region={inWidget ? "deep" : undefined}>
         {batch.on ? (
           <BatchHead />
         ) : (
@@ -130,14 +136,14 @@ function Pages({ folder }: { folder?: FolderId | null }) {
 
 /** Locked (docs/design.md#隐私锁): unlocked here as in the main window, closed as the panel is. */
 export function PanelLocked({ lock }: { lock: PrivacyLock }) {
-  useEscape(() => void hidePanel());
+  useEscape(close);
   return <LockScreen lock={lock} />;
 }
 
 /** Signed out, or local mode would not start: the main window is where to see to it, and a sign-in
  * there loads the panel again (main.tsx). */
 export function PanelOut({ failed }: { failed?: string }) {
-  useEscape(() => void hidePanel());
+  useEscape(close);
   return (
     <div className="panel-out">
       {failed && <p>{failed}</p>}

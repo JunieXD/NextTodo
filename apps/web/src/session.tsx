@@ -18,7 +18,7 @@ import * as mobile from "./mobile";
 import * as desktop from "./desktop";
 import { type FileMessage, Files } from "./sync/files";
 import { exclusive } from "./sync/locks";
-import { type Saver, forget, forgetCopy, forgetOthers, load, saver } from "./sync/persist";
+import { type Saver, forget, forgetCopy, forgetOthers, load, outbox, saver } from "./sync/persist";
 import { type Connection, Socket } from "./sync/socket";
 import { type Saved, Store } from "./sync/store";
 import { useFeedback } from "./ui/feedback";
@@ -78,18 +78,20 @@ async function logout(): Promise<boolean> {
  * the tab that sent it hears, so that tabs that took it from the outbox drop it too, and with why when
  * it was a file that could not go, for the tab the user is in; that a file has been uploaded, so that
  * the change waiting for it goes; and the changes a closing tab leaves the server to confirm, so that
- * they go from another, not at the next start. */
+ * they go from another, not at the next start. A sign-in the desktop app's panel or widget makes as it
+ * opens, with no data saved, says so: it takes on the main window's server and session, nothing for
+ * the other to load anew. */
 type Message =
-  | { signedIn: Login }
+  | { signedIn: Login; panel?: true }
   | { signedOut: Login }
   | { rejected: MutationId; told?: { user: string; text: string } }
   | { handed: { user: string; changes: Mutation[] } }
   | FileMessage;
 const tabs = new BroadcastChannel("nexttodo");
 
-/** Calls `f` whenever another tab signs in. */
+/** Calls `f` whenever another tab, or the desktop app's main window, signs in. */
 export function onSignInElsewhere(f: () => void) {
-  tabs.addEventListener("message", ({ data }: MessageEvent<Message>) => "signedIn" in data && f());
+  tabs.addEventListener("message", ({ data }: MessageEvent<Message>) => "signedIn" in data && !data.panel && f());
 }
 
 /** Runs `f` while no other tab is signing in or out: what it finds on the device stays so until it
@@ -279,6 +281,12 @@ export class Session {
     tabs.postMessage({ handed: { user: this.user.id, changes: this.store.queued } } satisfies Message);
   }
 
+  /** Takes on what the server has not confirmed yet of the changes saved on this device by a window
+   * that closed without handing them over: the desktop widget, turned off from here. */
+  async takeOver() {
+    this.store.adopt((await outbox(this.user.id)).map((p) => p.mutation));
+  }
+
   /** Asks the server whether the session still holds, and refreshes the user's details. */
   async check() {
     let me: User;
@@ -365,7 +373,7 @@ async function claim(user: User, copy: string): Promise<Session | Login> {
   const login: Login = { id: next(), user };
   localStorage.setItem(LOGIN, JSON.stringify(login));
   localStorage.removeItem(SIGNED_OUT);
-  tabs.postMessage({ signedIn: login } satisfies Message);
+  tabs.postMessage({ signedIn: login, ...(desktop.inPanel && { panel: true }) } satisfies Message);
   await forgetOthers(user.id);
   const saved = await load(user, copy);
   return saved ? new Session(user, login.id, copy, saved) : login;

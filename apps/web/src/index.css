@@ -722,6 +722,22 @@ a.text-btn { display: inline-flex; align-items: center; }
 .macos.in-panel, .macos.in-panel body { background: transparent; }
 .panel { display: flex; flex-direction: column; background: var(--surface); }
 .macos .panel { border-radius: 12px; border: .5px solid var(--outline-variant); }
+/* The desktop widget (docs/desktop.md#桌面小组件): a card in the colour and opacity chosen (widget.ts),
+   its lists and fields clear on it, in its text colour. Menus and dialogs keep the theme's. */
+.in-widget, .in-widget body { background: transparent; }
+.in-widget .panel { background: var(--w-bg); border-radius: 12px; border: none; }
+.in-widget :is(.panel-head, .panel-scroll, .quick-add, .status-note, .batch-bar, .panel-out, .login) {
+  --on-surface: var(--w-text); --on-surface-variant: var(--w-secondary); --outline: var(--w-done); --outline-variant: var(--w-divider);
+  --primary: var(--w-primary); --on-primary: var(--w-on-primary); --error: var(--w-overdue); --warn: var(--w-today);
+  --surface: var(--w-surface); --group-bg: transparent; --bar-bg: transparent; --surface-container: var(--w-divider);
+  --secondary-container: var(--w-divider); --on-secondary-container: var(--w-text); --press: color-mix(in srgb, var(--w-text) 8%, transparent);
+  color: var(--w-text);
+}
+/* The lock screen's fields, clear, are seen by their edges. */
+.in-widget .login { --outline-variant: var(--w-done); }
+/* A row's swipe actions, under it, show through a clear row: only while it is swiped, as it is opaque. */
+.in-widget .row:not(.swiping) .swipe-bg { visibility: hidden; }
+.in-widget .row.swiping > .row-inner { background: var(--surface); }
 /* The page's name starts where the groups do; pressed, the button around it reaches further out. */
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 6px 2px 4px; flex: none; }
 .panel-pages { display: flex; align-items: center; gap: 4px; min-width: 0; height: 36px; padding: 0 8px; border-radius: 10px; font-size: 17px; font-weight: 600; transition: background-color .15s; }
@@ -737,7 +753,7 @@ a.text-btn { display: inline-flex; align-items: center; }
 .panel-scroll .empty { margin: 8px 12px; }
 .panel-scroll .tip-card { margin-inline: 12px; }
 .panel .status-note { margin-inline: 12px; }
-.panel .row:hover > .row-inner { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 4%); }
+.panel .row:hover:not(.swiping) > .row-inner { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 4%); }
 .panel .batch-bar { position: static; flex: none; }
 .panel .snackbar { bottom: 12px; }
 .panel-out { height: 100%; display: grid; place-content: center; justify-items: center; gap: 16px; padding: 24px; text-align: center; color: var(--on-surface-variant); }
@@ -823,7 +839,8 @@ a.text-btn { display: inline-flex; align-items: center; }
 /* The settings are one column in the middle; their title lines up with it, the scroll's padding
    (12) and the groups' margin (16) accounted for. */
 .desk .settings-page { max-width: 600px; margin-inline: auto; }
-/* The Android widgets' preview, kept in view as the settings scroll, over a wallpaper half light and
+.settings-page > .widget-shown { margin-bottom: 16px; }
+/* The widgets' preview, kept in view as the settings scroll, over a wallpaper half light and
    half dark; laid out as the widget is (NextWidget.kt). */
 .settings-page > .widget-stage { position: sticky; top: 0; z-index: 1; margin: 0; padding: 16px; background: linear-gradient(90deg, #e3e9e5 50%, #1d2420 50%); }
 .widget-card { max-width: 340px; margin: 0 auto; padding-bottom: 6px; border-radius: 20px; font-size: calc(15px * var(--scale)); }

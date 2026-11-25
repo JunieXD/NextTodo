@@ -2,7 +2,6 @@
 // menu bar or tray icon and its shortcut, and the command line it carries. See docs/desktop.md.
 
 import { invoke } from "@tauri-apps/api/core";
-import { listen as on } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { navigate } from "wouter/use-browser-location";
 import { app } from "./api/http";
@@ -67,8 +66,12 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
   };
 }
 
-/** In the menu bar or tray panel rather than the main window (docs/desktop.md#菜单栏小窗). */
-export const inPanel = app === "desktop" && getCurrentWindow().label === "panel";
+const label = app === "desktop" ? getCurrentWindow().label : "main";
+/** In the desktop widget (docs/desktop.md#桌面小组件). */
+export const inWidget = label === "widget";
+/** In the menu bar or tray panel (docs/desktop.md#菜单栏小窗), or the desktop widget, which shows the
+ * same, rather than the main window. */
+export const inPanel = label === "panel" || inWidget;
 
 /** Shows `path` in the main window: the panel's task or page, which it closes for. */
 export const openMain = (path: string) => invoke<void>("open_main", { path });
@@ -87,13 +90,15 @@ export const openAttachment = (a: Attachment, file: Blob) => handOver<void>("ope
 /** Asks where to save the file; where it went, nothing when the user cancelled. */
 export const saveAttachment = (a: Pick<Attachment, "id" | "name">, file: Blob) => handOver<string | null>("save_attachment", a, file);
 
-/** Listens in the panel for being opened, to quick add; in the main window for what to show, from
- * the panel or a click on a reminder, and for the menu's 锁定, which with no lock set opens its
- * settings. */
+/** Listens, each window only to what is sent to it: the panel for being opened, to quick add; the main
+ * window for what to show, from the panel or a click on a reminder, and for the menu's 锁定, which
+ * with no lock set opens its settings. The widget is sent nothing. */
 export async function listen() {
-  if (inPanel) return void (await on("shown", () => navigate(`${location.pathname}?add`, { replace: true })));
-  await on<string>("open", (e) => navigate(e.payload));
-  await on("lock", () => (privacyLock() ? lockNow() : void openMain("/settings/lock")));
+  if (inWidget) return;
+  const here = getCurrentWindow();
+  if (inPanel) return void (await here.listen("shown", () => navigate(`${location.pathname}?add`, { replace: true })));
+  await here.listen<string>("open", (e) => navigate(e.payload));
+  await here.listen("lock", () => (privacyLock() ? lockNow() : void openMain("/settings/lock")));
 }
 
 /** Where the command line the app carries stands: on macOS its place may hold another one, `by` says
@@ -105,6 +110,12 @@ export type CliStatus = { state: "installed" | "missing" } | { state: "taken"; b
 export const cli = {
   status: () => invoke<CliStatus>("cli_status"),
   install: (replace: boolean) => invoke<void>("install_cli", { replace }),
+};
+
+/** Whether the desktop widget is shown, and showing or closing it (`apps/desktop/src-tauri/src/widget.rs`). */
+export const desktopWidget = {
+  shown: () => invoke<boolean>("widget"),
+  show: (shown: boolean) => invoke<void>("set_widget", { shown }),
 };
 
 /** The panel's global shortcut, as `control+alt+KeyK`, and whether another app had it when the app

@@ -16,6 +16,7 @@ import { limitBrowserMenu } from "./ui/menu";
 import { restorePage } from "./views/Panel";
 import "./index.css";
 import { applyTheme } from "./theme";
+import { paintWidget } from "./widget";
 import { applyZoom } from "./zoom";
 
 listenForFailures();
@@ -26,9 +27,13 @@ if (app === "desktop" && desktopOs === "macOS") document.documentElement.classLi
 if (app === "desktop") void applyZoom();
 if (desktop.inPanel) {
   document.documentElement.classList.add("in-panel");
+  if (desktop.inWidget) {
+    document.documentElement.classList.add("in-widget");
+    paintWidget();
+  }
   restorePage();
-  // A sign-in in the main window, local mode's new session too, loads the panel again, whatever it
-  // shows, for the server and session it keeps in memory (api/http.ts) to be read anew.
+  // A sign-in in the main window, local mode's new session too, loads the panel and the widget again,
+  // whatever they show, for the server and session each keeps in memory (api/http.ts) to be read anew.
   onSignInElsewhere(() => location.reload());
 }
 // Android's quick add card shows the app it is over around its sheet.

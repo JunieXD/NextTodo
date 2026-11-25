@@ -1,5 +1,6 @@
 // How the Android widgets look (docs/android.md#小组件的设置), and the colours they are drawn in, worked
-// out as the widgets' `Colors` (apps/android/.../widget/Look.kt) does, for the settings' preview.
+// out as the widgets' `Colors` (apps/android/.../widget/Look.kt) does, for the settings' preview; the
+// desktop widget takes its colours from the same (docs/desktop.md#桌面小组件).
 
 import { type Hex, luminance, parseHex, rgbOf } from "./color";
 
@@ -60,7 +61,7 @@ const alpha = (c: Hex, a: number) => `rgb(${rgbOf(c).join(" ")} / ${a})`;
 /** The colours the widgets are drawn in as `look` has them, the system `dark` or not: the text and the
  * marks those of the palette that go on a light background or on a dark one; one's own text colour,
  * fainter for what is less to the fore. */
-export function widgetColors(look: WidgetLook, dark: boolean) {
+export function widgetColors(look: Pick<WidgetLook, "background" | "opacity" | "text">, dark: boolean) {
   const system = PALETTES[dark ? "dark" : "light"];
   const ground = look.background === "system" ? system.surface : colorOf(look.background);
   const own = look.text === "auto" ? null : colorOf(look.text);
@@ -81,5 +82,7 @@ export function widgetColors(look: WidgetLook, dark: boolean) {
     onPrimary: tone.onPrimary,
     overdue: tone.error,
     today: tone.warn,
+    /** Under the text where the desktop widget can't be see-through: a row as it is swiped. */
+    surface: tone.surface,
   };
 }

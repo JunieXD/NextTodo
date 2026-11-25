@@ -44,17 +44,23 @@ tracing = "0.1.44"
 # The log, the server's and the plugins', on standard error (docs/local.md#可靠性).
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
-# Closing the panel gives the focus back to the app it was opened from (src/panel.rs). Tao uses it too.
+# Closing the panel gives the focus back to the app it was opened from (src/panel.rs); the desktop widget
+# stays put as the desktop is shown (src/widget.rs). Tao uses them too.
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "libc", "NSRunningApplication", "NSWorkspace"] }
+objc2 = "0.6.5"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "libc", "NSApplication", "NSResponder", "NSRunningApplication", "NSWindow", "NSWorkspace"] }
 
-# Putting the command line on the user's PATH, and seeing whether it is (src/cli.rs).
+# Putting the command line on the user's PATH, and seeing whether it is (src/cli.rs); the desktop's
+# window, which owns the desktop widget (src/widget.rs), the version Tauri takes its handle in.
 [target.'cfg(windows)'.dependencies]
 base64 = "0.22.1"
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 windows-registry = "0.6.1"
 
 [lints.rust]
-unsafe_code = "forbid"
+# Denied, not forbidden: one Win32 call, which the windows crate marks unsafe, is let through where it
+# is made (src/widget.rs).
+unsafe_code = "deny"
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }

@@ -320,6 +320,15 @@ label.row { cursor: pointer; }
 .qa-btn.folder span { overflow: hidden; text-overflow: ellipsis; }
 .qa-btn.send { background: var(--primary); color: var(--on-primary); }
 .qa-btn.send:disabled { opacity: .4; }
+/* Narrow, and in the quick add card, two layers: the field the whole width, and the buttons in a row
+   under it. Narrow and out of use, the field alone, as a one-line bar. */
+.quick-add.layered { flex-direction: column; align-items: stretch; gap: 0; transition: border-radius .2s; }
+.quick-add.layered:not(.shut) { border-radius: 22px; }
+.quick-add.layered:not(.shut) .qa-field { border-radius: 17px; }
+.qa-row { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .2s var(--ease-move), opacity .2s; }
+.quick-add.shut .qa-row { grid-template-rows: 0fr; opacity: 0; }
+.qa-row-in { min-height: 0; overflow: hidden; display: flex; justify-content: space-between; gap: 4px; }
+.qa-row-in .qa-btns { padding-top: 5px; min-width: 0; }
 /* AI organizing's text expanded: a page of its own on phones, a large window on computers */
 .editor { position: absolute; z-index: 31; inset: 0; display: flex; flex-direction: column; background: var(--surface-low); padding: var(--safe-top) 0 calc(12px + var(--safe-bottom)); }
 .editor.enter { animation: sheet-in .38s var(--ease); }
@@ -327,6 +336,7 @@ label.row { cursor: pointer; }
 .editor textarea { flex: 1; min-height: 0; border: 0; background: none; outline: none; resize: none; font-size: 16px; line-height: 1.6; padding: 4px 16px 12px; }
 .editor .staged-list { padding-inline: 16px; }
 .editor-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 16px 0; }
+.editor-foot > :first-child { margin-right: auto; }
 
 /* AI jobs in lists */
 .job-ic { width: 24px; height: 24px; display: grid; place-items: center; flex: none; color: var(--primary); }

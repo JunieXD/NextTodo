@@ -159,6 +159,7 @@ function TidyRequest({ onSubmit, onClose }: { onSubmit(text: string): void; onCl
     e.preventDefault();
     const c = checkJobText(text);
     if (!c.ok) return setError(c.error);
+    if (!c.value.trim()) return setError("要求不能为空");
     onSubmit(c.value);
     onClose();
   };

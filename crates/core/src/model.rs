@@ -264,11 +264,10 @@ text_type!(
     }
 );
 text_type!(
-    /// What was written for AI to organize into tasks.
+    /// What was written for AI to organize into tasks: empty when the pictures attached say it all
+    /// (docs/ai.md#附件). For a tidying, what to look for, which it needs.
     JobText,
-    |s| if s.trim().is_empty() {
-        Err("内容不能为空".into())
-    } else if s.chars().count() > 10_000 {
+    |s| if s.chars().count() > 10_000 {
         Err("内容不能超过 10000 个字".into())
     } else if s.chars().any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t')) {
         Err("内容不能包含控制字符".into())

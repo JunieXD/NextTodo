@@ -15,7 +15,7 @@ use nexttodo_core::board::{Now, comes_round, holds_up};
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
     AiJob, AiJobId, Attachment, AttachmentId, Change, Completion, Completions, Dependency, Due, DueAfter, Effect, Folder, FolderId, Holder,
-    JobKind, JobState, Link, MutationId, Person, Share, SortKey, Task, TaskId,
+    JobKind, JobState, JobText, Link, MutationId, Person, Share, SortKey, Task, TaskId,
 };
 use nexttodo_core::ops::{MAX_OPS, Mutation, Op};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -90,6 +90,15 @@ pub fn local(m: &Mutation, now: i64) -> Now {
         (None, Some(today)) => Now { today: today.clone(), time: None },
         (None, None) => Now::utc(now),
     }
+}
+
+/// Whether a job of `kind` says what to do with `text`: a tidying has to, an organizing may leave it
+/// to its pictures, which only running it can tell the model sees.
+fn asks(kind: JobKind, text: &JobText) -> Result<(), ApiError> {
+    if kind == JobKind::Tidy && text.as_str().trim().is_empty() {
+        return Err(ApiError::invalid("要求不能为空", Some("text".into())));
+    }
+    Ok(())
 }
 
 /// Applies the operations inside the caller's transaction, made on a device at `local`, and returns
@@ -825,6 +834,7 @@ impl<'a> Cx<'a> {
                 if store::job_id_taken(self.c, *id)? {
                     return Err(ApiError::conflict("请求 ID 已存在"));
                 }
+                asks(kind.unwrap_or_default(), text)?;
                 if let Some(f) = folder_id {
                     self.folder(*f)?;
                 }
@@ -852,6 +862,7 @@ impl<'a> Cx<'a> {
                 let mut j =
                     AiJob { state: JobState::Waiting, error: None, suggestions: None, reminders: reminders.clone(), ..before.clone() };
                 if let Some(text) = text {
+                    asks(j.kind, text)?;
                     j.text = text.clone();
                 }
                 if let Some(folder_id) = folder_id {

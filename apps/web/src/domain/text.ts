@@ -43,10 +43,13 @@ export function checkFileName(s: string): Checked {
   return c;
 }
 
-/** Text for AI to organize: long and on many lines, as written. */
+/** Whether `s` says nothing once the checks have taken out what they take out. */
+export const blank = (s: string) => !s.replace(control, "").trim();
+
+/** Text for AI to organize: long and on many lines, as written; empty when the pictures attached say
+ * it all, which its callers see to. */
 export function checkJobText(s: string): Checked {
   const value = s.replace(control, "");
-  if (!value.trim()) return { ok: false, error: "内容不能为空" };
   if (length(value) > 10_000) return { ok: false, error: "内容不能超过 10000 个字" };
   return { ok: true, value };
 }

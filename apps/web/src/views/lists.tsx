@@ -1,12 +1,12 @@
 // The bodies of the main pages: what is next, what is done, a folder (the root too), search results;
 // and the quick-add bar.
 
-import { ArrowUp, ChevronDown, ChevronRight, ChevronUp, Folder as FolderIcon, FolderPlus, List, ListFilter, Sparkles, Workflow } from "lucide-react";
+import { ArrowUp, ChevronDown, ChevronRight, ChevronUp, Folder as FolderIcon, FolderPlus, List, ListFilter, Paperclip, Sparkles, Workflow } from "lucide-react";
 import { Dialog } from "radix-ui";
 import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation, useSearchParams } from "wouter";
-import { NextTodo } from "../mobile";
+import { NextTodo, inCard } from "../mobile";
 import { app } from "../api/http";
 import type { AiJobId } from "../api/types/AiJobId";
 import type { Due } from "../api/types/Due";
@@ -20,11 +20,11 @@ import { lastKey } from "../domain/apply";
 import { matches } from "../domain/board";
 import { aiReady, setAiMode, useAiMode, useAiVision } from "../ai";
 import { day, dueKind, formatDay, inOrder, localTime } from "../domain/dates";
-import { checkJobText, checkTitle } from "../domain/text";
-import { useCommit, useSession, useView } from "../session";
+import { blank, checkJobText, checkTitle } from "../domain/text";
+import { useCommit, useConnection, useSession, useView } from "../session";
 import { readyIn, setNextFolders, useNextFolders } from "../next-folders";
 import { defaultReminders, jobReminders } from "../remind-settings";
-import { addOps, filesIn, isPicture, plan, unseen } from "../attach";
+import { addOps, filesIn, isPicture, plan, seesAny, unseen } from "../attach";
 import { type Staged, draft, keepDraft, keepStaged, onDrafts, stagedFiles } from "../sync/drafts";
 import { dropFiles } from "../sync/files";
 import { useBack } from "../ui/back";
@@ -37,7 +37,7 @@ import { useLeave } from "../ui/leave";
 import { useWide } from "../ui/hooks";
 import { useTaskActions } from "./actions";
 import { addedTo, pickAddTo, useAddTo } from "./add-to";
-import { StagedFiles, useKeepFiles } from "./attachments";
+import { ChooseFiles, StagedFiles, useKeepFiles } from "./attachments";
 import { useListed } from "./batch";
 import { type DueGroup, setGroupClosed, useClosedGroups } from "./closed-groups";
 import { useRowDrag } from "./drag";
@@ -427,8 +427,11 @@ export function QuickAdd({ folder, on, hide = false, onSent }: { folder?: Folder
   };
   // The device remembers the mode last used.
   const ai = useAiMode() && on === undefined;
-  const vision = useAiVision(user.id, ai && staged.some((f) => isPicture(f.type)));
+  const online = useConnection() === "online";
+  const vision = useAiVision(user.id, online && ai && staged.some((f) => isPicture(f.type)));
   const hidden = ai && vision !== undefined ? unseen(staged, vision) : undefined;
+  // Pictures the model sees say it all: AI organizing needs no text with them (docs/ai.md#附件).
+  const empty = blank(title) && !(ai && vision !== undefined && seesAny(staged, vision));
   // Until one is picked or fixed, in “接下来” the first folder it lists, so that a new task shows
   // there; in the calendar, the root.
   const target = useAddTo(board);
@@ -447,6 +450,33 @@ export function QuickAdd({ folder, on, hide = false, onSent }: { folder?: Folder
   const when = on && formatDay(day(on).getTime(), new Date());
   const area = useRef<HTMLTextAreaElement>(null);
   const focus = () => area.current?.focus();
+  // Narrower than this, the buttons beside the field would leave it a few characters: they go below
+  // it, and only while it is in use.
+  const form = useRef<HTMLFormElement>(null);
+  const [narrow, setNarrow] = useState(false);
+  useLayoutEffect(() => {
+    const el = form.current!;
+    const resized = new ResizeObserver(() => setNarrow(el.clientWidth < 480));
+    resized.observe(el);
+    return () => resized.disconnect();
+  }, []);
+  // In use from when the focus comes in until it or a tap goes elsewhere in the page: not to a menu or
+  // a dialog the bar opened. Away from the page, to choose a file say, does not count.
+  const [active, setActive] = useState(false);
+  useEffect(() => {
+    if (!active) return;
+    const away = (e: Event) =>
+      e.target instanceof Element && !form.current!.contains(e.target) && !e.target.closest('[role="menu"], [role="dialog"]') && setActive(false);
+    addEventListener("pointerdown", away, true);
+    addEventListener("focusin", away, true);
+    return () => {
+      removeEventListener("pointerdown", away, true);
+      removeEventListener("focusin", away, true);
+    };
+  }, [active]);
+  // The quick add card is in use whenever it is up.
+  const layered = narrow || inCard;
+  const shut = narrow && !inCard && !active && !title && !staged.length;
   // Android's quick add card opens with `?add` to type a new task straight away, and so does the
   // desktop app's panel each time it opens: on Android with the keyboard up, which focusing alone does
   // not bring.
@@ -514,7 +544,7 @@ export function QuickAdd({ folder, on, hide = false, onSent }: { folder?: Folder
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (empty) return;
     if (ai) return void organize();
     const c = checkTitle(title);
     if (!c.ok) return snack([...title.trim()].length > 200 && on === undefined ? `${c.error}；长段文字可以点 ✦ 交给 AI 整理` : c.error);
@@ -559,15 +589,43 @@ export function QuickAdd({ folder, on, hide = false, onSent }: { folder?: Folder
   );
   const send = (
     <Tip label={ai ? "交给 AI 整理" : "添加"}>
-      <button type="submit" className="qa-btn icon send" disabled={!title.trim()}>
+      <button type="submit" className="qa-btn icon send" disabled={empty}>
         <Icon of={ArrowUp} size={18} width={2.2} />
+      </button>
+    </Tip>
+  );
+  const clip = (
+    <ChooseFiles className="qa-btn icon" label="添加附件" onAdd={(list) => void addFiles(list)}>
+      <Icon of={Paperclip} size={16} />
+    </ChooseFiles>
+  );
+  // Not taking the focus from the text: on a phone the keyboard would go down and come up again.
+  const spark = on === undefined && (
+    <Tip label="AI 整理">
+      <button type="button" className={`qa-btn icon${ai ? " on" : ""}`} aria-pressed={ai} onMouseDown={(e) => e.preventDefault()} onClick={() => void switchMode()}>
+        <Icon of={Sparkles} size={16} />
+      </button>
+    </Tip>
+  );
+  const expand = ai && tall && (
+    <Tip label="展开编辑">
+      <button type="button" className="qa-btn icon expand" onClick={() => setExpanded(true)}>
+        <Icon of={ChevronUp} size={18} />
       </button>
     </Tip>
   );
 
   return (
     <>
-      <form className="quick-add" hidden={hide} onSubmit={submit} onDragOver={files.onDragOver} onDrop={files.onDrop}>
+      <form
+        ref={form}
+        className={`quick-add${layered ? " layered" : ""}${shut ? " shut" : ""}`}
+        hidden={hide}
+        onSubmit={submit}
+        onDragOver={files.onDragOver}
+        onDrop={files.onDrop}
+        onFocus={() => setActive(true)}
+      >
         <div className="qa-field">
           <StagedFiles files={staged} unseen={hidden} onRemove={unstage} />
           {/* A title pasted on many lines is joined into one. */}
@@ -584,33 +642,31 @@ export function QuickAdd({ folder, on, hide = false, onSent }: { folder?: Folder
             aria-label={ai ? "交给 AI 整理的内容" : when ? `新事项标题，截止${when}` : "新事项标题"}
           />
         </div>
-        <div className="qa-side">
-          {ai && tall && (
-            <Tip label="展开编辑">
-              <button type="button" className="qa-btn icon expand" onClick={() => setExpanded(true)}>
-                <Icon of={ChevronUp} size={18} />
-              </button>
-            </Tip>
-          )}
-          <div className="qa-btns">
-            {/* Not taking the focus from the text: on a phone the keyboard would go down and come up again. */}
-            {on === undefined && (
-              <Tip label="AI 整理">
-                <button
-                  type="button"
-                  className={`qa-btn icon${ai ? " on" : ""}`}
-                  aria-pressed={ai}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => void switchMode()}
-                >
-                  <Icon of={Sparkles} size={16} />
-                </button>
-              </Tip>
-            )}
-            {pick}
-            {send}
+        {layered ? (
+          <div className="qa-row" inert={shut}>
+            <div className="qa-row-in">
+              <div className="qa-btns">
+                {clip}
+                {spark}
+                {expand}
+              </div>
+              <div className="qa-btns">
+                {pick}
+                {send}
+              </div>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="qa-side">
+            {expand}
+            <div className="qa-btns">
+              {clip}
+              {spark}
+              {pick}
+              {send}
+            </div>
+          </div>
+        )}
       </form>
       {expanded && (
         <Editor
@@ -621,8 +677,9 @@ export function QuickAdd({ folder, on, hide = false, onSent }: { folder?: Folder
           onEdit={edit}
           onUnstage={unstage}
           onEnter={enter}
-          onSubmit={() => organize() && setExpanded(false)}
+          onSubmit={() => !empty && organize() && setExpanded(false)}
           onClose={() => setExpanded(false)}
+          clip={clip}
         >
           {pick}
           {send}
@@ -646,6 +703,8 @@ function Editor(props: {
   onEnter(e: React.KeyboardEvent<HTMLTextAreaElement>): void;
   onSubmit(): void;
   onClose(): void;
+  /** The button to add files, at the start of the foot. */
+  clip: React.ReactNode;
   children: React.ReactNode;
 }) {
   const root = useContext(RootContext);
@@ -675,7 +734,7 @@ function Editor(props: {
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (props.text.trim()) props.onSubmit();
+              props.onSubmit();
             }}
           >
             <div className="modal-head">
@@ -700,7 +759,10 @@ function Editor(props: {
               placeholder="交给 AI 整理"
               aria-label="交给 AI 整理的内容"
             />
-            <div className="editor-foot">{props.children}</div>
+            <div className="editor-foot">
+              {props.clip}
+              {props.children}
+            </div>
           </form>
         </Dialog.Content>
       </Dialog.Portal>

@@ -244,6 +244,32 @@ async fn a_model_that_sees_pictures_is_shown_the_jobs_and_puts_its_attachments_u
 }
 
 #[tokio::test]
+async fn pictures_alone_are_organized_and_with_none_shown_the_job_fails_unasked() {
+    let (t, fake) = server();
+    let s = t.admin().await;
+    let mut seeing = config();
+    seeing["vision"] = true.into();
+    t.call("PUT", "/ai/settings", Some(&s), Some(seeing)).await;
+    let with_picture = async |job: &str| {
+        let a = id();
+        t.upload(&s, &a, "image/png", b"png").await;
+        let add = json!({ "op": "attachment.add", "id": a, "name": "发票.png", "type": "image/png", "size": 3, "job_id": job });
+        assert_eq!(t.mutate(&s, json!([create(job, " \n", None), add])).await.status, StatusCode::OK);
+    };
+    fake.answer(Ok(r#"{"tasks": [{"title": "交报销"}]}"#));
+    with_picture(&id()).await;
+    let snap = until(&t, &s, |s| s["ai_jobs"].as_array().unwrap().is_empty()).await;
+    assert_eq!(titles(&snap), ["交报销"]);
+    assert_eq!(fake.pictures()[0].len(), 1);
+
+    t.call("PUT", "/ai/settings", Some(&s), Some(config())).await;
+    let job = id();
+    with_picture(&job).await;
+    until(&t, &s, |s| job_state(s, &job) == Some(("failed".into(), json!("没有原文，模型又看不到图片")))).await;
+    assert_eq!(fake.asked().len(), 1);
+}
+
+#[tokio::test]
 async fn testing_says_whether_the_model_sees_pictures() {
     let (t, fake) = server();
     let s = t.admin().await;
@@ -316,7 +342,8 @@ async fn a_tidying_suggests_and_what_is_taken_goes_with_it_in_one_change() {
     assert!(snap["dependencies"].as_array().unwrap().is_empty());
     assert_eq!(snap["ai_jobs"][0]["suggestions"], j["suggestions"]);
 
-    // Tidied again, its suggestions go until the new ones come.
+    // Tidied again, its suggestions go until the new ones come; still asked for something.
+    assert_eq!(t.mutate(&s, json!([{ "op": "ai_job.retry", "id": job, "text": " \n" }])).await.body["message"], "要求不能为空");
     fake.answer(Ok(r#"{"suggestions": []}"#));
     assert_eq!(t.mutate(&s, json!([{ "op": "ai_job.retry", "id": job }])).await.status, StatusCode::OK);
     let snap = until(&t, &s, |s| s["ai_jobs"][0]["suggestions"] == json!([])).await;
@@ -608,7 +635,9 @@ async fn jobs_go_with_their_folder_and_are_each_users_own() {
     assert_eq!(t.mutate(&bob, json!([{ "op": "ai_job.delete", "id": job }])).await.status, StatusCode::NOT_FOUND);
     assert_eq!(t.mutate(&bob, json!([create(&id(), "x", Some(&folder))])).await.status, StatusCode::NOT_FOUND);
     assert!(t.snapshot(&bob).await["ai_jobs"].as_array().unwrap().is_empty());
-    assert_eq!(t.mutate(&alice, json!([create(&id(), "  ", None)])).await.status, StatusCode::BAD_REQUEST);
+    let mut blank = create(&id(), "  ", None);
+    blank["kind"] = "tidy".into();
+    assert_eq!(t.mutate(&alice, json!([blank])).await.body["message"], "要求不能为空");
     assert_eq!(t.mutate(&alice, json!([{ "op": "ai_job.retry", "id": job }])).await.body["message"], "这条请求已在等待整理");
 
     let delete = id();

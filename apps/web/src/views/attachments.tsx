@@ -25,7 +25,7 @@ import {
   X,
 } from "lucide-react";
 import { Dialog } from "radix-ui";
-import { useContext, useEffect, useRef, useState } from "react";
+import { type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { NextTodo, writeAttachment } from "../mobile";
 import { ApiError, app, phoneApp } from "../api/http";
 import type { Attachment } from "../api/types/Attachment";
@@ -252,9 +252,9 @@ export function useAddFiles() {
   };
 }
 
-/** Choosing files to add: on a touch screen from the camera, the photos or the files, else from the
- * files. Calls `add` with those chosen. */
-function AddRow({ onAdd }: { onAdd(files: File[]): void }) {
+/** Choosing files to add, with the button `children` makes: on a touch screen from the camera, the
+ * photos or the files, else from the files. Calls `onAdd` with those chosen. */
+export function ChooseFiles({ className, label, onAdd, children }: { className: string; label?: string; onAdd(files: File[]): void; children: ReactNode }) {
   const touch = useMedia("(pointer: coarse)");
   const files = useRef<HTMLInputElement>(null);
   const photos = useRef<HTMLInputElement>(null);
@@ -265,17 +265,17 @@ function AddRow({ onAdd }: { onAdd(files: File[]): void }) {
     e.target.value = "";
     onAdd(list);
   };
-  const inner = (
-    <div className="row-inner">
-      <Icon of={Plus} />
-      添加附件
-    </div>
+  const button = (
+    <button type="button" className={className} onClick={() => files.current!.click()}>
+      {children}
+    </button>
   );
   return (
     <>
       {touch ? (
         <MenuButton
-          className="row add-row"
+          className={className}
+          label={label}
           align="start"
           items={[
             { icon: Camera, label: "拍照", onSelect: () => camera.current!.click() },
@@ -283,12 +283,12 @@ function AddRow({ onAdd }: { onAdd(files: File[]): void }) {
             { icon: FolderOpen, label: "文件", onSelect: () => files.current!.click() },
           ]}
         >
-          {inner}
+          {children}
         </MenuButton>
+      ) : label ? (
+        <Tip label={label}>{button}</Tip>
       ) : (
-        <button className="row add-row" onClick={() => files.current!.click()}>
-          {inner}
-        </button>
+        button
       )}
       <input ref={files} type="file" multiple hidden onChange={chosen} />
       <input ref={photos} type="file" accept="image/*" multiple hidden onChange={chosen} />
@@ -385,7 +385,12 @@ export function useAttachments(task: TaskId, refer: (a: Attachment) => void, onA
           .map((a) => (
             <FileRow key={a.id} a={a} waiting={waiting.has(a.id)} menu={actions.menu(a)} onOpen={() => open(a)} />
           ))}
-        <AddRow onAdd={onAdd} />
+        <ChooseFiles className="row add-row" onAdd={onAdd}>
+          <div className="row-inner">
+            <Icon of={Plus} />
+            添加附件
+          </div>
+        </ChooseFiles>
       </div>
       {viewing !== null && <Viewer key={viewing} pictures={pictures} start={viewing} actions={actions} onClose={() => setViewing(null)} />}
     </>

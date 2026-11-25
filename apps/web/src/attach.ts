@@ -166,6 +166,12 @@ export function unseen(files: Staged[], vision: boolean): Map<string, string> {
   return why;
 }
 
+/** Whether the model sees any of the pictures among `files`: then an AI job needs no text. */
+export function seesAny(files: Staged[], vision: boolean): boolean {
+  const hidden = unseen(files, vision);
+  return files.some((f) => isPicture(f.type) && !hidden.has(f.id));
+}
+
 /** The ops adding `files` to a task or an AI job. */
 export const addOps = (files: Staged[], to: { task_id: TaskId } | { job_id: AiJobId }): Op[] =>
   files.map((f) => ({ op: "attachment.add", id: f.id, name: f.name, type: f.type, size: f.size, ...to }));

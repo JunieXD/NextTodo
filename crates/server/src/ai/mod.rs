@@ -451,18 +451,24 @@ async fn organize(st: AppState, turn: Turn, job: AiJobId, config: Config, round:
                     // Ids are UUIDv7, made as the files were added.
                     attached.sort_by_key(|a| a.id);
                     let (prompt, shown, pictures) = organize::prompt(&j, &board, notes, &attached, vision);
-                    (prompt, Shown::Organize(shown), pictures)
+                    // With no text, the pictures are what there is to organize; a model not shown one
+                    // has nothing (docs/ai.md#附件).
+                    if j.text.as_str().trim().is_empty() && pictures.is_empty() {
+                        return Ok(Some(Err("没有原文，模型又看不到图片".to_owned())));
+                    }
+                    Ok((prompt, Shown::Organize(shown), pictures))
                 }
                 JobKind::Tidy => {
                     let (prompt, shown) = tidy::prompt(&j, snap, &owner, notes);
-                    (prompt, Shown::Tidy(Box::new(shown)), Vec::new())
+                    Ok((prompt, Shown::Tidy(Box::new(shown)), Vec::new()))
                 }
             }))
         })
         .await;
     let (mut status, outcome) = match read {
         Ok(None) => return,
-        Ok(Some((mut prompt, shown, pictures))) => {
+        Ok(Some(Err(message))) => (None, Err(message)),
+        Ok(Some(Ok((mut prompt, shown, pictures)))) => {
             let (api, files) = (st.ai.api.clone(), st.files.clone());
             let answer = tokio::task::spawn_blocking(move || {
                 prompt.pictures = pictures.into_iter().map(|p| p.read(&files)).collect::<std::io::Result<_>>().map_err(|e| {

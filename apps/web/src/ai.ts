@@ -115,7 +115,8 @@ export const aiReady = async (userId: string) => localAiConfig(userId) !== null 
 export const aiSetUp = async (userId: string) => localAiConfig(userId) !== null || ((await onServer(userId)) ?? !!serverAiModel(userId));
 
 /** Whether the model in use sees pictures (docs/ai.md#附件), as the settings kept here say, or else
- * those on the server, asked while `asking`; unknown until it answers, and when it cannot. */
+ * those on the server, asked each time `asking` turns true (callers make that wait for being online);
+ * unknown until it answers, and when it cannot. */
 export function useAiVision(userId: string, asking: boolean): boolean | undefined {
   const watch = useCallback((changed: () => void) => onConfig(userId, changed), [userId]);
   const local = parsed(useSyncExternalStore(watch, () => localStorage.getItem(PREFIX + userId)));

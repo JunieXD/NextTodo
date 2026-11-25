@@ -1,5 +1,5 @@
-import { expect, test } from "vitest";
-import { deadline, dueKind, formatDue, inOrder, nextFive, parseTime, remindAt, remindersLabel } from "./dates";
+import { expect, onTestFinished, test, vi } from "vitest";
+import { deadline, dueIn, dueKind, formatDue, inOrder, nextFive, parseTime, remindAt, remindersLabel } from "./dates";
 
 // Monday 2 November 2026, 10:30
 const now = new Date(2026, 10, 2, 10, 30);
@@ -19,6 +19,30 @@ test("a date alone is due at the end of that day", () => {
   expect(dueKind({ date: "2026-11-02", time: "09:00" }, now)).toBe("overdue");
   expect(dueKind({ date: "2026-11-09" }, now)).toBe("week");
   expect(dueKind({ date: "2026-11-10" }, now)).toBe("later");
+});
+
+test("how long until it is due, or since", () => {
+  // By the hour within a day of a due time, by the minute within an hour.
+  expect(dueIn({ date: "2026-11-02", time: "18:00" }, now)).toBe("还有 7 小时");
+  expect(dueIn({ date: "2026-11-03", time: "09:00" }, now)).toBe("还有 22 小时");
+  expect(dueIn({ date: "2026-11-02", time: "10:50" }, now)).toBe("还有 20 分钟");
+  expect(dueIn({ date: "2026-11-02", time: "10:30" }, now)).toBe("逾期不到 1 分钟");
+  expect(dueIn({ date: "2026-11-02", time: "10:31" }, new Date(2026, 10, 2, 10, 30, 20))).toBe("还有不到 1 分钟");
+  expect(dueIn({ date: "2026-11-01", time: "20:00" }, now)).toBe("逾期 14 小时");
+  // Otherwise by the date.
+  expect(dueIn({ date: "2026-11-03", time: "11:00" }, now)).toBe("还有 1 天");
+  expect(dueIn({ date: "2026-11-03" }, now)).toBe("还有 1 天");
+  expect(dueIn({ date: "2026-10-31", time: "18:00" }, now)).toBe("逾期 2 天");
+  expect(dueIn({ date: "2026-11-01" }, now)).toBe("逾期 1 天");
+  // A date alone due today: `今天` says it.
+  expect(dueIn({ date: "2026-11-02" }, now)).toBeNull();
+});
+
+test("a due time on a day of 25 hours is still by the hour", () => {
+  vi.stubEnv("TZ", "America/New_York");
+  onTestFinished(() => void vi.unstubAllEnvs());
+  // 1 November 2026: the clocks go back an hour at 2:00.
+  expect(dueIn({ date: "2026-11-01", time: "23:30" }, new Date(2026, 10, 1, 0, 0))).toBe("还有 24 小时");
 });
 
 test("reminders", () => {

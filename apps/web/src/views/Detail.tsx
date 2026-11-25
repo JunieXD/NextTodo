@@ -12,7 +12,7 @@ import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
 import { lateness } from "../domain/calendar";
-import { day, dueAfterLabel, formatDay, formatDue, formatMoment, isoDate, remindersLabel, startBeforeLabel, startLabel } from "../domain/dates";
+import { day, dueAfterLabel, dueIn, formatDay, formatDue, formatMoment, isoDate, remindersLabel, startBeforeLabel, startLabel } from "../domain/dates";
 import { daysBefore, doneToday, repeatText, skippable } from "../domain/repeat";
 import { filesIn, reference } from "../attach";
 import { checkDescription, checkTitle } from "../domain/text";
@@ -138,6 +138,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
   if (!t) return <div className="detail-empty">该事项已删除</div>;
   const status = board.status(t);
   const shared = board.sharedRoot(t.folder_id);
+  const countdown = t.due && t.done_at === null ? dueIn(t.due, now) : null;
   const found = t.completions && store.completedAt(t.id, t.completions.count);
   // While it repeats, or done for good by that last time itself; not once the repeat ended otherwise,
   // or it was reopened and done again, which taking back an earlier time would undo too.
@@ -231,13 +232,12 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
           icon={Calendar}
           label="截止"
           value={
-            t.due && t.due_after ? (
+            t.due ? (
               <>
                 {formatDue(t.due, now)}
-                <span className="muted">（{dueAfterLabel(t.due_after)}）</span>
+                {t.due_after && <span className="muted">（{dueAfterLabel(t.due_after)}）</span>}
+                {countdown && <span className={dueClass(t, now) === "overdue" ? "" : "muted"}> · {countdown}</span>}
               </>
-            ) : t.due ? (
-              formatDue(t.due, now)
             ) : t.due_after ? (
               dueAfterLabel(t.due_after)
             ) : (

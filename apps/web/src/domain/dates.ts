@@ -59,6 +59,21 @@ export function dueKind(due: Due, now: Date): DueKind {
   return days === 0 ? "today" : days <= 7 ? "week" : "later";
 }
 
+/** `还有 3 天`, `逾期 5 小时`, `还有 20 分钟`: how long until it is due or since; by the hour within a day
+ * of a due time or on its date, by the date otherwise. Null for a date alone due today, which `今天`
+ * already says. */
+export function dueIn(due: Due, now: Date): string | null {
+  const ms = deadline(due).getTime() - now.getTime();
+  const word = ms > 0 ? "还有" : "逾期";
+  const days = Math.abs(daysFrom(now, due.date));
+  // On its date, a day may have 25 hours, the clocks going back.
+  if (due.time && (Math.abs(ms) < 864e5 || days === 0)) {
+    const minutes = Math.floor(Math.abs(ms) / 60_000);
+    return minutes < 1 ? `${word}不到 1 分钟` : minutes < 60 ? `${word} ${minutes} 分钟` : `${word} ${Math.floor(minutes / 60)} 小时`;
+  }
+  return days === 0 ? null : `${word} ${days} 天`;
+}
+
 /** `前置完成后 3 天内`, `前置完成当天 18:00`: a due date still to come after the prerequisites, as the
  * server's `text::due_after` writes it. */
 export function dueAfterLabel(a: DueAfter): string {

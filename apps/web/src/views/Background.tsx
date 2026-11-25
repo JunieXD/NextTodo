@@ -2,7 +2,7 @@
 // and where to grant it.
 
 import { ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { type CalendarTarget, type DeviceCalendar, NextTodo, type ReminderSettings, calendarFolders, setCalendar, setCalendarFolders } from "../mobile";
 import { app } from "../api/http";
 import type { FolderId } from "../api/types/FolderId";
@@ -14,19 +14,12 @@ import { FolderChecks } from "./pickers";
 
 const TIP_SEEN = "nexttodo.backgroundTip";
 
-type Allowed = ReminderSettings & { calendar: boolean };
-
-async function allowed(): Promise<Allowed> {
-  if (app === "ios") return { ...(await NextTodo.reminderSettings()), calendar: false };
-  const [r, c] = await Promise.all([NextTodo.reminderSettings(), NextTodo.checkPermissions()]);
-  return { ...r, calendar: c.calendar === "granted" };
-}
-
 /** Whether the reminder card was turned on without the permission it needs, which the system
  * settings opened for: it goes on once that is given. */
 let wantCard = false;
 
-async function cardAllowed(now: Allowed): Promise<Allowed> {
+async function reminderSettings(): Promise<ReminderSettings> {
+  const now = await NextTodo.reminderSettings();
   if (wantCard && now.overlay && !now.card) {
     await NextTodo.setCard({ on: true });
     now.card = true;
@@ -35,24 +28,31 @@ async function cardAllowed(now: Allowed): Promise<Allowed> {
   return now;
 }
 
+const calendarAllowed = async () => (await NextTodo.checkPermissions()).calendar === "granted";
+
 /** Asks for notifications. When they stay off, say because the system no longer asks once they
  * were turned off in its settings or turned down for good, opens the app's system settings. */
 async function allowNotifications() {
   if (!(await NextTodo.allowNotifications()).notify) await NextTodo.openAppSettings();
 }
 
-/** The settings section: notifications, and on Android exact alarms, the reminder card, autostart,
- * and the system calendar. */
-export function BackgroundSettings() {
-  const [state, setState] = useState<Allowed | null>(null);
-  const check = () => allowed().then(cardAllowed).then(setState);
+/** What the system allows, read again on coming back from its settings. */
+function useAllowed<T>(read: () => Promise<T>): [T | null, () => Promise<void>] {
+  const [state, setState] = useState<T | null>(null);
+  const check = useCallback(() => read().then(setState), [read]);
   useEffect(() => {
-    // Back from the system settings, look again.
     const shown = () => document.visibilityState === "visible" && check();
     void check();
     document.addEventListener("visibilitychange", shown);
     return () => document.removeEventListener("visibilitychange", shown);
-  }, []);
+  }, [check]);
+  return [state, check];
+}
+
+/** In the reminders' section: notifications, and on Android their sound, exact alarms and the reminder
+ * card. */
+export function NotificationSettings() {
+  const [state, check] = useAllowed(reminderSettings);
   if (!state) return null;
   const card = async (on: boolean) => {
     if (on && !state.overlay) {
@@ -66,15 +66,27 @@ export function BackgroundSettings() {
   if (app === "ios") return <div className="group">{notify}</div>;
   return (
     <>
+      <h2 className="group-title">通知</h2>
       <div className="group">
         {notify}
         <Row title="铃声和振动" sub="提醒响什么铃声、振不振动，在系统设置里选" action={["打开设置", () => NextTodo.openReminderSound()]} />
         <Row title="准时提醒" sub={state.exact ? "已允许" : "未允许时提醒可能延迟几分钟"} action={state.exact ? undefined : ["前往设置", () => NextTodo.openExactAlarmSettings()]} />
         <Switch label="弹窗提醒" sub="到点在屏幕底部弹出卡片，不点不收起" on={state.card} onChange={card} />
         {state.card && !state.overlay && <Row title="显示在其他应用上层" sub="未允许时弹窗提醒改用顶部横幅" action={["前往设置", () => NextTodo.openOverlaySettings()]} />}
+      </div>
+    </>
+  );
+}
+
+/** The system's section on Android: running in the background, and the system calendar. */
+export function SystemSettings() {
+  const [calendar, check] = useAllowed(calendarAllowed);
+  return (
+    <>
+      <div className="group">
         <Row title="自启动和省电" sub={HYPER_OS} action={["打开设置", () => NextTodo.openAppSettings()]} />
       </div>
-      <CalendarSettings allowed={state.calendar} onAllowed={check} />
+      {calendar !== null && <CalendarSettings allowed={calendar} onAllowed={check} />}
     </>
   );
 }

@@ -2,9 +2,9 @@
 
 import { ChevronRight, Copy, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { ApiError, app } from "../api/http";
+import { app } from "../api/http";
 import { inLocalMode } from "../local";
-import { type ServerVersions, checkServer, followUpgrade, upgrade, useServerVersions, useUpgrading } from "../server-update";
+import { checkServer, useServerVersions } from "../server-update";
 import { useSession } from "../session";
 import { ago } from "../domain/dates";
 import { useCopy } from "../ui/clipboard";
@@ -20,18 +20,17 @@ export function About() {
   const pending = usePending();
   const { user } = useSession();
   const server = useServerVersions();
-  const admin = user.is_admin && !inLocalMode();
   const [installed, setInstalled] = useState<string | null>(null);
   const [changelog, setChangelog] = useState(false);
   useEffect(() => {
     appVersion().then(setInstalled, (e) => snack(forUser("读取版本", e)));
   }, [snack]);
-  // However lately it was asked: an admin come to look may have just heard of a release, and the server
-  // may have been upgraded since it was told to be older than the app.
-  const asks = admin || (!!app && !inLocalMode());
+  // However lately it was asked: the server may have been upgraded since it was told to be older than
+  // the app. Its admin has it in the server's settings.
+  const asks = !!app && !inLocalMode() && !user.is_admin;
   useEffect(() => {
-    if (asks) void checkServer({ now: true, latest: admin });
-  }, [asks, admin]);
+    if (asks) void checkServer({ now: true, latest: false });
+  }, [asks]);
   const version = import.meta.env.WEB_VERSION;
   return (
     <>
@@ -54,8 +53,7 @@ export function About() {
         ) : (
           <Row label="网页版本" value={version} />
         )}
-        {admin && server && <ServerVersion server={server} />}
-        {!admin && server && newer(version, server.server) && (
+        {asks && server && newer(version, server.server) && (
           <div className="row">
             <div className="row-inner">
               <span className="folder-main">
@@ -137,66 +135,6 @@ export function About() {
   );
 }
 
-/** The server's version, and upgrading it from here where it can (docs/design.md#部署). */
-function ServerVersion({ server }: { server: ServerVersions }) {
-  const { confirm, snack } = useFeedback();
-  const upgrading = useUpgrading();
-  useEffect(() => {
-    followUpgrade().catch((e: unknown) => {
-      // Not reached or turned down, it shows no upgrade under way, as before.
-      if (!(e instanceof ApiError)) throw e;
-      console.warn("查询服务器升级失败", e);
-    });
-  }, []);
-  const latest = server.latest !== null && newer(server.latest, server.server) ? server.latest : null;
-  const howTo = <Help to="server#升级">查看升级方法</Help>;
-  const start = async (version: string) => {
-    const body = "服务器会下载约 45 MB，换上新版本时各设备断开几秒。新版本起不来时会自动退回。";
-    if (await confirm({ title: `升级到 ${version}？`, body, ok: "升级" })) await upgrade(version).catch((e) => snack(forUser("升级", e)));
-  };
-  // Once the server can upgrade itself: those that cannot, and those not asked yet, have the way by hand.
-  const button = latest && (upgrading?.state === "idle" || upgrading?.state === "failed") && (
-    <button className="text-btn" onClick={() => void start(latest)}>
-      {upgrading.state === "failed" && upgrading.version === latest ? "重试" : "升级"}
-    </button>
-  );
-  const text =
-    upgrading?.state === "downloading" ? (
-      `正在下载 ${upgrading.version}，${upgrading.total ? Math.floor((upgrading.received * 100) / upgrading.total) : 0}%`
-    ) : upgrading?.state === "switching" || upgrading?.state === "restarting" ? (
-      `正在重启，换上 ${upgrading.version}…`
-    ) : upgrading?.state === "upgraded" ? (
-      `已升级到 ${upgrading.version}`
-    ) : upgrading?.state === "lost" ? (
-      "服务器没有重新启动，请在服务器上查看（docker compose ps）"
-    ) : upgrading?.state === "failed" ? (
-      <>
-        {upgrading.message}，{howTo}
-      </>
-    ) : server.latest === null ? (
-      "无法查询最新版本"
-    ) : !latest ? (
-      `已是最新版本，${ago(server.at, new Date())}检查`
-    ) : button ? (
-      `可升级到 ${latest}`
-    ) : (
-      <>
-        可升级到 {latest}，{howTo}
-      </>
-    );
-  return (
-    <div className="row">
-      <div className="row-inner">
-        <span className="folder-main">
-          <span>服务器版本</span>
-          <span className="folder-sub full">{text}</span>
-        </span>
-        <span className="row-value">{server.server}</span>
-        {button}
-      </div>
-    </div>
-  );
-}
 
 /** How the last check for updates went, under the app's version: why it failed, also with an update
  * waiting, which the row below shows. */

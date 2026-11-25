@@ -89,7 +89,7 @@ iOS App（iPhone 和 iPad）：和 [Android](android.md) 一样，Capacitor 外�
 
 ## 设置
 
-- “提醒和后台”在 iOS 上叫“提醒”，只有一行“通知”，同 Android：允许了写“已允许”；没允许时写“未允许时不会弹出截止提醒”，附“允许”，还没问过的弹出系统的请求，拒绝过的打开本 App 的通知设置。iOS 不需要自启动、省电和精确闹钟的设置。
+- “提醒”里的通知设置只有一行“通知”，同 Android：允许了写“已允许”；没允许时写“未允许时不会弹出截止提醒”，附“允许”，还没问过的弹出系统的请求，拒绝过的打开本 App 的通知设置。iOS 不需要自启动、省电和精确闹钟的设置。
 - “关于”见[更新](#更新)。
 
 ## 更新
@@ -97,7 +97,7 @@ iOS App（iPhone 和 iPad）：和 [Android](android.md) 一样，Capacitor 外�
 - 网页打包在 App 里，随整包更新，不热更新，和桌面一样。
 - 版本：`CFBundleShortVersionString` 是 `0.1.<提交数>`，`CFBundleVersion` 是提交数，构建时写入；和同一次构建的 Android、桌面 App 一样。Xcode 直接构建的开发版是 0.1.0（构建号 0），和网页端的开发版一致。
 - App 不能自己安装新版本，只提醒：打开 App、回到前台时和运行期间（每 6 小时最多一次），从 GitHub 最新 Release 取 `sidestore.json`（`https://github.com/JunieXD/NextTodo/releases/latest/download/sidestore.json`，同一份文件也是 SideStore 的软件源）。里面的构建号（`buildVersion`）比已装的（`CFBundleVersion`）大时，设置“关于”里显示“有新版本”，下面写“0.1.N，在 SideStore 里更新”，打开 App 时用提示条提醒一次。检查失败时的处理和“关于”里的显示同[总体设计](design.md#app-更新)，连不上时写“无法连接 GitHub”。
-- 连服务器时也从 GitHub 取，不从服务器取：服务器上没有 iOS 的安装包，SideStore 也只认这一个软件源。所以 iOS App 可能比服务器新，服务器跟着 Release 升级即可（管理员在“关于”里一键升级）。
+- 连服务器时也从 GitHub 取，不从服务器取：服务器上没有 iOS 的安装包，SideStore 也只认这一个软件源。所以 iOS App 可能比服务器新，服务器跟着 Release 升级即可（管理员在设置的“服务器”里一键升级）。
 
 ## 构建和发布
 

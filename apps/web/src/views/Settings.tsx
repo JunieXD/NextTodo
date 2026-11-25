@@ -1,48 +1,41 @@
 // The settings: a home page that lists the sections, each a page of its own (docs/ui.md#设置).
 
-import { Bell, ChevronRight, CirclePlus, Copy, HardDrive, History, Info, KeyRound, LayoutGrid, Lock, type LucideIcon, Mail, Monitor, Palette, Paperclip, Plus, Sparkles, SquareTerminal } from "lucide-react";
+import { Bell, ChevronRight, HardDrive, History, Info, KeyRound, LayoutGrid, ListChecks, Lock, type LucideIcon, Monitor, MonitorSmartphone, Palette, Paperclip, Plus, Server, Sparkles, SquareTerminal } from "lucide-react";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { useLocation } from "wouter";
 import { ApiError, api, app, desktopOs, phoneApp, serverUrl } from "../api/http";
 import type { CreatedToken } from "../api/types/CreatedToken";
-import type { Invite } from "../api/types/Invite";
 import type { Scope } from "../api/types/Scope";
-import type { ServerSettings } from "../api/types/ServerSettings";
 import type { TokenInfo } from "../api/types/TokenInfo";
 import type { User } from "../api/types/User";
-import { fetchServerSettings, keepServerSettings, serverSettings } from "../attach";
 import { ago } from "../domain/dates";
 import { type CliStatus, cli } from "../desktop";
 import { checkDisplayName, checkTokenName } from "../domain/text";
 import * as local from "../local";
-import { usePrivacyLock } from "../lock";
 import { useServerVersions } from "../server-update";
 import { useSession, useView } from "../session";
 import { type Accent, type Theme, setAccent, setTheme, useAccent, useTheme } from "../theme";
 import { type Zoom, type Zoomed, setZoom, useZoom } from "../zoom";
-import { copyText, useCopy } from "../ui/clipboard";
-import { Copyable, Seg, Stepper, Swatch, Switch } from "../ui/controls";
-import { Modal, Tip, forUser, useFeedback } from "../ui/feedback";
+import { Copyable, Seg, Stepper, Swatch } from "../ui/controls";
+import { Modal, forUser, useFailure, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
 import { Icon } from "../ui/icons";
 import { newer, usePending } from "../updates";
 import { About } from "./About";
 import { fixAddTo, unfixAddTo, useAddTo, useFixedAddTo } from "./add-to";
 import { AiPage, useAiSummary } from "./AiSettings";
-import { BackgroundSettings } from "./Background";
-import { DesktopBackground } from "./DesktopBackground";
+import { NotificationSettings, SystemSettings } from "./Background";
+import { DesktopSystem } from "./DesktopSystem";
 import { RemindSettings } from "./RemindSettings";
 import { DriveSyncDialog, syncLine, useDriveSync } from "./DriveSync";
 import { MAX_KEEP_DONE, setKeepDone, useKeepDone } from "./keep-done";
 import { LockPage } from "./Lock";
 import { LogPage } from "./Log";
+import { ServerPage } from "./ServerSettings";
 import { WidgetSettings } from "./WidgetSettings";
 import { FolderPicker } from "./pickers";
 import { type SettingsSection, settingsUrl } from "./nav";
 
-/** The link that opens registration with an invite code: on the server, which in the app is not
- * where the page comes from. */
-const inviteLink = (code: string) => `${serverUrl() || location.origin}/?invite=${code}`;
 
 const TITLES: Record<SettingsSection, string> = {
   account: "账号",
@@ -50,33 +43,35 @@ const TITLES: Record<SettingsSection, string> = {
   log: "改动记录",
   lock: "隐私锁",
   appearance: "外观",
+  lists: "列表和添加",
+  reminders: "提醒",
   widget: "小组件",
-  add: "快速添加",
-  // iOS has nothing to allow for running in the background (docs/ios.md#设置), the web nothing to run.
-  background: app === "ios" || !app ? "提醒" : "提醒和后台",
+  system: "系统",
   ai: "AI 整理",
   agent: "agent 接入",
-  invites: "邀请注册",
-  attachments: "附件",
+  server: "服务器",
   about: "关于",
 };
-
-export const settingsTitle = (section: SettingsSection) => TITLES[section];
 
 const ICONS: Record<Exclude<SettingsSection, "account">, LucideIcon> = {
   local: HardDrive,
   log: History,
   lock: Lock,
   appearance: Palette,
+  lists: ListChecks,
+  reminders: Bell,
   widget: LayoutGrid,
-  add: CirclePlus,
-  background: Bell,
+  system: MonitorSmartphone,
   ai: Sparkles,
   agent: KeyRound,
-  invites: Mail,
-  attachments: Paperclip,
+  server: Server,
   about: Info,
 };
+
+/** In local mode the server is the app's, and has nothing of its own to set but the attachments. */
+export const settingsTitle = (section: SettingsSection) => (section === "server" && local.inLocalMode() ? "附件" : TITLES[section]);
+
+const icon = (section: Exclude<SettingsSection, "account">) => (section === "server" && local.inLocalMode() ? Paperclip : ICONS[section]);
 
 const THEMES: [Theme, string][] = [
   ["system", "跟随系统"],
@@ -102,12 +97,12 @@ function useSections(): SettingsSection[][] {
   // Phones have a lock screen of their own (docs/design.md#隐私锁).
   const groups: SettingsSection[][] = [
     [inLocal ? "local" : "account", "log", ...(phoneApp ? [] : (["lock"] as const))],
-    ["appearance", ...(app === "android" ? (["widget"] as const) : []), "add", "background"],
+    // Only the apps run on a system to set things of: the web has the browser's.
+    ["appearance", "lists", "reminders", ...(app === "android" ? (["widget"] as const) : []), ...(app === "android" || app === "desktop" ? (["system"] as const) : [])],
   ];
   groups.push(!inLocal || app === "desktop" ? ["ai", "agent"] : ["ai"]);
   // The server's own: its admin's, or in local mode the user's, who has it alone.
-  const server: SettingsSection[] = [...(user.is_admin && !inLocal ? (["invites"] as const) : []), ...(user.is_admin || inLocal ? (["attachments"] as const) : [])];
-  if (server.length) groups.push(server);
+  if (user.is_admin || inLocal) groups.push(["server"]);
   groups.push(["about"]);
   return groups;
 }
@@ -122,21 +117,15 @@ export function useSectionAt(location: string): SettingsSection | null | undefin
 export function SettingsHome() {
   const [, navigate] = useLocation();
   const { user } = useSession();
-  const { board } = useView();
-  const theme = useTheme();
-  const addTo = useFixedAddTo(user.id);
   const ai = useAiSummary();
   const pending = usePending();
   const server = useServerVersions();
-  const lock = usePrivacyLock();
   const upgradable = user.is_admin && !local.inLocalMode() && server?.latest && newer(server.latest, server.server);
+  // Only what is worth seeing without opening it.
   const values: Partial<Record<SettingsSection, string>> = {
-    appearance: THEMES.find(([t]) => t === theme)![1],
-    add: addTo === undefined ? "上次选的" : board.hasFolder(addTo) ? board.folderName(addTo) : GONE,
-    lock: lock ? `闲置 ${lock.idle} 分钟后` : "关闭",
     ai,
-    attachments: serverSettings().compress_images ? "压缩图片" : "上传原图",
-    about: pending ? "有新版本" : upgradable ? "服务器可升级" : undefined,
+    server: upgradable ? "可升级" : undefined,
+    about: pending ? "有新版本" : undefined,
   };
   const open = (s: SettingsSection) => () => navigate(settingsUrl(s));
   return (
@@ -160,13 +149,13 @@ export function SettingsHome() {
             return (
               <Entry key={s} onClick={open(s)}>
                 <span className="token-ic">
-                  <Icon of={ICONS[s]} size={18} />
+                  <Icon of={icon(s)} size={18} />
                 </span>
                 {s === "local" ? (
                   <LocalCard />
                 ) : (
                   <>
-                    <span className="row-name">{TITLES[s]}</span>
+                    <span className="row-name">{settingsTitle(s)}</span>
                     <span className="row-value long">{values[s]}</span>
                   </>
                 )}
@@ -200,58 +189,24 @@ export function SettingsPage({ section, onSignOut }: { section: SettingsSection;
     log: () => <LogPage />,
     lock: () => <LockPage />,
     appearance: () => <Appearance />,
-    widget: () => <WidgetSettings />,
-    add: () => <AddTo />,
-    background: () => (
+    lists: () => <Lists />,
+    reminders: () => (
       <>
         <RemindSettings />
-        {phoneApp ? <BackgroundSettings /> : app && <DesktopBackground />}
+        {phoneApp && <NotificationSettings />}
       </>
     ),
+    widget: () => <WidgetSettings />,
+    system: () => (app === "android" ? <SystemSettings /> : <DesktopSystem />),
     ai: () => <AiPage />,
     agent: () => <Agent />,
-    invites: () => <Invites />,
-    attachments: () => <AttachmentSettings />,
+    server: () => <ServerPage />,
     about: () => <About />,
   };
   return <div className="settings-page">{pages[section]()}</div>;
 }
 
-/** Whether photos are made smaller before they are uploaded (docs/design.md#附件), for everyone on the
- * server. As last fetched, then as the server has it. */
-function AttachmentSettings() {
-  const { snack } = useFeedback();
-  const [on, setOn] = useState(() => serverSettings().compress_images);
-  useEffect(() => {
-    void fetchServerSettings().then(() => setOn(serverSettings().compress_images));
-  }, []);
-  const change = async (to: boolean) => {
-    try {
-      const s = await api<ServerSettings>("PUT", "/settings", { compress_images: to } satisfies ServerSettings);
-      keepServerSettings(s);
-      setOn(s.compress_images);
-    } catch (e) {
-      snack(forUser("修改设置", e));
-    }
-  };
-  return (
-    <div className="group">
-      <Switch label="压缩图片" sub="上传前把 JPEG 照片缩到长边 2560 像素以内，并去掉拍摄地点等信息。关闭后一律上传原图。对所有用户生效。" on={on} onChange={(to) => void change(to)} />
-    </div>
-  );
-}
 
-/** What went wrong talking to the server, shown at the top of the page. */
-function useFailure(): [string, (e: unknown) => void] {
-  const [error, setError] = useState("");
-  return [
-    error,
-    (e: unknown) => {
-      if (!(e instanceof ApiError)) throw e;
-      setError(e.message);
-    },
-  ];
-}
 
 /** The tokens of a kind, loaded once the page opens, and taking one away. */
 function useTokens(kind: TokenInfo["kind"], failed: (e: unknown) => void) {
@@ -404,7 +359,6 @@ function Action({ label, value, onClick }: { label: string; value?: string; onCl
 function Appearance() {
   const theme = useTheme();
   const accent = useAccent();
-  const keepDone = useKeepDone();
   return (
     <>
       <h2 className="group-title">主题</h2>
@@ -417,6 +371,16 @@ function Appearance() {
           <Swatch key={a} label={name} color={`var(--accent-${a})`} chosen={a === accent} onChoose={() => setAccent(a)} />
         ))}
       </div>
+      {app === "desktop" && <Zooms />}
+    </>
+  );
+}
+
+/** How the lists keep what is done, and where quick add puts a task. */
+function Lists() {
+  const keepDone = useKeepDone();
+  return (
+    <>
       <h2 className="group-title">已完成的事项</h2>
       <div className="group settings">
         <div className="row">
@@ -429,7 +393,8 @@ function Appearance() {
           </div>
         </div>
       </div>
-      {app === "desktop" && <Zooms />}
+      <h2 className="group-title">快速添加</h2>
+      <AddTo />
     </>
   );
 }
@@ -541,62 +506,6 @@ function Agent() {
   );
 }
 
-function Invites() {
-  const [invites, setInvites] = useState<Invite[] | null>(null);
-  const [error, failed] = useFailure();
-  const { snack } = useFeedback();
-  useEffect(() => {
-    api<Invite[]>("GET", "/invites").then(setInvites, failed);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loads once when opened
-  }, []);
-  const copy = useCopy();
-  const invite = async () => {
-    const made = await api<Invite>("POST", "/invites").catch(failed);
-    if (!made) return;
-    setInvites((list) => [made, ...(list ?? [])]);
-    // The invite is made whether or not the link reaches the clipboard: a click a while back may no
-    // longer allow copying, on a page on plain HTTP.
-    await copyText(inviteLink(made.code)).then(
-      () => snack("已复制邀请链接"),
-      () => snack("邀请码已生成，点它右边的按钮复制链接"),
-    );
-  };
-  const now = new Date();
-  return (
-    <>
-      {error && <p className="form-error">{error}</p>}
-      <p className="empty">每人一个账号，数据彼此独立。每个邀请码只能注册一个账号。</p>
-      <div className="group">
-        {invites?.map((i) => (
-          <div key={i.code} className="row">
-            <div className="row-inner">
-              <span className="token-ic">
-                <Icon of={Mail} size={18} />
-              </span>
-              <span className="folder-main">
-                <span className="tabular-nums">{i.code}</span>
-                <span className="folder-sub">{i.used_by ? `${i.used_by} 已注册` : `未使用，${ago(i.created_at, now)}生成`}</span>
-              </span>
-              {!i.used_by && (
-                <Tip label="复制邀请链接">
-                  <button className="icon-btn sm" onClick={() => copy(inviteLink(i.code), "邀请链接")}>
-                    <Icon of={Copy} size={16} />
-                  </button>
-                </Tip>
-              )}
-            </div>
-          </div>
-        ))}
-        <button className="row add-row" onClick={invite}>
-          <div className="row-inner">
-            <Icon of={Mail} />
-            生成邀请码
-          </div>
-        </button>
-      </div>
-    </>
-  );
-}
 
 /** The command line the app carries, and putting it where a terminal finds it (docs/desktop.md#命令行). */
 function CommandLine() {

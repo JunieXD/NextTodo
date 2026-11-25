@@ -11,7 +11,7 @@ import { Icon } from "../ui/icons";
 
 const windows = desktopOs === "Windows";
 
-export function DesktopBackground() {
+export function DesktopSystem() {
   return (
     <div className="group settings">
       <StartAtLogin />

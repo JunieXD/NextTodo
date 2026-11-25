@@ -174,7 +174,7 @@ function ServerVersions({ admin }: { admin: boolean }) {
     const tell = (key: string, version: string, text: string) => {
       if (localStorage.getItem(key + versions.of) === version) return;
       localStorage.setItem(key + versions.of, version);
-      snack(admin ? { text, action: "查看", onAction: () => navigate(settingsUrl("about")), ms: 8000 } : { text, ms: 8000 });
+      snack(admin ? { text, action: "查看", onAction: () => navigate(settingsUrl("server")), ms: 8000 } : { text, ms: 8000 });
     };
     const latest = versions.latest;
     if (admin && latest && newer(latest, versions.server)) tell(SERVER_TOLD, latest, `服务器可升级到 ${latest}`);

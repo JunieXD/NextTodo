@@ -30,6 +30,18 @@ export function saidToUser(e: unknown): string | null {
   return typeof message === "string" && /[\u4e00-\u9fff]/.test(message) ? message : null;
 }
 
+/** What went wrong talking to the server, shown at the top of the page. */
+export function useFailure(): [string, (e: unknown) => void] {
+  const [error, setError] = useState("");
+  return [
+    error,
+    (e: unknown) => {
+      if (!(e instanceof ApiError)) throw e;
+      setError(e.message);
+    },
+  ];
+}
+
 interface Snack {
   text: string;
   action?: string;

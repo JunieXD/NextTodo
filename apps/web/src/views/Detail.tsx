@@ -11,8 +11,8 @@ import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "../domain/board";
 import { lateness } from "../domain/calendar";
-import { day, dueAfterLabel, formatDay, formatDue, formatMoment, isoDate, remindersLabel, startLabel } from "../domain/dates";
-import { doneToday, repeatText, skippable } from "../domain/repeat";
+import { day, dueAfterLabel, formatDay, formatDue, formatMoment, isoDate, remindersLabel, startBeforeLabel, startLabel } from "../domain/dates";
+import { daysBefore, doneToday, repeatText, skippable } from "../domain/repeat";
 import { filesIn, reference } from "../attach";
 import { checkDescription, checkTitle } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
@@ -30,6 +30,7 @@ import { useSelection } from "./nav";
 import { FolderPicker, TaskPicker } from "./pickers";
 import { dueClass } from "./rows";
 import { AssigneePicker, Avatars, namesOf } from "./share";
+import { startTipSeen } from "./start-tip";
 
 const STATUS = { ready: "可做", waiting: "等待中", done: "已完成" };
 
@@ -202,7 +203,13 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
         <Prop
           icon={CalendarClock}
           label="开始"
-          value={t.start ? formatDue({ date: t.start, time: t.start_time }, now) : "未设置"}
+          value={
+            !t.start
+              ? "未设置"
+              : t.due?.repeat
+                ? startBeforeLabel(daysBefore(t.start, t.due.date), t.start_time)
+                : formatDue({ date: t.start, time: t.start_time }, now)
+          }
           cls={t.start ? "" : "muted"}
           onClick={() => setPanel("start")}
         />
@@ -321,7 +328,10 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
           time={t.start_time}
           due={t.due}
           dueAfter={t.due_after}
-          onSave={(s) => update(s ? { start: s.date, start_time: s.time ?? null } : { start: null })}
+          onSave={(s) => {
+            if (!update(s ? { start: s.date, start_time: s.time ?? null } : { start: null }) || !s) return;
+            startTipSeen(board.me);
+          }}
           onClose={() => setPanel(null)}
         />
       )}

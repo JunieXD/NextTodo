@@ -107,13 +107,18 @@ export function plus(date: string, days: number): string {
   return t.getUTCFullYear() > 9999 ? "9999-12-31" : `${pad(t.getUTCFullYear(), 4)}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
 }
 
+/** The moment `date` begins in UTC, to count days by alike in every time zone. */
+function utcDay(date: string): number {
+  const [y, m, d] = date.split("-").map(Number);
+  return utc(y, m, d).getTime();
+}
+
+/** How many days `date` is before `due`; below 0 for one after it. */
+export const daysBefore = (date: string, due: string) => Math.round((utcDay(due) - utcDay(date)) / 864e5);
+
 /** `date` moved as many days as `from` moved to `to`: a start date kept as far before its due date. */
 export function shifted(date: string, from: string, to: string): string {
-  const day = (s: string) => {
-    const [y, m, d] = s.split("-").map(Number);
-    return utc(y, m, d).getTime();
-  };
-  const t = new Date(day(date) + day(to) - day(from));
+  const t = new Date(utcDay(date) + utcDay(to) - utcDay(from));
   return `${pad(t.getUTCFullYear(), 4)}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
 }
 

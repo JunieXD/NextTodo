@@ -87,6 +87,13 @@ export function startLabel(date: string, time: string | undefined, now: Date): s
   return time ? `${formatDue({ date, time }, now)} 开始` : `${formatDue({ date }, now)}开始`;
 }
 
+/** `截止当天`, `截止前 2 天 09:00`: a start counted back from the due date, as a repeating task's is
+ * each time. */
+export function startBeforeLabel(days: number, time: string | undefined): string {
+  const back = days === 0 ? "截止当天" : `截止前 ${days} 天`;
+  return time ? `${back} ${time}` : back;
+}
+
 /** The 42 days a month's calendar shows: six weeks from the Monday on or before its first day. */
 export function monthGrid(year: number, month: number): Date[] {
   const start = 1 - ((new Date(year, month, 1).getDay() + 6) % 7);

@@ -139,6 +139,12 @@ svg { display: block; flex: none; }
 .group-title { margin: 22px 32px 8px; font-size: 13px; font-weight: 600; color: var(--on-surface-variant); display: flex; justify-content: space-between; }
 .group-title.overdue { color: var(--error); }
 .group-title.today { color: var(--warn); }
+/* “接下来”'s groups fold away by their titles (docs/design.md#接下来): taller than the text to take a tap. */
+.fold-title { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 0; margin: -6px 0; }
+.fold-title .chev { display: inline-flex; margin-left: auto; transition: transform .2s; }
+.fold-title[aria-expanded="false"] .chev { transform: rotate(-90deg); }
+.fold-count { font-weight: 400; }
+@media (hover: hover) { .fold-title:hover .chev { color: var(--on-surface-variant); } }
 .group { margin: 0 16px; background: var(--group-bg); border-radius: 14px; overflow: hidden; position: relative; }
 .row { position: relative; display: block; width: 100%; }
 .row + .row::before, .rail-list + .row::before, .rail-note + .rail-list > .row:first-child::before, .row + .fold > div > .row:first-child::before { content: ""; position: absolute; z-index: 3; top: 0; right: 0; left: var(--sep-left, 52px); height: .5px; background: var(--outline-variant); }
@@ -713,6 +719,7 @@ a.text-btn { display: inline-flex; align-items: center; }
 .panel-scroll .group-title { margin: 16px 28px 6px; }
 .panel-scroll .group { margin: 0 12px; }
 .panel-scroll .empty { margin: 8px 12px; }
+.panel-scroll .tip-card { margin-inline: 12px; }
 .panel .status-note { margin-inline: 12px; }
 .panel .row:hover > .row-inner { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 4%); }
 .panel .batch-bar { position: static; flex: none; }
@@ -1003,7 +1010,7 @@ a.text-btn { display: inline-flex; align-items: center; }
 .sb-item[data-lifted]:not(.on) { background: var(--surface-high); }
 .sb-line { position: absolute; z-index: 5; left: calc(42px + var(--depth) * 18px); right: 8px; height: 2px; margin-top: -2px; border-radius: 1px; background: var(--primary); pointer-events: none; }
 
-/* The Android app's first-start tip. */
+/* Tips at the top of “接下来”: the Android app's first-start one, the start time one. */
 .tip-card { margin: 8px 16px 4px; padding: 14px 16px 6px; border-radius: 14px; background: var(--secondary-container); color: var(--on-secondary-container); font-size: 14px; line-height: 1.5; }
 .tip-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 4px; }
 

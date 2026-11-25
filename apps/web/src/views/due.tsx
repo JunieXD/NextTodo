@@ -29,9 +29,10 @@ import {
   parseTime,
   remindLabel,
   remindersLabel,
+  startLabel,
 } from "../domain/dates";
 import { dayName, lunarDate, lunarLabel, lunarText } from "../domain/lunar";
-import { WORKDAYS, repeatLabel } from "../domain/repeat";
+import { WORKDAYS, daysBefore, plus, repeatLabel } from "../domain/repeat";
 import { useDefaultReminders } from "../remind-settings";
 import { useBack } from "../ui/back";
 import { MultiSelect, Seg, Select, Stepper, Switch } from "../ui/controls";
@@ -324,9 +325,13 @@ export const ARROWS = new Map([
   ["ArrowDown", 7],
 ]);
 
-/** Sets when a task starts, a day and maybe a time, not after it is `due`; or clears it. Due some days
- * after its prerequisites (`dueAfter`), it counts from a later start, so that only a time on the day
- * itself, 0 days after, may be too late. */
+/** The longest a start is counted back from the due date. */
+const MAX_AHEAD = 365;
+
+/** Sets when a task starts, a day and maybe a time, not after it is `due`; or clears it. The day is
+ * picked, or counted back from the due date, as a repeating one opens: its start is kept as far before
+ * it each time (docs/design.md#开始时间). Due some days after its prerequisites (`dueAfter`), it counts
+ * from a later start, so that only a time on the day itself, 0 days after, may be too late. */
 export function StartEditor({
   start,
   time: was,
@@ -342,19 +347,29 @@ export function StartEditor({
   onSave(start: { date: string; time?: string } | null): void;
   onClose(): void;
 }) {
+  const now = useNow();
   const bound = dueAfter ? null : due;
   const [date, setDate] = useState(() => {
     const today = isoDate(new Date());
     return start ?? (bound && bound.date < today ? bound.date : today);
   });
+  // How many days before the due date, while counting back from it: as a repeating task's opens, unless
+  // its start is further back than that counts.
+  const [ahead, setAhead] = useState<number | null>(() => {
+    const back = bound?.repeat ? (start ? daysBefore(start, bound.date) : 0) : -1;
+    return back >= 0 && back <= MAX_AHEAD ? back : null;
+  });
+  // No longer due on a date, changed in another window say, it is the day picked again.
+  const counting = bound !== null && ahead !== null;
+  const startDay = counting ? plus(bound.date, -ahead) : date;
   const [time, setTime] = useState(was ?? "");
   // Said once saving is tried, until it is put right.
   const [tried, setTried] = useState(false);
-  const latest = dueAfter?.days === 0 ? dueAfter.time : date === bound?.date ? bound.time : undefined;
-  const late = Boolean(latest && time && time > latest);
+  const latest = dueAfter?.days === 0 ? dueAfter.time : startDay === bound?.date ? bound.time : undefined;
+  const late = Boolean(latest && time && time > latest) || (bound !== null && startDay > bound.date);
   const save = () => {
     if (late) return setTried(true);
-    onSave({ date, ...(time && { time }) });
+    onSave({ date: startDay, ...(time && { time }) });
     onClose();
   };
   return (
@@ -379,7 +394,34 @@ export function StartEditor({
         </>
       }
     >
-      <Calendar value={date} max={bound?.date} onChange={setDate} />
+      <p className="group-note">开始之前不在“接下来”和小组件里显示</p>
+      {bound && (
+        <div className="due-mode">
+          <Seg<"date" | "before">
+            label="开始方式"
+            items={[
+              ["date", "按日期"],
+              ["before", "截止前"],
+            ]}
+            value={counting ? "before" : "date"}
+            // The same day, the other way.
+            onChange={(m) => (m === "before" ? setAhead(Math.min(Math.max(daysBefore(date, bound.date), 0), MAX_AHEAD)) : (setDate(startDay), setAhead(null)))}
+          />
+        </div>
+      )}
+      {!counting ? (
+        // A day picked is the start, whatever becomes of the due date meanwhile.
+        <Calendar value={date} max={bound?.date} onChange={(d) => (setDate(d), setAhead(null))} />
+      ) : (
+        <>
+          <div className="group settings">
+            <Controls name="提前几天">
+              <Stepper label="提前几天" min={0} max={MAX_AHEAD} value={ahead} onChange={setAhead} />
+            </Controls>
+          </div>
+          <p className="group-note">{ahead === 0 ? "截止当天开始" : startLabel(startDay, undefined, now)}</p>
+        </>
+      )}
       <div className="group settings">
         <TimeRow value={time} extra={was} max={latest} onChange={setTime} optional />
       </div>

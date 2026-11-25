@@ -18,7 +18,7 @@ import type { Task } from "../api/types/Task";
 import { lastKey } from "../domain/apply";
 import { matches } from "../domain/board";
 import { aiReady, setAiMode, useAiMode, useAiVision } from "../ai";
-import { day, type DueKind, dueKind, formatDay, inOrder, localTime } from "../domain/dates";
+import { day, dueKind, formatDay, inOrder, localTime } from "../domain/dates";
 import { checkJobText, checkTitle } from "../domain/text";
 import { useCommit, useSession, useView } from "../session";
 import { readyIn, setNextFolders, useNextFolders } from "../next-folders";
@@ -38,6 +38,7 @@ import { useTaskActions } from "./actions";
 import { addedTo, pickAddTo, useAddTo } from "./add-to";
 import { StagedFiles, useKeepFiles } from "./attachments";
 import { useListed } from "./batch";
+import { type DueGroup, setGroupClosed, useClosedGroups } from "./closed-groups";
 import { useRowDrag } from "./drag";
 import { useNewFolder, usePlaceFolder } from "./FolderMenu";
 import { useMarks } from "./marks";
@@ -46,8 +47,9 @@ import { JobRows } from "./jobs";
 import { useKeepDone } from "./keep-done";
 import { FolderChecks, FolderPicker } from "./pickers";
 import { FolderRow, RailList, TaskRow } from "./rows";
+import { StartTip } from "./start-tip";
 
-const GROUPS: [DueKind | "none", string, string][] = [
+const GROUPS: [DueGroup, string, string][] = [
   ["overdue", "已逾期", "overdue"],
   ["today", "今天", "today"],
   ["week", "7 天内", ""],
@@ -65,7 +67,8 @@ export function NextBody({ now }: { now: Date }) {
   const all = folders.includes(null);
   const ready = readyIn(board, folders);
   const lingering = [...linger].map((id) => board.task(id)).filter((t): t is Task => !!t && t.done_at !== null);
-  const groups = new Map<string, Task[]>();
+  const groups = new Map<DueGroup, Task[]>();
+  const closed = useClosedGroups(board.me);
   for (const t of board.byDue([...ready, ...lingering])) {
     const g = t.due ? dueKind(t.due, now) : "none";
     groups.set(g, [...(groups.get(g) ?? []), t]);
@@ -74,6 +77,7 @@ export function NextBody({ now }: { now: Date }) {
   const jobs = board.snapshot.ai_jobs;
   return (
     <>
+      <StartTip ready={ready} now={now} />
       {jobs.length > 0 && (
         <section>
           <h2 className="group-title">AI 整理</h2>
@@ -91,16 +95,30 @@ export function NextBody({ now }: { now: Date }) {
           </button>
         </div>
       )}
-      {GROUPS.filter(([g]) => groups.has(g)).map(([g, label, cls]) => (
-        <section key={g}>
-          <h2 className={`group-title ${cls}`}>{label}</h2>
-          <div className="group">
-            {groups.get(g)!.map((t) => (
-              <TaskRow key={t.id} task={t} board={board} now={now} path step leaving={leaving.has(t.id) && t.done_at !== null} selected={selected === t.id} actions={actions} />
-            ))}
-          </div>
-        </section>
-      ))}
+      {GROUPS.filter(([g]) => groups.has(g)).map(([g, label, cls]) => {
+        const tasks = groups.get(g)!;
+        const open = !closed.has(g);
+        return (
+          <section key={g}>
+            <h2 className={`group-title ${cls}`}>
+              <button className="fold-title" aria-expanded={open} onClick={() => setGroupClosed(board.me, g, open)}>
+                {label}
+                {!open && <span className="fold-count">{tasks.length} 项</span>}
+                <span className="chev">
+                  <Icon of={ChevronDown} size={16} />
+                </span>
+              </button>
+            </h2>
+            <Fold open={open}>
+              <div className="group">
+                {tasks.map((t) => (
+                  <TaskRow key={t.id} task={t} board={board} now={now} path step leaving={leaving.has(t.id) && t.done_at !== null} selected={selected === t.id} actions={actions} />
+                ))}
+              </div>
+            </Fold>
+          </section>
+        );
+      })}
     </>
   );
 }

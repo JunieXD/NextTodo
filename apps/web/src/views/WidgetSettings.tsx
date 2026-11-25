@@ -4,7 +4,7 @@ import { Plus, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type Hex, parseHex } from "../domain/color";
 import { dueKind, formatDue } from "../domain/dates";
-import { type WidgetLook, type WidgetTextSize, widgetColors } from "../domain/widget-look";
+import { type WidgetLook, type WidgetTextSize, type WidgetWeek, widgetColors } from "../domain/widget-look";
 import { NextTodo } from "../mobile";
 import { nextFolders, readyIn } from "../next-folders";
 import { useView } from "../session";
@@ -115,6 +115,18 @@ export function WidgetSettings() {
           ]}
           value={look.size}
           onChange={(size) => change({ size })}
+        />
+      </div>
+      <h2 className="group-title">“一周”的日子</h2>
+      <div style={{ margin: "0 16px 16px" }}>
+        <Seg<WidgetWeek>
+          label="“一周”的日子"
+          items={[
+            ["today", "从今天起 7 天"],
+            ["monday", "本周一到周日"],
+          ]}
+          value={look.week}
+          onChange={(week) => change({ week })}
         />
       </div>
     </>

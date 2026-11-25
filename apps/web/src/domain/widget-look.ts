@@ -5,6 +5,9 @@ import { type Hex, luminance, parseHex, rgbOf } from "./color";
 
 export type WidgetTextSize = "small" | "standard" | "large";
 
+/** The “一周” widget's days: today and the six after, or Monday to Sunday of this week. */
+export type WidgetWeek = "today" | "monday";
+
 /** A colour is `white`, `black` or `#rrggbb`. */
 export interface WidgetLook {
   /** `system`, or a colour. */
@@ -18,6 +21,7 @@ export interface WidgetLook {
   refresh: boolean;
   add: boolean;
   size: WidgetTextSize;
+  week: WidgetWeek;
 }
 
 /** The colours of the palette the widgets take, as `Palette.kt` has them. */

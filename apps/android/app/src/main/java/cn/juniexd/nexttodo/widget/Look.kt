@@ -45,6 +45,8 @@ data class Look(
     val add: Boolean = true,
     /** `small`, `standard` or `large`. */
     val size: String = "standard",
+    /** The “一周” widget's days: `today` and the six after, or `monday` to Sunday of this week. */
+    val week: String = "today",
 ) {
     /** How much larger or smaller than standard the text is. */
     val scale get() = SCALES.getValue(size)
@@ -57,6 +59,7 @@ data class Look(
         .put("refresh", refresh)
         .put("add", add)
         .put("size", size)
+        .put("week", week)
 
     /** Kept in `edit`, a key each. */
     fun write(edit: SharedPreferences.Editor): SharedPreferences.Editor = edit
@@ -67,6 +70,7 @@ data class Look(
         .putBoolean(REFRESH, refresh)
         .putBoolean(ADD, add)
         .putString(SIZE, size)
+        .putString(WEEK, week)
 
     companion object {
         private val SCALES = mapOf("small" to 0.88f, "standard" to 1f, "large" to 1.15f)
@@ -78,6 +82,7 @@ data class Look(
         private const val ADD = "show_add"
         /** The key the text size has had since before the rest. */
         private const val SIZE = "text_size"
+        private const val WEEK = "week"
 
         /** As the app gives it. */
         fun from(o: JSONObject) = Look(
@@ -88,6 +93,7 @@ data class Look(
             o.getBoolean("refresh"),
             o.getBoolean("add"),
             o.getString("size").also { require(it in SCALES) { "文字大小只能是 small、standard 或 large" } },
+            o.getString("week").also { require(it == "today" || it == "monday") { "一周的日子只能是 today 或 monday" } },
         )
 
         /** As kept in `prefs`; as at first where nothing is. */
@@ -101,6 +107,7 @@ data class Look(
                 prefs.getBoolean(REFRESH, d.refresh),
                 prefs.getBoolean(ADD, d.add),
                 prefs.getString(SIZE, d.size)!!,
+                prefs.getString(WEEK, d.week)!!,
             )
         }
     }
@@ -147,6 +154,9 @@ internal class Colors(look: Look) {
     val icon = own?.let(::fixed) ?: of { onSurfaceVariant }
     val iconAlpha = if (own == null) 1f else SECONDARY
     val done = faint(0.5f) { outline }
+
+    /** The circle of a task that can't be ticked off here, as the app's waiting ones. */
+    val rail = faint(0.4f) { rail }
     val divider = faint(0.15f) { divider }
     val primary = of { primary }
     val onPrimary = of { onPrimary }

@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { type WidgetLook, widgetColors } from "./widget-look";
 
-const look: WidgetLook = { background: "system", opacity: 100, text: "auto", title: true, refresh: true, add: true, size: "standard" };
+const look: WidgetLook = { background: "system", opacity: 100, text: "auto", title: true, refresh: true, add: true, size: "standard", week: "today" };
 
 test("by default the widgets are as the system is, light or dark", () => {
   expect([widgetColors(look, false).text, widgetColors(look, true).text]).toEqual(["#171D1A", "#DEE4DF"]);

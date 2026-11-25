@@ -233,11 +233,21 @@ export const widgetTasks = (board: Board, folders: (FolderId | null)[]) =>
 /** How many days from today the agenda widget lists (docs/android.md#日程). */
 const AGENDA_DAYS = 7;
 
-/** What the agenda widget lists: what is due in the folders “接下来” lists, as the `agenda` tool gives it. */
+/** What the agenda widgets list: what is due in the folders “接下来” lists, as the `agenda` tool gives
+ * it; with whether each can be done now, and the times a repeating one was done, for “一周” to tick
+ * them off. */
 export function widgetAgenda(board: Board, folders: (FolderId | null)[]) {
   const { overdue, days } = agenda(board, AGENDA_DAYS);
   const listed = (t: Task) => folders.some((f) => board.inSubtree(t.folder_id, f));
-  const entry = (t: Task, later: boolean) => ({ id: t.id, title: t.title, folder: board.folderPath(t.folder_id), due: t.due, ...(later && { later }) });
+  const entry = (t: Task, later: boolean) => ({
+    id: t.id,
+    title: t.title,
+    folder: board.folderPath(t.folder_id),
+    due: t.due,
+    completions: t.completions,
+    status: board.status(t),
+    ...(later && { later }),
+  });
   return {
     overdue: overdue.filter(listed).map((t) => entry(t, false)),
     days: days

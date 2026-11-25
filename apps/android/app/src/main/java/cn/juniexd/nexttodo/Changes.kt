@@ -89,7 +89,7 @@ object Changes {
         val (outcome, offline) = send(context, id)
         // A task it marks done goes from the widget until it is sent; hidden here, in turn, so that
         // the change it becomes, once sent from elsewhere, comes after.
-        if (outcome is Outcome.Kept && token != null) for ((task, occurrence) in completed(change)) Widget.hide(context, task, occurrence, token, null)
+        if (outcome is Outcome.Kept && token != null) for ((task, occurrence) in completed(change)) hide(context, task, occurrence, token, null)
         if (offline) retry(context)
         outcome
     }
@@ -105,7 +105,7 @@ object Changes {
                 val seq = Server.mutate(context, token, id, change.getJSONArray("ops"))
                 // Before it goes from the queue: stopped in between, it is sent again, and the
                 // server gives the same `seq`.
-                for ((task, occurrence) in completed(change)) Widget.hide(context, task, occurrence, token, seq)
+                for ((task, occurrence) in completed(change)) hide(context, task, occurrence, token, seq)
                 Reminders.sent(context, id, seq)
                 keep(context, kept(context).objects().filter { it.getString("id") != id })
                 if (id == mine) outcome = Outcome.Sent(seq)
@@ -129,6 +129,12 @@ object Changes {
         return outcome to false
     }
 
+    /** Hides a task done from the widgets' lists kept from before (`Done`). */
+    private suspend fun hide(context: Context, task: String, occurrence: Occurrence?, token: String, seq: Long?) {
+        Widget.hide(context, task, occurrence, token, seq)
+        Agenda.hide(context, task, occurrence, token, seq)
+    }
+
     /** The tasks a change marks done, each with the time it does should the task repeat. */
     private fun completed(change: JSONObject) = change.getJSONArray("ops").objects().filter { it.getString("op") == "task.update" && it.optBoolean("done") }
         .map { it.getString("id") to Occurrence.from(it.optJSONObject("occurrence")) }
@@ -136,7 +142,10 @@ object Changes {
     /** The server turned down a change kept from before: it goes, and a notification says which and
      * why. A task it marked done shows again. */
     private suspend fun refused(context: Context, change: JSONObject, message: String) {
-        for ((task, _) in completed(change)) Widget.unhide(context, task)
+        for ((task, occurrence) in completed(change)) {
+            Widget.unhide(context, task, occurrence)
+            Agenda.unhide(context, task, occurrence)
+        }
         val open = PendingIntent.getActivity(context, 0, Intent(Intent.ACTION_VIEW, Uri.parse("nexttodo://home"), context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val notification = Notification.Builder(context, Channels.REFUSED)
             .setSmallIcon(R.drawable.ic_stat_nexttodo)

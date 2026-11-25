@@ -1,6 +1,7 @@
 package cn.juniexd.nexttodo.widget
 
 import android.content.Context
+import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -35,6 +36,9 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import java.time.LocalDate
 import java.time.LocalDateTime
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /** The home-screen agenda: what is due each of the next days. See docs/android.md#日程. */
 class AgendaWidget : GlanceAppWidget() {
@@ -78,7 +82,7 @@ private fun AgendaContent(context: Context, shown: Agendas) {
 
 /** `已逾期` over what is overdue, `今天`, `明天`, then `周日 11月22日`; it opens the calendar. */
 @Composable
-private fun DayTitle(context: Context, date: LocalDate?, today: LocalDate, scale: Float) {
+internal fun DayTitle(context: Context, date: LocalDate?, today: LocalDate, scale: Float) {
     val title = when (date) {
         null -> "已逾期"
         today -> "今天"
@@ -119,7 +123,7 @@ private fun EntryItem(context: Context, entry: Entry, first: Boolean, overdue: B
 
 /** Past the tasks listed, how many more there are, which opens the calendar. */
 @Composable
-private fun AgendaMore(context: Context, more: Int, scale: Float) {
+internal fun AgendaMore(context: Context, more: Int, scale: Float) {
     Text(
         "还有 $more 项",
         GlanceModifier.fillMaxWidth().padding(horizontal = EDGE, vertical = 8.dp * scale).clickable(open(context, "nexttodo://calendar")),
@@ -127,8 +131,13 @@ private fun AgendaMore(context: Context, more: Int, scale: Float) {
     )
 }
 
+/** With the “接下来” widget's list too while there is a widget that ticks tasks off, for the next start
+ * in it (`Widget.ticks`). */
 class AgendaRefreshAction : ActionCallback {
-    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) = refreshing(context) { Agenda.refresh(context) }
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) = refreshing(context) {
+        Agenda.refresh(context)
+        if (Widget.ticks(context)) Widget.refresh(context)
+    }
 }
 
 class AgendaWidgetReceiver : GlanceAppWidgetReceiver() {
@@ -137,10 +146,37 @@ class AgendaWidgetReceiver : GlanceAppWidgetReceiver() {
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
         Widget.schedule(context)
+        Agenda.placedChanged(context)
     }
 
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
-        if (!Widget.placed(context)) Widget.unschedule(context)
+        Widget.unschedule(context)
+        Agenda.placedChanged(context)
+    }
+
+    /** The alarm `Agenda.redrawAt` set; the phone starting or the app updated, which take it away; and
+     * the clock or the time zone changed, which move what it was set for. */
+    override fun onReceive(context: Context, intent: Intent) {
+        val alarm = setOf(REDRAW, Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED, Intent.ACTION_TIME_CHANGED, Intent.ACTION_TIMEZONE_CHANGED)
+        if (intent.action !in alarm) return super.onReceive(context, intent)
+        val pending = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // Turned back across midnight or a deadline, what is drawn is wrong, though the time it holds
+                // until is still to come.
+                val clock = intent.action == Intent.ACTION_TIME_CHANGED || intent.action == Intent.ACTION_TIMEZONE_CHANGED
+                Agenda.redraw(context, anyway = clock)
+                // What has started is told by the clock here too, and the start's alarm was set by it.
+                if (clock && Widget.ticks(context)) Widget.started(context)
+            } finally {
+                pending.finish()
+            }
+        }
+    }
+
+    companion object {
+        /** For the “日程” and “一周” widgets both. */
+        const val REDRAW = "cn.juniexd.nexttodo.AGENDA_REDRAW"
     }
 }

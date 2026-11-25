@@ -42,3 +42,18 @@ test("the agenda widget lists what is due in the folders picked, with the later 
   expect(overdue.map((t) => [t.title, "later" in t])).toEqual([["开例会", false], ["交报告", false]]);
   expect(days.map((d) => [d.date, d.tasks.map((t) => [t.title, t.folder, t.due?.date, "later" in t])])).toEqual([["2026-11-26", [["开例会", "/工作", "2026-11-19", true]]]]);
 });
+
+test("the agenda widget says which tasks can be done now, and which time of a repeating one, to tick them off", () => {
+  const snapshot: Snapshot = {
+    folders: [],
+    tasks: [
+      task(1, "背单词", { due: { date: "2026-11-19", repeat: { every: 1, unit: "day", from: "due" } }, completions: { count: 2, last: "2026-11-18" } }),
+      task(2, "写总结", { due: { date: "2026-11-19" } }),
+      task(3, "收集数据", {}),
+    ],
+    dependencies: [{ before: id(3), after: id(2), created_at: 0 }],
+    completions: [], attachments: [], ai_jobs: [], shares: [], people: [],
+  };
+  const { overdue } = widgetAgenda(new Board(snapshot, { today: "2026-11-20" }, ME), [null]);
+  expect(overdue.map((t) => [t.title, t.status, t.completions?.count])).toEqual([["背单词", "ready", 2], ["写总结", "waiting", undefined]]);
+});

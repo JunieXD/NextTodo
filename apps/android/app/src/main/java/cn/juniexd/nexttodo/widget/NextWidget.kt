@@ -132,7 +132,7 @@ private fun Content(context: Context, shown: Shown) {
             else -> Box(GlanceModifier.defaultWeight().fillMaxWidth()) {
                 Box(GlanceModifier.fillMaxSize().clickable(open(context, "nexttodo://home"))) {}
                 LazyColumn(GlanceModifier.fillMaxWidth()) {
-                    itemsIndexed(shown.items) { i, item -> TaskItem(context, item, i == 0, item.id in shown.ticked, now, compact, look.scale) }
+                    itemsIndexed(shown.items) { i, item -> TaskItem(context, item, i == 0, (item.id to item.occurrence) in shown.ticked, now, compact, look.scale) }
                     if (shown.more > 0) item { More(context, shown.more, shown.items.isEmpty(), look.scale) }
                 }
             }
@@ -142,7 +142,7 @@ private fun Content(context: Context, shown: Shown) {
 
 /** A line between tasks, from where the titles start, as in the app's lists. */
 @Composable
-private fun Divider() {
+internal fun Divider() {
     Box(GlanceModifier.fillMaxWidth().padding(start = CIRCLE)) {
         Spacer(GlanceModifier.fillMaxWidth().height(1.dp).background(LocalColors.current.divider))
     }
@@ -192,21 +192,29 @@ private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boole
                 }
             }
         }
-        if (ticked) {
-            Box(GlanceModifier.width(EDGE + 26.dp).height(26.dp).padding(start = EDGE + 2.dp, top = 2.dp, end = 2.dp, bottom = 2.dp)) {
-                Image(ImageProvider(R.drawable.ic_widget_dot), "已完成", GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(colors.primary))
-                Image(ImageProvider(R.drawable.ic_widget_tick), null, GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(colors.onPrimary))
-            }
-        } else {
-            val complete = listOfNotNull(TaskKey to item.id, TitleKey to item.title, item.occurrence?.let { OccurrenceKey to it.json().toString() })
-            // Larger than the circle, from the widget's side up to where the title starts, to be easy to
-            // hit; round at the ends, for its ripple.
-            Box(
-                GlanceModifier.width(EDGE + CIRCLE).height(CIRCLE).padding(start = EDGE).cornerRadius(CIRCLE / 2).clickable(actionRunCallback<CompleteAction>(actionParametersOf(*complete.toTypedArray()))),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                Image(ImageProvider(R.drawable.ic_widget_check), "标为完成", GlanceModifier.size(26.dp).padding(2.dp), colorFilter = ColorFilter.tint(colors.primary))
-            }
+        Tick(item.id, item.title, item.occurrence, ticked)
+    }
+}
+
+/** The circle at the start of a task's row, drawn over the start of what opens it: it completes the
+ * task, its time `occurrence` should it repeat; `ticked` off, it shows it done while that goes on. */
+@Composable
+internal fun Tick(task: String, title: String, occurrence: Occurrence?, ticked: Boolean) {
+    val colors = LocalColors.current
+    if (ticked) {
+        Box(GlanceModifier.width(EDGE + 26.dp).height(26.dp).padding(start = EDGE + 2.dp, top = 2.dp, end = 2.dp, bottom = 2.dp)) {
+            Image(ImageProvider(R.drawable.ic_widget_dot), "已完成", GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(colors.primary))
+            Image(ImageProvider(R.drawable.ic_widget_tick), null, GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(colors.onPrimary))
+        }
+    } else {
+        val complete = listOfNotNull(TaskKey to task, TitleKey to title, occurrence?.let { OccurrenceKey to it.json().toString() })
+        // Larger than the circle, from the widget's side up to where the title starts, to be easy to
+        // hit; round at the ends, for its ripple.
+        Box(
+            GlanceModifier.width(EDGE + CIRCLE).height(CIRCLE).padding(start = EDGE).cornerRadius(CIRCLE / 2).clickable(actionRunCallback<CompleteAction>(actionParametersOf(*complete.toTypedArray()))),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Image(ImageProvider(R.drawable.ic_widget_check), "标为完成", GlanceModifier.size(26.dp).padding(2.dp), colorFilter = ColorFilter.tint(colors.primary))
         }
     }
 }
@@ -223,7 +231,7 @@ private fun More(context: Context, more: Int, first: Boolean, scale: Float) {
 }
 
 /** Where the title starts: the circle, and the space after it. */
-private val CIRCLE = 36.dp
+internal val CIRCLE = 36.dp
 
 /** In place of the list, all the rest of the widget: tapped, it opens the app. */
 @Composable
@@ -236,11 +244,12 @@ internal fun ColumnScope.Note(text: String, onClick: Action) {
 class CompleteAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         val task = parameters[TaskKey]!!
+        val occurrence = parameters[OccurrenceKey]?.let { Occurrence.from(JSONObject(it)) }
         val token = Server.token(context) ?: return
         val start = SystemClock.elapsedRealtime()
-        Widget.tick(context, task, token)
+        Widget.tick(context, task, occurrence, token)
         val outcome = try {
-            Changes.complete(context, task, parameters[TitleKey]!!, parameters[OccurrenceKey]?.let { Occurrence.from(JSONObject(it)) }).also {
+            Changes.complete(context, task, parameters[TitleKey]!!, occurrence).also {
                 if (it !is Changes.Outcome.Refused) delay(LINGER_MS - (SystemClock.elapsedRealtime() - start))
             }
         } finally {

@@ -14,9 +14,6 @@ import { forUser, useFeedback } from "../ui/feedback";
 import { useKeepFiles } from "./attachments";
 import { QuickAdd, type Sent, quickAddPlace } from "./lists";
 
-/** Where the bar keeps its draft and files. */
-const PLACE = quickAddPlace();
-
 /** Closes the card once what another app shared is in the bar (`shared`), and what was made here is
  * safe, written on this device or confirmed by the server, and the widgets and reminders have it: the
  * page goes with the card. What the server has not confirmed yet goes on from the app's window, if
@@ -44,6 +41,9 @@ export function Card() {
     return { promise: new Promise<void>((r) => (done = r)), done };
   });
   const [sent, setSent] = useState<Sent>();
+  /** The day it adds to, opened from a day of the “一周” widget: as the calendar's quick add. */
+  const [on] = useState(() => new URLSearchParams(window.location.search).get("on") ?? undefined);
+  const place = quickAddPlace(undefined, on);
   /** The server would not start the AI job sent with the settings on this device. */
   const [unstarted, setUnstarted] = useState(false);
   /** Left, or asked to close. */
@@ -66,9 +66,9 @@ export function Card() {
       if (!text && !files.length) return;
       const ai = await aiSetUp(user);
       await setAiMode(ai);
-      if (text) keepDraft(user, PLACE, [draft(user, PLACE), ai ? text : text.replace(/\s*\n\s*/g, " ")].filter(Boolean).join(ai ? "\n" : " "));
-      const kept = await keepFiles(plan(files, stagedFiles(user, PLACE).map((f) => f.name), snack));
-      if (kept.length) keepStaged(user, PLACE, [...stagedFiles(user, PLACE), ...kept]);
+      if (text) keepDraft(user, place, [draft(user, place), ai ? text : text.replace(/\s*\n\s*/g, " ")].filter(Boolean).join(ai ? "\n" : " "));
+      const kept = await keepFiles(plan(files, stagedFiles(user, place).map((f) => f.name), snack));
+      if (kept.length) keepStaged(user, place, [...stagedFiles(user, place), ...kept]);
     };
     void take()
       .catch((e: unknown) => snack(forUser("读取分享的内容", e)))
@@ -117,6 +117,7 @@ export function Card() {
       ) : (
         taken && (
           <QuickAdd
+            on={on}
             onSent={(s) => {
               setSent(s);
               setUnstarted(false);

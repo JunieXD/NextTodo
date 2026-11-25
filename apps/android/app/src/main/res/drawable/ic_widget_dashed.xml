@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ic_widget_check's circle in dashes, for a task that can't be ticked off here: one waiting, or a
+     later time of a repeating one, as the app has them. Tinted by the widget. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:pathData="M13.41,3.11A9,9 0,0 1,16.09,3.98M18.36,5.64A9,9 0,0 1,20.02,7.91M20.89,10.59A9,9 0,0 1,20.89,13.41M20.02,16.09A9,9 0,0 1,18.36,18.36M16.09,20.02A9,9 0,0 1,13.41,20.89M10.59,20.89A9,9 0,0 1,7.91,20.02M5.64,18.36A9,9 0,0 1,3.98,16.09M3.11,13.41A9,9 0,0 1,3.11,10.59M3.98,7.91A9,9 0,0 1,5.64,5.64M7.91,3.98A9,9 0,0 1,10.59,3.11" android:strokeColor="#FFFFFF" android:strokeWidth="2" android:strokeLineCap="round" />
+</vector>

@@ -22,7 +22,6 @@ import cn.juniexd.nexttodo.HttpError
 import cn.juniexd.nexttodo.Local
 import cn.juniexd.nexttodo.Occurrence
 import cn.juniexd.nexttodo.Server
-import cn.juniexd.nexttodo.covers
 import cn.juniexd.nexttodo.reminders.Reminders
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -48,11 +47,11 @@ import org.json.JSONObject
  * `occurrence` the time shown; `step`, which step it is along its dependencies, such as `2/5`. */
 data class Item(val id: String, val title: String, val folder: String, val due: Due?, val lastDone: LocalDate?, val occurrence: Occurrence?, val step: String?)
 
-/** What the widget shows: the list with the tasks just ticked off in it, and how many `more` there are
- * past it; or that the app is signed out. With the `look` the user chose. As of `now`, to the minute,
+/** What the widget shows: the list with the tasks just ticked off in it, each `ticked` at its time
+ * should it repeat, and how many `more` there are past it; or that the app is signed out. With the `look` the user chose. As of `now`, to the minute,
  * which what it says of the time goes by: a part of it, so that the widget is drawn again as the time
  * alone moves on. */
-data class Shown(val signedIn: Boolean, val items: List<Item>, val more: Int, val ticked: Set<String>, val look: Look, val now: LocalDateTime)
+data class Shown(val signedIn: Boolean, val items: List<Item>, val more: Int, val ticked: Set<Pair<String, Occurrence?>>, val look: Look, val now: LocalDateTime)
 
 /** The widget's list, kept in its own preferences: written by the app, or fetched from the server. */
 object Widget {
@@ -64,12 +63,6 @@ object Widget {
      * widget fetched. A list as of no change, the empty one of signing out, replaces any, and any
      * replaces it. */
     private const val SEQ = "seq"
-
-    /** Tasks done here that the list kept still has, being from before, by the change that did each:
-     * hidden from it until a list as of that change comes; by none while the change waits to be sent
-     * (docs/android.md#原生发出的改动). Kept apart from the list, which stays what it was as of its
-     * change. */
-    private const val DONE = "done"
 
     /** The most tasks the widget lists, the rest only counted: the launcher is handed all of them at
      * once, some 14KB each, and takes no more than 1MB. */
@@ -103,6 +96,7 @@ object Widget {
             true
         }
         AgendaWidget().updateAll(context)
+        WeekWidget().updateAll(context)
     }
 
     /** The paths of the folders the widgets list, as a JSON array; none for all of them. */
@@ -125,19 +119,12 @@ object Widget {
     private fun keep(context: Context, prefs: SharedPreferences, tasks: String, more: Int, seq: Long?, start: String?): Boolean {
         if (seq != null && prefs.contains(SEQ) && seq < prefs.getLong(SEQ, 0)) return false
         val edit = prefs.edit().putString("tasks", tasks).putInt(MORE, more)
-        if (seq == null) {
-            edit.remove(SEQ).remove(DONE)
-        } else {
-            val done = done(prefs)
-            done.keys().asSequence().toList().filter { !done.isNull(it) && done.getLong(it) <= seq }.forEach(done::remove)
-            edit.putLong(SEQ, seq).putString(DONE, done.toString())
-        }
+        if (seq == null) edit.remove(SEQ) else edit.putLong(SEQ, seq)
+        Done.keep(prefs, edit, seq)
         edit.apply()
         refreshAt(context, start)
         return true
     }
-
-    private fun done(prefs: SharedPreferences) = JSONObject(prefs.getString(DONE, "{}"))
 
     /** Shows `tasks`, the app's list, as JSON in the shape of the `next` tool's `tasks`, as of the
      * change `seq` its copy has. The app's lists come in the order of its sign-ins and sign-outs. Drawn
@@ -165,67 +152,59 @@ object Widget {
     private fun listed(prefs: SharedPreferences, back: List<IndexedValue<Item>> = emptyList()): Pair<List<Item>, Int> {
         val items = items(prefs)
         val listed = items.take(MOST).toMutableList()
+        val shown = { item: Item -> listed.any { it.id == item.id && it.occurrence == item.occurrence } }
         for ((i, item) in back.sortedBy { it.index }) {
-            if (listed.none { it.id == item.id }) listed.add(minOf(i, listed.size), item)
+            if (!shown(item)) listed.add(minOf(i, listed.size), item)
         }
-        return listed to items.count { item -> listed.none { it.id == item.id } } + prefs.getInt(MORE, 0)
+        return listed to items.count { !shown(it) } + prefs.getInt(MORE, 0)
     }
 
     private fun items(prefs: SharedPreferences): List<Item> {
         val list = JSONArray(prefs.getString("tasks", "[]"))
-        val done = done(prefs)
-        return (0 until list.length()).map(list::getJSONObject).filter { !done.has(it.getString("id")) }.map { t ->
+        val done = Done.of(prefs)
+        return (0 until list.length()).map(list::getJSONObject).map { t ->
             val due = t.optJSONObject("due")?.let { Due.from(it) }
             // `/学习/毕业论文` reads `学习 / 毕业论文`; the root shows nothing.
             val lastDone = t.optJSONObject("completions")?.let { LocalDate.parse(it.getString("last")) }
             val step = t.optJSONArray("step")?.let { "${it.getInt(0)}/${it.getInt(1)}" }
             Item(t.getString("id"), t.getString("title"), t.getString("folder").removePrefix("/").replace("/", " / "), due, lastDone, Occurrence.of(t), step)
-        }
+        }.filter { !Done.hides(done, it.id, it.occurrence) }
     }
 
-    /** A task ticked off and being completed, with where it was in the list, in the session `token`. */
-    private data class Ticked(val row: IndexedValue<Item>, val token: String)
+    /** A task ticked off and being completed, at its time `occurrence` should it repeat, in the session
+     * `token`, with where it was in the list, and in the “一周” widget's list of its day
+     * (`Agenda.place`); in either, none when not there. */
+    private data class Ticked(val occurrence: Occurrence?, val row: IndexedValue<Item>?, val entry: IndexedValue<Entry>?, val token: String)
 
     /** The tasks being completed: each stays where it was, shown done, until it goes, whatever lists
      * come meanwhile; in its own session only. Kept in memory, as the completing is: should the app be
      * stopped, both end. */
     private val ticked = MutableStateFlow<Map<String, Ticked>>(emptyMap())
 
+    /** Each time a task is ticked off, or done being completed. */
+    val ticking: Flow<*> = ticked
+
+    /** The tasks being completed in this session, as the “一周” widget lists them. */
+    fun ticked(context: Context): List<IndexedValue<Entry>> = Server.token(context).let { token -> ticked.value.values.filter { it.token == token }.mapNotNull { it.entry } }
+
     /** What to show now. */
     fun shown(context: Context): Shown {
         val token = Server.token(context)
         val ticked = ticked.value.filterValues { it.token == token }
-        val (items, more) = listed(prefs(context), ticked.values.map { it.row })
-        return Shown(token != null, items, more, ticked.keys, look(context), LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES))
+        val (items, more) = listed(prefs(context), ticked.values.mapNotNull { it.row })
+        return Shown(token != null, items, more, ticked.map { (task, t) -> task to t.occurrence }.toSet(), look(context), LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES))
     }
 
-    /** Hides a task done in session `token`, its time `occurrence` should it repeat, by the change
-     * `seq`, or by one not sent yet without it, while the list kept is from before it, unless signed in
-     * again since. One listed at another time, the list being ahead of where it was done, stays; and
-     * once sent, it is no longer hidden as done by a change not sent. */
+    /** Hides a task done in session `token` from the list, as `Done.hide` says, unless signed in again
+     * since. */
     suspend fun hide(context: Context, task: String, occurrence: Occurrence?, token: String, seq: Long?) = update(context) { prefs ->
-        if (Server.token(context) != token) return@update false
-        val tasks = JSONArray(prefs.getString("tasks", "[]"))
-        val listed = (0 until tasks.length()).map(tasks::getJSONObject).find { it.getString("id") == task }
-        val done = done(prefs)
-        if (listed != null && !occurrence.covers(Occurrence.of(listed))) {
-            if (seq == null || !done.has(task) || !done.isNull(task)) return@update false
-            done.remove(task)
-        } else when {
-            seq == null -> done.put(task, JSONObject.NULL)
-            prefs.contains(SEQ) && prefs.getLong(SEQ, 0) >= seq -> done.remove(task)
-            // The latest of its completions, should it be completed twice, from two widgets say.
-            else -> done.put(task, if (done.isNull(task)) seq else maxOf(seq, done.optLong(task, seq)))
-        }
-        prefs.edit().putString(DONE, done.toString()).commit()
-        true
+        val mine = Server.token(context) == token
+        if (mine) Done.hide(prefs, task, occurrence, seq, prefs.getLong(SEQ, 0).takeIf { prefs.contains(SEQ) })
+        mine
     }
 
-    /** Shows a task again whose completion the server turned down. */
-    suspend fun unhide(context: Context, task: String) = update(context) { prefs ->
-        val done = done(prefs)
-        done.remove(task) != null && prefs.edit().putString(DONE, done.toString()).commit()
-    }
+    /** Shows a task again whose completion, of its time `occurrence`, the server turned down. */
+    suspend fun unhide(context: Context, task: String, occurrence: Occurrence?) = update(context) { Done.unhide(it, task, occurrence) }
 
     /** What to show, each time the list or the sign-in changes: an empty list stays empty when the
      * app signs in or out. */
@@ -262,17 +241,20 @@ object Widget {
         }
     }
 
-    /** Shows `task` done where it is in the list, whatever lists come, while it is being completed in
-     * session `token`. */
-    suspend fun tick(context: Context, task: String, token: String) {
-        shown(context).items.withIndex().find { it.value.id == task }?.let { row -> ticked.update { it + (task to Ticked(row, token)) } }
+    /** Shows `task` at its time `occurrence` done where it is in the lists, whatever lists come, while it
+     * is being completed in session `token`. */
+    suspend fun tick(context: Context, task: String, occurrence: Occurrence?, token: String) {
+        val row = shown(context).items.withIndex().find { it.value.id == task && it.value.occurrence == occurrence }
+        ticked.update { it + (task to Ticked(occurrence, row, Agenda.place(context, task, occurrence), token)) }
         NextWidget().updateAll(context)
+        WeekWidget().updateAll(context)
     }
 
     suspend fun untick(context: Context, task: String, token: String) {
         // Signed in again, the same task may have been ticked off in the new session meanwhile.
         ticked.update { if (it[task]?.token == token) it - task else it }
         NextWidget().updateAll(context)
+        WeekWidget().updateAll(context)
     }
 
     /** The server says the session `token` has ended: unless the app has signed in again since, sign
@@ -290,8 +272,27 @@ object Widget {
         Toast.makeText(context, text, Toast.LENGTH_LONG).show()
     }
 
+    /** When, in milliseconds, the clock here first reads `local`: now, should it have already; a time
+     * skipped as summer time begins comes as it ends the skip; in the hour that leaving it repeats, the
+     * one still to come. */
+    fun firstReads(local: LocalDateTime): Long {
+        val zone = ZoneId.systemDefault()
+        val now = ZonedDateTime.now(zone)
+        val change = zone.rules.getTransition(local)
+        return when {
+            !local.isAfter(now.toLocalDateTime()) -> now
+            change == null -> local.atZone(zone)
+            change.isGap -> change.instant.atZone(zone)
+            else -> local.atZone(zone).let { if (it.isBefore(now)) it.withLaterOffsetAtOverlap() else it }
+        }.toInstant().toEpochMilli()
+    }
+
     /** Whether there is a “接下来” widget on the home screen to keep up to date. */
     fun placed(context: Context) = placed(context, NextWidgetReceiver::class.java)
+
+    /** Whether there is a widget on the home screen that ticks tasks off, “接下来” or “一周”: what it
+     * may tick off changes as tasks start (`refreshAt`). */
+    fun ticks(context: Context) = placed(context) || placed(context, WeekWidgetReceiver::class.java)
 
     /** Whether there is a widget of `receiver`'s on the home screen. */
     fun placed(context: Context, receiver: Class<*>) =
@@ -310,8 +311,8 @@ object Widget {
     /** Fetches the list when the next task starts, `2026-11-16` or `2026-11-16 20:05` here, as the
      * `next` tool's `next_start` gives it: it comes into the list also with the app not running, and
      * that list sets the one after. An alarm, as reminders have, on time and in place of the one set
-     * before; none without a start, or without a widget. Set only with the list it came with, as that
-     * is kept. */
+     * before; none without a start, or without a widget that ticks tasks off. Set only with the list it
+     * came with, as that is kept. */
     private fun refreshAt(context: Context, start: String?) {
         val alarms = context.getSystemService(AlarmManager::class.java)
         val alarm = PendingIntent.getBroadcast(
@@ -320,24 +321,13 @@ object Widget {
             Intent(context, NextWidgetReceiver::class.java).setAction(NextWidgetReceiver.STARTED),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        if (start == null || !placed(context)) {
+        if (start == null || !ticks(context)) {
             alarms.cancel(alarm)
             return
         }
         val (date, time) = start.split(' ').let { it[0] to it.getOrNull(1) }
-        val local = LocalDate.parse(date).atTime(time?.let(LocalTime::parse) ?: LocalTime.MIDNIGHT)
-        // When the clock here first reads it, as starts are told by the clock here: a time skipped as
-        // summer time begins comes as it ends the skip; in the hour that leaving it repeats, the one
-        // still to come.
-        val zone = ZoneId.systemDefault()
-        val now = ZonedDateTime.now(zone)
-        val change = zone.rules.getTransition(local)
-        val at = when {
-            !local.isAfter(now.toLocalDateTime()) -> now
-            change == null -> local.atZone(zone)
-            change.isGap -> change.instant.atZone(zone)
-            else -> local.atZone(zone).let { if (it.isBefore(now)) it.withLaterOffsetAtOverlap() else it }
-        }.toInstant().toEpochMilli()
+        // As starts are told by the clock here.
+        val at = firstReads(LocalDate.parse(date).atTime(time?.let(LocalTime::parse) ?: LocalTime.MIDNIGHT))
         when {
             Reminders.exact(context) -> alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, alarm)
             else -> alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, alarm)
@@ -351,10 +341,11 @@ object Widget {
         WorkManager.getInstance(context).enqueueUniqueWork(START, ExistingWorkPolicy.REPLACE, request)
     }
 
-    /** The “接下来” widget is gone: its refreshes go, and those of both, unless the agenda is there. */
+    /** The last of a kind of widget is gone: the refreshes go with the last of all, the start's alarm
+     * with the last that ticks tasks off. */
     fun unschedule(context: Context) {
-        if (!Agenda.placed(context)) WorkManager.getInstance(context).cancelUniqueWork(WORK)
-        refreshAt(context, null)
+        if (!placed(context) && !Agenda.placed(context)) WorkManager.getInstance(context).cancelUniqueWork(WORK)
+        if (!ticks(context)) refreshAt(context, null)
     }
 
     private const val WORK = "widget-refresh"
@@ -366,7 +357,8 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         try {
             // Syncing through a drive, with what other devices did meanwhile.
             if (Local.on(applicationContext)) withContext(Dispatchers.IO) { Local.pull(PULL_WAIT_MS) }
-            if (Widget.placed(applicationContext)) Widget.refresh(applicationContext)
+            // For the “一周” widget too, the list's next start.
+            if (Widget.ticks(applicationContext)) Widget.refresh(applicationContext)
             if (Agenda.placed(applicationContext)) Agenda.refresh(applicationContext)
             Result.success()
         } catch (e: Exception) {

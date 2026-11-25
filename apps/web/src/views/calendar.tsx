@@ -5,7 +5,7 @@ import { Check as CheckIcon, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRef, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { completionKey } from "../domain/apply";
-import { type DoneOn, type DueOn, doneByDay, dueBetween, heat, lateness } from "../domain/calendar";
+import { type DoneOn, type DueOn, doneByDay, dueBetween, heat, lateness, overdue } from "../domain/calendar";
 import { day, dueKind, formatToday, isoDate, monthGrid } from "../domain/dates";
 import type { Task } from "../api/types/Task";
 import { lunarDate, lunarLabel, lunarText } from "../domain/lunar";
@@ -182,7 +182,7 @@ export function CalendarBody({ now, picked, setPicked }: { now: Date; picked: st
           </>
         )}
       </div>
-      {view !== "year" && <DayList date={picked} now={now} due={due.get(picked) ?? []} done={done.get(picked) ?? []} />}
+      {view !== "year" && <DayList date={picked} now={now} overdue={picked === today ? overdue(board, today) : []} due={due.get(picked) ?? []} done={done.get(picked) ?? []} />}
     </div>
   );
 }
@@ -233,8 +233,8 @@ function Year(p: {
   );
 }
 
-/** What is due and done on `date`. */
-function DayList({ date, now, due, done }: { date: string; now: Date; due: DueOn[]; done: DoneOn[] }) {
+/** What is due and done on `date`, and for today, what is `overdue`. */
+function DayList({ date, now, overdue, due, done }: { date: string; now: Date; overdue: Task[]; due: DueOn[]; done: DoneOn[] }) {
   const { board } = useView();
   const { selected } = useSelection();
   const actions = useTaskActions();
@@ -243,7 +243,17 @@ function DayList({ date, now, due, done }: { date: string; now: Date; due: DueOn
   return (
     <section className="cal-day">
       <h2 className="cal-date">{title}</h2>
-      {!due.length && !done.length && <p className="empty">这天没有事项</p>}
+      {!overdue.length && !due.length && !done.length && <p className="empty">这天没有事项</p>}
+      {overdue.length > 0 && (
+        <>
+          <h3 className="group-title overdue">已逾期</h3>
+          <div className="group">
+            {overdue.map((task) => (
+              <TaskRow key={task.id} task={task} board={board} now={now} path selected={selected === task.id} actions={actions} />
+            ))}
+          </div>
+        </>
+      )}
       {due.length > 0 && (
         <>
           <h3 className="group-title">截止</h3>

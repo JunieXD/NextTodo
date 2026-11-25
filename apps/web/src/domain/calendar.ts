@@ -49,14 +49,17 @@ export function dueBetween(board: Board, from: string, to: string): Map<string, 
   return days;
 }
 
-/** What is due over `days` days from the board's today, by day in order, and before it, the user's
- * open tasks due before today, in the order of `Board.byDue`. */
+/** The user's open tasks due before `today`, in the order of `Board.byDue`. */
+export const overdue = (board: Board, today: string) =>
+  board.byDue(board.snapshot.tasks.filter((t) => t.done_at === null && t.due !== null && t.due.date < today && board.mine(t)));
+
+/** What is due over `days` days from the board's today, by day in order, and before it, what is
+ * `overdue`. */
 export function agenda(board: Board, days: number) {
   const { today } = board.now;
-  const overdue = board.byDue(board.snapshot.tasks.filter((t) => t.done_at === null && t.due !== null && t.due.date < today && board.mine(t)));
   const d = day(today);
   const due = dueBetween(board, today, isoDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() + days - 1)));
-  return { overdue, days: [...due].sort(([a], [b]) => cmp(a, b)) };
+  return { overdue: overdue(board, today), days: [...due].sort(([a], [b]) => cmp(a, b)) };
 }
 
 /** What the user did, by day: the tasks done, on the day they were here, and the times repeating tasks

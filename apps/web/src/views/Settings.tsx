@@ -19,7 +19,8 @@ import { useSession, useUndo, useView } from "../session";
 import { type Preset, type Theme, hueOf, isPreset, primaryOf, setAccent, setTheme, startOwn, tuneAccent, useAccent, useDark, useTheme } from "../theme";
 import { type Zoom, type Zoomed, setZoom, useZoom } from "../zoom";
 import { ColorPicker } from "../ui/color-picker";
-import { Copyable, Seg, Stepper, Swatch } from "../ui/controls";
+import { Copyable, Seg, Stepper, Swatch, Switch } from "../ui/controls";
+import { useTimeGridOn } from "./calendar";
 import { Modal, forUser, useFailure, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
 import { Icon } from "../ui/icons";
@@ -436,6 +437,7 @@ function Action({ label, value, onClick }: { label: string; value?: string; onCl
 
 function Appearance() {
   const theme = useTheme();
+  const [grid, setGrid] = useTimeGridOn();
   const accent = useAccent();
   const dark = useDark();
   const own = accent === "emerald" || isPreset(accent) ? null : accent;
@@ -474,6 +476,10 @@ function Appearance() {
         </div>
       )}
       {app === "desktop" && <Zooms />}
+      <h2 className="group-title">日历</h2>
+      <div className="group settings">
+        <Switch label="时间轴视图" sub="日历里多一种按钟点排的一周，看什么时候要交什么" on={grid} onChange={setGrid} />
+      </div>
     </>
   );
 }

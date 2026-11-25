@@ -347,10 +347,15 @@ export function SearchResults({ query, now }: { query: string; now: Date }) {
   );
 }
 
-/** A due date on `date`, with this device's defaults for one without a time. */
-function due(date: string): Due {
-  const reminders = inOrder(defaultReminders().dated, undefined);
-  return { date, ...(reminders.length > 0 && { reminders }) };
+/** A due date on `date`, at `time` if any, with this device's defaults for one so. */
+function due(date: string, time: string | null): Due {
+  const defaults = defaultReminders();
+  if (time === null) {
+    const reminders = inOrder(defaults.dated, undefined);
+    return { date, ...(reminders.length > 0 && { reminders }) };
+  }
+  const reminders = inOrder(defaults.timed, time);
+  return { date, time, ...(reminders.length > 0 && { reminders }) };
 }
 
 /** What a quick add sent: its changes, and the task it added or the AI job it asked for. */
@@ -366,8 +371,20 @@ export const quickAddPlace = (folder?: FolderId | null, on?: string) => (on !== 
  * `add-to.ts` keeps it. In the calendar, `on` the day picked there, a task is due that day, with the
  * defaults for a due date; it has no AI organizing, which dates tasks by what the text says. Hidden by
  * `hide`, it keeps what it has, the folder picked and the files still being saved. `onSent` hears of
- * what each add sent. */
-export function QuickAdd({ folder, on, hide = false, onSent }: { folder?: FolderId | null; on?: string; hide?: boolean; onSent?: (sent: Sent) => void }) {
+ * what each add sent. `at` a time picked on the day, it is due then, and takes the focus. */
+export function QuickAdd({
+  folder,
+  on,
+  at = null,
+  hide = false,
+  onSent,
+}: {
+  folder?: FolderId | null;
+  on?: string;
+  at?: string | null;
+  hide?: boolean;
+  onSent?: (sent: Sent) => void;
+}) {
   const { board } = useView();
   const commit = useCommit();
   const { snack } = useFeedback();
@@ -447,9 +464,13 @@ export function QuickAdd({ folder, on, hide = false, onSent }: { folder?: Folder
         : on === undefined
           ? (board.folderTree().find((f) => listed.includes(f)) ?? null)
           : null;
-  const when = on && formatDay(day(on).getTime(), new Date());
+  const when = on && `${formatDay(day(on).getTime(), new Date())}${at ? ` ${at}` : ""}`;
   const area = useRef<HTMLTextAreaElement>(null);
   const focus = () => area.current?.focus();
+  // A time picked on the day is to add to now.
+  useEffect(() => {
+    if (at !== null) area.current?.focus();
+  }, [on, at]);
   // Narrower than this, the buttons beside the field would leave it a few characters: they go below
   // it, and only while it is in use.
   const form = useRef<HTMLFormElement>(null);
@@ -556,7 +577,7 @@ export function QuickAdd({ folder, on, hide = false, onSent }: { folder?: Folder
       title: c.value,
       sort_key: lastKey(board.contents(into).map((t) => t.sort_key)),
       ...(into && { folder_id: into }),
-      ...(on && { due: due(on) }),
+      ...(on && { due: due(on, at) }),
     };
     const made = commit([op]);
     if (!made) return;

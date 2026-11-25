@@ -1,8 +1,8 @@
 // The calendar page (docs/ui.md#日历): a month, a week or a year, what is due and done on each day,
 // and the day picked listed under it.
 
-import { Check as CheckIcon, ChevronLeft, ChevronRight } from "lucide-react";
-import { useRef, useSyncExternalStore } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { completionKey } from "../domain/apply";
 import { type DoneOn, type DueOn, doneByDay, droppedByDay, dueBetween, heat, lateness, overdue } from "../domain/calendar";
@@ -16,31 +16,48 @@ import { Icon } from "../ui/icons";
 import { useTaskActions } from "./actions";
 import { ARROWS, WEEKDAYS } from "./due";
 import { useSelection } from "./nav";
-import { PathMeta, TaskRow } from "./rows";
+import { Occurrence, TaskRow } from "./rows";
+import { TimeGrid } from "./timegrid";
 
-export type CalendarView = "month" | "week" | "year";
+export type CalendarView = "month" | "week" | "year" | "time";
 
 const VIEW_KEY = "nexttodo.calendarView";
+const GRID_KEY = "nexttodo.timeGrid";
 const listeners = new Set<() => void>();
 
-/** Which of a month, a week or a year the calendar shows, remembered on this device. */
-export function useCalendarView(): [CalendarView, (v: CalendarView) => void] {
-  const view = useSyncExternalStore(
+/** What is kept on this device under `key`, and how to keep another value there. */
+function useKept(key: string): [string | null, (v: string) => void] {
+  const value = useSyncExternalStore(
     (l) => {
       listeners.add(l);
       return () => listeners.delete(l);
     },
-    () => (localStorage.getItem(VIEW_KEY) as CalendarView | null) ?? "month",
+    () => localStorage.getItem(key),
   );
-  const setView = (v: CalendarView) => {
-    localStorage.setItem(VIEW_KEY, v);
+  const keep = (v: string) => {
+    localStorage.setItem(key, v);
     for (const l of listeners) l();
   };
-  return [view, setView];
+  return [value, keep];
+}
+
+/** Whether the calendar offers the time grid, set on this device in the settings; off unless turned on. */
+export function useTimeGridOn(): [boolean, (on: boolean) => void] {
+  const [on, keep] = useKept(GRID_KEY);
+  return [on === "on", (v) => keep(v ? "on" : "off")];
+}
+
+/** Which of a month, a week, a year or the time grid the calendar shows, remembered on this device;
+ * the week once the time grid is turned off. */
+export function useCalendarView(): [CalendarView, (v: CalendarView) => void] {
+  const [view, keep] = useKept(VIEW_KEY);
+  const [grid] = useTimeGridOn();
+  return [view === "time" && !grid ? "week" : ((view as CalendarView | null) ?? "month"), keep];
 }
 
 export function CalendarViewSeg() {
   const [view, setView] = useCalendarView();
+  const [grid] = useTimeGridOn();
   return (
     <Seg<CalendarView>
       label="日历的视图"
@@ -48,6 +65,7 @@ export function CalendarViewSeg() {
         ["month", "月"],
         ["week", "周"],
         ["year", "年"],
+        ...(grid ? [["time", "时间轴"] satisfies [CalendarView, string]] : []),
       ]}
       value={view}
       onChange={setView}
@@ -55,34 +73,54 @@ export function CalendarViewSeg() {
   );
 }
 
+/** The day picked in the calendar and, in the time grid, the half hour on it picked to add to: gone once
+ * the calendar shows another `view`. */
+export function useCalendarPick(now: Date, view: CalendarView) {
+  const [picked, setPicked] = useState(() => isoDate(now));
+  const [slot, setSlot] = useState<{ date: string; time: string } | null>(null);
+  if (view !== "time" && slot) setSlot(null);
+  return {
+    picked,
+    // Another day picked, the half hour goes.
+    at: slot?.date === picked ? slot.time : null,
+    pick(date: string, time?: string) {
+      setPicked(date);
+      setSlot(time === undefined ? null : { date, time });
+    },
+  };
+}
+
+export type CalendarPick = ReturnType<typeof useCalendarPick>;
+
 /** Day `date` moved `by` months, weeks or years, as the view turns: the same day of the month, or the
  * last one where there is none. */
 function turned(date: string, view: CalendarView, by: number): string {
   const d = day(date);
-  if (view === "week") return isoDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7 * by));
+  if (view === "week" || view === "time") return isoDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7 * by));
   const [y, m] = view === "year" ? [d.getFullYear() + by, d.getMonth()] : [d.getFullYear(), d.getMonth() + by];
   const last = new Date(y, m + 1, 0).getDate();
   return isoDate(new Date(y, m, Math.min(d.getDate(), last)));
 }
 
-export function CalendarBody({ now, picked, setPicked }: { now: Date; picked: string; setPicked(date: string): void }) {
+export function CalendarBody({ now, pick: { picked, at, pick } }: { now: Date; pick: CalendarPick }) {
   const { board } = useView();
   const [view, setView] = useCalendarView();
+  const setPicked = (date: string) => pick(date);
   const today = isoDate(now);
   const shown = day(picked);
   const days =
-    view === "week"
+    view === "week" || view === "time"
       ? Array.from({ length: 7 }, (_, i) => new Date(shown.getFullYear(), shown.getMonth(), shown.getDate() - ((shown.getDay() + 6) % 7) + i))
       : view === "month"
         ? monthGrid(shown.getFullYear(), shown.getMonth())
         : [];
   const isoDays = days.map(isoDate);
-  // The year shows only what was done.
-  const due = view === "year" ? new Map<string, DueOn[]>() : dueBetween(board, isoDays[0], isoDays[isoDays.length - 1]);
-  const done = doneByDay(board);
-  const dropped = view === "year" ? new Map<string, Task[]>() : droppedByDay(board);
+  // The year shows only what was done; the time grid finds what it shows itself.
+  const due = view === "year" || view === "time" ? new Map<string, DueOn[]>() : dueBetween(board, isoDays[0], isoDays[isoDays.length - 1]);
+  const done = view === "time" ? new Map<string, DoneOn[]>() : doneByDay(board);
+  const dropped = view === "year" || view === "time" ? new Map<string, Task[]>() : droppedByDay(board);
   const turn = (by: number) => setPicked(turned(picked, view, by));
-  const current = view === "year" ? picked.slice(0, 4) === today.slice(0, 4) : view === "week" ? isoDays.includes(today) : picked.slice(0, 7) === today.slice(0, 7);
+  const current = view === "year" ? picked.slice(0, 4) === today.slice(0, 4) : view !== "month" ? isoDays.includes(today) : picked.slice(0, 7) === today.slice(0, 7);
   // The arrow keys move the day picked, which takes the focus, to another month, week or year too.
   const grid = useRef<HTMLDivElement>(null);
   const focus = (date: string) => grid.current!.querySelector<HTMLElement>(`[data-date="${date}"]`)!.focus();
@@ -94,36 +132,61 @@ export function CalendarBody({ now, picked, setPicked }: { now: Date; picked: st
     flushSync(() => setPicked(to));
     focus(to);
   };
-  // Swiped sideways across the days, the view turns as with the arrows.
+  // Swiped sideways across the days, the view turns as with the arrows, and what it began on takes no
+  // click from it; a browser may send none, so a key's click (`detail` 0) still counts. Not in what the
+  // days open, a panel or a menu, whose events come by React's tree.
   const swipe = useRef<{ x: number; y: number } | null>(null);
+  const swept = useRef(false);
   const swiped = (e: React.PointerEvent) => {
     const from = swipe.current;
     swipe.current = null;
     if (!from || e.pointerType === "mouse") return;
     const [dx, dy] = [e.clientX - from.x, e.clientY - from.y];
-    if (Math.abs(dx) > 48 && Math.abs(dx) > 2 * Math.abs(dy)) turn(dx < 0 ? 1 : -1);
+    if (Math.abs(dx) > 48 && Math.abs(dx) > 2 * Math.abs(dy)) {
+      swept.current = true;
+      turn(dx < 0 ? 1 : -1);
+    }
   };
+  // Another view, in the same scroll as the one before, which may have been far down (the time grid
+  // opens at an hour), starts with its month and arrows in sight.
+  const bar = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (view !== "time") bar.current!.scrollIntoView({ block: "nearest" });
+  }, [view]);
   return (
-    <div className="cal-page">
-      <div className="cal-bar">
+    <div className={`cal-page${view === "time" ? " time" : ""}`}>
+      <div ref={bar} className="cal-bar">
         <span aria-live="polite">{view === "year" ? `${shown.getFullYear()}年` : `${shown.getFullYear()}年${shown.getMonth() + 1}月`}</span>
         {!current && (
           <button type="button" className="text-btn" onClick={() => setPicked(today)}>
             今天
           </button>
         )}
-        <Tip label={view === "year" ? "上一年" : view === "week" ? "上一周" : "上个月"}>
+        <Tip label={view === "year" ? "上一年" : view === "month" ? "上个月" : "上一周"}>
           <button type="button" className="icon-btn sm" onClick={() => turn(-1)}>
             <Icon of={ChevronLeft} size={18} />
           </button>
         </Tip>
-        <Tip label={view === "year" ? "下一年" : view === "week" ? "下一周" : "下个月"}>
+        <Tip label={view === "year" ? "下一年" : view === "month" ? "下个月" : "下一周"}>
           <button type="button" className="icon-btn sm" onClick={() => turn(1)}>
             <Icon of={ChevronRight} size={18} />
           </button>
         </Tip>
       </div>
-      <div ref={grid} onPointerDown={(e) => (swipe.current = { x: e.clientX, y: e.clientY })} onPointerUp={swiped} onPointerCancel={() => (swipe.current = null)}>
+      <div
+        ref={grid}
+        className="cal-swipe"
+        onPointerDown={(e) => {
+          swept.current = false;
+          swipe.current = grid.current!.contains(e.target as Node) ? { x: e.clientX, y: e.clientY } : null;
+        }}
+        onPointerUp={swiped}
+        onPointerCancel={() => (swipe.current = null)}
+        onClickCapture={(e) => {
+          if (swept.current && e.detail > 0) e.stopPropagation();
+          swept.current = false;
+        }}
+      >
         {view === "year" ? (
           <Year
             year={shown.getFullYear()}
@@ -139,6 +202,8 @@ export function CalendarBody({ now, picked, setPicked }: { now: Date; picked: st
               focus(d);
             }}
           />
+        ) : view === "time" ? (
+          <TimeGrid days={isoDays} today={today} picked={picked} at={at} now={now} onPick={pick} />
         ) : (
           <>
             <div className="cal-week" aria-hidden>
@@ -183,7 +248,7 @@ export function CalendarBody({ now, picked, setPicked }: { now: Date; picked: st
           </>
         )}
       </div>
-      {view !== "year" && <DayList date={picked} now={now} overdue={picked === today ? overdue(board, today) : []} due={due.get(picked) ?? []} dropped={dropped.get(picked) ?? []} done={done.get(picked) ?? []} />}
+      {(view === "month" || view === "week") && <DayList date={picked} now={now} overdue={picked === today ? overdue(board, today) : []} due={due.get(picked) ?? []} dropped={dropped.get(picked) ?? []} done={done.get(picked) ?? []} />}
     </div>
   );
 }
@@ -288,28 +353,5 @@ function DayList({ date, now, overdue, due, dropped, done }: { date: string; now
         </>
       )}
     </section>
-  );
-}
-
-/** A time a repeating task is due later, or was `done`: not a task to tick, but one to open. */
-function Occurrence({ task, meta, done, onOpen }: { task: Task; meta: string; done?: boolean; onOpen(): void }) {
-  const { board } = useView();
-  return (
-    <div className="row task occurrence" onClick={onOpen}>
-      <div className="row-inner">
-        <span className={`check ${done ? "done" : "waiting"}`} aria-hidden>
-          <Icon of={CheckIcon} size={15} width={2.6} />
-        </span>
-        <button type="button" className="task-main">
-          <span className="task-head">
-            <span className="task-title">{task.title}</span>
-          </span>
-          <span className="task-meta">
-            {task.folder_id && <PathMeta board={board} folder={task.folder_id} />}
-            <span>{meta}</span>
-          </span>
-        </button>
-      </div>
-    </div>
   );
 }

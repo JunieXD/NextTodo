@@ -5,7 +5,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, CircleCheck, FolderRoot, Histo
 import { Fragment, type ReactNode, useRef, useState } from "react";
 import { Link, Redirect, useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
-import { formatToday, isoDate } from "../domain/dates";
+import { formatToday } from "../domain/dates";
 import { lockNow, usePrivacyLock } from "../lock";
 import { useConnection, useSession, useView } from "../session";
 import { useBack } from "../ui/back";
@@ -18,7 +18,7 @@ import { useColumns } from "./columns";
 import { Detail } from "./Detail";
 import { useTreeDrag } from "./drag";
 import { FolderContextMenu, FolderMenu, usePlaceFolder } from "./FolderMenu";
-import { CalendarBody, CalendarViewSeg, useCalendarView } from "./calendar";
+import { CalendarBody, CalendarViewSeg, useCalendarPick, useCalendarView } from "./calendar";
 import { setFolderClosed, useClosedFolders } from "./closed-folders";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, NextFilter, QuickAdd, SearchResults } from "./lists";
 import { readyIn, useNextFolders } from "../next-folders";
@@ -194,8 +194,8 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
 }
 
 function CalendarPage({ now }: { now: Date }) {
-  const [picked, setPicked] = useState(() => isoDate(now));
   const [view] = useCalendarView();
+  const pick = useCalendarPick(now, view);
   return (
     <Page
       title="日历"
@@ -204,10 +204,10 @@ function CalendarPage({ now }: { now: Date }) {
           <CalendarViewSeg />
         </div>
       }
-      add={<QuickAdd key="calendar" on={picked} hide={view === "year"} />}
-      narrow
+      add={<QuickAdd key="calendar" on={pick.picked} at={pick.at} hide={view === "year"} />}
+      narrow={view !== "time"}
     >
-      <CalendarBody now={now} picked={picked} setPicked={setPicked} />
+      <CalendarBody now={now} pick={pick} />
     </Page>
   );
 }

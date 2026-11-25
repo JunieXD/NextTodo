@@ -13,7 +13,7 @@ import { plainRail, railLayout } from "../domain/rail";
 import { doneToday, skippable } from "../domain/repeat";
 import { range, rekey } from "../domain/reorder";
 import { inPanel } from "../desktop";
-import { useCommit } from "../session";
+import { useCommit, useView } from "../session";
 import { useFeedback } from "../ui/feedback";
 import { useWide } from "../ui/hooks";
 import { Box, Check } from "../ui/controls";
@@ -150,18 +150,7 @@ export function TaskRow({
   const chosen = choosing && choice.has(t.id);
   const inner = useRef<HTMLDivElement>(null);
   const swiped = useSwipe(inner, choosing ? null : (dx) => (dx > 0 ? actions.toggle(t) : actions.remove(t)));
-  const [moving, setMoving] = useState(false);
-  const menu: MenuItem[] = [
-    ...(selected ? [] : [{ icon: PanelRightOpen, label: "打开", onSelect: () => actions.open(t) }]),
-    // In the lists of tasks from many folders; not in the menu bar panel, which shows them elsewhere.
-    ...(path && !inPanel ? [{ icon: ArrowUpRight, label: "在文件夹中显示", onSelect: () => actions.reveal(t) }] : []),
-    t.done_at === null ? { icon: CheckIcon, label: "标为完成", onSelect: () => actions.toggle(t) } : { icon: RotateCcw, label: "重新打开", onSelect: () => actions.toggle(t) },
-    ...(skippable(t, isoDate(now)) ? [{ icon: SkipForward, label: "跳过这一次", onSelect: () => actions.skip(t) }] : []),
-    ...(t.due?.repeat ? [{ icon: CheckCheck, label: "结束重复并完成", onSelect: () => actions.endRepeat(t) }] : []),
-    ...(t.done_at === null ? [{ icon: Ban, label: "放弃", onSelect: () => actions.drop(t) }] : []),
-    { icon: FolderInput, label: "移动到…", onSelect: () => setMoving(true) },
-    { icon: Trash2, label: "删除", danger: true, onSelect: () => actions.remove(t) },
-  ];
+  const { menu, picker } = useTaskMenu(t, now, actions, { selected, path });
   const cls = ["row", "task", status, marks.flash.has(t.id) && "unlocked", leaving && "leaving", selected && "selected", chosen && "chosen"].filter(Boolean).join(" ");
   const tap = (e: React.MouseEvent) => {
     if (swiped.current) return;
@@ -208,9 +197,51 @@ export function TaskRow({
           </div>
         </div>
       </ContextMenu>
-      {moving && <FolderPicker mode="move" current={t.folder_id} onPick={(f: FolderId | null) => actions.move(t, f)} onClose={() => setMoving(false)} />}
+      {picker}
     </>
   );
+}
+
+/** A time a repeating task is due later, or was `done`: not a task to tick, but one to open. */
+export function Occurrence({ task, meta, done, onOpen }: { task: Task; meta: string; done?: boolean; onOpen(): void }) {
+  const { board } = useView();
+  return (
+    <div className="row task occurrence" onClick={onOpen}>
+      <div className="row-inner">
+        <span className={`check ${done ? "done" : "waiting"}`} aria-hidden>
+          <Icon of={CheckIcon} size={15} width={2.6} />
+        </span>
+        <button type="button" className="task-main">
+          <span className="task-head">
+            <span className="task-title">{task.title}</span>
+          </span>
+          <span className="task-meta">
+            {task.folder_id && <PathMeta board={board} folder={task.folder_id} />}
+            <span>{meta}</span>
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** A task's right-click menu, and the folder picker its 移动到… opens: “打开” unless it is `selected`,
+ * “在文件夹中显示” in lists that show the `path`. */
+export function useTaskMenu(t: Task, now: Date, actions: RowActions, { selected, path }: { selected?: boolean; path?: boolean }) {
+  const [moving, setMoving] = useState(false);
+  const menu: MenuItem[] = [
+    ...(selected ? [] : [{ icon: PanelRightOpen, label: "打开", onSelect: () => actions.open(t) }]),
+    // In the lists of tasks from many folders; not in the menu bar panel, which shows them elsewhere.
+    ...(path && !inPanel ? [{ icon: ArrowUpRight, label: "在文件夹中显示", onSelect: () => actions.reveal(t) }] : []),
+    t.done_at === null ? { icon: CheckIcon, label: "标为完成", onSelect: () => actions.toggle(t) } : { icon: RotateCcw, label: "重新打开", onSelect: () => actions.toggle(t) },
+    ...(skippable(t, isoDate(now)) ? [{ icon: SkipForward, label: "跳过这一次", onSelect: () => actions.skip(t) }] : []),
+    ...(t.due?.repeat ? [{ icon: CheckCheck, label: "结束重复并完成", onSelect: () => actions.endRepeat(t) }] : []),
+    ...(t.done_at === null ? [{ icon: Ban, label: "放弃", onSelect: () => actions.drop(t) }] : []),
+    { icon: FolderInput, label: "移动到…", onSelect: () => setMoving(true) },
+    { icon: Trash2, label: "删除", danger: true, onSelect: () => actions.remove(t) },
+  ];
+  const picker = moving && <FolderPicker mode="move" current={t.folder_id} onPick={(f: FolderId | null) => actions.move(t, f)} onClose={() => setMoving(false)} />;
+  return { menu, picker };
 }
 
 /** Right swipe past 90px to complete, left to delete; none without `done`. Returns whether a swipe

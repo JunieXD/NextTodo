@@ -70,18 +70,24 @@ export function agenda(board: Board, days: number) {
   return { overdue: overdue(board, today), days: [...due].sort(([a], [b]) => cmp(a, b)) };
 }
 
+/** The record of the time that ended `task`, done for good the last time it repeated: its due date
+ * stays that time's, and that time done more than once, the record is the latest. None for a task
+ * given up, which was not done; the times it was done before were. */
+export const endingRecord = (board: Board, task: Task): Completion | undefined =>
+  task.done_at === null || task.dropped
+    ? undefined
+    : board.completions(task.id).reduce<Completion | undefined>((l, r) => (r.due === task.due?.date && (!l || r.again > l.again) ? r : l), undefined);
+
 /** What the user did, by day: the tasks done, on the day they were here, and the times repeating tasks
- * were done, those given up since too. A task done for good the last time it repeated is there once, as the task, on the day
- * of that time's record: its due date stays that time's, and `done_at` is when the server took it,
- * which may be a day later for one done offline. That time done more than once, the record is the
- * latest. */
+ * were done, those given up since too. A task done for good the last time it repeated is there once,
+ * as the task, on the day of its `endingRecord`: `done_at` is when the server took it, which may be a
+ * day later for one done offline. */
 export function doneByDay(board: Board): Map<string, DoneOn[]> {
   const days = new Map<string, DoneOn[]>();
   const last = new Set<Completion>();
   for (const task of board.snapshot.tasks) {
-    // Given up, it was not done; the times it was done before were.
     if (task.done_at === null || task.dropped || !board.mine(task)) continue;
-    const record = board.completions(task.id).reduce<Completion | undefined>((l, r) => (r.due === task.due?.date && (!l || r.again > l.again) ? r : l), undefined);
+    const record = endingRecord(board, task);
     if (record) last.add(record);
     add(days, record?.done ?? isoDate(new Date(task.done_at)), { task });
   }

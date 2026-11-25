@@ -24,7 +24,7 @@
   --surface-low: #EFF5F0; --surface-container: #E9EFEA; --surface-high: #E4EAE5; --surface-highest: #DEE4DF;
   --on-surface: #171D1A; --on-surface-variant: #404944;
   --outline: #707973; --outline-variant: #BFC9C2;
-  --error: #BA1A1A; --warn: #8A5100;
+  --error: #BA1A1A; --error-container: #FFDAD6; --warn: #8A5100;
   --inverse-surface: #2C322E; --inverse-on-surface: #ECF2ED; --inverse-primary: #8BD6B6;
   --bar-bg: rgba(245, 251, 246, .8);
   --press: rgba(23, 29, 26, .06);
@@ -57,7 +57,7 @@
   --surface-low: #171D1A; --surface-container: #222825; --surface-high: #2A302D; --surface-highest: #343A37;
   --on-surface: #DEE4DF; --on-surface-variant: #BFC9C2;
   --outline: #89938D; --outline-variant: #3F4944;
-  --error: #FFB4AB; --warn: #FFB870;
+  --error: #FFB4AB; --error-container: #93000A; --warn: #FFB870;
   --inverse-surface: #DEE4DF; --inverse-on-surface: #2C322E; --inverse-primary: #1B6B51;
   --bar-bg: rgba(15, 21, 18, .78);
   --press: rgba(222, 228, 223, .08);
@@ -99,7 +99,7 @@ svg { display: block; flex: none; }
 .icon-btn:active { background: var(--press); }
 .icon-btn.sm { width: 32px; height: 32px; }
 
-.scroll { flex: 1; overflow-y: auto; padding-top: calc(56px + var(--safe-top)); padding-bottom: calc(var(--tabbar-h) + 84px); }
+.scroll { flex: 1; overflow-y: auto; padding-top: calc(56px + var(--safe-top)); padding-bottom: calc(var(--tabbar-h) + 84px); scroll-padding-top: calc(56px + var(--safe-top)); }
 .scroll.fill { display: flex; flex-direction: column; overflow: hidden; padding-bottom: var(--tabbar-h); }
 /* Nothing scrolls here, so a long folder name keeps to two lines and leaves the graph its room. */
 .scroll.fill .large-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
@@ -673,7 +673,9 @@ a.text-btn { display: inline-flex; align-items: center; }
 .crumbs .crumb-back { display: inline-flex; align-items: center; gap: 2px; margin-left: -4px; color: var(--primary); font-weight: 500; }
 .crumbs .crumb-back:hover { opacity: .8; }
 .main-title { margin: 0; font-size: 28px; font-weight: 700; line-height: 1.2; }
-.main-head .seg { width: 200px; }
+.main-head .seg { min-width: 200px; }
+/* The calendar's views, four with the time grid, each in a line. */
+:is(.main-head, .hero-actions) .seg button { white-space: nowrap; }
 /* Short of room, such as the batch's in a narrow middle column, whole buttons go on to another line. */
 .head-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-left: auto; }
 .main-scroll { flex: 1; overflow-y: auto; padding: 0 12px 40px; }
@@ -920,8 +922,10 @@ a.text-btn { display: inline-flex; align-items: center; }
 
 /* The calendar page (docs/ui.md#日历): a month or a week of days tinted by how much was done on each,
    or a year of small ones. As wide as the settings' column on desktops. */
-.desk .cal-page { max-width: 600px; margin-inline: auto; }
-.cal-bar { display: flex; align-items: center; gap: 4px; margin: 14px 16px 6px; }
+.desk .cal-page:not(.time) { max-width: 600px; margin-inline: auto; }
+/* Sideways is the page's own, to turn it; up and down scroll. */
+.cal-swipe { touch-action: pan-y pinch-zoom; }
+.cal-bar { display: flex; align-items: center; gap: 4px; margin: 14px 16px 6px; scroll-margin-top: 14px; }
 .cal-bar > span { flex: 1; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .cal-page .cal-week, .cal-grid { margin: 0 12px; }
 .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
@@ -968,6 +972,52 @@ a.text-btn { display: inline-flex; align-items: center; }
 .cal-date { margin: 20px 32px 0; font-size: 16px; font-weight: 600; }
 .cal-day .empty { margin-inline: 32px; }
 .occurrence .check { cursor: default; }
+
+/* The time grid (docs/ui.md#日历): a week by the hour in half-hour cells, edge to edge on phones. The days
+   and the row of what is due on a day alone stay on top as the hours scroll. */
+.tg { --hour: 4rem; --gutter: 32px; }
+.desk .tg { --gutter: 40px; }
+.tg-head { position: sticky; top: 0; z-index: 5; background: var(--surface); }
+.tg-row { display: grid; grid-template-columns: var(--gutter) repeat(7, minmax(0, 1fr)); }
+.tg-day { height: 52px; margin: 2px 1px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 10px; font-variant-numeric: tabular-nums; outline: none; }
+.tg-day small { font-size: 10px; line-height: 1.3; color: var(--on-surface-variant); }
+.tg-day[aria-current="date"] :is(small:first-child, .cal-num) { color: var(--primary); font-weight: 700; }
+.tg-day[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--primary); }
+.tg-day:focus-visible { box-shadow: 0 0 0 2px var(--primary); }
+.tg-allday { max-height: 40vh; overflow-y: auto; padding: 2px 0 4px; border-bottom: 1px solid var(--outline-variant); }
+.tg-gutter { padding: 3px 4px 0 0; font-size: 10px; text-align: right; color: var(--on-surface-variant); }
+.tg-cell { min-width: 0; min-height: 20px; display: flex; flex-direction: column; gap: 2px; padding: 0 2px; cursor: pointer; }
+.tg-body { display: grid; grid-template-columns: var(--gutter) minmax(0, 1fr); padding-bottom: 12px; }
+.tg-hours { position: relative; height: calc(24 * var(--hour)); }
+.tg-hours span { position: absolute; right: 2px; transform: translateY(-50%); font-size: 10px; letter-spacing: -.2px; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+.tg-hours .now { color: var(--primary); font-weight: 600; }
+.tg-cols { position: relative; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); height: calc(24 * var(--hour)); }
+/* A faint line each hour. */
+.tg-cols::before { content: ""; position: absolute; inset: 0; background: linear-gradient(var(--outline-variant) 1px, transparent 1px) 0 0 / 100% var(--hour); opacity: .6; pointer-events: none; }
+.tg-col { position: relative; min-width: 0; cursor: pointer; }
+.tg-col.today::before { content: ""; position: absolute; inset: 0; background: var(--primary); opacity: .05; pointer-events: none; }
+/* Now, under the blocks, so that it doesn't strike out a title: across the week, and bold on today. */
+.tg-now, .tg-now-today { position: absolute; left: 0; right: 0; z-index: 1; height: 1px; background: var(--primary); pointer-events: none; }
+.tg-now { opacity: .5; }
+.tg-now-today { height: 2px; margin-top: -.5px; }
+.tg-mark { position: absolute; width: 1px; height: 1px; }
+.tg-block, .tg-label { position: relative; overflow: hidden; font-size: 11px; font-weight: 500; }
+.tg-block { position: absolute; z-index: 2; display: grid; place-items: center; padding: 0 3px; border-radius: 6px; line-height: 13px; }
+.tg-block span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; text-align: center; text-wrap: balance; overflow-wrap: anywhere; }
+.tg-block.merged { font-weight: 700; }
+.tg-label { height: 18px; padding: 0 4px; border-radius: 5px; line-height: 18px; white-space: nowrap; text-overflow: ellipsis; text-align: center; }
+.tg-label.more { background: var(--surface-container); color: var(--on-surface-variant); font-weight: 700; }
+/* By the state, as the details' label has it. */
+:is(.tg-block, .tg-label).ready { background: var(--primary-container); color: var(--on-primary-container); }
+:is(.tg-block, .tg-label).overdue { background: var(--error-container); color: var(--error); }
+:is(.tg-block, .tg-label).waiting { background: var(--surface-highest); color: var(--on-surface-variant); }
+:is(.tg-block, .tg-label):is(.done, .dropped) { background: var(--surface-container); color: var(--outline); }
+:is(.tg-block, .tg-label):is(.done, .dropped):not(.merged) { text-decoration: line-through; }
+:is(.tg-block, .tg-label).later { background: var(--group-bg); box-shadow: inset 0 0 0 1px var(--outline-variant); color: var(--primary); }
+:is(.tg-block, .tg-label):active::after { content: ""; position: absolute; inset: 0; background: var(--press); }
+/* The half hour picked to add to, under what is added there. */
+.tg-new { position: absolute; z-index: 1; display: grid; place-items: center; border: 1.5px solid var(--primary); border-radius: 6px; color: var(--primary); }
+.tg-new::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--primary); opacity: .08; }
 
 /* Hours and minutes, side by side. */
 .time-menu { min-width: 0; padding: 6px; }

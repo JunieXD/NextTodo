@@ -53,6 +53,7 @@ export function useTaskActions(): RowActions & {
       if (!ok) return;
     }
     const readyBefore = new Set(board().next().map((x) => x.id));
+    const by = board().dueBy().get(t.id);
     // Ending the repeat keeps the rest of the due date.
     let ended: Due | null = null;
     if (endRepeat && t.due?.repeat) {
@@ -94,6 +95,7 @@ export function useTaskActions(): RowActions & {
     marking.completed(
       t.id,
       unlocked.map((x) => x.id),
+      by,
     );
     const unlocks = unlocking(unlocked);
     const text = last ? (unlocks ? `已完成最后一次，${unlocks}` : `“${t.title}”已完成最后一次`) : unlocks || `已完成“${t.title}”`;
@@ -137,6 +139,7 @@ export function useTaskActions(): RowActions & {
       if (!now || now.done_at !== null) return;
       const going = along ? [now, ...board().openAfter(now)] : [now];
       const readyBefore = new Set(board().next().map((x) => x.id));
+      const by = board().dueBy().get(t.id);
       const r = commit(going.map((x) => ({ op: "task.drop", id: x.id })));
       if (!r) return;
       const unlocked = board()
@@ -145,6 +148,7 @@ export function useTaskActions(): RowActions & {
       marking.completed(
         t.id,
         unlocked.map((x) => x.id),
+        by,
       );
       const text = [going.length > 1 ? `已放弃 ${going.length} 项` : `已放弃“${t.title}”`, unlocking(unlocked)].filter(Boolean).join("，");
       snack({ text, action: "撤销", onAction: () => undo(r.id) });

@@ -181,6 +181,7 @@ svg { display: block; flex: none; }
 .overdue { color: var(--error); }
 .today { color: var(--warn); }
 .m-unlock, .m-done-today { color: var(--primary); font-weight: 500; }
+.m-warn { color: var(--warn); font-weight: 500; }
 .task.unlocked > .row-inner { animation: unlock 1.6s ease-out; }
 .task.unlocked .check { animation: ring 1s ease-out; }
 @keyframes unlock { 0%, 30% { background: var(--primary-container); } }
@@ -237,6 +238,7 @@ svg { display: block; flex: none; }
 .main-title .title-ic { vertical-align: calc(.36em - 12px); }
 .m-folder { min-width: 0; flex-shrink: 1; overflow: hidden; }
 .prop .row-value .folder-glyph { margin-right: 4px; vertical-align: -2px; }
+.prop .prop-note { display: block; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--on-surface-variant); }
 .prop .folder-glyph svg { color: inherit; }
 .look-preview { display: flex; align-items: center; gap: 12px; margin: 4px 16px 0; font-size: 16px; font-weight: 500; min-width: 0; }
 .look-title { margin: 18px 16px 8px; font-size: 13px; font-weight: 600; color: var(--on-surface-variant); }

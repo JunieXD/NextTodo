@@ -7,7 +7,7 @@ import type { Op } from "../api/types/Op";
 import type { Folder } from "../api/types/Folder";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
-import type { Board } from "../domain/board";
+import type { Board, Dated } from "../domain/board";
 import { dueAfterLabel, dueKind, formatDue, isoDate, startLabel } from "../domain/dates";
 import { plainRail, railLayout } from "../domain/rail";
 import { doneToday, skippable } from "../domain/repeat";
@@ -56,6 +56,7 @@ export function TaskRow({
   now,
   path,
   step,
+  dueBy,
   railX,
   leaving,
   batchable,
@@ -69,6 +70,8 @@ export function TaskRow({
   path?: boolean;
   /** Show which step it is, in “接下来”, which has no rail to show it (docs/design.md#关联进度). */
   step?: boolean;
+  /** In “接下来”, the deadline of a task after it that it is to make (docs/design.md#后续的截止). */
+  dueBy?: Dated;
   /** Where the check sits on the rail. */
   railX?: number;
   /** Folding away out of its list, completed (docs/ui.md#交互细节). */
@@ -97,6 +100,19 @@ export function TaskRow({
       <span key="due" className={dueClass(t, now)}>
         <Icon of={t.due.repeat ? Repeat : Clock} size={14} />
         {formatDue(t.due, now)}
+      </span>,
+    );
+    if (dueBy)
+      meta.push(
+        <span key="by" className="m-warn">
+          晚于后续
+        </span>,
+      );
+  } else if (dueBy) {
+    meta.push(
+      <span key="due" className={dueClass(dueBy, now)}>
+        <Icon of={Clock} size={14} />
+        后续 {formatDue(dueBy.due, now)}
       </span>,
     );
   } else if (t.due_after) {

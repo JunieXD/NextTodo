@@ -140,6 +140,8 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
   const status = board.status(t);
   const shared = board.sharedRoot(t.folder_id);
   const countdown = t.due && t.done_at === null ? dueIn(t.due, now) : null;
+  // The deadline of a task after it that it is to make (docs/design.md#后续的截止).
+  const by = board.dueBy().get(t.id);
   const found = t.completions && store.completedAt(t.id, t.completions.count);
   // While it repeats, or done for good by that last time itself; not once the repeat ended otherwise,
   // it was given up, or it was reopened and done again, which taking back an earlier time would undo
@@ -245,6 +247,16 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
             ) : (
               "未设置"
             )
+          }
+          note={
+            by &&
+            (t.due ? (
+              <span className="m-warn">
+                晚于后续“{by.title}”的截止（{formatDue(by.due, now)}）
+              </span>
+            ) : (
+              `后续“${by.title}”${formatDue(by.due, now)}${by.due.time ? " " : ""}截止`
+            ))
           }
           cls={t.due ? dueClass(t, now) : t.due_after ? "" : "muted"}
           onClick={() => setPanel("due")}
@@ -408,12 +420,32 @@ function Completions({ records, count, now, onClose }: { records: Completion[]; 
 
 /** A property of the task; one without `onClick` is only shown. `side` is a button of its own at the
  * end, beside the part that takes the click. */
-function Prop({ icon, label, value, cls = "", onClick, side }: { icon: LucideIcon; label: string; value: ReactNode; cls?: string; onClick?(): void; side?: ReactNode }) {
+function Prop({
+  icon,
+  label,
+  value,
+  note,
+  cls = "",
+  onClick,
+  side,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: ReactNode;
+  /** A line under the value, smaller. */
+  note?: ReactNode;
+  cls?: string;
+  onClick?(): void;
+  side?: ReactNode;
+}) {
   const parts = (
     <>
       <Icon of={icon} />
       <span className="row-name">{label}</span>
-      <span className={`row-value long ${cls}`}>{value}</span>
+      <span className={`row-value long ${cls}`}>
+        {value}
+        {note && <small className="prop-note">{note}</small>}
+      </span>
     </>
   );
   if (side)

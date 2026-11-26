@@ -229,7 +229,15 @@ export const widgetTasks = (board: Board, folders: (FolderId | null)[]) =>
     due: t.due,
     completions: t.completions,
     step: board.step(t),
+    ...dueBy(board, t),
   }));
+
+/** The deadline of a task after `t` that it is to make, as the `next` tool gives it
+ * (docs/design.md#后续的截止). */
+function dueBy(board: Board, t: Task) {
+  const by = board.dueBy().get(t.id);
+  return by && { due_by: { date: by.due.date, ...(by.due.time && { time: by.due.time }), number: by.number, title: by.title } };
+}
 
 /** How many days from today the agenda widget lists (docs/android.md#日程). */
 const AGENDA_DAYS = 7;

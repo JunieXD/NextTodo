@@ -63,6 +63,17 @@ export function holdsUp(t: Task, now: Now): boolean {
 
 /** A snapshot indexed for lookups, as of a moment, the user's `now`, for the user `me`. `null` as a
  * folder means the root, the user's own. */
+/** A task with a deadline. */
+export type Dated = Task & { due: NonNullable<Task["due"]> };
+const dated = (t: Task): t is Dated => !!t.due;
+
+/** When `t` is due, to sort by: a date without a time counts as the end of that day. */
+function deadline(t: Dated): string;
+function deadline(t: Task): string | null;
+function deadline(t: Task) {
+  return t.due ? `${t.due.date} ${t.due.time ?? "24:00"}` : null;
+}
+
 export class Board {
   private readonly tasks = new Map<TaskId, Task>();
   /** By owner and number: `${owner}#${number}`. */
@@ -84,6 +95,7 @@ export class Board {
   private readonly records = new Map<TaskId, Completion[]>();
 
   private steps?: Map<TaskId, [number, number]>;
+  private firstAfter?: Map<TaskId, Dated>;
 
   constructor(
     readonly snapshot: Snapshot,
@@ -240,18 +252,18 @@ export class Board {
     return t.start !== null && before(this.now, t.start, t.start_time);
   }
 
-  /** When the first of the user's open tasks still to start does, or a repeating task they wait for
-   * holds them up again: the date, and the time if it has one. Shown with what is ready, so that
-   * what shows it can be fetched again then. */
+  /** When the first of the user's open tasks still to start does, or a repeating task holds up the
+   * open tasks after it again, which may change what is ready and the deadlines those before it are
+   * to make (`dueBy`): the date, and the time if it has one. Shown with what is ready, so that what
+   * shows it can be fetched again then. */
   nextStart(): Moment | null {
     const moments: Moment[] = [];
     for (const t of this.snapshot.tasks) {
-      if (t.done_at !== null || !this.mine(t)) continue;
-      if (t.start !== null) moments.push({ date: t.start, time: t.start_time });
-      for (const id of this.prerequisites.get(t.id) ?? []) {
-        const a = again(this.tasks.get(id)!);
-        if (a) moments.push(a);
-      }
+      if (t.done_at === null && this.mine(t) && t.start !== null) moments.push({ date: t.start, time: t.start_time });
+    }
+    for (const [id, after] of this.dependents) {
+      const a = after.some((x) => this.tasks.get(x)!.done_at === null) && again(this.tasks.get(id)!);
+      if (a) moments.push(a);
     }
     let next: Moment | null = null;
     for (const m of moments) {
@@ -285,19 +297,38 @@ export class Board {
     return this.after(t).filter((a) => a.done_at === null && this.waitingOn(a) === 1 && !this.notStarted(a));
   }
 
+  /** Each task holding up open tasks after it, directly or through others holding them up, and the one
+   * of them due first, where it is due before the task itself, or the task has no deadline; of those
+   * due at once, the first by ID (docs/design.md#后续的截止). */
+  dueBy(): ReadonlyMap<TaskId, Dated> {
+    if (!this.firstAfter) {
+      const first = new Map<TaskId, Dated>();
+      const sooner = (c: Dated, than: Dated) => deadline(c) < deadline(than) || (deadline(c) === deadline(than) && c.id < than.id);
+      // Those after a task before it.
+      for (const id of this.inOrder().reverse()) {
+        if (!this.holdsUp(this.tasks.get(id)!)) continue;
+        let soonest: Dated | undefined;
+        for (const a of this.dependents.get(id) ?? []) {
+          const after = this.tasks.get(a)!;
+          if (after.done_at !== null) continue;
+          for (const c of [dated(after) ? after : undefined, first.get(a)]) if (c && (!soonest || sooner(c, soonest))) soonest = c;
+        }
+        if (soonest) first.set(id, soonest);
+      }
+      for (const [id, s] of first) {
+        const own = deadline(this.tasks.get(id)!);
+        if (own !== null && own <= deadline(s)) first.delete(id);
+      }
+      this.firstAfter = first;
+    }
+    return this.firstAfter;
+  }
+
   /** Which step a task linked to others is along its dependencies, and how many there are on the
    * longest chain through it (docs/design.md#关联进度). Done tasks are steps too. */
   step(t: Task): [number, number] | undefined {
     if (!this.steps) {
-      // Kahn's algorithm: each task after its prerequisites.
-      const waiting = new Map([...this.prerequisites].map(([id, b]) => [id, b.length]));
-      const order = [...this.dependents.keys()].filter((id) => !waiting.has(id));
-      for (let i = 0; i < order.length; i++)
-        for (const next of this.dependents.get(order[i]) ?? []) {
-          const n = waiting.get(next)! - 1;
-          waiting.set(next, n);
-          if (n === 0) order.push(next);
-        }
+      const order = this.inOrder();
       const longest = (edges: Map<TaskId, TaskId[]>, counted: Map<TaskId, number>, id: TaskId) =>
         1 + Math.max(0, ...(edges.get(id) ?? []).map((other) => counted.get(other)!));
       const depth = new Map<TaskId, number>();
@@ -307,6 +338,19 @@ export class Board {
       this.steps = new Map(order.map((id) => [id, [depth.get(id)!, depth.get(id)! + height.get(id)! - 1]]));
     }
     return this.steps.get(t.id);
+  }
+
+  /** The tasks linked to others, each after its prerequisites (Kahn's algorithm). */
+  private inOrder(): TaskId[] {
+    const waiting = new Map([...this.prerequisites].map(([id, b]) => [id, b.length]));
+    const order = [...this.dependents.keys()].filter((id) => !waiting.has(id));
+    for (let i = 0; i < order.length; i++)
+      for (const next of this.dependents.get(order[i]) ?? []) {
+        const n = waiting.get(next)! - 1;
+        waiting.set(next, n);
+        if (n === 0) order.push(next);
+      }
+    return order;
   }
 
   /** The tasks on a shortest dependency chain from `from` to `to`, if there is one: linking
@@ -451,17 +495,20 @@ export class Board {
     return [...this.order(tasks.filter((t) => t.done_at === null), (t) => t.done_at === null), ...done];
   }
 
-  /** Ready tasks of the user's, in the order of `byDue`. */
+  /** Ready tasks of the user's, as `byDue` sorts them, but by the deadline each is to make: that of a
+   * task after it, should it be due first (`dueBy`). */
   next(): Task[] {
-    return this.byDue([...this.tasks.values()].filter((t) => this.mine(t) && this.status(t) === "ready"));
+    return this.byDue(
+      [...this.tasks.values()].filter((t) => this.mine(t) && this.status(t) === "ready"),
+      (t) => this.dueBy().get(t.id) ?? t,
+    );
   }
 
   /** Tasks with a due date first, earliest first (a date without a time counts as the end of that
-   * day), then the rest in folder order and manual order. */
-  byDue(list: Task[]): Task[] {
-    const due = (t: Task) => (t.due ? `${t.due.date} ${t.due.time ?? "24:00"}` : null);
+   * day), then the rest in folder order and manual order; each by the deadline of `by` it. */
+  byDue(list: Task[], by = (t: Task) => t): Task[] {
     return list
-      .map((t) => ({ t, due: due(t), key: this.key(t) }))
+      .map((t) => ({ t, due: deadline(by(t)), key: this.key(t) }))
       .sort((a, b) => {
         if (a.due !== b.due) {
           if (a.due === null) return 1;

@@ -412,5 +412,85 @@
       "next": ["买菜"],
       "agenda": { "days": 3, "overdue": [], "due": { "2026-11-20": ["买菜"] } }
     }
+  },
+  {
+    "name": "后续的截止：没设截止的前置按后续里最早的截止排，晚于后续截止的也按后续的排；只看没结束的后续，经过已结束的不算；只有日期的算当天最晚",
+    "folders": [],
+    "tasks": [
+      { "id": "outline", "key": "a0" },
+      { "id": "draft", "key": "a1" },
+      { "id": "report", "key": "a2", "due": { "date": "2026-11-20", "time": "18:00" } },
+      { "id": "late", "key": "a3", "due": { "date": "2026-11-30" } },
+      { "id": "early", "key": "a4", "due": { "date": "2026-11-15" } },
+      { "id": "ahead", "key": "a5", "due": { "date": "2026-11-14" } },
+      { "id": "behind", "key": "a6", "due": { "date": "2026-11-25" } },
+      { "id": "past", "key": "a7" },
+      { "id": "finished", "key": "a8", "done_at": 1, "due": { "date": "2026-11-13" } },
+      { "id": "after_finished", "key": "a9", "due": { "date": "2026-11-16" } },
+      { "id": "prep", "key": "aA" },
+      { "id": "day", "key": "aB", "due": { "date": "2026-11-20" } },
+      { "id": "morning", "key": "aC", "due": { "date": "2026-11-20", "time": "09:00" } },
+      { "id": "alone", "key": "aD" }
+    ],
+    "deps": [["outline", "draft"], ["draft", "report"], ["late", "early"], ["ahead", "behind"], ["past", "finished"], ["finished", "after_finished"], ["prep", "day"], ["prep", "morning"]],
+    "expect": {
+      "due_by": { "outline": "report", "draft": "report", "late": "early", "prep": "morning" },
+      "next": ["ahead", "late", "after_finished", "prep", "outline", "past", "alone"]
+    }
+  },
+  {
+    "name": "后续的截止：只沿还挡着后续的事项算，重复的前置这一次做完、下一次还没开始时不算；同时截止的取 ID 在前的",
+    "today": "2026-11-12",
+    "time": "09:00",
+    "folders": [],
+    "tasks": [
+      { "id": "setup", "key": "a0" },
+      { "id": "weekly", "key": "a1", "due": { "date": "2026-11-19", "repeat": { "every": 1, "unit": "week", "from": "due" } }, "completions": { "count": 3, "last": "2026-11-12" } },
+      { "id": "ship", "key": "a2", "due": { "date": "2026-11-14" } },
+      { "id": "pick", "key": "a3" },
+      { "id": "tie_a", "key": "a4", "due": { "date": "2026-11-16" } },
+      { "id": "tie_b", "key": "a5", "due": { "date": "2026-11-16" } }
+    ],
+    "deps": [["setup", "weekly"], ["weekly", "ship"], ["pick", "tie_b"], ["pick", "tie_a"]],
+    "expect": {
+      "due_by": { "setup": "weekly", "pick": "tie_a" },
+      "next": ["ship", "pick", "setup"],
+      "next_start": "2026-11-19"
+    }
+  },
+  {
+    "name": "后续的截止：重复事项这一次开始、又挡着后续时，前面的事项要赶的截止会变，到时要再取一次接下来（交给别人的事项也算）",
+    "today": "2026-11-26",
+    "time": "09:59",
+    "folders": [{ "id": "proj", "name": "项目", "key": "a0" }],
+    "tasks": [
+      { "id": "prepare", "folder": "proj", "key": "a0" },
+      { "id": "weekly", "folder": "proj", "key": "a1", "assignees": ["bob"], "start": "2026-11-26", "start_time": "10:00", "due": { "date": "2026-12-03", "time": "18:00", "repeat": { "every": 1, "unit": "week", "from": "due" } }, "completions": { "count": 1, "last": "2026-11-20" } },
+      { "id": "urgent", "folder": "proj", "key": "a2", "assignees": ["bob"], "due": { "date": "2026-11-26", "time": "11:00" } }
+    ],
+    "deps": [["prepare", "weekly"], ["weekly", "urgent"]],
+    "shares": [{ "folder": "proj", "owner": "me", "members": ["bob"] }],
+    "expect": {
+      "due_by": { "prepare": "weekly" },
+      "next": ["prepare"],
+      "next_start": "2026-11-26 10:00"
+    }
+  },
+  {
+    "name": "后续的截止：重复事项这一次开始以后又挡着后续，前面的事项按后续里更早的截止算",
+    "today": "2026-11-26",
+    "time": "10:00",
+    "folders": [{ "id": "proj", "name": "项目", "key": "a0" }],
+    "tasks": [
+      { "id": "prepare", "folder": "proj", "key": "a0" },
+      { "id": "weekly", "folder": "proj", "key": "a1", "assignees": ["bob"], "start": "2026-11-26", "start_time": "10:00", "due": { "date": "2026-12-03", "time": "18:00", "repeat": { "every": 1, "unit": "week", "from": "due" } }, "completions": { "count": 1, "last": "2026-11-20" } },
+      { "id": "urgent", "folder": "proj", "key": "a2", "assignees": ["bob"], "due": { "date": "2026-11-26", "time": "11:00" } }
+    ],
+    "deps": [["prepare", "weekly"], ["weekly", "urgent"]],
+    "shares": [{ "folder": "proj", "owner": "me", "members": ["bob"] }],
+    "expect": {
+      "due_by": { "prepare": "urgent", "weekly": "urgent" },
+      "next": ["prepare"]
+    }
   }
 ]

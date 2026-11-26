@@ -24,6 +24,8 @@ interface Case {
     /** The tasks in a folder and its subfolders, by name. */
     within?: Record<string, string[]>;
     steps?: Record<string, [number, number] | null>;
+    /** Each task due by another after it, by name: all of them. */
+    due_by?: Record<string, string>;
     /** `2026-11-12` or `2026-11-12 20:00`. */
     next_start?: string;
     /** By day, a time a repeating task is due later marked `+`. */
@@ -110,6 +112,9 @@ describe.each(cases as unknown as Case[])("$name", (c) => {
     expect(titles(board.next())).toEqual(c.expect.next ?? []);
     const start = board.nextStart();
     expect(start && [start.date, start.time].filter(Boolean).join(" "), "next start").toEqual(c.expect.next_start ?? null);
+  });
+  test.runIf(c.expect.due_by)("due by", () => {
+    expect(Object.fromEntries([...board.dueBy()].map(([id, s]) => [board.task(id)!.title, s.title]))).toEqual(c.expect.due_by);
   });
   test("steps", () => {
     for (const [n, want] of Object.entries(c.expect.steps ?? {})) expect(board.step(task(n)) ?? null, n).toEqual(want);

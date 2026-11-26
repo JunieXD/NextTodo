@@ -143,6 +143,7 @@ pub fn next(c: &Connection, cx: &Cx, a: NextArgs) -> Result<Output, ApiError> {
     let snap = store::snapshot(c, cx.user)?;
     let b = Board::new(&snap, cx.local.clone(), cx.user);
     let steps = b.steps();
+    let by = b.due_by();
     let mut tasks = b.next();
     if let Some(picked) = picked(&b, a.folders.as_deref())? {
         tasks.retain(|t| picked.contains(&t.id));
@@ -152,7 +153,16 @@ pub fn next(c: &Connection, cx: &Cx, a: NextArgs) -> Result<Output, ApiError> {
     let text = if tasks.is_empty() {
         if a.folders.is_some() { "这些文件夹里暂无可做的事项。" } else { "暂无可做的事项。" }.to_owned()
     } else {
-        let lines = tasks.iter().map(|t| task_line(&b, t, t.folder_id.is_some(), false, steps.get(&t.id).copied())).collect();
+        let lines = tasks
+            .iter()
+            .map(|t| {
+                let line = task_line(&b, t, t.folder_id.is_some(), false, steps.get(&t.id).copied());
+                match by.get(&t.id) {
+                    Some(&s) => line + &text::due_by(&b, t, s),
+                    None => line,
+                }
+            })
+            .collect();
         listed(lines, tasks.len(), total).join("\n")
     };
     let tasks: Vec<Value> = tasks
@@ -161,6 +171,9 @@ pub fn next(c: &Connection, cx: &Cx, a: NextArgs) -> Result<Output, ApiError> {
             let mut v = task_view(&b, t);
             if let Some(step) = steps.get(&t.id) {
                 v["step"] = json!(step);
+            }
+            if let Some(&s) = by.get(&t.id) {
+                v["due_by"] = text::due_by_view(s);
             }
             v
         })

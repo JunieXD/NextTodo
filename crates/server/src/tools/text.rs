@@ -159,6 +159,23 @@ pub fn task_line(b: &Board, t: &Task, folder: bool, status: bool, step: Option<(
     line
 }
 
+/// ` · 后续 #12 写报告 2026-11-30 18:00 截止`, or ` · 截止晚于后续 #12 写报告（2026-11-30 18:00）`: the
+/// deadline `d` of `by`, after `t`, that `t` is to make (docs/design.md#后续的截止).
+pub fn due_by(b: &Board, t: &Task, (by, d): (&Task, &Due)) -> String {
+    let when = moment(&d.date, d.at.as_ref().map(|at| &at.time));
+    let what = format!("{} {}", b.label(by), excerpt(by.title.as_str(), SHORT));
+    if t.due.is_some() { format!(" · 截止晚于后续 {what}（{when}）") } else { format!(" · 后续 {what} {when} 截止") }
+}
+
+/// The data of the deadline `d` of `by`, which the task before it is to make.
+pub fn due_by_view((by, d): (&Task, &Due)) -> Value {
+    let mut v = json!({ "date": d.date, "number": by.number, "title": by.title });
+    if let Some(at) = &d.at {
+        v["time"] = json!(at.time);
+    }
+    v
+}
+
 /// The usernames of people by user id.
 pub fn usernames<'a>(b: &Board<'a>, ids: &'a [String]) -> Vec<&'a str> {
     ids.iter().map(|id| b.person(id).map_or(id.as_str(), |p| p.username.as_str())).collect()

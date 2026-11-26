@@ -163,6 +163,7 @@ function useBatchActions(place: Place, chosen: Task[], end: () => void): { actio
     const going = still(todo).filter((t) => t.done_at === null);
     if (!going.length) return end();
     const readyBefore = new Set(board().next().map((t) => t.id));
+    const by = new Map(going.map((t) => [t.id, board().dueBy().get(t.id)]));
     const counts = new Map(going.map((t) => [t.id, t.completions?.count]));
     // The day here: a repeating task's next due date counts from it, as does a due date some days after
     // these are done.
@@ -182,7 +183,7 @@ function useBatchActions(place: Place, chosen: Task[], end: () => void): { actio
       .filter((t) => !readyBefore.has(t.id))
       .map((t) => t.id);
     // As one completed alone: each stays a moment before folding away, and what they unlocked flashes.
-    took.filter((t) => board().task(t.id)?.done_at !== null).forEach((t) => marking.completed(t.id, []));
+    took.filter((t) => board().task(t.id)?.done_at !== null).forEach((t) => marking.completed(t.id, [], by.get(t.id)));
     marking.flash(unlocked);
     done(r, unlocked.length ? `已完成 ${took.length} 项，解锁了 ${unlocked.length} 项` : `已完成 ${took.length} 项`);
   };

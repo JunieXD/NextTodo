@@ -123,7 +123,7 @@ agent 和用户可能同时在改同一项：
 
 默认输出简洁的中文文本，给人和 agent 读；命令行加 `--json` 输出结构化数据。
 
-事项一行一个，依次是编号、状态（`next` 里都可做，不写；`agenda` 里重复事项以后的一次也不写）、标题，后面用 ` · ` 接文件夹（在 `next`、`agenda`、`search` 和连到外面的事项上）、负责人（“负责 bob、carol”）、截止时间、[关联进度](design.md#关联进度)（在 `next` 上）、解锁数：
+事项一行一个，依次是编号、状态（`next` 里都可做，不写；`agenda` 里重复事项以后的一次也不写）、标题，后面用 ` · ` 接文件夹（在 `next`、`agenda`、`search` 和连到外面的事项上）、负责人（“负责 bob、carol”）、截止时间、[关联进度](design.md#关联进度)（在 `next` 上）、解锁数、要赶的[后续的截止](design.md#后续的截止)（在 `next` 上，“后续 #14 交报告 2026-11-27 截止”，设了截止但晚于后续的是“截止晚于后续 #14 交报告（2026-11-27）”）：
 
 ```text
 $ nexttodo ls 工作/网站改版
@@ -167,7 +167,7 @@ $ nexttodo graph 工作
 | 事项 | `{id, number, title, status, folder}`；`status` 是 `ready`、`waiting`、`done`、`dropped`，`folder` 是路径；别人共享给我的文件夹里的事项另有 `owner`（共享人的用户名，引用写成 `@owner#number`），有负责人时另有 `assignees`（用户名）；`waiting_on`（还在等的前置数）、`unlocks`（解锁数）不为 0 时才有，`start`、`due`、`due_after`（同 API 的写法 `{days, time, reminders}`）、`done_at`、`completions`（`{count, last}`，重复的事项完成过时）有值时才有 |
 | `tree` | `[{path, name, depth, pending, ready}]`，先序排列，第一项是根目录，别人共享给我的文件夹在最后；共享的文件夹另有 `owner` 和 `members`（用户名），设了颜色或图标的另有 `color`、`icon` |
 | `list` | `{folder, folders: [{path, name, pending, ready}], tasks: [事项], total}`，`total` 是没截断时的事项数；有 AI 整理请求时另有 `jobs: {waiting, running, failed, ready}`，只含不为 0 的；在共享的文件夹里时另有 `owner` 和 `members` |
-| `next` | `{tasks: [事项], total}`；有前置或后续的事项另有 `step: [2, 5]`（第几步、共几步）；我的事项里有还没到开始时间的，或者等的[重复事项](design.md#重复)这一次还没开始的，另有 `next_start`：其中最早的那个时刻（`2026-11-14` 或 `2026-11-14 09:30`），到时列表可能变，可以再取一次；它不受 `folders` 和 `limit` 限制 |
+| `next` | `{tasks: [事项], total}`；有前置或后续的事项另有 `step: [2, 5]`（第几步、共几步）；要赶[后续的截止](design.md#后续的截止)的另有 `due_by: {date, time?, number, title}`（那一项的截止和编号、标题）；我的事项里有还没到开始时间的，或者有后续没结束的[重复事项](design.md#重复)这一次还没开始的（包括交给别人的，它开始时，前面的事项要赶的截止可能变），另有 `next_start`：其中最早的那个时刻（`2026-11-14` 或 `2026-11-14 09:30`），到时列表、顺序或 `due_by` 可能变，可以再取一次；它不受 `folders` 和 `limit` 限制 |
 | `agenda` | `{overdue: [事项], days: [{date, tasks: [事项]}]}`：`overdue` 是截止日期在今天以前、还没完成的，按截止时间；`days` 只有有事项的日子，按日期；每天里有具体时间的按时间排在前面；重复事项以后的一次另有 `later: true`，它的 `due` 仍是现在这一次的 |
 | `show` | 事项加上 `created_at, updated_at`；`description`、`created_by`、`updated_by`（用户名，自己时没有）、`created_via`、`updated_via`（令牌名，没用令牌时没有）、`before: [事项]`、`after: [事项]` 有内容时才有 |
 | `search` | `{tasks: [事项], total}` |

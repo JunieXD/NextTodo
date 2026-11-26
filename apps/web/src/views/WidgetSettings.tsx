@@ -235,14 +235,23 @@ function Preview({
           )}
           {tasks.length ? (
             tasks.map((t) => {
-              const kind = t.due && dueKind(t.due, now);
+              // As the widget shows it (docs/design.md#后续的截止).
+              const by = board.dueBy().get(t.id);
+              const due = t.due ?? by?.due;
+              const kind = due && dueKind(due, now);
               return (
                 <div key={t.id} className="widget-row">
                   <span className="widget-circle" />
                   <span className="widget-title">{t.title}</span>
-                  {t.due && (
+                  {due && (
                     <span className="widget-meta" style={{ color: kind === "overdue" ? c.overdue : kind === "today" ? c.today : c.secondary }}>
-                      {formatDue(t.due, now)}
+                      {t.due ? "" : "后续 "}
+                      {formatDue(due, now)}
+                    </span>
+                  )}
+                  {t.due && by && (
+                    <span className="widget-meta" style={{ color: c.today, fontWeight: 500 }}>
+                      晚于后续
                     </span>
                   )}
                 </div>

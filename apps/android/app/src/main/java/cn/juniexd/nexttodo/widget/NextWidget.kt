@@ -46,6 +46,7 @@ import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
 import androidx.glance.layout.width
+import androidx.glance.text.FontWeight
 import androidx.glance.text.TextDecoration
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
@@ -179,19 +180,24 @@ private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boole
             // Not when catching up left it due today still: today's time is to do (docs/design.md#重复).
             val doneToday = "今天已完成".takeIf { item.lastDone == now.toLocalDate() && item.due?.date?.isAfter(now.toLocalDate()) == true }
             // In a line, the folder gives way to the title.
-            val meta = listOfNotNull(item.folder.takeIf { it.isNotEmpty() && !compact }, doneToday, item.due?.label(now)).joinToString(" · ")
+            // Its own deadline, or else that of a task after it it is to make (docs/design.md#后续的截止).
+            val due = item.due?.label(now) ?: item.dueBy?.let { "后续 ${it.label(now)}" }
+            val meta = listOfNotNull(item.folder.takeIf { it.isNotEmpty() && !compact }, doneToday, due).joinToString(" · ")
             val color = when {
-                item.due?.overdue(now) == true -> colors.overdue
-                item.due?.today(now) == true -> colors.today
+                (item.due ?: item.dueBy)?.overdue(now) == true -> colors.overdue
+                (item.due ?: item.dueBy)?.today(now) == true -> colors.today
                 else -> colors.secondary
             }
             val metaStyle = TextStyle(color = color, fontSize = 12.sp * scale)
+            val late = item.due != null && item.dueBy != null
+            val lateStyle = TextStyle(color = colors.today, fontSize = 12.sp * scale, fontWeight = FontWeight.Medium)
             val stepStyle = TextStyle(color = colors.secondary, fontSize = 12.sp * scale)
             if (compact) {
                 Row(GlanceModifier.fillMaxWidth().padding(start = indent, top = 7.dp * scale, bottom = 7.dp * scale), verticalAlignment = Alignment.CenterVertically) {
                     Text(item.title, GlanceModifier.defaultWeight(), style = title, maxLines = 1)
                     if (item.step != null && !narrow) Text(item.step, GlanceModifier.padding(start = 6.dp), style = stepStyle, maxLines = 1)
                     if (meta.isNotEmpty() && !narrow) Text(meta, GlanceModifier.padding(start = 8.dp), style = metaStyle, maxLines = 1)
+                    if (late && !narrow) Text("晚于后续", GlanceModifier.padding(start = 6.dp), style = lateStyle, maxLines = 1)
                 }
             } else {
                 Column(GlanceModifier.fillMaxWidth().padding(start = indent, top = 8.dp * scale, bottom = 8.dp * scale)) {
@@ -200,7 +206,13 @@ private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boole
                         Text(item.title, GlanceModifier.defaultWeight(), style = title, maxLines = 1)
                         if (item.step != null && !narrow) Text(item.step, GlanceModifier.padding(start = 6.dp), style = stepStyle, maxLines = 1)
                     }
-                    if (meta.isNotEmpty()) Text(meta, style = metaStyle, maxLines = 1)
+                    // The warning at the end, as the step above it, however long the folder.
+                    if (late) {
+                        Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(meta, GlanceModifier.defaultWeight(), style = metaStyle, maxLines = 1)
+                            Text("晚于后续", GlanceModifier.padding(start = 6.dp), style = lateStyle, maxLines = 1)
+                        }
+                    } else if (meta.isNotEmpty()) Text(meta, style = metaStyle, maxLines = 1)
                 }
             }
         }

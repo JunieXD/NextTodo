@@ -74,6 +74,11 @@ impl Now {
     }
 }
 
+/// When `t` is due, to sort by: a date without a time counts as the end of that day.
+fn deadline(t: &Task) -> Option<(&str, &str)> {
+    t.due.as_ref().map(|d| (d.date.as_str(), d.at.as_ref().map_or("24:00", |at| at.time.as_str())))
+}
+
 /// When a repeating task done before holds up the tasks after it again: as its current occurrence
 /// begins, at its start or else on its due date (docs/design.md#重复).
 fn again(t: &Task) -> Option<(&Date, Option<&Time>)> {
@@ -332,7 +337,23 @@ impl<'a> Board<'a> {
     /// For each task linked to others, which step it is along its dependencies and how many there are
     /// on the longest chain through it (docs/design.md#关联进度). Done tasks are steps too.
     pub fn steps(&self) -> HashMap<TaskId, (usize, usize)> {
-        // Kahn's algorithm: each task after its prerequisites.
+        let order = self.in_order();
+        let longest = |edges: &HashMap<TaskId, Vec<TaskId>>, counted: &HashMap<TaskId, usize>, id| {
+            1 + edges.get(id).into_iter().flatten().map(|other| counted[other]).max().unwrap_or(0)
+        };
+        let mut depth = HashMap::new();
+        for id in &order {
+            depth.insert(*id, longest(&self.before, &depth, id));
+        }
+        let mut height = HashMap::new();
+        for id in order.iter().rev() {
+            height.insert(*id, longest(&self.after, &height, id));
+        }
+        order.iter().map(|id| (*id, (depth[id], depth[id] + height[id] - 1))).collect()
+    }
+
+    /// The tasks linked to others, each after its prerequisites (Kahn's algorithm).
+    fn in_order(&self) -> Vec<TaskId> {
         let mut waiting: HashMap<TaskId, usize> = self.before.iter().map(|(id, b)| (*id, b.len())).collect();
         let mut order: Vec<TaskId> = self.after.keys().filter(|id| !waiting.contains_key(id)).copied().collect();
         let mut i = 0;
@@ -346,18 +367,7 @@ impl<'a> Board<'a> {
             }
             i += 1;
         }
-        let longest = |edges: &HashMap<TaskId, Vec<TaskId>>, counted: &HashMap<TaskId, usize>, id| {
-            1 + edges.get(id).into_iter().flatten().map(|other| counted[other]).max().unwrap_or(0)
-        };
-        let mut depth = HashMap::new();
-        for id in &order {
-            depth.insert(*id, longest(&self.before, &depth, id));
-        }
-        let mut height = HashMap::new();
-        for id in order.iter().rev() {
-            height.insert(*id, longest(&self.after, &height, id));
-        }
-        order.iter().map(|id| (*id, (depth[id], depth[id] + height[id] - 1))).collect()
+        order
     }
 
     pub fn subfolders(&self, f: Option<FolderId>) -> &[&'a Folder] {
@@ -427,29 +437,65 @@ impl<'a> Board<'a> {
         list
     }
 
-    /// The user's ready tasks, in the order of `by_due`.
+    /// The user's ready tasks, as `by_due` sorts them, but by the deadline each is to make: that of
+    /// a task after it, should it be due first (`due_by`).
     pub fn next(&self) -> Vec<&'a Task> {
         let mut list: Vec<&Task> = self.tasks().filter(|t| self.mine(t) && self.status(t) == Status::Ready).collect();
-        self.by_due(&mut list);
+        let by = self.due_by();
+        self.sort_by_deadline(&mut list, |t| by.get(&t.id).map_or(t, |&(s, _)| s));
         list
     }
 
     /// Sorts tasks with a due date first, earliest first (a date without a time counts as the end of
     /// that day), then the rest in folder order and manual order.
     pub fn by_due(&self, list: &mut [&'a Task]) {
+        self.sort_by_deadline(list, |t| t);
+    }
+
+    /// As `by_due`, each by the deadline of the task `of` gives for it.
+    fn sort_by_deadline(&self, list: &mut [&'a Task], of: impl Fn(&'a Task) -> &'a Task) {
         list.sort_by_key(|&t| {
-            let due = t.due.as_ref().map(|d| (d.date.as_str(), d.at.as_ref().map_or("24:00", |at| at.time.as_str())));
+            let due = deadline(of(t));
             (due.is_none(), due, self.key(t))
         });
     }
 
-    /// When the first of the user's open tasks still to start does, or a repeating task they wait for
-    /// holds them up again: the date, and the time if it has one. Shown with what is ready, so that
+    /// For each task holding up open tasks after it, directly or through others holding them up, the
+    /// one of them due first, where it is due before the task itself, or the task has no deadline; of
+    /// those due at once, the first by ID (docs/design.md#后续的截止).
+    pub fn due_by(&self) -> HashMap<TaskId, (&'a Task, &'a Due)> {
+        let mut first: HashMap<TaskId, (&'a Task, &'a Due)> = HashMap::new();
+        // Those after a task before it.
+        for id in self.in_order().iter().rev().filter(|id| self.holds_up(self.tasks[*id])) {
+            let after = self.after.get(id).into_iter().flatten().map(|a| self.tasks[a]).filter(|a| a.done_at.is_none());
+            let soonest = after
+                .flat_map(|a| [a.due.as_ref().map(|d| (a, d)), first.get(&a.id).copied()])
+                .flatten()
+                .min_by_key(|&(a, _)| (deadline(a), a.id));
+            if let Some(s) = soonest {
+                first.insert(*id, s);
+            }
+        }
+        first.retain(|id, (s, _)| deadline(self.tasks[id]).is_none_or(|own| deadline(s) < Some(own)));
+        first
+    }
+
+    /// When the first of the user's open tasks still to start does, or a repeating task holds up the
+    /// open tasks after it again, which may change what is ready and the deadlines those before it
+    /// are to make (`due_by`): the date, and the time if it has one. Shown with what is ready, so that
     /// what shows it can be fetched again then.
     pub fn next_start(&self) -> Option<(&'a Date, Option<&'a Time>)> {
-        let open = || self.tasks.values().copied().filter(|t| t.done_at.is_none() && self.mine(t));
-        let starts = open().filter_map(|t| Some((t.start.as_ref()?, t.start_time.as_ref())));
-        let again = open().flat_map(|t| self.before.get(&t.id).into_iter().flatten()).filter_map(|id| again(self.tasks[id]));
+        let starts = self
+            .tasks
+            .values()
+            .copied()
+            .filter(|t| t.done_at.is_none() && self.mine(t))
+            .filter_map(|t| Some((t.start.as_ref()?, t.start_time.as_ref())));
+        let again = self
+            .after
+            .iter()
+            .filter(|(_, after)| after.iter().any(|a| self.tasks[a].done_at.is_none()))
+            .filter_map(|(id, _)| again(self.tasks[id]));
         starts.chain(again).filter(|(date, time)| self.now.before(date, *time)).min()
     }
 

@@ -67,11 +67,15 @@ export function NextBody({ now }: { now: Date }) {
   const folders = useNextFolders(board);
   const all = folders.includes(null);
   const ready = readyIn(board, folders);
-  const lingering = [...linger].map((id) => board.task(id)).filter((t): t is Task => !!t && t.done_at !== null);
+  const lingering = [...linger.keys()].map((id) => board.task(id)).filter((t): t is Task => !!t && t.done_at !== null);
+  // The deadline of a task after it that it is to make (docs/design.md#后续的截止); one lingering, as
+  // it was listed by.
+  const by = (t: Task) => (t.done_at === null ? board.dueBy().get(t.id) : linger.get(t.id));
   const groups = new Map<DueGroup, Task[]>();
   const closed = useClosedGroups(board.me);
-  for (const t of board.byDue([...ready, ...lingering])) {
-    const g = t.due ? dueKind(t.due, now) : "none";
+  for (const t of board.byDue([...ready, ...lingering], (t) => by(t) ?? t)) {
+    const due = (by(t) ?? t).due;
+    const g = due ? dueKind(due, now) : "none";
     groups.set(g, [...(groups.get(g) ?? []), t]);
   }
   // Every job not done yet, wherever it was submitted.
@@ -113,7 +117,7 @@ export function NextBody({ now }: { now: Date }) {
             <Fold open={open}>
               <div className="group">
                 {tasks.map((t) => (
-                  <TaskRow key={t.id} task={t} board={board} now={now} path step leaving={leaving.has(t.id) && t.done_at !== null} selected={selected === t.id} actions={actions} />
+                  <TaskRow key={t.id} task={t} board={board} now={now} path step dueBy={by(t)} leaving={leaving.has(t.id) && t.done_at !== null} selected={selected === t.id} actions={actions} />
                 ))}
               </div>
             </Fold>

@@ -45,6 +45,8 @@ struct Expect {
     within: HashMap<String, Vec<String>>,
     #[serde(default)]
     steps: HashMap<String, Option<(usize, usize)>>,
+    /// Each task due by another after it, by name: all of them.
+    due_by: Option<HashMap<String, String>>,
     /// `2026-11-12` or `2026-11-12 20:00`.
     next_start: Option<String>,
     agenda: Option<AgendaWant>,
@@ -175,6 +177,11 @@ fn board_matches_fixtures() {
         let steps = board.steps();
         for (n, want) in &case.expect.steps {
             assert_eq!(steps.get(&task(&mut names, n).id).copied(), *want, "{c}: steps of {n}");
+        }
+        if let Some(want) = &case.expect.due_by {
+            let got: HashMap<String, String> =
+                board.due_by().into_iter().map(|(id, (s, _))| (names.name(board.task(id).unwrap()), names.name(s))).collect();
+            assert_eq!(&got, want, "{c}: due by");
         }
         for (f, want) in &case.expect.paths {
             let f = folder(&mut names, f);

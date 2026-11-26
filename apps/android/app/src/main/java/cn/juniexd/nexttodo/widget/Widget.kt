@@ -43,9 +43,10 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** A task as the widget shows it. `lastDone` is the last day a repeating one was done, and
+/** A task as the widget shows it. `dueBy` is the deadline of a task after it that it is to make, should
+ * that come first (docs/design.md#后续的截止); `lastDone` the last day a repeating one was done, and
  * `occurrence` the time shown; `step`, which step it is along its dependencies, such as `2/5`. */
-data class Item(val id: String, val title: String, val folder: String, val due: Due?, val lastDone: LocalDate?, val occurrence: Occurrence?, val step: String?)
+data class Item(val id: String, val title: String, val folder: String, val due: Due?, val dueBy: Due?, val lastDone: LocalDate?, val occurrence: Occurrence?, val step: String?)
 
 /** What the widget shows: the list with the tasks just ticked off in it, each `ticked` at its time
  * should it repeat, and how many `more` there are past it; or that the app is signed out. With the `look` the user chose. As of `now`, to the minute,
@@ -83,8 +84,8 @@ object Widget {
      * of the time. Worked out again later, it gives the same only while that still holds, also should
      * the clock have gone back or the time zone changed. */
     private fun until(items: List<Item>, now: LocalDateTime): LocalDateTime {
-        if (items.none { it.due != null || it.lastDone != null }) return LocalDateTime.MAX
-        return (items.mapNotNull { it.due?.deadline } + now.toLocalDate().plusDays(1).atStartOfDay()).filter { it.isAfter(now) }.min()
+        if (items.none { it.due != null || it.dueBy != null || it.lastDone != null }) return LocalDateTime.MAX
+        return (items.mapNotNull { (it.due ?: it.dueBy)?.deadline } + now.toLocalDate().plusDays(1).atStartOfDay()).filter { it.isAfter(now) }.min()
     }
 
     /** How the widgets look (docs/android.md#小组件的设置). */
@@ -165,10 +166,11 @@ object Widget {
         val done = Done.of(prefs)
         return (0 until list.length()).map(list::getJSONObject).map { t ->
             val due = t.optJSONObject("due")?.let { Due.from(it) }
+            val dueBy = t.optJSONObject("due_by")?.let { Due.from(it) }
             // `/学习/毕业论文` reads `学习 / 毕业论文`; the root shows nothing.
             val lastDone = t.optJSONObject("completions")?.let { LocalDate.parse(it.getString("last")) }
             val step = t.optJSONArray("step")?.let { "${it.getInt(0)}/${it.getInt(1)}" }
-            Item(t.getString("id"), t.getString("title"), t.getString("folder").removePrefix("/").replace("/", " / "), due, lastDone, Occurrence.of(t), step)
+            Item(t.getString("id"), t.getString("title"), t.getString("folder").removePrefix("/").replace("/", " / "), due, dueBy, lastDone, Occurrence.of(t), step)
         }.filter { !Done.hides(done, it.id, it.occurrence) }
     }
 

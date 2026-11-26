@@ -3,7 +3,7 @@
 
 import { ArrowUp, ChevronDown, ChevronRight, ChevronUp, Folder as FolderIcon, FolderPlus, List, ListFilter, Paperclip, Sparkles, Workflow } from "lucide-react";
 import { Dialog } from "radix-ui";
-import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, lazy, Suspense, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation, useSearchParams } from "wouter";
 import { NextTodo, inCard } from "../mobile";
@@ -39,6 +39,7 @@ import { useTaskActions } from "./actions";
 import { addedTo, pickAddTo, useAddTo } from "./add-to";
 import { ChooseFiles, StagedFiles, useKeepFiles } from "./attachments";
 import { useListed } from "./batch";
+import { Chain, useChains } from "./chain";
 import { type DueGroup, setGroupClosed, useClosedGroups } from "./closed-groups";
 import { useRowDrag } from "./drag";
 import { useNewFolder, usePlaceFolder } from "./FolderMenu";
@@ -73,6 +74,7 @@ export function NextBody({ now }: { now: Date }) {
   const by = (t: Task) => (t.done_at === null ? board.dueBy().get(t.id) : linger.get(t.id));
   const groups = new Map<DueGroup, Task[]>();
   const closed = useClosedGroups(board.me);
+  const chains = useChains(board);
   for (const t of board.byDue([...ready, ...lingering], (t) => by(t) ?? t)) {
     const due = (by(t) ?? t).due;
     const g = due ? dueKind(due, now) : "none";
@@ -116,9 +118,29 @@ export function NextBody({ now }: { now: Date }) {
             </h2>
             <Fold open={open}>
               <div className="group">
-                {tasks.map((t) => (
-                  <TaskRow key={t.id} task={t} board={board} now={now} path step dueBy={by(t)} leaving={leaving.has(t.id) && t.done_at !== null} selected={selected === t.id} actions={actions} />
-                ))}
+                {tasks.map((t) => {
+                  const follows = t.done_at === null && board.after(t).some((a) => a.done_at === null);
+                  const unfolded = follows && chains.open.has(t.id);
+                  return (
+                    <Fragment key={t.id}>
+                      <TaskRow
+                        task={t}
+                        board={board}
+                        now={now}
+                        path
+                        step
+                        dueBy={by(t)}
+                        leaving={leaving.has(t.id) && t.done_at !== null}
+                        selected={selected === t.id}
+                        chain={follows ? { open: unfolded, toggle: () => chains.toggle(t) } : undefined}
+                        actions={actions}
+                      />
+                      <Fold open={unfolded}>
+                        <Chain task={t} board={board} now={now} selected={selected} actions={actions} />
+                      </Fold>
+                    </Fragment>
+                  );
+                })}
               </div>
             </Fold>
           </section>

@@ -1,6 +1,6 @@
 // Rows in lists: tasks, folders, and the folder view's tasks with the dependency rail on the left.
 
-import { ArrowUpRight, Ban, CalendarClock, CheckCheck, ChevronRight, Clock, FolderInput, Check as CheckIcon, PanelRightOpen, Paperclip, Repeat, RotateCcw, SkipForward, Trash2 } from "lucide-react";
+import { ArrowUpRight, Ban, CalendarClock, CheckCheck, ChevronDown, ChevronRight, Clock, FolderInput, Check as CheckIcon, PanelRightOpen, Paperclip, Repeat, RotateCcw, SkipForward, Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FolderId } from "../api/types/FolderId";
 import type { Op } from "../api/types/Op";
@@ -14,7 +14,7 @@ import { doneToday, skippable } from "../domain/repeat";
 import { range, rekey } from "../domain/reorder";
 import { inPanel } from "../desktop";
 import { useCommit, useView } from "../session";
-import { useFeedback } from "../ui/feedback";
+import { Tip, useFeedback } from "../ui/feedback";
 import { useWide } from "../ui/hooks";
 import { Box, Check } from "../ui/controls";
 import { Icon, Inbound, Outbound } from "../ui/icons";
@@ -61,6 +61,7 @@ export function TaskRow({
   leaving,
   batchable,
   selected,
+  chain,
   actions,
 }: {
   task: Task;
@@ -79,6 +80,9 @@ export function TaskRow({
   /** On a page where tasks can be chosen for [batch operations](docs/ui.md#批量操作). */
   batchable?: boolean;
   selected: boolean;
+  /** In “接下来”, for an open task with open ones after it: whether they are unfolded under the row
+   * (docs/ui.md#接下来里的后续). */
+  chain?: { open: boolean; toggle(): void };
   actions: RowActions;
 }) {
   const marks = useMarks();
@@ -167,7 +171,7 @@ export function TaskRow({
   const inner = useRef<HTMLDivElement>(null);
   const swiped = useSwipe(inner, choosing ? null : (dx) => (dx > 0 ? actions.toggle(t) : actions.remove(t)));
   const { menu, picker } = useTaskMenu(t, now, actions, { selected, path });
-  const cls = ["row", "task", status, marks.flash.has(t.id) && "unlocked", leaving && "leaving", selected && "selected", chosen && "chosen"].filter(Boolean).join(" ");
+  const cls = ["row", "task", status, marks.flash.has(t.id) && "unlocked", leaving && "leaving", selected && "selected", chosen && "chosen", chain?.open && "chain-open"].filter(Boolean).join(" ");
   const tap = (e: React.MouseEvent) => {
     if (swiped.current) return;
     if (choosing) choice.tap(t.id, e.shiftKey);
@@ -210,6 +214,21 @@ export function TaskRow({
               {meta.length > 0 && <span className="task-meta">{meta}</span>}
             </button>
             {choosing ? <Box checked={chosen} /> : t.assignees.length > 0 && <Avatars board={board} ids={t.assignees} size={22} max={3} />}
+            {chain && (
+              <Tip label={chain.open ? "收起后续" : "展开后续"}>
+                <button
+                  type="button"
+                  className={`icon-btn sm chain-btn${chain.open ? " open" : ""}`}
+                  aria-expanded={chain.open}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!swiped.current) chain.toggle();
+                  }}
+                >
+                  <Icon of={ChevronDown} size={18} />
+                </button>
+              </Tip>
+            )}
           </div>
         </div>
       </ContextMenu>
@@ -338,7 +357,7 @@ export function FolderRow({ folder, board, onOpen }: { folder: Folder; board: Bo
 }
 
 /** How many lanes the rail may take before the list goes without it: on a phone, on a computer. */
-const MAX_LANES = { narrow: 3, wide: 5 };
+export const MAX_LANES = { narrow: 3, wide: 5 };
 
 export function RailList({
   tasks,

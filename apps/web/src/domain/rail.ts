@@ -9,12 +9,26 @@ const ROW = 64;
 const LANE = 24;
 const laneX = (c: number) => 28 + c * LANE;
 
+/** Where a row is down the rail: its top, the middle where its task sits, its bottom, and how far from
+ * the middle a line runs straight, clear of the task's circle, before it bends to another lane. */
+export interface RailRow {
+  top: number;
+  mid: number;
+  bottom: number;
+  clear: number;
+}
+
+const folderRow = (i: number): RailRow => ({ top: i * ROW, mid: i * ROW + 32, bottom: (i + 1) * ROW, clear: 12 });
+
+/** A line bending from lane `x0` to `x1` between heights `y0` and `y1`. */
+const bend = (x0: number, x1: number, y0: number, y1: number) => `C${x0} ${y0 + (3 * (y1 - y0)) / 5} ${x1} ${y0 + (2 * (y1 - y0)) / 5} ${x1} ${y1}`;
+
 /** Lanes like a subway map, each dependency running down one from its first task's row to the
  * second's, in at most `max` lanes; none when it can't be done. Dependencies may share a lane: those
  * of a task with several after it, branching off to each, and those into a task from tasks with one
  * after them, merging. Of sharing both ways, one, or neither, the layout with the fewest crossings
  * is taken, then the one with the fewest lanes. */
-export function railLayout(list: Task[], board: Board, max: number) {
+export function railLayout(list: Task[], board: Board, max: number, row = folderRow) {
   const index = new Map(list.map((t, i) => [t.id, i]));
   const edges = edgesAmong(board, list);
   const outs = new Map<TaskId, number>();
@@ -36,18 +50,18 @@ export function railLayout(list: Task[], board: Board, max: number) {
   const paths = edges
     .map(([a, b]) => {
       const [xu, xl, xv] = [laneX(best.col.get(a)!), laneX(best.lane([a, b])), laneX(best.col.get(b)!)];
-      const [yu, yv] = [index.get(a)! * ROW + 32, index.get(b)! * ROW + 32];
-      let d = `M${xu} ${yu}`;
-      if (xl !== xu) d += ` L${xu} ${yu + 12} C${xu} ${yu + 24} ${xl} ${yu + 20} ${xl} ${yu + 32}`;
-      d += ` L${xl} ${yv - 32}`;
-      if (xl !== xv) d += ` C${xl} ${yv - 20} ${xv} ${yv - 24} ${xv} ${yv - 12}`;
-      d += ` L${xv} ${yv}`;
+      const [u, v] = [row(index.get(a)!), row(index.get(b)!)];
+      let d = `M${xu} ${u.mid}`;
+      if (xl !== xu) d += ` L${xu} ${u.mid + u.clear} ${bend(xu, xl, u.mid + u.clear, u.bottom)}`;
+      d += ` L${xl} ${v.top}`;
+      if (xl !== xv) d += ` ${bend(xl, xv, v.top, v.mid - v.clear)}`;
+      d += ` L${xv} ${v.mid}`;
       return { key: `${a}>${b}`, d, live: board.status(board.task(a)!) === "ready" };
     })
     // Over the others where they share a lane.
     .sort((p, q) => Number(p.live) - Number(q.live));
   const { lanes, crossings: crossed, col } = best;
-  return { lanes, crossings: crossed, gutter: 16 + lanes * LANE + 12, height: list.length * ROW, paths, x: (t: Task) => laneX(col.get(t.id)!) };
+  return { lanes, crossings: crossed, gutter: 16 + lanes * LANE + 12, height: row(list.length - 1).bottom, paths, x: (t: Task) => laneX(col.get(t.id)!) };
 }
 
 type Placed = NonNullable<ReturnType<typeof place>>;

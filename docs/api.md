@@ -80,8 +80,11 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 { "id": "…", "number": 5, "folder_id": "…", "title": "设计问卷", "description": "…", "done_at": null, "dropped": false, "start": "2026-10-30", "start_time": "09:00",
   // done_at 是结束的时间，待办为 null；dropped 是[放弃](design.md#放弃)了，这时 done_at 是放弃的时间
   // 开始时间的日期和几点几分：没设时 start 为 null，只有日期时没有 start_time，见 design.md#开始时间
+  "start_reminders": [{ "before": 30 }], "remind_at": [{ "date": "2026-11-28", "time": "15:00" }],
+  // 按开始时间算的提醒，写法同 due 的 reminders（提前多久的要有 start_time），只能在有 start 时设；排法不同：按日子的在前、提前多久的在后，各自按到点的先后排，不随 start_time 变；remind_at 是指定时间的提醒，
+  // 按时刻先后排、不重复，只响一次，按设备上的钟点算（同 due），服务端不检查是否已过。都可省略，没有时不写出。它们和 due（或 due_after）的 reminders 加起来最多 100 个，见 design.md#提醒
   "due": { "date": "2026-11-02", "time": "18:00", "reminders": [{ "days": 1, "time": "20:00" }, { "before": 60 }], "repeat": { "every": 1, "unit": "week", "from": "due" } },
-  // 没有截止时间时为 null；time、reminders、repeat 可省略；reminders 是提醒：{"before": 分钟} 提前多久（0 是截止时，要有 time，最多 43200），{"days": 天数, "time": "20:00"} 截止那天（0）或提前几天（最多 30）的几点，按到点的先后排、不重复，最多 100 个；旧版本写的 remind_before（提前多少分钟）读入时换成一个提前多久的提醒，不再写出；按周的 repeat 可以带 "days": [1, 3, 5]，在周几（1 是周一，7 是周日）；每个法定工作日是 every 1、unit week、days [1, 2, 3, 4, 5]、不按农历，再带 "legal": true，别的组合带它报错；不是的不写 legal；按月的 days 是几号（1–31）。每年是 every 12、unit month。repeat 可以带 "until": "2026-12-19"，重复到哪天（含这天）。按农历的按月 repeat 带 "lunar": true，这时一定有 days，是农历的几号（1–30，初一到三十），见[重复](design.md#重复)
+  // 没有截止时间时为 null；time、reminders、repeat 可省略；reminders 是按截止时间算的提醒：{"before": 分钟} 提前多久（0 是截止时，要有 time，最多 43200），{"days": 天数, "time": "20:00"} 截止那天（0）或提前几天（最多 30）的几点，按到点的先后排、不重复，最多 100 个；旧版本写的 remind_before（提前多少分钟）读入时换成一个提前多久的提醒，不再写出；按周的 repeat 可以带 "days": [1, 3, 5]，在周几（1 是周一，7 是周日）；每个法定工作日是 every 1、unit week、days [1, 2, 3, 4, 5]、不按农历，再带 "legal": true，别的组合带它报错；不是的不写 legal；按月的 days 是几号（1–31）。每年是 every 12、unit month。repeat 可以带 "until": "2026-12-19"，重复到哪天（含这天）。按农历的按月 repeat 带 "lunar": true，这时一定有 days，是农历的几号（1–30，初一到三十），见[重复](design.md#重复)
   "due_after": { "days": 30, "time": "18:00", "reminders": [{ "before": 60 }] }, "unlocked_on": "2026-11-24",
   // 前置完成后几天内截止的才有，见下面的[前置完成后的截止](#前置完成后的截止)：due_after 同 due 去掉 date 和 repeat，days 是 0–365；
   // unlocked_on 是前置都完成的那天，没完成时没有这一项，这时 due 为 null
@@ -125,8 +128,8 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | `folder.create` | `id`、`name`，可选 `parent_id`、`sort_key`、`color`、`icon` | 不给 `sort_key` 时排在同一层最后 |
 | `folder.update` | `id`，可选 `name`、`parent_id`、`sort_key`、`color`、`icon` | `parent_id: null` 表示移到根目录；`color`、`icon` 给 `null` 表示改回默认 |
 | `folder.delete` | `id` | 连同子文件夹、事项和相关依赖 |
-| `task.create` | `id`、`title`，可选 `folder_id`、`description`、`start`、`start_time`、`due` 或 `due_after`、`sort_key`、`done`、`assignees` | `assignees` 是负责人的用户 ID |
-| `task.update` | `id`，可选 `folder_id`、`title`、`description`、`start`、`start_time`、`due` 或 `due_after`、`sort_key`、`done`、`today`、`occurrence`、`assign`、`unassign` | 只带要改的字段；`start: null` 清除开始时间（连同几点）；只给 `start` 时几点不变，`start_time: null` 只清除几点；有 `start_time` 就要有开始日期；`due: null` 清除截止时间（连同重复和 `due_after`），给了日期就不再是前置完成后的；`due_after: null` 清除它和它给的截止日期；`done: true/false` 完成或重新打开，放弃了的完成时改成完成、结束的时间不变；`assign`、`unassign` 是要加上、去掉的负责人，两个人同时指派时都算数 |
+| `task.create` | `id`、`title`，可选 `folder_id`、`description`、`start`、`start_time`、`start_reminders`、`remind_at`、`due` 或 `due_after`、`sort_key`、`done`、`assignees` | `assignees` 是负责人的用户 ID |
+| `task.update` | `id`，可选 `folder_id`、`title`、`description`、`start`、`start_time`、`start_reminders`、`remind_at`、`due` 或 `due_after`、`sort_key`、`done`、`today`、`occurrence`、`assign`、`unassign` | 只带要改的字段；`start: null` 清除开始时间（连同几点和按它算的提醒）；只给 `start` 时几点和提醒不变，`start_time: null` 只清除几点，按开始算的提前多久的提醒一起去掉；`start_reminders`、`remind_at` 整个换掉原来的，`[]` 清除；有 `start_time` 就要有开始日期；`due: null` 清除截止时间（连同重复和 `due_after`），给了日期就不再是前置完成后的；`due_after: null` 清除它和它给的截止日期；`done: true/false` 完成或重新打开，放弃了的完成时改成完成、结束的时间不变；`assign`、`unassign` 是要加上、去掉的负责人，两个人同时指派时都算数 |
 | `task.drop` | `id` | [放弃](design.md#放弃)：结束并标为放弃，重复的事项去掉重复，不记完成；已完成的改成放弃、结束的时间不变，已经放弃的不变。连同后续一起放弃是一个改动里的几个 `task.drop` |
 | `task.delete` | `id` | 连同相关依赖 |
 | `dep.add` | `before`、`after` | |

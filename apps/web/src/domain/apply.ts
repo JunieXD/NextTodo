@@ -19,13 +19,18 @@ import type { Mutation } from "../api/types/Mutation";
 import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
 import type { Person } from "../api/types/Person";
+import type { Remind } from "../api/types/Remind";
 import type { Share } from "../api/types/Share";
 import type { Snapshot } from "../api/types/Snapshot";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import { type Now, cmp, comesRound, holdsUp } from "./board";
+import { MAX_REMINDERS, startInOrder, timesInOrder } from "./dates";
 import { lunarDate } from "./lunar";
 import { nextDue, occurrence, plus, shifted } from "./repeat";
+
+/** What a `task.update` changes. */
+export type TaskFields = Omit<Extract<Op, { op: "task.update" }>, "op" | "id">;
 
 /** A user's data, keyed for changes. */
 export interface Data {
@@ -270,6 +275,8 @@ class Applier {
           dropped: false,
           start: op.start ?? null,
           start_time: op.start_time,
+          start_reminders: byStart(op.start_time, op.start_reminders ?? []),
+          remind_at: listed(timesInOrder(op.remind_at ?? [])),
           due_after: op.due_after,
           due: op.due ?? null,
           sort_key: op.sort_key ?? lastKey(keys),
@@ -295,6 +302,8 @@ class Applier {
           t.start = op.start;
         }
         if (op.start_time !== undefined) t.start_time = op.start_time ?? undefined;
+        t.start_reminders = op.start_reminders ? byStart(t.start_time, op.start_reminders) : fitStart(t);
+        if (op.remind_at) t.remind_at = listed(timesInOrder(op.remind_at));
         if (op.due !== undefined && op.due_after !== undefined) throw bothDue();
         if (op.due !== undefined) {
           // As given, before doing it the last time could take the repeat away.
@@ -857,7 +866,7 @@ class Applier {
           this.createTask({ ...t, updated_at: now, updated_by: this.cx.me, updated_via: null });
         } else {
           const cur = this.d.tasks.get(e.before.id);
-          const fields = ["folder_id", "title", "description", "done_at", "dropped", "start", "start_time", "due_after", "unlocked_on", "completions", "sort_key"] as const;
+          const fields = ["folder_id", "title", "description", "done_at", "dropped", "start", "start_time", "start_reminders", "remind_at", "due_after", "unlocked_on", "completions", "sort_key"] as const;
           // Done again or taken back since, maybe to the same count on the same day: setting the count
           // back would undo that too.
           const { before, after } = e;
@@ -870,14 +879,15 @@ class Applier {
           }
           if (cur) {
             const restored = restore(cur, e.before, e.after, fields);
+            restored.start_time = restored.start ? restored.start_time : undefined;
             // A due date `due_after` gave is given again.
             const set = (t: Task) => (t.due_after ? null : t.due);
             this.updateTask(cur, {
               ...restored,
-              // A time without its date, which was cleared since, goes too; so does the day
-              // prerequisites were done, without a due date counting from it, and giving up one open
-              // since.
-              start_time: restored.start ? restored.start_time : undefined,
+              // A time without its date, which was cleared since, goes too, and reminders by the start
+              // with nothing to go by; so does the day prerequisites were done, without a due date
+              // counting from it, and giving up one open since.
+              start_reminders: fitStart(restored),
               unlocked_on: restored.due_after ? restored.unlocked_on : undefined,
               dropped: restored.dropped && restored.done_at !== null,
               due: restoreDue(set(cur), set(e.before), set(e.after)),
@@ -1024,12 +1034,28 @@ function dueAfter(t: Task): Task {
   return { ...t, due: { date: plus(t.start && t.start > on ? t.start : on, days), ...timing } };
 }
 
+/** Reminders by a start at `time` as given, as the server keeps them. */
+function byStart(time: string | undefined, given: Remind[]): Remind[] | undefined {
+  if (time === undefined && given.some((r) => "before" in r)) throw new Rejected("invalid", "提前多久的提醒需要具体的开始时间");
+  return listed(startInOrder(given));
+}
+
+/** `t`'s reminders by the start that still have something to go by: none without a start, those so long
+ * before only with its time (docs/design.md#提醒). */
+const fitStart = (t: Task) => listed((t.start_reminders ?? []).filter((r) => t.start && (t.start_time || "days" in r)));
+
+/** A list as the server has it: none when empty. */
+const listed = <T>(l: T[]) => (l.length ? l : undefined);
+
 /** What the server rejects too, so that a change it would refuse isn't applied here meanwhile. */
 function checkTask(t: Task) {
   if (t.done_at !== null && t.due?.repeat) throw new Rejected("invalid", `“${t.title}”已${t.dropped ? "放弃" : "完成"}，不能设置重复，请先重新打开`);
   checkRepeat(t.title, t.due);
+  const reminders = ((t.due_after ?? t.due)?.reminders?.length ?? 0) + (t.start_reminders?.length ?? 0) + (t.remind_at?.length ?? 0);
+  if (reminders > MAX_REMINDERS) throw new Rejected("invalid", `“${t.title}”的提醒最多 ${MAX_REMINDERS} 个`);
   if (!t.start) {
     if (t.start_time) throw new Rejected("invalid", "设置开始时刻须先有开始日期");
+    if (t.start_reminders) throw new Rejected("invalid", "按开始时间算的提醒需要开始时间");
     return;
   }
   // Due the day they are done, it may come to be due the day it starts (docs/design.md#前置完成后的截止).

@@ -12,6 +12,12 @@
     "expect": { "allowed": ["due"], "due": [[21, "2026-11-20 18:00 !60"]], "untouched": [22] }
   },
   {
+    "id": "start-remind",
+    "note": "按开始时间提醒：有开始时间、没有截止的事项，开始前半小时提醒",
+    "input": { "local_time": "2026-11-27 10:00 星期五", "folder": "/学习", "request": "讲座开始前半小时提醒我", "subfolders": [], "open_tasks": [{ "number": 31, "title": "参加线上讲座", "start": "2026-12-02 19:00" }, { "number": 32, "title": "整理笔记" }], "done_tasks": [], "looks": [{ "folder": "/学习" }] },
+    "expect": { "allowed": ["due"], "due": [[31, "s!30"]], "untouched": [32] }
+  },
+  {
     "id": "reverse",
     "note": "把先后反过来：去掉原来的前置，加上反向的",
     "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/旅行/东京", "request": "改成先订酒店再订机票：酒店定了日期才知道哪天飞", "subfolders": [], "open_tasks": [{ "number": 31, "title": "订机票" }, { "number": 32, "title": "订酒店", "requires": [31] }, { "number": 33, "title": "办签证" }], "done_tasks": [], "looks": [{ "folder": "/旅行/东京" }] },

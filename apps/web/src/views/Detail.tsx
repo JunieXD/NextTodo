@@ -1,18 +1,18 @@
 // A task's details: title, folder, who is to do it, due date, description, attachments, what it
 // waits for and what waits for it.
 
-import { ArrowUpRight, Bell, Calendar, CalendarCheck, CalendarClock, Folder as FolderIcon, KeyRound, type LucideIcon, Plus, Repeat, User, Users, X } from "lucide-react";
+import { ArrowUpRight, Calendar, CalendarCheck, CalendarClock, Folder as FolderIcon, KeyRound, type LucideIcon, Plus, Repeat, User, Users, X } from "lucide-react";
 import { type ReactNode, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import type { Attachment } from "../api/types/Attachment";
 import type { Completion } from "../api/types/Completion";
 import type { MutationId } from "../api/types/MutationId";
-import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
+import type { TaskFields } from "../domain/apply";
 import type { Board } from "../domain/board";
 import { lateness } from "../domain/calendar";
-import { day, dueAfterLabel, dueIn, formatDay, formatDue, formatMoment, isoDate, remindersLabel, startBeforeLabel, startLabel } from "../domain/dates";
+import { day, dueAfterLabel, dueIn, formatDay, formatDue, formatMoment, isoDate, startBeforeLabel, startLabel } from "../domain/dates";
 import { daysBefore, doneToday, repeatText, skippable } from "../domain/repeat";
 import { draggingFiles, filesIn, reference } from "../attach";
 import { checkDescription, checkTitle } from "../domain/text";
@@ -31,6 +31,7 @@ import { FolderGlyph, styled } from "./folder-look";
 import { useMarks } from "./marks";
 import { folderUrl, useSelection } from "./nav";
 import { FolderPicker, TaskPicker } from "./pickers";
+import { ReminderRow } from "./remind";
 import { dueClass } from "./rows";
 import { AssigneePicker, Avatars, namesOf } from "./share";
 import { startTipSeen } from "./start-tip";
@@ -51,8 +52,6 @@ const who = (board: Board, user: string, via: string | null) => {
   const s = source(board, user, via);
   return s ? `${s} ` : "";
 };
-
-type TaskFields = Omit<Extract<Op, { op: "task.update" }>, "op" | "id">;
 
 /** Saves a text field; what `useCommit` gives back. */
 type Save = (value: string) => { id: MutationId } | null;
@@ -261,15 +260,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
           cls={t.due ? dueClass(t, now) : t.due_after ? "" : "muted"}
           onClick={() => setPanel("due")}
         />
-        {(t.due ?? t.due_after) && (
-          <Prop
-            icon={Bell}
-            label="提醒"
-            value={remindersLabel((t.due ?? t.due_after)?.reminders)}
-            cls={(t.due ?? t.due_after)?.reminders ? "" : "muted"}
-            onClick={() => setPanel("due")}
-          />
-        )}
+        {t.done_at === null && <ReminderRow task={t} now={now} update={update} />}
         {t.due?.repeat && <Prop icon={Repeat} label="重复" value={repeatText(t.due.repeat, t.due.date, now)} onClick={() => setPanel("due")} />}
         {(t.due?.repeat || t.completions) && (
           <Prop
@@ -375,6 +366,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
           start={t.start}
           startTime={t.start_time}
           endedAs={status === "done" || status === "dropped" ? STATUS[status] : null}
+          others={(t.start_reminders?.length ?? 0) + (t.remind_at?.length ?? 0)}
           onSave={update}
           onClose={() => setPanel(null)}
         />

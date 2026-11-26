@@ -1,5 +1,6 @@
 import { expect, onTestFinished, test, vi } from "vitest";
-import { deadline, dueIn, dueKind, formatDue, inOrder, nextFive, parseTime, remindAt, remindersLabel } from "./dates";
+import type { Remind } from "../api/types/Remind";
+import { deadline, dueIn, dueKind, formatDue, inOrder, nextFive, parseTime, remindAt, remindAtLabel, remindLabel, remindersLabel, timesInOrder } from "./dates";
 
 // Monday 2 November 2026, 10:30
 const now = new Date(2026, 10, 2, 10, 30);
@@ -46,12 +47,13 @@ test("a due time on a day of 25 hours is still by the hour", () => {
 });
 
 test("reminders", () => {
-  expect(remindersLabel(undefined)).toBe("不提醒");
-  expect(remindersLabel([2880, 120].map((before) => ({ before })))).toBe("提前 2 天、提前 2 小时");
+  const said = (reminders: Remind[]) => remindersLabel(reminders.map(remindLabel));
+  expect(said([])).toBe("不提醒");
+  expect(said([2880, 120].map((before) => ({ before })))).toBe("提前 2 天、提前 2 小时");
   // Not a whole number of a larger unit, as an agent may set it.
-  expect(remindersLabel([{ before: 90 }, { before: 1500 }])).toBe("提前 90 分钟、提前 25 小时");
+  expect(said([{ before: 90 }, { before: 1500 }])).toBe("提前 90 分钟、提前 25 小时");
   // More than two, the first and how many, kept to a row.
-  expect(remindersLabel([3, 1, 0].map((days) => ({ days, time: "09:00" })))).toBe("提前 3 天 09:00 等 3 个");
+  expect(said([3, 1, 0].map((days) => ({ days, time: "09:00" })))).toBe("提前 3 天 09:00 等 3 个");
   // As the server keeps them: the first to come first, each once, none before a time there isn't.
   const all = [{ before: 0 }, { days: 0, time: "08:00" }, { before: 1440 }, { days: 1, time: "20:00" }, { before: 0 }];
   expect(inOrder(all, "09:00")).toEqual([{ before: 1440 }, { days: 1, time: "20:00" }, { days: 0, time: "08:00" }, { before: 0 }]);
@@ -61,6 +63,10 @@ test("reminders", () => {
   expect(remindAt(due, { days: 1, time: "20:00" })).toEqual(new Date(2026, 10, 7, 20, 0));
   expect(remindAt(due, { before: 90 })).toEqual(new Date(2026, 10, 8, 7, 30));
   expect(remindAt({ date: "2026-12-01" }, { days: 2, time: "09:30" })).toEqual(new Date(2026, 10, 29, 9, 30));
+  // At times of their own: the first first, each once; another year's says its year.
+  const at = [{ date: "2027-01-03", time: "08:00" }, { date: "2026-12-15", time: "10:00" }, { date: "2027-01-03", time: "08:00" }];
+  expect(timesInOrder(at)).toEqual([at[1], at[0]]);
+  expect(timesInOrder(at).map((r) => remindAtLabel(r, new Date(2026, 10, 2)))).toEqual(["12月15日 10:00", "2027年1月3日 08:00"]);
 });
 
 test("the next five minutes", () => {

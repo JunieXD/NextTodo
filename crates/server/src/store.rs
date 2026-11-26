@@ -17,14 +17,14 @@ const ATTACHMENTS: &str =
     "SELECT a.id, a.task_id, a.job_id, a.name, f.type, f.size, a.created_at FROM attachments a JOIN files f ON f.id = a.id";
 macro_rules! task_columns {
     () => {
-        "id, number, folder_id, title, description, done_at, due_date, due_time, reminders, sort_key, created_at, updated_at, created_via, updated_via, repeat_every, repeat_unit, repeat_from, repeat_days, completion_count, last_completed, repeat_monthdays, start_date, created_by, updated_by, start_time, repeat_until, repeat_lunar, due_after, unlocked_on, dropped, repeat_legal"
+        "id, number, folder_id, title, description, done_at, due_date, due_time, reminders, sort_key, created_at, updated_at, created_via, updated_via, repeat_every, repeat_unit, repeat_from, repeat_days, completion_count, last_completed, repeat_monthdays, start_date, created_by, updated_by, start_time, repeat_until, repeat_lunar, due_after, unlocked_on, dropped, repeat_legal, start_reminders, remind_at"
     };
 }
 const TASK_COLUMNS: &str = task_columns!();
 /// A task's columns and its assignees, from `tasks`.
 const TASK_SELECT: &str = concat!(
     task_columns!(),
-    ", (SELECT json_group_array(user_id) FROM (SELECT user_id FROM assignees WHERE task_id = tasks.id ORDER BY user_id))"
+    ", (SELECT json_group_array(user_id) FROM (SELECT user_id FROM assignees WHERE task_id = tasks.id ORDER BY user_id)) AS assignees"
 );
 
 /// Folder ids in the subtree rooted at `?1`, including the root.
@@ -76,7 +76,7 @@ fn task_row(r: &Row) -> rusqlite::Result<Task> {
         _ => None,
     };
     let due_after: Option<String> = r.get(27)?;
-    let assignees: String = r.get(31)?;
+    let assignees: String = r.get("assignees")?;
     Ok(Task {
         id: r.get(0)?,
         number: r.get(1)?,
@@ -92,6 +92,8 @@ fn task_row(r: &Row) -> rusqlite::Result<Task> {
             .transpose()
             .map_err(|e| rusqlite::Error::FromSqlConversionFailure(27, rusqlite::types::Type::Text, Box::new(e)))?,
         unlocked_on: r.get(28)?,
+        start_reminders: json_list(r, 31)?,
+        remind_at: json_list(r, 32)?,
         due: date
             .map(|date| Due::new(date, time, reminders, repeat))
             .transpose()
@@ -99,7 +101,7 @@ fn task_row(r: &Row) -> rusqlite::Result<Task> {
         completions,
         sort_key: r.get(9)?,
         assignees: serde_json::from_str(&assignees)
-            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(31, rusqlite::types::Type::Text, Box::new(e)))?,
+            .map_err(|e| rusqlite::Error::FromSqlConversionFailure(33, rusqlite::types::Type::Text, Box::new(e)))?,
         created_at: r.get(10)?,
         updated_at: r.get(11)?,
         created_by: r.get(22)?,
@@ -107,6 +109,19 @@ fn task_row(r: &Row) -> rusqlite::Result<Task> {
         created_via: r.get(12)?,
         updated_via: r.get(13)?,
     })
+}
+
+/// A list kept as JSON in column `i`, none when empty.
+fn json_list<T: serde::de::DeserializeOwned>(r: &Row, i: usize) -> rusqlite::Result<Vec<T>> {
+    let json: Option<String> = r.get(i)?;
+    json.map_or(Ok(Vec::new()), |j| {
+        serde_json::from_str(&j).map_err(|e| rusqlite::Error::FromSqlConversionFailure(i, rusqlite::types::Type::Text, Box::new(e)))
+    })
+}
+
+/// A list as JSON for a column, none when empty.
+fn json_column<T: serde::Serialize>(list: &[T]) -> Option<String> {
+    (!list.is_empty()).then(|| serde_json::to_string(list).expect("a list serializes"))
 }
 
 fn job_row(r: &Row) -> rusqlite::Result<AiJob> {
@@ -306,7 +321,8 @@ pub fn last_folder_key(c: &Connection, owner: &str, parent: Option<FolderId>) ->
 
 /// A task and its owner.
 pub fn load_task(c: &Connection, id: TaskId) -> rusqlite::Result<Option<(Task, String)>> {
-    c.query_row(&format!("SELECT {TASK_SELECT}, owner_id FROM tasks WHERE id = ?1"), [id], |r| Ok((task_row(r)?, r.get(32)?))).optional()
+    c.query_row(&format!("SELECT {TASK_SELECT}, owner_id FROM tasks WHERE id = ?1"), [id], |r| Ok((task_row(r)?, r.get("owner_id")?)))
+        .optional()
 }
 
 /// Whether `owner` has another task than `id` numbered `number`.
@@ -327,7 +343,7 @@ pub fn insert_task(c: &Connection, owner: &str, t: &Task) -> rusqlite::Result<()
     let (date, time, remind, every, unit, from, days, monthdays, until, lunar, legal) = due_columns(&t.due);
     c.execute(
         &format!(
-            "INSERT INTO tasks (owner_id, {TASK_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32)"
+            "INSERT INTO tasks (owner_id, {TASK_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34)"
         ),
         params![
             owner,
@@ -361,7 +377,9 @@ pub fn insert_task(c: &Connection, owner: &str, t: &Task) -> rusqlite::Result<()
             due_after(t),
             t.unlocked_on,
             t.dropped,
-            legal
+            legal,
+            json_column(&t.start_reminders),
+            json_column(&t.remind_at)
         ],
     )?;
     set_assignees(c, t)
@@ -374,7 +392,7 @@ pub fn update_task(c: &Connection, owner: &str, t: &Task) -> rusqlite::Result<()
          reminders = ?8, sort_key = ?9, updated_at = ?10, updated_via = ?11, repeat_every = ?12, repeat_unit = ?13,
          repeat_from = ?14, repeat_days = ?15, completion_count = ?16, last_completed = ?17, repeat_monthdays = ?18,
          start_date = ?19, updated_by = ?20, owner_id = ?21, number = ?22, start_time = ?23, repeat_until = ?24, repeat_lunar = ?25,
-         due_after = ?26, unlocked_on = ?27, dropped = ?28, repeat_legal = ?29 WHERE id = ?1",
+         due_after = ?26, unlocked_on = ?27, dropped = ?28, repeat_legal = ?29, start_reminders = ?30, remind_at = ?31 WHERE id = ?1",
         params![
             t.id,
             t.folder_id,
@@ -404,7 +422,9 @@ pub fn update_task(c: &Connection, owner: &str, t: &Task) -> rusqlite::Result<()
             due_after(t),
             t.unlocked_on,
             t.dropped,
-            legal
+            legal,
+            json_column(&t.start_reminders),
+            json_column(&t.remind_at)
         ],
     )?;
     set_assignees(c, t)

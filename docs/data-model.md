@@ -77,9 +77,11 @@
 | dropped | INTEGER | [放弃](design.md#放弃)了为 1，否则为 0；为 1 时 `done_at` 有值，是放弃的时间 |
 | start_date | TEXT，可空 | [开始时间](design.md#开始时间)的日期，没到时事项等着；有 `due_date` 时开始不能晚于截止 |
 | start_time | TEXT，可空 | 开始的几点几分，只能在有 `start_date` 时设置；没有时从那天 0 点开始 |
+| start_reminders | TEXT，可空 | 按开始时间算的[提醒](design.md#提醒)，JSON 列表，写法同 `reminders`；只能在有 `start_date` 时设置，提前多久的要有 `start_time`；没有时为空 |
+| remind_at | TEXT，可空 | 指定时间的提醒，JSON 列表 `[{date, time}]`，按时刻先后排、不重复；没有时为空 |
 | due_date | TEXT，可空 | |
 | due_time | TEXT，可空 | 只能在有 `due_date` 时设置 |
-| reminders | TEXT，可空 | [提醒](design.md#提醒)，JSON 列表，写法同 [API](api.md) 的 `reminders`；提前多久的只能在有 `due_time` 时设置；没有提醒时为空 |
+| reminders | TEXT，可空 | 按截止时间算的[提醒](design.md#提醒)，JSON 列表，写法同 [API](api.md) 的 `reminders`；提前多久的只能在有 `due_time` 时设置；没有提醒时为空 |
 | repeat_every | INTEGER，可空 | [重复](design.md#重复)的间隔数，1–365；只能在有 `due_date` 时设置 |
 | repeat_unit | TEXT，可空 | `day`、`week` 或 `month` |
 | repeat_from | TEXT，可空 | 下一次从哪天算：`due`（截止日期）或 `done`（完成那天） |
@@ -97,7 +99,7 @@
 | created_by / updated_by | TEXT | 添加和最后修改它的用户 ID，共享的文件夹里可能不是主人 |
 | created_via / updated_via | TEXT，可空 | 用 API 令牌改动时记令牌名，AI 整理添加的记“AI 整理”；本人在设备上改动时为空 |
 
-`(owner_id, number)` 唯一。重复的三列同时有值或同时为空，已完成的事项（`done_at` 有值）不能有。开始、截止、提醒和重复的约束同时用 `CHECK` 写在表上，`completion_count` 和 `last_completed` 也一样同时有值或同时为空。
+`(owner_id, number)` 唯一。重复的三列同时有值或同时为空，已完成的事项（`done_at` 有值）不能有。开始、截止、提醒和重复的约束同时用 `CHECK` 写在表上（三种提醒加起来最多 100 个），`completion_count` 和 `last_completed` 也一样同时有值或同时为空。
 
 ### completions
 

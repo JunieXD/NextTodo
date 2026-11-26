@@ -3,6 +3,7 @@
 import type { Due } from "../api/types/Due";
 import type { DueAfter } from "../api/types/DueAfter";
 import type { Remind } from "../api/types/Remind";
+import type { RemindAt } from "../api/types/RemindAt";
 import type { RemindOn } from "../api/types/RemindOn";
 
 const WEEK = "日一二三四五六";
@@ -176,6 +177,15 @@ export function inOrder<R extends Remind>(reminders: R[], time: string | undefin
   return [...unique.values()].sort(([a], [b]) => a - b).map(([, r]) => r);
 }
 
+/** Reminders by the start as the server keeps them: each once, those by the day ahead of those so long
+ * before, each the first to come first. Not all by when they come, as that moves with the start's time,
+ * a field of its own: moving it would change them too, and undoing it what was set since. */
+export function startInOrder(reminders: Remind[]): Remind[] {
+  const key = (r: Remind) => ("before" in r ? [1, -r.before] : [0, minutesOf(r.time) - r.days * 1440]);
+  const unique = new Map(reminders.map((r) => [JSON.stringify(r), r]));
+  return [...unique.values()].sort((a, b) => key(a)[0] - key(b)[0] || key(a)[1] - key(b)[1]);
+}
+
 /** When reminder `r` of `due` comes. */
 export function remindAt(due: Due, r: Remind): Date {
   if ("before" in r) return new Date(deadline(due).getTime() - r.before * 60_000);
@@ -211,9 +221,33 @@ export function remindLabel(r: Remind): string {
   return `提前 ${n} ${REMIND_UNITS[unit].name}`;
 }
 
-/** A due date's reminders on a row, in the order they come: up to two, all of them, `前一天 20:00、当天 09:00`;
+/** A reminder by the start: `开始时`, `开始前 30 分钟`, `开始当天 09:00`, `开始前一天 20:00`. */
+export function startRemindLabel(r: Remind): string {
+  if ("days" in r) return r.days === 0 ? `开始当天 ${r.time}` : r.days === 1 ? `开始前一天 ${r.time}` : `开始前 ${r.days} 天 ${r.time}`;
+  if (r.before === 0) return "开始时";
+  const [n, unit] = remindIn(r.before);
+  return `开始前 ${n} ${REMIND_UNITS[unit].name}`;
+}
+
+/** When a reminder at a time of its own comes. */
+export const remindAtTime = (r: RemindAt) => remindAt({ date: r.date }, { days: 0, time: r.time });
+
+/** A reminder at a time of its own: `11月28日 15:00`, with the year when it is not `now`'s. */
+export function remindAtLabel(r: RemindAt, now: Date): string {
+  const [y, m, d] = r.date.split("-").map(Number);
+  return `${y === now.getFullYear() ? "" : `${y}年`}${m}月${d}日 ${r.time}`;
+}
+
+/** Reminders at times of their own, as the server keeps them: the first first, none twice. */
+export function timesInOrder(list: RemindAt[]): RemindAt[] {
+  const moment = (r: RemindAt) => `${r.date} ${r.time}`;
+  const sorted = [...list].sort((a, b) => (moment(a) < moment(b) ? -1 : moment(a) > moment(b) ? 1 : 0));
+  return sorted.filter((r, i) => i === 0 || moment(r) !== moment(sorted[i - 1]));
+}
+
+/** Reminders on a row, said as `labels` in the order they come: up to two, all of them, `前一天 20:00、开始时`;
  *  more, the first and how many, `提前 7 天 09:00 等 5 个`; `不提醒` for none. */
-export function remindersLabel(reminders: Remind[] | undefined): string {
-  if (!reminders?.length) return "不提醒";
-  return reminders.length > 2 ? `${remindLabel(reminders[0])} 等 ${reminders.length} 个` : reminders.map(remindLabel).join("、");
+export function remindersLabel(labels: string[]): string {
+  if (!labels.length) return "不提醒";
+  return labels.length > 2 ? `${labels[0]} 等 ${labels.length} 个` : labels.join("、");
 }

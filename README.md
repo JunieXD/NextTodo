@@ -130,7 +130,7 @@ Android、iOS 和桌面 App 的构建见 [Android](docs/android.md#构建和签�
 | [本机模式](docs/local.md) | 不连服务器时的做法、备份和恢复、借网盘同步 |
 | [网页端](docs/web.md) | 前端结构、本地数据和同步 |
 | [Android](docs/android.md) | Android App 和小组件 |
-| [iOS](docs/ios.md) | iOS App、截止提醒和 SideStore 安装 |
+| [iOS](docs/ios.md) | iOS App、提醒和 SideStore 安装 |
 | [桌面 App](docs/desktop.md) | macOS 和 Windows App |
 | [部署](docs/deploy.md) | 自己部署、升级、备份、构建发布和官网 |
 

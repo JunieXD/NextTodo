@@ -9,7 +9,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use nexttodo_core::board::{Board, Now, Status};
 use nexttodo_core::model::{
     Attachment, AttachmentId, Change, Date, Description, Due, DueAfter, Effect, Every, FileName, FileSize, FolderId, MAX_NAME, MediaType,
-    Misfit, Monthdays, MutationId, Name, Period, Remind, RemindBefore, RemindOn, Repeat, RepeatFrom, Task, TaskId, Time, Title,
+    Misfit, Monthdays, MutationId, Name, Period, Remind, RemindAt, RemindBefore, RemindOn, Repeat, RepeatFrom, Task, TaskId, Time, Title,
 };
 use nexttodo_core::ops::{MAX_OPS, Op};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -18,8 +18,8 @@ use uuid::Uuid;
 
 use super::args::{
     AddArgs, ApplyArgs, AttachArgs, CopyArgs, DeleteArgs, DepArgs, DetachArgs, DoneArgs, DropArgs, DueAfterText, EditArgs, MkdirArgs,
-    Monthly, MoveArgs, PeriodText, Plan, PlanRef, PlanTask, RemindText, RenameArgs, RepeatText, Replace, ShareArgs, StyleArgs, TaskRef,
-    TasksArgs, UndoArgs, UnshareArgs, WhenText, task_ref,
+    Monthly, MoveArgs, PeriodText, Plan, PlanRef, PlanTask, RenameArgs, RepeatText, Replace, ShareArgs, StyleArgs, TaskRef, TasksArgs,
+    UndoArgs, UnshareArgs, WhenText, task_ref,
 };
 use super::text::{self, Names, task_view};
 use super::{Output, WriteFn, find_folder, find_task, person};
@@ -281,7 +281,7 @@ pub(crate) struct RepeatGiven {
 pub(crate) fn new_due(
     due_text: Option<WhenText>,
     after: Option<DueAfterText>,
-    remind: Option<RemindText>,
+    remind: Vec<Remind>,
     repeat_given: RepeatGiven,
     start: Option<&Date>,
     now: &Now,
@@ -294,13 +294,36 @@ pub(crate) fn new_due(
     let monthly = days.map(|days| Monthly { days, start });
     let due_at = due_text.map(|d| when(d, now, monthly, "due")).transpose()?;
     let repeat = repeat(repeat_given, due_at.as_ref().map(|(date, _)| (date, said)))?;
-    let remind = remind.map_or_else(Vec::new, |r| r.0);
     match (due_at, after) {
         (due_at, None) => Ok((due(due_at, remind, repeat)?, None)),
         (Some(_), Some(_)) => Err(mutate::both_due()),
         (None, Some(_)) if repeat.is_some() => Err(repeating_after()),
         (None, Some(a)) => Ok((None, Some(due_after(a.days, a.time, remind)?))),
     }
+}
+
+/// The reminders by the start and at times of their own given, for a task starting on `start`, at its
+/// time if any, as a change keeps them: the times as `now` has them.
+pub(crate) fn others(
+    by_start: Vec<Remind>,
+    at: Vec<WhenText>,
+    start: Option<(&Date, Option<&Time>)>,
+    now: &Now,
+) -> Result<(Vec<Remind>, Vec<RemindAt>), ApiError> {
+    let at = at
+        .into_iter()
+        .map(|w| {
+            let (date, time) = when(w, now, None, "remind")?;
+            Ok(RemindAt { date, time: time.expect("read with its time") })
+        })
+        .collect::<Result<Vec<_>, ApiError>>()?;
+    let by_start = match start {
+        Some((_, time)) => nexttodo_core::model::start_reminders(time, on_days(by_start, time.is_some()))
+            .map_err(|m| ApiError::invalid(m, Some("remind".into())))?,
+        None if by_start.is_empty() => by_start,
+        None => return Err(ApiError::invalid("按开始时间算的提醒（start …）需要开始时间", Some("remind".into()))),
+    };
+    Ok((by_start, mutate::at_times(&at)))
 }
 
 fn due_after(days: u16, time: Option<Time>, remind: Vec<Remind>) -> Result<DueAfter, ApiError> {
@@ -408,7 +431,9 @@ fn plan_ops(b: &Board, plan: Plan, number: &dyn Fn(i64) -> Option<TaskId>) -> Re
             None => (None, None),
         };
         let repeat = RepeatGiven { rule: repeat_text, from: repeat_from, until: repeat_until };
-        let (due, due_after) = new_due(due_text, due_after, remind, repeat, start.as_ref(), b.now())?;
+        let remind = remind.unwrap_or_default();
+        let (start_reminders, remind_at) = others(remind.start, remind.at, start.as_ref().map(|s| (s, start_time.as_ref())), b.now())?;
+        let (due, due_after) = new_due(due_text, due_after, remind.due, repeat, start.as_ref(), b.now())?;
         ops.push(Op::TaskCreate {
             id,
             title,
@@ -416,6 +441,8 @@ fn plan_ops(b: &Board, plan: Plan, number: &dyn Fn(i64) -> Option<TaskId>) -> Re
             description: description.unwrap_or_default(),
             start,
             start_time,
+            start_reminders,
+            remind_at,
             due,
             due_after,
             sort_key: None,
@@ -470,7 +497,7 @@ pub fn apply(w: &WriteCx, a: ApplyArgs) -> Result<Write, ApiError> {
 
 pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
     let t = find_task(w.board, &a.task)?;
-    let Edit { id, title, description, start, due, due_after, assign, unassign } = edit_fields(w.board, t, a)?;
+    let Edit { id, title, description, start, start_reminders, remind_at, due, due_after, assign, unassign } = edit_fields(w.board, t, a)?;
     // A start date given without a time starts at the start of its day; cleared, its time goes too.
     let (start, start_time) = match start {
         None => (None, None),
@@ -484,6 +511,8 @@ pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
         description,
         start,
         start_time,
+        start_reminders,
+        remind_at,
         due,
         due_after,
         sort_key: None,
@@ -503,6 +532,8 @@ pub(crate) struct Edit {
     pub title: Option<Title>,
     pub description: Option<Description>,
     pub start: Option<Option<(Date, Option<Time>)>>,
+    pub start_reminders: Option<Vec<Remind>>,
+    pub remind_at: Option<Vec<RemindAt>>,
     pub due: Option<Option<Due>>,
     pub due_after: Option<Option<DueAfter>>,
     pub assign: Vec<String>,
@@ -539,15 +570,23 @@ pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiE
         Some(_) => None,
         None => current.and_then(|c| c.repeat.as_ref()).and_then(|r| lunar_days(r.every, r.period)),
     };
-    let starts = match &start {
-        Some(start) => start.as_ref().map(|(date, _)| date),
-        None => t.start.as_ref(),
+    let (starts, start_time) = match &start {
+        Some(start) => (start.as_ref().map(|(date, _)| date), start.as_ref().and_then(|(_, time)| time.as_ref())),
+        None => (t.start.as_ref(), t.start_time.as_ref()),
     };
     let monthly = days.map(|days| Monthly { days, start: starts });
     let due_at = a.due.map(|d| d.map(|d| when(d, b.now(), monthly, "due")).transpose()).transpose()?;
     let current_reminders = t.reminders();
-    // `Some(empty)` clears them.
-    let remind = a.remind.map(|r| r.map_or_else(Vec::new, |r| r.0));
+    // `Some(empty)` clears them, all three kinds; of the due date's, the next lines.
+    let given = a.remind.map(Option::unwrap_or_default);
+    let (start_reminders, remind_at) = match given.as_ref() {
+        Some(r) => {
+            let (by_start, at) = others(r.start.clone(), r.at.clone(), starts.map(|s| (s, start_time)), b.now())?;
+            ((by_start != t.start_reminders).then_some(by_start), (at != t.remind_at).then_some(at))
+        }
+        None => (None, None),
+    };
+    let remind = given.map(|r| r.due);
     // `Some(None)` stops it repeating.
     let new_repeat = if changes_repeat {
         let date = match &due_at {
@@ -588,6 +627,8 @@ pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiE
             title: a.title,
             description,
             start,
+            start_reminders,
+            remind_at,
             due: None,
             due_after: (due_after != t.due_after).then_some(due_after),
             assign: people(b, &a.assign)?,
@@ -643,6 +684,8 @@ pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiE
         title: a.title,
         description,
         start,
+        start_reminders,
+        remind_at,
         due: new_due,
         due_after: None,
         assign: people(b, &a.assign)?,
@@ -702,6 +745,8 @@ fn set_done(b: &Board, tasks: Vec<TaskRef>, done: bool, today: Option<Date>, end
                 description: None,
                 start: None,
                 start_time: None,
+                start_reminders: None,
+                remind_at: None,
                 due,
                 due_after: None,
                 sort_key: None,
@@ -776,6 +821,8 @@ pub fn skip(w: &WriteCx, a: TasksArgs) -> Result<Write, ApiError> {
             description: None,
             start: t.start.as_ref().map(|s| Some(s.shifted(&due.date, &next))),
             start_time: None,
+            start_reminders: None,
+            remind_at: None,
             due: Some(Some(Due { date: next, ..due.clone() })),
             due_after: None,
             sort_key: None,
@@ -866,6 +913,8 @@ pub fn move_to(w: &WriteCx, a: MoveArgs) -> Result<Write, ApiError> {
             description: None,
             start: None,
             start_time: None,
+            start_reminders: None,
+            remind_at: None,
             due: None,
             due_after: None,
             sort_key: None,
@@ -965,6 +1014,8 @@ pub fn copy(w: &WriteCx, a: CopyArgs) -> Result<Write, ApiError> {
             description: Description::try_from(description).expect("ids as long as before"),
             start: t.start.clone(),
             start_time: t.start_time.clone(),
+            start_reminders: t.start_reminders.clone(),
+            remind_at: t.remind_at.clone(),
             // One due after its prerequisites counts anew (docs/design.md#前置完成后的截止).
             due: t.due.clone().filter(|_| t.due_after.is_none()),
             due_after: t.due_after.clone(),

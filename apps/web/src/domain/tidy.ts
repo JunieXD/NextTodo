@@ -9,18 +9,19 @@ import type { FolderIcon } from "../api/types/FolderIcon";
 import type { FolderId } from "../api/types/FolderId";
 import type { NewTask } from "../api/types/NewTask";
 import type { Op } from "../api/types/Op";
+import type { Remind } from "../api/types/Remind";
+import type { RemindAt } from "../api/types/RemindAt";
 import type { Suggestion } from "../api/types/Suggestion";
 import type { TaskId } from "../api/types/TaskId";
+import type { TaskFields } from "./apply";
 import { Board } from "./board";
-import { dueAfterLabel, formatDue, isoDate, remindLabel } from "./dates";
+import { dueAfterLabel, formatDue, isoDate, remindAtLabel, remindLabel, startRemindLabel } from "./dates";
 import { arrange } from "./reorder";
 import { lastTime, repeatText } from "./repeat";
 
-type Fields = { title?: string; description?: string; due?: Due | null; done?: boolean; folder_id?: FolderId };
-
 /** What taking a part does. */
 type Act =
-  | { update: TaskId; fields: Fields }
+  | { update: TaskId; fields: TaskFields }
   | { link: [before: TaskId, after: TaskId] }
   | { unlink: [before: TaskId, after: TaskId] }
   | { remove: TaskId }
@@ -50,17 +51,25 @@ const sameDue = (a: Due | null, b: Due | null) =>
   !a?.repeat?.legal === !b?.repeat?.legal &&
   a?.repeat?.until === b?.repeat?.until;
 
-/** `11月20日 18:00 · 前一天 20:00、提前 30 分钟 · 每周`, or `无`. */
-const dueText = (d: Due | null, now: Date) =>
-  d ? [formatDue(d, now), d.reminders?.map(remindLabel).join("、"), d.repeat && repeatText(d.repeat, d.date, now)].filter(Boolean).join(" · ") : "无";
-
 const sameAfter = (a: DueAfter | undefined, b: DueAfter | undefined) =>
   a?.days === b?.days && a?.time === b?.time && JSON.stringify(a?.reminders) === JSON.stringify(b?.reminders);
 
-/** A due date as `dueText` has it, and the prerequisites it counts from, if it does: `前置完成后 3 天内`,
- * and once they are done `11月20日 18:00（前置完成后 3 天内 18:00）`. */
-const deadlineText = (d: Due | null, after: DueAfter | undefined, now: Date) =>
-  !after ? dueText(d, now) : d ? `${dueText(d, now)}（${dueAfterLabel(after)}）` : dueAfterLabel(after);
+/** A task's due date, its reminders of all three kinds and its repeat, as a part shows them: `11月20日 18:00 ·
+ * 前一天 20:00、开始前 30 分钟 · 每周`; a due date its prerequisites give with them, `前置完成后 3 天内`,
+ * once they are done `11月20日 18:00（前置完成后 3 天内 18:00）`; `无` for none of it. */
+type Timing = { due: Due | null; due_after?: DueAfter; start_reminders?: Remind[]; remind_at?: RemindAt[] };
+function timingText({ due, due_after: after, start_reminders, remind_at }: Timing, now: Date): string {
+  const when = !after ? due && formatDue(due, now) : due ? `${formatDue(due, now)}（${dueAfterLabel(after)}）` : dueAfterLabel(after);
+  const reminders = [
+    ...((after ?? due)?.reminders ?? []).map(remindLabel),
+    ...(start_reminders ?? []).map(startRemindLabel),
+    ...(remind_at ?? []).map((r) => remindAtLabel(r, now)),
+  ];
+  return [when, reminders.join("、"), due?.repeat && repeatText(due.repeat, due.date, now)].filter(Boolean).join(" · ") || "无";
+}
+
+/** Lists the same, none being as many as empty. */
+const sameList = (a: unknown[] | undefined, b: unknown[] | undefined) => JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
 
 /** What `s` would still do: to tasks and folders there and in the state it found them, and links not
  * made yet. */
@@ -96,7 +105,7 @@ function group(s: Suggestion, j: AiJob, board: Board, created: Map<TaskId, strin
     const text = [
       s.title,
       s.description,
-      s.due && `截止：${dueText(s.due, now)}`,
+      (s.due || s.remind_at) && `${s.due ? "截止" : "提醒"}：${timingText({ due: s.due ?? null, remind_at: s.remind_at }, now)}`,
       s.after.length && `前置：${s.after.map(name).join("、")}`,
       s.before.length && `后续：${s.before.map(name).join("、")}`,
     ]
@@ -110,8 +119,13 @@ function group(s: Suggestion, j: AiJob, board: Board, created: Map<TaskId, strin
   if ("delete" in s) {
     if (!t) return null;
     const changed =
-      t.title !== s.was.title || t.description !== s.was.description || !sameDue(t.due, s.was.due) || !sameAfter(t.due_after, s.was.due_after);
-    const current = JSON.stringify([t.title, t.description, t.due, t.due_after]);
+      t.title !== s.was.title ||
+      t.description !== s.was.description ||
+      !sameDue(t.due, s.was.due) ||
+      !sameAfter(t.due_after, s.was.due_after) ||
+      !sameList(t.start_reminders, s.was.start_reminders) ||
+      !sameList(t.remind_at, s.was.remind_at);
+    const current = JSON.stringify([t.title, t.description, t.due, t.due_after, t.start_reminders, t.remind_at]);
     const part: Part = { key: "delete", label: "删除", text: "删除这个事项", act: { remove: id }, ...(changed && { now: "整理后改过这个事项", current }) };
     return { key: id, heading: heading!, reason: s.reason, parts: [part] };
   }
@@ -129,12 +143,36 @@ function group(s: Suggestion, j: AiJob, board: Board, created: Map<TaskId, strin
     const was = changed && { now: `整理后已改为：${show(t.title, t.description)}`, current };
     parts.push({ key: "text", label, text: show(text.title ?? "", text.description ?? ""), act: { update: id, fields: text }, ...was });
   }
+  // The due date, the reminders and the repeat are one part, as the reminders given take the place of
+  // all three kinds (docs/ai.md#整理文件夹); of those by the start, those its start still has what they go by for.
   // A date the prerequisites gave, set as a date of its own, is a change too.
-  if (s.due !== undefined && (!sameDue(t.due, s.due) || t.due_after)) {
-    const changed = !sameDue(t.due, s.was.due) || !sameAfter(t.due_after, s.was.due_after);
-    const was = changed && { now: `整理后已改为：${deadlineText(t.due, t.due_after, now)}`, current: JSON.stringify([t.due, t.due_after]) };
-    const text = `${deadlineText(s.was.due, s.was.due_after, now)} → ${dueText(s.due, now)}`;
-    parts.push({ key: "due", label: "截止", text, act: { update: id, fields: { due: s.due } }, ...was });
+  const given = s.start_reminders;
+  const fits = given && t.start ? given.filter((r) => t.start_time || "days" in r) : undefined;
+  // None left of some given is no change, not clearing those it has.
+  const byStart = fits && (fits.length || !given?.length) ? fits : undefined;
+  // As it was for what it sets, as it is for the rest.
+  const from: Timing = {
+    due: s.due === undefined ? t.due : s.was.due,
+    due_after: s.due === undefined ? t.due_after : s.was.due_after,
+    start_reminders: byStart ? s.was.start_reminders : t.start_reminders,
+    remind_at: s.remind_at ? s.was.remind_at : t.remind_at,
+  };
+  const to: Timing = {
+    due: s.due === undefined ? t.due : s.due,
+    due_after: s.due === undefined ? t.due_after : undefined,
+    start_reminders: byStart ?? t.start_reminders,
+    remind_at: s.remind_at ?? t.remind_at,
+  };
+  if ((s.due !== undefined && (!sameDue(t.due, s.due) || t.due_after)) || !sameList(to.start_reminders, t.start_reminders) || !sameList(to.remind_at, t.remind_at)) {
+    // Of what it sets, what has changed since.
+    const changed =
+      (s.due !== undefined && (!sameDue(t.due, s.was.due) || !sameAfter(t.due_after, s.was.due_after))) ||
+      (byStart !== undefined && !sameList(t.start_reminders, s.was.start_reminders)) ||
+      (s.remind_at !== undefined && !sameList(t.remind_at, s.was.remind_at));
+    const current = JSON.stringify([s.due !== undefined && [t.due, t.due_after], byStart !== undefined && t.start_reminders, s.remind_at !== undefined && t.remind_at]);
+    const was = changed && { now: `整理后已改为：${timingText(t, now)}`, current };
+    const fields = { ...(s.due !== undefined && { due: s.due }), ...(byStart && { start_reminders: byStart }), ...(s.remind_at && { remind_at: s.remind_at }) };
+    parts.push({ key: "due", label: s.due === undefined ? "提醒" : "截止", text: `${timingText(from, now)} → ${timingText(to, now)}`, act: { update: id, fields }, ...was });
   }
   if (s.done !== undefined && s.done !== (t.done_at !== null)) {
     // As the suggestion's own due date, taken with it by default, has it.
@@ -164,7 +202,7 @@ export function ops(parts: Part[], j: AiJob, board: Board): Op[] {
   const creates: Op[] = [];
   const made = new Set<TaskId>();
   const removed = new Set<TaskId>();
-  const updates = new Map<TaskId, Fields>();
+  const updates = new Map<TaskId, TaskFields>();
   const links: [TaskId, TaskId][] = [];
   const unlinks: [TaskId, TaskId][] = [];
   const looks = new Map<FolderId, { color?: FolderColor | null; icon?: FolderIcon | null }>();
@@ -173,7 +211,7 @@ export function ops(parts: Part[], j: AiJob, board: Board): Op[] {
     if ("create" in a) {
       const c = a.create;
       made.add(c.create);
-      creates.push({ op: "task.create", id: c.create, title: c.title, ...(c.description && { description: c.description }), ...(c.due && { due: c.due }), ...(j.folder_id && { folder_id: j.folder_id }) });
+      creates.push({ op: "task.create", id: c.create, title: c.title, ...(c.description && { description: c.description }), ...(c.due && { due: c.due }), ...(c.remind_at && { remind_at: c.remind_at }), ...(j.folder_id && { folder_id: j.folder_id }) });
       links.push(...c.after.map((b): [TaskId, TaskId] => [b, c.create]), ...c.before.map((x): [TaskId, TaskId] => [c.create, x]));
     } else if ("update" in a) updates.set(a.update, { ...updates.get(a.update), ...a.fields });
     else if ("remove" in a) removed.add(a.remove);

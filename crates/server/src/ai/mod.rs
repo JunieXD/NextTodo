@@ -550,7 +550,7 @@ fn added(
     if let Some(r) = &j.reminders {
         for t in tasks.iter_mut().filter(|t| t.remind.is_none()) {
             let timed = t.due.as_ref().map(|d| d.time.is_some()).or(t.due_after.as_ref().map(|a| a.time.is_some()));
-            t.remind = timed.map(|timed| RemindText(r.for_due(timed)));
+            t.remind = timed.map(|timed| RemindText { due: r.for_due(timed), ..RemindText::default() });
         }
     }
     let mut ops = tools::plan_into(&board, j.folder_id, tasks, &shown.tasks)?;

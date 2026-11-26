@@ -9,7 +9,8 @@ import { DAY_REMINDERS, MAX_REMINDERS, REMINDERS, inOrder, remindLabel, reminder
 import { setDailyDigest, setDefaultReminders, setHideReminders, useDailyDigest, useDefaultReminders, useHideReminders } from "../remind-settings";
 import { MultiSelect, Switch } from "../ui/controls";
 import { Modal, useFeedback } from "../ui/feedback";
-import { TimeRow, useRemindBefore, useRemindOn } from "./due";
+import { TimeRow } from "./due";
+import { useRemindBefore, useRemindOn } from "./remind";
 
 /** The menu of `presets` and those of `value`, the reminders picked, ordered as for a task due at
  * `time`; “自定义…” opens a dialog of the rows of `custom`, which adds its reminder. */
@@ -33,8 +34,8 @@ function Pick<R extends Remind>(p: {
     <>
       <MultiSelect
         label={p.label}
-        text={remindersLabel(value)}
-        items={listed.map((r) => [key(r), remindLabel(r)])}
+        text={remindersLabel(value.map(remindLabel))}
+        groups={[{ options: listed.map((r) => ({ value: key(r), text: remindLabel(r) })) }]}
         value={value.map(key)}
         onChange={(keys) => set(listed.filter((r) => keys.includes(key(r))))}
         none="不提醒"

@@ -75,7 +75,7 @@ class NextTodoPlugin : Plugin() {
     }
 
     /** Hands over the reminders, as JSON in the shape `apps/web/src/mobile.ts` gives
-     * (docs/android.md#截止提醒). The first time there are some, asks for notifications. */
+     * (docs/android.md#提醒). The first time there are some, asks for notifications. */
     @PluginMethod
     fun setReminders(call: PluginCall) {
         val reminders = call.getString("reminders")!!

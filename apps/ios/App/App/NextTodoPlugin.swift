@@ -55,7 +55,7 @@ public class NextTodoPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDelega
     }
 
     /// Hands over the reminders, as JSON in the shape `apps/web/src/mobile.ts` gives
-    /// (docs/ios.md#截止提醒). The first time there are some, asks for notifications.
+    /// (docs/ios.md#提醒). The first time there are some, asks for notifications.
     @objc func setReminders(_ call: CAPPluginCall) {
         work(call, "设置提醒", on: Reminders.queue) {
             try Reminders.set(call.getString("reminders")!, digest: call.getString("digest")!, seq: Int64(call.getInt("seq")!))

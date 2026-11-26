@@ -38,18 +38,34 @@ pub fn moment(date: &Date, time: Option<&Time>) -> String {
     time.map_or_else(|| date.as_str().to_owned(), |time| format!("{} {}", date.as_str(), time.as_str()))
 }
 
-/// A reminder as the app writes it: `截止时`, `提前 90 分钟`, `提前 3 小时`, `提前 2 天`, `当天 09:00`,
-/// `前一天 20:00`, `提前 3 天 09:00`.
+/// A reminder by the due as the app writes it: `截止时`, `提前 90 分钟`, `提前 3 小时`, `提前 2 天`,
+/// `当天 09:00`, `前一天 20:00`, `提前 3 天 09:00`.
 pub fn remind(r: &Remind) -> String {
+    anchored(r, "截止时", "提前", "")
+}
+
+/// One by the start: `开始时`, `开始前 90 分钟`, `开始当天 09:00`, `开始前一天 20:00`, `开始前 3 天 09:00`.
+pub fn start_remind(r: &Remind) -> String {
+    anchored(r, "开始时", "开始前", "开始")
+}
+
+fn anchored(r: &Remind, at: &str, before: &str, day: &str) -> String {
     match r {
-        Remind::Before(RemindBefore { before: 0 }) => "截止时".into(),
-        Remind::Before(RemindBefore { before: m }) if m % 1440 == 0 => format!("提前 {} 天", m / 1440),
-        Remind::Before(RemindBefore { before: m }) if m % 60 == 0 => format!("提前 {} 小时", m / 60),
-        Remind::Before(RemindBefore { before: m }) => format!("提前 {m} 分钟"),
-        Remind::On(RemindOn { days: 0, time }) => format!("当天 {}", time.as_str()),
-        Remind::On(RemindOn { days: 1, time }) => format!("前一天 {}", time.as_str()),
-        Remind::On(RemindOn { days, time }) => format!("提前 {days} 天 {}", time.as_str()),
+        Remind::Before(RemindBefore { before: 0 }) => at.into(),
+        Remind::Before(RemindBefore { before: m }) if m % 1440 == 0 => format!("{before} {} 天", m / 1440),
+        Remind::Before(RemindBefore { before: m }) if m % 60 == 0 => format!("{before} {} 小时", m / 60),
+        Remind::Before(RemindBefore { before: m }) => format!("{before} {m} 分钟"),
+        Remind::On(RemindOn { days: 0, time }) => format!("{day}当天 {}", time.as_str()),
+        Remind::On(RemindOn { days: 1, time }) => format!("{day}前一天 {}", time.as_str()),
+        Remind::On(RemindOn { days, time }) => format!("{before} {days} 天 {}", time.as_str()),
     }
+}
+
+/// All its reminders, as the app writes them: by the due, by the start, then at times of their own
+/// (`2026-12-15 10:00`).
+pub fn reminders(t: &Task) -> Vec<String> {
+    let at = t.remind_at.iter().map(|r| moment(&r.date, Some(&r.time)));
+    t.reminders().iter().map(remind).chain(t.start_reminders.iter().map(start_remind)).chain(at).collect()
 }
 
 /// `2026-11-20 18:00`, with how it repeats: `2026-11-20，每周`, `2026-11-20，每天，到 2026-12-19`; by
@@ -224,6 +240,12 @@ pub fn task_view(b: &Board, t: &Task) -> Value {
     }
     if let Some(a) = &t.due_after {
         v["due_after"] = json!(a);
+    }
+    if !t.start_reminders.is_empty() {
+        v["start_reminders"] = json!(t.start_reminders);
+    }
+    if !t.remind_at.is_empty() {
+        v["remind_at"] = json!(t.remind_at);
     }
     if let Some(at) = t.done_at {
         v["done_at"] = at.into();
@@ -628,6 +650,7 @@ fn edited(before: &Task, after: &Task) -> Vec<&'static str> {
         ("description", before.description != after.description),
         ("start", start || before.start_time != after.start_time),
         ("due", due),
+        ("reminders", before.start_reminders != after.start_reminders || before.remind_at != after.remind_at),
         ("completions", before.completions != after.completions && moved.is_none() && !ended),
         ("assignees", before.assignees != after.assignees),
         ("order", before.sort_key != after.sort_key && before.folder_id == after.folder_id),
@@ -1035,7 +1058,7 @@ fn fields(e: &Effect, n: &Names) -> Vec<LogField> {
 /// A task's fields as a change shows them, in order.
 fn task_values(t: &Task, n: &Names) -> Vec<(ChangedField, Option<String>)> {
     let due = t.due.as_ref();
-    let reminders: Vec<String> = t.reminders().iter().map(remind).collect();
+    let reminders = reminders(t);
     let people: Vec<String> = t.assignees.iter().map(|u| n.person(u)).collect();
     vec![
         (ChangedField::Title, Some(t.title.as_str().to_owned())),

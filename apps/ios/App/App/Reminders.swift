@@ -15,7 +15,7 @@ extension Optional where Wrapped == Occurrence {
     func covers(_ o: Occurrence?) -> Bool { self == nil || self == o }
 }
 
-/// Deadline reminders (docs/ios.md#截止提醒): the list the page hands over, scheduled with the system,
+/// Reminders (docs/ios.md#提醒): the list the page hands over, scheduled with the system,
 /// which shows each when due, the app running or not. One thing at a time, on `queue`.
 enum Reminders {
     static let queue = DispatchQueue(label: "cn.juniexd.nexttodo.reminders")
@@ -43,12 +43,14 @@ enum Reminders {
     static let SNOOZES = [(15, "15 分钟后提醒"), (60, "1 小时后提醒"), (180, "3 小时后提醒")]
 
     /// A reminder as `apps/web/src/mobile.ts` gives it: `at` in ms; `occurrence`, the time it is of
-    /// should the task repeat, the same for a task's reminders of one time; `waiting`, how many of its
-    /// prerequisites are not done.
+    /// should the task repeat, the same for a task's reminders of one time; `completable`, whether it can
+    /// be done from the reminder, which a repeating task's at a time of its own can't, being of none of
+    /// its times, none from an earlier version; `waiting`, how many of its prerequisites are not done.
     private struct Reminder: Codable {
         let task: String
         let at: Int64
         let occurrence: Occurrence?
+        let completable: Bool?
         let title: String
         let body: String
         let waiting: Int
@@ -75,7 +77,7 @@ enum Reminders {
     }
 
     /// `task`'s time `occurrence`, every time of it without one, done here by change `id`, which became
-    /// change `seq` on the server; none while not sent (docs/android.md#截止提醒).
+    /// change `seq` on the server; none while not sent (docs/android.md#提醒).
     private struct Done: Codable {
         let id: String
         let task: String
@@ -152,13 +154,16 @@ enum Reminders {
         storedDigests = digests
         schedule()
         // Shown already: those no longer in the list go, and those that say otherwise than they would
-        // now, the content hidden since say, or are of a time done since. The system can't change one
-        // shown.
+        // now, the content hidden since say, or are of a time done since, or of none where the reminder is
+        // of a time now that the task repeats, or offer 完成 for a reminder of none of a repeating task's
+        // times. The system can't change one shown.
         let wanted = Dictionary(list.map { (id(task: $0.task, at: $0.at), $0) }) { first, _ in first }
         let shown = wait { center.getDeliveredNotifications(completionHandler: $0) }.filter { isReminder($0.request.content) }
         let stale = shown.filter { n in
             let c = n.request.content
-            return wanted[n.request.identifier].map { $0.title != c.title || $0.body != c.body || !occurrence(of: c).covers($0.occurrence) } ?? true
+            return wanted[n.request.identifier].map {
+                $0.title != c.title || $0.body != c.body || occurrence(of: c) != $0.occurrence || (c.categoryIdentifier == DONE && $0.completable == false)
+            } ?? true
         }
         center.removeDeliveredNotifications(withIdentifiers: stale.map(\.request.identifier))
         // Hidden since one was shown, a digest may list titles still.
@@ -301,10 +306,10 @@ enum Reminders {
     /// another's place once shown.
     private static func id(task: String, at: Int64) -> String { "\(task) \(at)" }
 
-    /// Whether `r`'s task can be marked done as it shows at `at`: it waits for nothing, and has started
-    /// by then, by this phone's clock. Decided as it is scheduled: the app may not run when it shows.
+    /// Whether `r`'s task can be marked done as it shows at `at`: it can be, waits for nothing, and has
+    /// started by then, by this phone's clock. Decided as it is scheduled: the app may not run when it shows.
     private static func completable(_ r: Reminder, at: Int64) -> Bool {
-        guard r.waiting == 0 else { return false }
+        guard r.completable != false, r.waiting == 0 else { return false }
         guard let start = r.start else { return true }
         let format = DateFormatter()
         format.locale = Locale(identifier: "en_US_POSIX")

@@ -1,4 +1,4 @@
-// What only the desktop app does: deadline reminders, shown by the app while it runs, the panel of the
+// What only the desktop app does: reminders, shown by the app while it runs, the panel of the
 // menu bar or tray icon and its shortcut, and the command line it carries. See docs/desktop.md.
 
 import { invoke } from "@tauri-apps/api/core";

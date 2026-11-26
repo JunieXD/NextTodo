@@ -444,6 +444,26 @@ pub enum Remind {
     On(RemindOn),
 }
 
+/// A reminder at a time of its own, ringing once (docs/design.md#提醒), by the clock of the device.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+#[ts(export)]
+pub struct RemindAt {
+    pub date: Date,
+    pub time: Time,
+}
+
+/// Reminders by the start, `time` its time of day: checked, none twice, those on a day before those so
+/// long before, each the first to come first. Not all by when they come, as that moves with the
+/// start's time, a field of its own: moving it would change them too, and undoing it what was set
+/// since (docs/design.md#改动记录和撤销).
+pub fn start_reminders(time: Option<&Time>, reminders: Vec<Remind>) -> Result<Vec<Remind>, String> {
+    let (at, mut on) = timing(time.cloned(), reminders, "开始")?;
+    on.sort_by(|a, b| b.days.cmp(&a.days).then_with(|| a.time.cmp(&b.time)));
+    let before = at.into_iter().flat_map(|at| at.remind_before.into_iter().rev()).map(|before| Remind::Before(RemindBefore { before }));
+    Ok(on.into_iter().map(Remind::On).chain(before).collect())
+}
+
 /// The reminders a device gives a task as it gets a due date (docs/design.md#提醒): one due at a time
 /// those so many minutes before, one due on a date alone those by the day. Sorted, none twice.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -840,8 +860,9 @@ pub struct DueFields {
     repeat: Option<Repeat>,
 }
 
-/// The time of day and the reminders of a due date, checked: sorted, none twice.
-fn timing(time: Option<Time>, reminders: Vec<Remind>) -> Result<(Option<DueAt>, Vec<RemindOn>), String> {
+/// The time of day and the reminders of a due date, or of what else they go by, `of`: checked,
+/// sorted, none twice.
+fn timing(time: Option<Time>, reminders: Vec<Remind>, of: &str) -> Result<(Option<DueAt>, Vec<RemindOn>), String> {
     let (mut before, mut on) = (Vec::new(), Vec::new());
     for r in reminders {
         match r {
@@ -861,7 +882,7 @@ fn timing(time: Option<Time>, reminders: Vec<Remind>) -> Result<(Option<DueAt>, 
     let at = match time {
         Some(time) => Some(DueAt { time, remind_before: before }),
         None if before.is_empty() => None,
-        None => return Err("提前多久的提醒需要具体的截止时间".into()),
+        None => return Err(format!("提前多久的提醒需要具体的{of}时间")),
     };
     Ok((at, on))
 }
@@ -888,7 +909,7 @@ impl Due {
         if let Some(m) = repeat.as_ref().and_then(|r| r.misfit(&date)) {
             return Err(m.to_string());
         }
-        let (at, remind_on) = timing(time, reminders)?;
+        let (at, remind_on) = timing(time, reminders, "截止")?;
         Ok(Due { date, at, remind_on, repeat })
     }
 
@@ -932,7 +953,7 @@ impl DueAfter {
         if days > MAX_DUE_AFTER_DAYS {
             return Err(format!("前置完成后最多 {MAX_DUE_AFTER_DAYS} 天"));
         }
-        let (at, remind_on) = timing(time, reminders)?;
+        let (at, remind_on) = timing(time, reminders, "截止")?;
         Ok(DueAfter { days, at, remind_on })
     }
 
@@ -1135,6 +1156,15 @@ pub struct Task {
     #[ts(optional)]
     pub unlocked_on: Option<Date>,
     pub due: Option<Due>,
+    /// Reminders by the start, in the order `start_reminders` gives: only with a start, those so long
+    /// before with its time.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<Remind>>", optional)]
+    pub start_reminders: Vec<Remind>,
+    /// Reminders at times of their own, the first first, none twice.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<RemindAt>>", optional)]
+    pub remind_at: Vec<RemindAt>,
     /// None until a repeating task is first done.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -1158,6 +1188,18 @@ impl Task {
     pub fn occurrence(&self) -> Option<Occurrence> {
         let due = self.due.as_ref().filter(|d| d.repeat.is_some())?;
         Some(Occurrence { due: due.date.clone(), completions: self.completions.as_ref().map_or(0, |c| c.count.get()) })
+    }
+
+    /// Keeps the reminders by the start that have something left to go by: none without a start, those
+    /// so long before only with its time (docs/design.md#提醒).
+    pub fn fit_start_reminders(&mut self) {
+        let (start, timed) = (self.start.is_some(), self.start_time.is_some());
+        self.start_reminders.retain(|r| start && (timed || matches!(r, Remind::On(_))));
+    }
+
+    /// How many reminders it has, of all kinds.
+    pub fn reminder_count(&self) -> usize {
+        self.reminders().len() + self.start_reminders.len() + self.remind_at.len()
     }
 
     /// The reminders of its due date, also while that is still to come after its prerequisites.
@@ -1253,6 +1295,13 @@ pub struct TaskEdit {
     #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub due: Option<Option<Due>>,
+    /// Reminders by the start and at times of their own, all of each kind, in place of those it has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub start_reminders: Option<Vec<Remind>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub remind_at: Option<Vec<RemindAt>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub done: Option<bool>,
@@ -1292,6 +1341,9 @@ pub struct NewTask {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub due: Option<Due>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<RemindAt>>", optional)]
+    pub remind_at: Vec<RemindAt>,
     /// Tasks to put before it, new ones among them.
     pub after: Vec<TaskId>,
     /// Tasks already there to put after it.
@@ -1340,6 +1392,12 @@ pub struct Was {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub due_after: Option<DueAfter>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<Remind>>", optional)]
+    pub start_reminders: Vec<Remind>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<Vec<RemindAt>>", optional)]
+    pub remind_at: Vec<RemindAt>,
 }
 
 /// Tells a missing field (`None`) from an explicit `null` (`Some(None)`).

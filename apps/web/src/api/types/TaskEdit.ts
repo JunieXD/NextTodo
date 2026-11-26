@@ -2,6 +2,8 @@
 import type { Description } from "./Description";
 import type { Due } from "./Due";
 import type { FolderId } from "./FolderId";
+import type { Remind } from "./Remind";
+import type { RemindAt } from "./RemindAt";
 import type { TaskId } from "./TaskId";
 import type { Title } from "./Title";
 import type { Was } from "./Was";
@@ -13,7 +15,11 @@ export type TaskEdit = { task: TaskId, title?: Title, description?: Description,
 /**
  * `null` clears the due date.
  */
-due?: Due | null, done?: boolean, 
+due?: Due | null, 
+/**
+ * Reminders by the start and at times of their own, all of each kind, in place of those it has.
+ */
+start_reminders?: Array<Remind>, remind_at?: Array<RemindAt>, done?: boolean, 
 /**
  * A folder inside the one tidied, to move it into.
  */

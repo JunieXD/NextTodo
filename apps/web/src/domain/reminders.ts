@@ -1,11 +1,13 @@
-// When to remind of deadlines (docs/design.md#提醒): each reminder of a task, at the time it says. The
-// phone apps hand these to the device; the desktop app shows them while it runs.
+// When to remind of tasks (docs/design.md#提醒): each reminder of a task, at the time it says, by its
+// due date, its start, or at a time of its own. The phone apps hand these to the device; the desktop app
+// shows them while it runs.
 
+import type { Due } from "../api/types/Due";
 import type { Occurrence } from "../api/types/Occurrence";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { Board } from "./board";
-import { day, formatDue, isoDate, remindAt } from "./dates";
+import { day, formatDue, isoDate, remindAt, remindAtLabel, remindAtTime, remindLabel, startRemindLabel } from "./dates";
 import { occurrence } from "./repeat";
 
 export interface Reminder {
@@ -13,26 +15,61 @@ export interface Reminder {
   /** The time reminded of, should the task repeat: done from one reminder, the others of that time
    * go too, and a time done already is not done again (docs/api.md#改动). */
   occurrence?: Occurrence;
+  /** Whether it can be done from the notification: not when a repeating task is also reminded then at
+   * a time of its own, which is of none of its times. Such a reminder has no `occurrence` either, so
+   * that doing or skipping a time doesn't take it away (docs/design.md#提醒). */
+  completable: boolean;
   title: string;
   body: string;
   task: Task;
 }
 
 /** What a reminder says when its content is hidden (docs/design.md#提醒). */
-export const HIDDEN = "有事项到期";
+export const HIDDEN = "有事项提醒";
 
 /** The reminders of an unfinished task of the user's (docs/design.md#共享), one at each moment;
- * `hide`, saying only that something is due. */
+ * `hide`, saying only that there is something. */
 export function remindersOf(board: Board, t: Task, hide: boolean): Reminder[] {
-  const due = t.done_at === null && board.mine(t) ? t.due : null;
-  if (!due?.reminders) return [];
-  const where = t.folder_id ? ` · ${board.place(t.folder_id)}` : "";
-  const times = due.repeat && t.completions ? ` · 已完成 ${t.completions.count} 次` : "";
-  return [...new Set(due.reminders.map((r) => remindAt(due, r).getTime()))].map((ms) => {
+  if (t.done_at !== null || !board.mine(t)) return [];
+  const due = t.due;
+  const start = startOf(t);
+  const until = (d: Due, what: string) => (at: Date) => `${formatDue(d, at)}${d.time ? " " : ""}${what}`;
+  // What a moment says is what the first of its reminders, by the due date, the start or at a time of
+  // its own, goes by; `own`, whether one is at a time of its own.
+  const moments = new Map<number, { says: (at: Date) => string; own: boolean }>();
+  const add = (at: Date, says: (at: Date) => string, own: boolean) => {
+    const m = moments.get(at.getTime());
+    if (m) m.own ||= own;
+    else moments.set(at.getTime(), { says, own });
+  };
+  if (due) for (const r of due.reminders ?? []) add(remindAt(due, r), until(due, "截止"), false);
+  if (start) for (const r of t.start_reminders ?? []) add(remindAt(start, r), until(start, "开始"), false);
+  for (const r of t.remind_at ?? []) add(remindAtTime(r), due ? until(due, "截止") : () => "", true);
+  const where = t.folder_id ? board.place(t.folder_id) : "";
+  const times = due?.repeat && t.completions ? `已完成 ${t.completions.count} 次` : "";
+  return [...moments].map(([ms, { says: when, own }]) => {
     const at = new Date(ms);
-    const says = hide ? { title: HIDDEN, body: "" } : { title: t.title, body: `${formatDue(due, at)}${due.time ? " " : ""}截止${where}${times}` };
-    return { at, occurrence: occurrence(t), task: t, ...says };
+    const says = hide ? { title: HIDDEN, body: "" } : { title: t.title, body: [when(at), where, times].filter(Boolean).join(" · ") };
+    const completable = !(own && due?.repeat);
+    return { at, occurrence: completable ? occurrence(t) : undefined, completable, task: t, ...says };
   });
+}
+
+/** When `t` starts, as a due date is: the date, and the time if it has one. */
+export const startOf = (t: Task): Due | null => (t.start ? { date: t.start, ...(t.start_time && { time: t.start_time }) } : null);
+
+/** What each of `t`'s reminders says, `now`, in the order they come; those by a due date still to come
+ * after its prerequisites last (docs/ui.md#详情). */
+export function reminderLabels(t: Task, now: Date): string[] {
+  const { due } = t;
+  const start = startOf(t);
+  const dated: [number, string][] = [
+    ...(due ? (due.reminders ?? []).map((r): [number, string] => [remindAt(due, r).getTime(), remindLabel(r)]) : []),
+    ...(start ? (t.start_reminders ?? []).map((r): [number, string] => [remindAt(start, r).getTime(), startRemindLabel(r)]) : []),
+    ...(t.remind_at ?? []).map((r): [number, string] => [remindAtTime(r).getTime(), remindAtLabel(r, now)]),
+  ];
+  const undated = due ? [] : (t.due_after?.reminders ?? []).map(remindLabel);
+  return [...dated.sort(([a], [b]) => a - b).map(([, label]) => label), ...undated];
 }
 
 /** Every reminder there is, those past too, earliest first. */

@@ -229,7 +229,7 @@ async fn editing_a_task() {
     // Several, the first to come first, also by the day; moved to a date alone, those before its time go.
     t.ok(&s, "edit", json!({ "task": 1, "remind": [0, "1d 20:00", "09:00"] })).await;
     let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
-    assert!(text(&shown).contains("截止：2026-11-21 09:00，提醒：前一天 20:00、截止时、当天 09:00"), "{}", text(&shown));
+    assert!(text(&shown).contains("截止：2026-11-21 09:00\n提醒：前一天 20:00、截止时、当天 09:00"), "{}", text(&shown));
     t.ok(&s, "edit", json!({ "task": 1, "due": "2026-11-22" })).await;
     let due = t.ok(&s, "show", json!({ "task": 1 })).await["data"]["due"].clone();
     assert_eq!(due, json!({ "date": "2026-11-22", "reminders": [{ "days": 1, "time": "20:00" }, { "days": 0, "time": "09:00" }] }));
@@ -256,6 +256,59 @@ async fn editing_a_task() {
         assert_eq!(t.tool(&s, "edit", json!({ "task": 1, "remind": bad })).await.status, StatusCode::BAD_REQUEST, "{bad}");
     }
     assert_eq!(t.tool(&s, "edit", json!({ "task": 1 })).await.status, StatusCode::BAD_REQUEST, "nothing to change");
+}
+
+#[tokio::test]
+async fn reminders_go_by_the_due_the_start_or_times_of_their_own() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    assert_eq!(t.tool(&s, "add", json!({ "title": "领券", "remind": "start 0" })).await.status, StatusCode::BAD_REQUEST, "no start");
+    // A time of its own needs no due.
+    t.ok(&s, "add", json!({ "title": "领券", "remind": "2026-12-15 10:00" })).await;
+    let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
+    assert!(text(&shown).contains("提醒：2026-12-15 10:00"), "{}", text(&shown));
+    assert_eq!(shown["data"]["remind_at"], json!([{ "date": "2026-12-15", "time": "10:00" }]));
+    // All three kinds at once, in place of those it had, each the first to come first.
+    t.ok(&s, "edit", json!({ "task": 1, "start": "2026-12-01 20:00", "due": "2026-12-10", "remind": ["1d 20:00", "start 30m", "start 09:00", "2026-12-05 12:00"] }))
+        .await;
+    let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
+    assert!(text(&shown).contains("提醒：前一天 20:00、开始当天 09:00、开始前 30 分钟、2026-12-05 12:00"), "{}", text(&shown));
+    // The start's time moved past one by the day, they stay as they are, no change of theirs; undoing
+    // that leaves those set since.
+    let moved = t.ok(&s, "edit", json!({ "task": 1, "start": "2026-12-01 08:00" })).await;
+    assert_eq!(moved["data"]["changes"], json!([{ "kind": "task_edited", "task": 1, "fields": ["start"] }]));
+    assert_eq!(
+        t.ok(&s, "show", json!({ "task": 1 })).await["data"]["start_reminders"],
+        json!([{ "days": 0, "time": "09:00" }, { "before": 30 }])
+    );
+    t.ok(&s, "edit", json!({ "task": 1, "remind": ["1d 20:00", "start 07:00", "2026-12-05 12:00"] })).await;
+    t.ok(&s, "undo", json!({ "batch": moved["data"]["batch"] })).await;
+    let data = t.ok(&s, "show", json!({ "task": 1 })).await["data"].clone();
+    assert_eq!((&data["start_time"], &data["start_reminders"]), (&json!("20:00"), &json!([{ "days": 0, "time": "07:00" }])));
+    t.ok(&s, "edit", json!({ "task": 1, "remind": ["1d 20:00", "start 30m", "start 09:00", "2026-12-05 12:00"] })).await;
+    // The start's time gone, those so long before it go; whole days on a date alone are at 09:00.
+    let dated = t.ok(&s, "edit", json!({ "task": 1, "start": "2026-12-02" })).await;
+    assert_eq!(t.ok(&s, "show", json!({ "task": 1 })).await["data"]["start_reminders"], json!([{ "days": 0, "time": "09:00" }]));
+    t.ok(&s, "edit", json!({ "task": 1, "remind": ["start 1d", "2026-12-05 12:00"] })).await;
+    assert_eq!(t.ok(&s, "show", json!({ "task": 1 })).await["data"]["start_reminders"], json!([{ "days": 1, "time": "09:00" }]));
+    // The start gone, all those by it; the others stay.
+    t.ok(&s, "edit", json!({ "task": 1, "start": null })).await;
+    let data = t.ok(&s, "show", json!({ "task": 1 })).await["data"].clone();
+    assert_eq!((&data["start_reminders"], &data["remind_at"]), (&Value::Null, &json!([{ "date": "2026-12-05", "time": "12:00" }])));
+    // Undone, they come back with the start they go by.
+    t.ok(&s, "undo", json!({ "batch": dated["data"]["batch"] })).await;
+    let data = t.ok(&s, "show", json!({ "task": 1 })).await["data"].clone();
+    assert_eq!((&data["start"], &data["start_time"]), (&json!("2026-12-01"), &json!("20:00")));
+    assert_eq!(data["start_reminders"], json!([{ "days": 0, "time": "09:00" }, { "before": 30 }]));
+    // At most 100 of all kinds together.
+    let many: Vec<String> = (0..100).map(|i| format!("2026-12-{:02} 10:{:02}", 20 + i / 60, i % 60)).collect();
+    let too_many = [many.clone(), vec!["start 0".to_owned()]].concat();
+    let r = t.tool(&s, "edit", json!({ "task": 1, "remind": too_many })).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    t.ok(&s, "edit", json!({ "task": 1, "remind": many })).await;
+    // Changed alone, those at times of their own are a change of its reminders.
+    let fewer = t.ok(&s, "edit", json!({ "task": 1, "remind": many[1..] })).await;
+    assert_eq!(fewer["data"]["changes"], json!([{ "kind": "task_edited", "task": 1, "fields": ["reminders"] }]));
 }
 
 #[tokio::test]
@@ -873,7 +926,7 @@ async fn a_repeating_task_moves_on_when_done() {
     assert_eq!(shown["data"]["status"], "ready", "it stays open");
     let repeat = json!({ "every": 1, "unit": "week", "from": "due" });
     assert_eq!(shown["data"]["due"], json!({ "date": "2026-11-16", "time": "10:00", "reminders": [{ "before": 15 }], "repeat": repeat }));
-    assert!(text(&shown).contains("截止：2026-11-16 10:00，每周，提醒：提前 15 分钟"), "{}", text(&shown));
+    assert!(text(&shown).contains("截止：2026-11-16 10:00，每周\n提醒：提前 15 分钟"), "{}", text(&shown));
     let status = async |today: &str| t.ok(&s, "show", json!({ "task": 2, "today": today })).await["data"]["status"].clone();
     assert_eq!(status("2026-11-15").await, "ready");
     assert_eq!(status("2026-11-16").await, "waiting", "the next time come, what follows waits for it again");
@@ -1712,7 +1765,7 @@ async fn a_task_due_some_days_after_its_prerequisites_reads_so_until_they_are_do
     let added = t.ok(&s, "add", json!({ "title": "报销", "folder": "/报销", "after": [1], "due_after": "30d 18:00", "remind": 60 })).await;
     assert!(text(&added).contains("报销"), "{}", text(&added));
     let shown = t.ok(&s, "show", json!({ "task": 2 })).await;
-    assert!(text(&shown).contains("截止：前置完成后 30 天内 18:00，提醒：提前 1 小时"), "{}", text(&shown));
+    assert!(text(&shown).contains("截止：前置完成后 30 天内 18:00\n提醒：提前 1 小时"), "{}", text(&shown));
     assert_eq!(shown["data"]["due_after"], json!({ "days": 30, "time": "18:00", "reminders": [{ "before": 60 }] }));
 
     let done = t.ok(&s, "done", json!({ "tasks": [1], "today": "2026-11-20" })).await;

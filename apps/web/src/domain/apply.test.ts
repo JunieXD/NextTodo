@@ -469,6 +469,40 @@ test("a start keeps its time with a new date, loses it with the date, and is not
   expect([d.tasks.get(id(1))!.start, d.tasks.get(id(1))!.start_time]).toEqual([null, undefined]);
 });
 
+test("reminders by the start go with it, and its time those so long before; those at times of their own stay; 100 of all kinds at most", () => {
+  const d = empty();
+  const t = () => d.tasks.get(id(1))!;
+  expect(() => apply(d, [{ op: "task.create", id: id(1), title: "抢票", start_reminders: [{ before: 0 }] }], cx)).toThrow("提前多久的提醒需要具体的开始时间");
+  expect(() => apply(d, [{ op: "task.create", id: id(1), title: "抢票", start_reminders: [{ days: 0, time: "09:00" }] }], cx)).toThrow("按开始时间算的提醒需要开始时间");
+  const at = [{ date: "2026-12-15", time: "10:00" }, { date: "2026-12-01", time: "09:00" }, { date: "2026-12-15", time: "10:00" }];
+  run(d, 140, [{ op: "task.create", id: id(1), title: "抢票", start: "2026-12-01", start_time: "20:00", start_reminders: [{ days: 1, time: "20:00" }, { before: 10 }], remind_at: at }]);
+  expect([t().start_reminders, t().remind_at]).toEqual([[{ days: 1, time: "20:00" }, { before: 10 }], [at[1], at[0]]]);
+  // The time moved past one by the day, they stay as they are; undoing that leaves those set since.
+  run(d, 151, [{ op: "task.update", id: id(1), start_reminders: [{ before: 0 }, { days: 0, time: "09:00" }] }]);
+  run(d, 152, [{ op: "task.update", id: id(1), start_time: "08:00" }]);
+  expect(t().start_reminders).toEqual([{ days: 0, time: "09:00" }, { before: 0 }]);
+  run(d, 154, [{ op: "task.update", id: id(1), start_reminders: [{ days: 0, time: "07:00" }] }]);
+  run(d, 155, [{ op: "undo", mutation: id(152) }]);
+  expect([t().start_time, t().start_reminders]).toEqual(["20:00", [{ days: 0, time: "07:00" }]]);
+  run(d, 153, [{ op: "task.update", id: id(1), start_reminders: [{ days: 1, time: "20:00" }, { before: 10 }] }]);
+  // Without the time, those so long before go; without the start, all of them; undone, they come back.
+  run(d, 141, [{ op: "task.update", id: id(1), start_time: null }]);
+  expect(t().start_reminders).toEqual([{ days: 1, time: "20:00" }]);
+  run(d, 142, [{ op: "undo", mutation: id(141) }]);
+  expect(t().start_reminders).toEqual([{ days: 1, time: "20:00" }, { before: 10 }]);
+  run(d, 143, [{ op: "task.update", id: id(1), start: null }]);
+  expect([t().start_reminders, t().remind_at]).toEqual([undefined, [at[1], at[0]]]);
+  // Undoing a change to them once the start is gone brings back none without it.
+  run(d, 144, [{ op: "undo", mutation: id(143) }]);
+  run(d, 145, [{ op: "task.update", id: id(1), start_reminders: [{ before: 30 }] }]);
+  run(d, 146, [{ op: "task.update", id: id(1), start: null }]);
+  run(d, 147, [{ op: "undo", mutation: id(145) }]);
+  expect(t().start_reminders).toBeUndefined();
+  const many = Array.from({ length: 99 }, (_, i) => ({ date: "2026-12-20", time: `${String(Math.floor(i / 60)).padStart(2, "0")}:${String(i % 60).padStart(2, "0")}` }));
+  run(d, 148, [{ op: "task.update", id: id(1), remind_at: many, due: { date: "2026-12-31", reminders: [{ days: 0, time: "09:00" }] } }]);
+  expect(() => apply(d, [{ op: "task.update", id: id(1), due: { date: "2026-12-31", reminders: [{ days: 0, time: "09:00" }, { days: 1, time: "09:00" }] } }], cx)).toThrow("“抢票”的提醒最多 100 个");
+});
+
 test("revert undoes what replaying effects did", () => {
   const d = empty();
   const effects = run(d, 110, [

@@ -29,20 +29,22 @@ import org.json.JSONObject
 
 /** A task's reminder, as the app hands them over (`apps/web/src/mobile.ts`): at `at`, in
  * milliseconds; `occurrence`, the time it is of should the task repeat, the same for a task's reminders
- * of one time; `waiting`, how many of its prerequisites are not done; `start` and `startTime`, when it
- * starts, at the start of the day without a time. */
+ * of one time; `completable`, whether it can be done from the reminder, which a repeating task's at a
+ * time of its own can't, being of none of its times; `waiting`, how many of its prerequisites are not
+ * done; `start` and `startTime`, when it starts, at the start of the day without a time. */
 data class Reminder(
     val task: String,
     val at: Long,
     val occurrence: Occurrence?,
+    val completable: Boolean,
     val title: String,
     val body: String,
     val waiting: Int,
     val start: LocalDate?,
     val startTime: LocalTime?,
 ) {
-    /** Whether it can be done straight from the reminder `now`: it waits for nothing. */
-    fun ready(now: LocalDateTime) = waiting == 0 && toStart(now) == null
+    /** Whether it can be done straight from the reminder `now`: it can be, and waits for nothing. */
+    fun ready(now: LocalDateTime) = completable && waiting == 0 && toStart(now) == null
 
     /** What the reminder card says under the title: what the notification says, and what it waits for. */
     fun meta(now: LocalDateTime): String {
@@ -67,6 +69,8 @@ data class Reminder(
             o.getString("task"),
             o.getLong("at"),
             Occurrence.from(o.optJSONObject("occurrence")),
+            // Handed over by an earlier version, without it.
+            o.optBoolean("completable", true),
             o.getString("title"),
             o.getString("body"),
             o.getInt("waiting"),
@@ -77,7 +81,7 @@ data class Reminder(
 }
 
 /**
- * The reminders, scheduled and shown here (docs/android.md#截止提醒): the list the app hands over,
+ * The reminders, scheduled and shown here (docs/android.md#提醒): the list the app hands over,
  * kept in preferences, and one alarm at the next of them. Each time the alarm goes off or a list comes,
  * the reminders due since the last time are shown. Everything here runs in turn.
  */
@@ -106,7 +110,7 @@ object Reminders {
     private const val SHOWN = "shown"
 
     /** The daily digests handed over, as JSON `{hide, list: [{at, tasks: [{task, occurrence, title}]}]}`, less
-     * the tasks done here since (docs/android.md#截止提醒). */
+     * the tasks done here since (docs/android.md#提醒). */
     private const val DIGEST = "digest"
 
     /** The daily digest's notification: one at a time, the next day's in place of the one before. */
@@ -114,7 +118,7 @@ object Reminders {
 
     /** The times of tasks done here, as JSON `[{id, task, occurrence, seq}]`: `id` the change, `seq`
      * what it became, none while not sent. A list handed over behind one leaves it out
-     * (docs/android.md#截止提醒). */
+     * (docs/android.md#提醒). */
     private const val DONE = "done"
 
     /** Whether the app has asked for notifications, which it does once. */
@@ -253,8 +257,8 @@ object Reminders {
             val extras = shown.notification.extras
             val task = extras.getString(TASK) ?: continue
             val r = wanted[task to extras.getLong(AT)]
-            // Of a time done since, should the next have a reminder at the same moment. Shown by an
-            // earlier version, without it: of the time it is now.
+            // Of a time done since, should the next have a reminder at the same moment. Shown without one,
+            // by an earlier version or before the task repeated, it is put right below.
             if (r == null || !occurrence(extras).covers(r.occurrence)) {
                 manager.cancel(shown.tag, shown.id)
             } else if (shown.tag != task) {
@@ -264,7 +268,8 @@ object Reminders {
             } else if (
                 extras.getCharSequence(Notification.EXTRA_TITLE).toString() != r.title ||
                 extras.getCharSequence(Notification.EXTRA_TEXT).toString() != r.body ||
-                extras.getBoolean(READY) != r.ready(now)
+                extras.getBoolean(READY) != r.ready(now) ||
+                occurrence(extras) != r.occurrence
             ) {
                 post(context, r, quiet = shown.notification.channelId == Channels.DUE_QUIET, again = true)
             }
@@ -345,7 +350,8 @@ object Reminders {
      * does not repeat. */
     private fun occurrence(extras: Bundle) = extras.getString(OCCURRENCE)?.let { Occurrence.from(JSONObject(it)) }
 
-    private fun json(r: Reminder) = JSONObject().put("task", r.task).put("at", r.at).put("occurrence", r.occurrence?.json()).put("title", r.title)
+    private fun json(r: Reminder) = JSONObject().put("task", r.task).put("at", r.at).put("occurrence", r.occurrence?.json())
+        .put("completable", r.completable).put("title", r.title)
         .put("body", r.body).put("waiting", r.waiting).put("start", r.start?.toString()).put("start_time", r.startTime?.toString())
 
     /** Signed out, or the data is gone: no reminders, none put off, none shown. */

@@ -62,7 +62,7 @@ export function NotificationSettings() {
     await NextTodo.setCard({ on });
     await check();
   };
-  const notify = <Row title="通知" sub={state.notify ? "已允许" : "未允许时不会弹出截止提醒"} action={state.notify ? undefined : ["允许", () => allowNotifications().then(check)]} />;
+  const notify = <Row title="通知" sub={state.notify ? "已允许" : "未允许时不会弹出提醒"} action={state.notify ? undefined : ["允许", () => allowNotifications().then(check)]} />;
   if (app === "ios") return <div className="group">{notify}</div>;
   return (
     <>
@@ -92,7 +92,7 @@ export function SystemSettings() {
 }
 
 /** What HyperOS needs for the widget and reminders: docs/android.md#澎湃-os. */
-const HYPER_OS = "澎湃 OS 需允许自启动、将省电策略设为“无限制”，小组件和提醒才能按时工作；如需在屏幕顶部弹出提醒，还需在通知设置的“截止提醒”中允许“悬浮通知”";
+const HYPER_OS = "澎湃 OS 需允许自启动、将省电策略设为“无限制”，小组件和提醒才能按时工作；如需在屏幕顶部弹出提醒，还需在通知设置的“提醒”中允许“悬浮通知”";
 
 function Row({ title, sub, action }: { title: string; sub: string; action?: [string, () => unknown] }) {
   return (
@@ -177,7 +177,7 @@ export function BackgroundTip() {
   };
   return (
     <div className="tip-card">
-      <p>为确保提醒和小组件按时工作，请在系统设置中允许 NextTodo 自启动，并将省电策略设为“无限制”；如需在屏幕顶部弹出提醒，还需在通知设置的“截止提醒”中允许“悬浮通知”。此项也可在设置中找到。</p>
+      <p>为确保提醒和小组件按时工作，请在系统设置中允许 NextTodo 自启动，并将省电策略设为“无限制”；如需在屏幕顶部弹出提醒，还需在通知设置的“提醒”中允许“悬浮通知”。此项也可在设置中找到。</p>
       <div className="tip-actions">
         <button className="text-btn" onClick={dismiss}>
           关闭

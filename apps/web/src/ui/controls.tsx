@@ -172,21 +172,32 @@ export function Select<T extends string>({
   );
 }
 
-/** A row whose menu ticks any number of `items` and stays open meanwhile; `text` says what is ticked.
- * First is `none`, ticked while nothing else is, which takes the rest off; last may be `more`, an action
- * of its own that closes the menu, such as adding one not listed. */
+/** An option of a `MultiSelect`; one with a `note` is greyed, the note after it, and can be ticked off
+ * all the same. */
+export interface Option<T> {
+  value: T;
+  text: string;
+  note?: string;
+}
+
+/** A row whose menu ticks any number of options, in `groups`, and stays open meanwhile; `text` says what
+ * is ticked. First is `none`, ticked while nothing else is, which takes the rest off; last may be `more`,
+ * an action of its own that closes the menu, such as adding one not listed, which stays in view while
+ * the rest scroll. With an `icon`, the row is a property of a task in its detail, `none` greyed there. */
 export function MultiSelect<T extends string>({
   label,
+  icon,
   text,
-  items,
+  groups,
   value,
   onChange,
   none,
   more,
 }: {
   label: string;
+  icon?: LucideIcon;
   text: string;
-  items: [T, string][];
+  groups: { label?: string; options: Option<T>[] }[];
   value: T[];
   onChange(v: T[]): void;
   none: string;
@@ -202,37 +213,49 @@ export function MultiSelect<T extends string>({
   );
   return (
     <DropdownMenu.Root open={open} onOpenChange={setOpen}>
-      <DropdownMenu.Trigger className="row pick" aria-label={label}>
+      <DropdownMenu.Trigger className={icon ? "row prop" : "row pick"} aria-label={label}>
         <div className="row-inner">
+          {icon && <Icon of={icon} />}
           <span className="row-name" aria-hidden>
             {label}
           </span>
-          <span className="row-value long">{text}</span>
-          <Icon of={ChevronsUpDown} size={16} />
+          <span className={icon && !value.length ? "row-value long muted" : "row-value long"}>{text}</span>
+          {!icon && <Icon of={ChevronsUpDown} size={16} />}
         </div>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal container={root}>
         <DropdownMenu.Content className="menu choose multi" align="end" sideOffset={4}>
-          <DropdownMenu.CheckboxItem className="menu-item" checked={value.length === 0} onSelect={(e) => e.preventDefault()} onCheckedChange={() => onChange([])}>
-            {none}
-            {tick}
-          </DropdownMenu.CheckboxItem>
-          {items.map(([v, text]) => (
-            <DropdownMenu.CheckboxItem
-              key={v}
-              className="menu-item"
-              checked={value.includes(v)}
-              onSelect={(e) => e.preventDefault()}
-              onCheckedChange={(on) => onChange(on ? [...value, v] : value.filter((x) => x !== v))}
-            >
-              {text}
+          <div className="menu-scroll">
+            <DropdownMenu.CheckboxItem className="menu-item" checked={value.length === 0} onSelect={(e) => e.preventDefault()} onCheckedChange={() => onChange([])}>
+              {none}
               {tick}
             </DropdownMenu.CheckboxItem>
-          ))}
+            {groups.map((g, i) => (
+              <DropdownMenu.Group key={g.label ?? i}>
+                {g.label && <DropdownMenu.Label className="menu-label">{g.label}</DropdownMenu.Label>}
+                {g.options.map((o) => (
+                  <DropdownMenu.CheckboxItem
+                    key={o.value}
+                    className={o.note ? "menu-item noted" : "menu-item"}
+                    checked={value.includes(o.value)}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={(on) => onChange(on ? [...value, o.value] : value.filter((x) => x !== o.value))}
+                  >
+                    {o.text}
+                    {o.note && <span className="menu-note">{o.note}</span>}
+                    {tick}
+                  </DropdownMenu.CheckboxItem>
+                ))}
+              </DropdownMenu.Group>
+            ))}
+          </div>
           {more && (
-            <DropdownMenu.Item className="menu-item" onSelect={more[1]}>
-              {more[0]}
-            </DropdownMenu.Item>
+            <>
+              <DropdownMenu.Separator className="menu-sep" />
+              <DropdownMenu.Item className="menu-item" onSelect={more[1]}>
+                {more[0]}
+              </DropdownMenu.Item>
+            </>
           )}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

@@ -2,6 +2,8 @@
 import type { Description } from "./Description";
 import type { Due } from "./Due";
 import type { DueAfter } from "./DueAfter";
+import type { Remind } from "./Remind";
+import type { RemindAt } from "./RemindAt";
 import type { Title } from "./Title";
 
-export type Was = { title: Title, description: Description, due: Due | null, due_after?: DueAfter, };
+export type Was = { title: Title, description: Description, due: Due | null, due_after?: DueAfter, start_reminders?: Array<Remind>, remind_at?: Array<RemindAt>, };

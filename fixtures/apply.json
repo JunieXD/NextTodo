@@ -364,5 +364,15 @@
       { "op": "task.update", "id": "打卡", "done": true, "today": "2026-11-20", "occurrence": { "due": "2026-11-20", "completions": 0 } }
     ],
     "expect": { "ended": { "打卡": "dropped" }, "repeating": [] }
+  },
+  {
+    "name": "按开始算的提醒按日子的在前、提前多久的在后，各自先到的在前，不重复；挪开始的几点不改它们，去掉几点时提前多久的一起去掉",
+    "ops": [
+      { "op": "task.create", "id": "抢票", "title": "抢票", "start": "2026-12-01", "start_time": "20:00", "start_reminders": [{ "before": 0 }, { "days": 0, "time": "09:00" }, { "before": 30 }, { "days": 1, "time": "20:00" }, { "before": 30 }] },
+      { "op": "task.update", "id": "抢票", "start_time": "08:00" },
+      { "op": "task.create", "id": "开会", "title": "开会", "start": "2026-12-01", "start_time": "10:00", "start_reminders": [{ "before": 15 }, { "days": 0, "time": "08:00" }] },
+      { "op": "task.update", "id": "开会", "start_time": null }
+    ],
+    "expect": { "start_reminders": { "抢票": [{ "days": 1, "time": "20:00" }, { "days": 0, "time": "09:00" }, { "before": 30 }, { "before": 0 }], "开会": [{ "days": 0, "time": "08:00" }] } }
   }
 ]

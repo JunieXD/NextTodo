@@ -1,4 +1,4 @@
-// What only the phone apps do: deadline reminders shown by the device, the changes the reminders made,
+// What only the phone apps do: reminders shown by the device, the changes the reminders made,
 // and on Android the list the home-screen widget shows, the changes it made and the tasks written into
 // the system calendar. See docs/android.md and docs/ios.md.
 
@@ -51,7 +51,7 @@ export interface ReminderSettings {
 interface NextTodoPlugin {
   /** Hands the device the reminders and the daily digests, as JSON in the shapes `deviceReminders`
    * and `deviceDigests` give, of the local copy as of change `seq`: the device leaves out the times
-   * done on it that the copy may not have yet (docs/android.md#截止提醒). The first time there are
+   * done on it that the copy may not have yet (docs/android.md#提醒). The first time there are
    * some, asks for notifications. */
   setReminders(o: { reminders: string; digest: string; seq: number }): Promise<void>;
   /** Takes every reminder away, those put off and those shown too. */
@@ -298,7 +298,7 @@ function widgetDays(from: string, marks: boolean) {
   return { from, days };
 }
 
-/** What the device reminds of (docs/android.md#截止提醒): every reminder, past ones too, with its
+/** What the device reminds of (docs/android.md#提醒): every reminder, past ones too, with its
  * time should the task repeat, whether the task waits for prerequisites as the reminder comes (a repeating one may
  * hold it up again by then), and for its start, which the device reads by its own clock. */
 export const deviceReminders = (board: Board, hide: boolean, now = Date.now()) =>
@@ -306,6 +306,7 @@ export const deviceReminders = (board: Board, hide: boolean, now = Date.now()) =
     task: r.task.id,
     at: r.at.getTime(),
     occurrence: r.occurrence,
+    completable: r.completable,
     title: r.title,
     body: r.body,
     // By the clock, not the board's moment, which may lag behind it.
@@ -314,7 +315,7 @@ export const deviceReminders = (board: Board, hide: boolean, now = Date.now()) =
     start_time: r.task.start_time,
   }));
 
-/** The daily digests the device shows (docs/android.md#截止提醒), none while off, and whether they
+/** The daily digests the device shows (docs/android.md#提醒), none while off, and whether they
  * hide what they are of: the device says them, as `digestText` does, of what is left by then. */
 export const deviceDigests = (board: Board, { on, time }: Digest, hide: boolean) => ({
   hide,

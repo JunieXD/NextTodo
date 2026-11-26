@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import type { Task } from "../api/types/Task";
 import { Board } from "./board";
-import { digestText, digests, reminders } from "./reminders";
+import { HIDDEN, digestText, digests, reminders } from "./reminders";
 
 /** The user whose data it is. */
 const ME = "019a4b2c-0000-7000-8000-0000000000ee";
@@ -77,8 +77,43 @@ test("reminders come at the times set, for the user's pending tasks, earliest fi
   ]);
   // A repeating task's are of its time now; a task that does not repeat has only the one.
   expect(reminders(board, false).flatMap((r) => (r.occurrence ? [[r.task.number, r.occurrence]] : []))).toEqual([[2, { due: "2026-11-03", completions: 12 }]]);
-  // Hidden, they say only that something is due.
-  expect(new Set(reminders(board, true).map((r) => `${r.title}|${r.body}`))).toEqual(new Set(["有事项到期|"]));
+  // Hidden, they say only that there is something.
+  expect(new Set(reminders(board, true).map((r) => `${r.title}|${r.body}`))).toEqual(new Set([`${HIDDEN}|`]));
+});
+
+test("reminders by the start and at times of their own: one at each moment, saying the due date, else the start; a repeating task's at a time of its own is of none of its times", () => {
+  const weekly = { every: 1, unit: "week", from: "due" } as const;
+  const board = new Board(
+    {
+      folders: [],
+      tasks: [
+        // The due date's day before at 07:00 and the start's own day at 07:00 are one moment.
+        task(1, { start: "2026-11-04", start_time: "08:00", start_reminders: [{ before: 30 }, { days: 0, time: "07:00" }], due: { date: "2026-11-05", time: "18:00", reminders: [{ days: 1, time: "07:00" }] } }),
+        task(2, { remind_at: [{ date: "2026-11-06", time: "10:00" }] }),
+        task(3, { due: { date: "2026-11-07", time: "12:00", reminders: [{ before: 0 }], repeat: weekly }, remind_at: [{ date: "2026-11-06", time: "09:00" }, { date: "2026-11-07", time: "12:00" }] }),
+        task(4, { start: "2026-11-08", start_reminders: [{ days: 1, time: "20:00" }] }),
+        task(5, { due: { date: "2026-11-09", time: "12:00", reminders: [{ before: 0 }], repeat: weekly }, remind_at: [{ date: "2026-11-09", time: "08:00" }] }),
+      ],
+      dependencies: [],
+      completions: [],
+      attachments: [], ai_jobs: [],
+      shares: [],
+      people: [],
+    },
+    { today: "2026-11-03" },
+    ME,
+  );
+  expect(reminders(board, false).map((r) => [r.task.number, r.at.getDate(), r.at.getHours(), r.at.getMinutes(), r.body, r.completable, r.occurrence !== undefined])).toEqual([
+    [1, 4, 7, 0, "明天 18:00 截止", true, false],
+    [1, 4, 7, 30, "今天 08:00 开始", true, false],
+    [3, 6, 9, 0, "明天 12:00 截止", false, false],
+    [2, 6, 10, 0, "", true, false],
+    // With one by the due date: still of none of its times.
+    [3, 7, 12, 0, "今天 12:00 截止", false, false],
+    [4, 7, 20, 0, "明天开始", true, false],
+    [5, 9, 8, 0, "今天 12:00 截止", false, false],
+    [5, 9, 12, 0, "今天 12:00 截止", true, true],
+  ]);
 });
 
 test("a daily digest each day from yesterday to a week on lists the open tasks due by then, earliest first, unless there are none", () => {

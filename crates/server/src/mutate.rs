@@ -15,7 +15,7 @@ use nexttodo_core::board::{Now, comes_round, holds_up};
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
     AiJob, AiJobId, Attachment, AttachmentId, Change, Completion, Completions, Dependency, Due, DueAfter, Effect, Folder, FolderId, Holder,
-    JobKind, JobState, JobText, Link, MutationId, Name, NoteText, Person, Share, SortKey, Task, TaskId,
+    JobKind, JobState, JobText, Link, MAX_REMINDERS, MutationId, Name, NoteText, Person, Remind, RemindAt, Share, SortKey, Task, TaskId,
 };
 use nexttodo_core::ops::{MAX_OPS, Mutation, Op};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -448,6 +448,19 @@ fn restore_due(cur: &Option<Due>, b: &Option<Due>, a: &Option<Due>) -> Option<Du
     })
 }
 
+/// Reminders by the start as given, for a start at `time`.
+fn by_start(time: Option<&nexttodo_core::model::Time>, given: &[Remind]) -> Result<Vec<Remind>, ApiError> {
+    nexttodo_core::model::start_reminders(time, given.to_vec()).map_err(|m| ApiError::invalid(m, Some("start_reminders".into())))
+}
+
+/// Reminders at times of their own as given, the first first, none twice.
+pub(crate) fn at_times(given: &[RemindAt]) -> Vec<RemindAt> {
+    let mut at = given.to_vec();
+    at.sort();
+    at.dedup();
+    at
+}
+
 pub(crate) fn both_due() -> ApiError {
     ApiError::invalid("due 和 due_after 只能给一个：截止日期，或者前置完成后几天内", Some("due_after".into()))
 }
@@ -498,10 +511,17 @@ fn check_task(t: &Task) -> Result<(), ApiError> {
     {
         return Err(ApiError::invalid(format!("“{}”的{m}", t.title.as_str()), Some("due".into())));
     }
+    if t.reminder_count() > MAX_REMINDERS {
+        return Err(ApiError::invalid(format!("“{}”的提醒最多 {MAX_REMINDERS} 个", t.title.as_str()), Some("remind".into())));
+    }
+    if t.start_time.is_none() && t.start_reminders.iter().any(|r| matches!(r, Remind::Before(_))) {
+        return Err(ApiError::invalid("提前多久的提醒需要具体的开始时间", Some("start_reminders".into())));
+    }
     let Some(start) = &t.start else {
-        return match t.start_time {
-            Some(_) => Err(ApiError::invalid("设置开始时刻须先有开始日期", Some("start_time".into()))),
-            None => Ok(()),
+        return match (&t.start_time, t.start_reminders.is_empty()) {
+            (Some(_), _) => Err(ApiError::invalid("设置开始时刻须先有开始日期", Some("start_time".into()))),
+            (None, false) => Err(ApiError::invalid("按开始时间算的提醒需要开始时间", Some("start_reminders".into()))),
+            (None, true) => Ok(()),
         };
     };
     // Due the day they are done, it may come to be due the day it starts (docs/design.md#前置完成后的截止).
@@ -702,7 +722,21 @@ impl<'a> Cx<'a> {
                 let (_, owner) = self.folder(*id)?;
                 self.delete_folder(*id, &owner)
             }
-            Op::TaskCreate { id, title, folder_id, description, start, start_time, due, due_after, sort_key, done, assignees } => {
+            Op::TaskCreate {
+                id,
+                title,
+                folder_id,
+                description,
+                start,
+                start_time,
+                start_reminders,
+                remind_at,
+                due,
+                due_after,
+                sort_key,
+                done,
+                assignees,
+            } => {
                 if store::task_id_taken(self.c, *id)? {
                     return Err(ApiError::conflict("事项 ID 已存在"));
                 }
@@ -728,6 +762,8 @@ impl<'a> Cx<'a> {
                     dropped: false,
                     start: start.clone(),
                     start_time: start_time.clone(),
+                    start_reminders: by_start(start_time.as_ref(), start_reminders)?,
+                    remind_at: at_times(remind_at),
                     due_after: due_after.clone(),
                     unlocked_on: None,
                     due: due.clone(),
@@ -750,6 +786,8 @@ impl<'a> Cx<'a> {
                 description,
                 start,
                 start_time,
+                start_reminders,
+                remind_at,
                 due,
                 due_after,
                 sort_key,
@@ -777,6 +815,13 @@ impl<'a> Cx<'a> {
                 }
                 if let Some(time) = start_time {
                     t.start_time = time.clone();
+                }
+                match start_reminders {
+                    Some(given) => t.start_reminders = by_start(t.start_time.as_ref(), given)?,
+                    None => t.fit_start_reminders(),
+                }
+                if let Some(at) = remind_at {
+                    t.remind_at = at_times(at);
                 }
                 match (due, due_after) {
                     (Some(_), Some(_)) => return Err(both_due()),
@@ -1649,6 +1694,8 @@ impl<'a> Cx<'a> {
                             dropped,
                             start,
                             start_time,
+                            start_reminders,
+                            remind_at,
                             due_after,
                             unlocked_on,
                             completions,
@@ -1658,6 +1705,7 @@ impl<'a> Cx<'a> {
                         // prerequisites were done, without a due date counting from it, and giving up
                         // one open since.
                         restored.start_time = restored.start_time.filter(|_| restored.start.is_some());
+                        restored.fit_start_reminders();
                         restored.unlocked_on = restored.unlocked_on.filter(|_| restored.due_after.is_some());
                         restored.dropped &= restored.done_at.is_some();
                         // A due date `due_after` gave is given again.

@@ -13,8 +13,8 @@ use uuid::Uuid;
 /// colour may be one of the user's own, and there are more presets. 6: an AI job has the asking device's
 /// default reminders, and a task may be due some days after its prerequisites are done. 7: a task may be
 /// given up. 8: a tidying may suggest a folder's colour and icon. 9: a repeat may be every statutory
-/// working day.
-pub(crate) const FORMAT: i64 = 9;
+/// working day. 10: a task may be reminded by its start and at times of its own.
+pub(crate) const FORMAT: i64 = 10;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct Commit {

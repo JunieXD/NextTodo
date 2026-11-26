@@ -18,6 +18,8 @@ import type { MediaType } from "./MediaType";
 import type { MutationId } from "./MutationId";
 import type { Name } from "./Name";
 import type { Occurrence } from "./Occurrence";
+import type { Remind } from "./Remind";
+import type { RemindAt } from "./RemindAt";
 import type { SortKey } from "./SortKey";
 import type { TaskId } from "./TaskId";
 import type { Time } from "./Time";
@@ -35,7 +37,11 @@ color?: FolderColor | null,
 /**
  * `null` goes back to the default.
  */
-icon?: FolderIcon | null, } | { "op": "folder.delete", id: FolderId, } | { "op": "task.create", id: TaskId, title: Title, folder_id?: FolderId, description?: Description, start?: Date, start_time?: Time, due?: Due, 
+icon?: FolderIcon | null, } | { "op": "folder.delete", id: FolderId, } | { "op": "task.create", id: TaskId, title: Title, folder_id?: FolderId, description?: Description, start?: Date, start_time?: Time, 
+/**
+ * Reminders by the start (docs/design.md#提醒).
+ */
+start_reminders?: Array<Remind>, remind_at?: Array<RemindAt>, due?: Due, 
 /**
  * In place of `due` (docs/design.md#前置完成后的截止).
  */
@@ -49,13 +55,22 @@ assignees?: Array<string>, } | { "op": "task.update", id: TaskId,
  */
 folder_id?: FolderId | null, title?: Title, description?: Description, 
 /**
- * `null` clears the start date, with its time.
+ * `null` clears the start date, with its time and the reminders by it.
  */
 start?: Date | null, 
 /**
  * `null` clears the time of the start; without it, a new start date keeps the time.
  */
 start_time?: Time | null, 
+/**
+ * All the reminders by the start, in place of those there are; without them, those left with
+ * nothing to go by go (docs/design.md#提醒).
+ */
+start_reminders?: Array<Remind>, 
+/**
+ * All the reminders at times of their own, in place of those there are.
+ */
+remind_at?: Array<RemindAt>, 
 /**
  * `null` clears the due date, and with it `due_after`.
  */

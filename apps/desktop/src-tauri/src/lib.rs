@@ -1,5 +1,5 @@
 //! The desktop app, for macOS and Windows: the web app in a window that closing only hides, a menu
-//! bar or tray icon and a global shortcut for the panel, the desktop widget, deadline reminders while
+//! bar or tray icon and a global shortcut for the panel, the desktop widget, reminders while
 //! it runs, updates, the server inside it for local mode, and the command line it carries. See
 //! docs/desktop.md.
 

@@ -1,6 +1,7 @@
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test, vi } from "vitest";
 import type { AiJob } from "../api/types/AiJob";
 import type { Folder } from "../api/types/Folder";
+import type { Remind } from "../api/types/Remind";
 import type { Suggestion } from "../api/types/Suggestion";
 import type { Task } from "../api/types/Task";
 import { apply, fromSnapshot, toSnapshot } from "./apply";
@@ -174,6 +175,48 @@ test("what has changed since is shown as it is now, and what is done already is 
   );
   expect(shown).toHaveLength(1);
   expect(shown[0].parts[0].now).toBe("整理后已改为：官网（已改）");
+});
+
+test("a due date and the reminders of all kinds are one part; those by a start it no longer has a time for are left out; only what it sets is checked for changes since", () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date(2026, 10, 12, 10, 0) });
+  onTestFinished(() => void vi.useRealTimers());
+  const at = [{ date: "2026-12-15", time: "10:00" }];
+  const { shown, after } = tidy(
+    [
+      task(1, "开会", { start: "2026-12-01", start_time: "09:00" }),
+      // Its start's time taken off since: of those by it, those on a day still go.
+      task(2, "抢票", { start: "2026-12-01" }),
+      task(4, "订餐", { start: "2026-12-01" }),
+      // Its reminders by the start changed since, which this one doesn't set.
+      task(3, "交报告", { start: "2026-12-01", start_reminders: [{ before: 0 }] }),
+    ],
+    [],
+    [
+      { task: id(1), due: { date: "2026-12-20", reminders: [{ days: 0, time: "09:00" }] }, start_reminders: [{ before: 30 }], remind_at: at, after: [], reason: "", was: was("开会") },
+      { task: id(2), start_reminders: [{ before: 30 }], after: [], reason: "", was: { ...was("抢票"), start_reminders: [] } },
+      { task: id(3), remind_at: at, after: [], reason: "", was: was("交报告") },
+      { task: id(4), start_reminders: [{ before: 30 }, { days: 0, time: "09:00" }], after: [], reason: "", was: was("订餐") },
+    ],
+  );
+  expect(shown.map((g) => g.parts.map((p) => [p.label, p.text, p.now]))).toEqual([
+    [["截止", "无 → 12月20日 · 当天 09:00、开始前 30 分钟、12月15日 10:00", undefined]],
+    [["提醒", "开始时 → 开始时、12月15日 10:00", undefined]],
+    [["提醒", "无 → 开始当天 09:00", undefined]],
+  ]);
+  // Asked to confirm by what it sets: what else changed since leaves that be.
+  const confirming = (start_reminders: Remind[]) =>
+    tidy(
+      [task(3, "交报告", { start: "2026-12-01", start_reminders, remind_at: [{ date: "2026-12-10", time: "08:00" }] })],
+      [],
+      [{ task: id(3), remind_at: at, after: [], reason: "", was: was("交报告") }],
+    ).shown[0].parts[0].current;
+  expect(confirming([{ before: 0 }])).toBeDefined();
+  expect(confirming([{ before: 0 }])).toBe(confirming([{ before: 5 }]));
+  expect([after.task(id(1))!.due, after.task(id(1))!.start_reminders, after.task(id(1))!.remind_at]).toEqual([
+    { date: "2026-12-20", reminders: [{ days: 0, time: "09:00" }] },
+    [{ before: 30 }],
+    at,
+  ]);
 });
 
 test("a date for a task due some days after its prerequisites shows what it was, and is a change also when the same", () => {

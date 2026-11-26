@@ -5,6 +5,8 @@ import type { Description } from "./Description";
 import type { Due } from "./Due";
 import type { DueAfter } from "./DueAfter";
 import type { FolderId } from "./FolderId";
+import type { Remind } from "./Remind";
+import type { RemindAt } from "./RemindAt";
 import type { SortKey } from "./SortKey";
 import type { TaskId } from "./TaskId";
 import type { Time } from "./Time";
@@ -39,6 +41,15 @@ due_after?: DueAfter,
  * with `due_after`; none while they are not.
  */
 unlocked_on?: Date, due: Due | null, 
+/**
+ * Reminders by the start, in the order `start_reminders` gives: only with a start, those so long
+ * before with its time.
+ */
+start_reminders?: Array<Remind>, 
+/**
+ * Reminders at times of their own, the first first, none twice.
+ */
+remind_at?: Array<RemindAt>, 
 /**
  * None until a repeating task is first done.
  */

@@ -5,7 +5,7 @@ use ts_rs::TS;
 
 use crate::model::{
     AiJobId, AttachmentId, Date, DefaultReminders, Description, Due, DueAfter, FileName, FileSize, FolderColor, FolderIcon, FolderId,
-    JobKind, JobText, LocalTime, MediaType, MutationId, Name, Occurrence, SortKey, TaskId, Time, Title, nullable,
+    JobKind, JobText, LocalTime, MediaType, MutationId, Name, Occurrence, Remind, RemindAt, SortKey, TaskId, Time, Title, nullable,
 };
 
 pub const MAX_OPS: usize = 1000;
@@ -112,6 +112,13 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         start_time: Option<Time>,
+        /// Reminders by the start (docs/design.md#提醒).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[ts(as = "Option<Vec<Remind>>", optional)]
+        start_reminders: Vec<Remind>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        #[ts(as = "Option<Vec<RemindAt>>", optional)]
+        remind_at: Vec<RemindAt>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         due: Option<Due>,
@@ -143,7 +150,7 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         description: Option<Description>,
-        /// `null` clears the start date, with its time.
+        /// `null` clears the start date, with its time and the reminders by it.
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         start: Option<Option<Date>>,
@@ -151,6 +158,15 @@ pub enum Op {
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         start_time: Option<Option<Time>>,
+        /// All the reminders by the start, in place of those there are; without them, those left with
+        /// nothing to go by go (docs/design.md#提醒).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        start_reminders: Option<Vec<Remind>>,
+        /// All the reminders at times of their own, in place of those there are.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        remind_at: Option<Vec<RemindAt>>,
         /// `null` clears the due date, and with it `due_after`.
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
         #[ts(optional)]

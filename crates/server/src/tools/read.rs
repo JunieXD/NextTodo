@@ -293,9 +293,11 @@ pub fn show(c: &Connection, cx: &Cx, a: ShowArgs) -> Result<Output, ApiError> {
         lines.push(format!("开始：{s}"));
     }
     if let Some(deadline) = text::deadline(t) {
-        let reminders: Vec<String> = t.reminders().iter().map(text::remind).collect();
-        let remind = if reminders.is_empty() { String::new() } else { format!("，提醒：{}", reminders.join("、")) };
-        lines.push(format!("截止：{deadline}{remind}"));
+        lines.push(format!("截止：{deadline}"));
+    }
+    let reminders = text::reminders(t);
+    if !reminders.is_empty() {
+        lines.push(format!("提醒：{}", reminders.join("、")));
     }
     if let Some(done_at) = t.done_at {
         lines.push(format!("{}：{}", if t.dropped { "放弃" } else { "完成" }, ago(cx.now, done_at)));

@@ -1,4 +1,4 @@
-//! Deadline reminders, and the daily digests, while the app runs. The web app hands over the ones to
+//! Reminders, and the daily digests, while the app runs. The web app hands over the ones to
 //! come whenever they change (`apps/web/src/desktop.ts`); a thread waits for the earliest and shows it.
 
 use std::sync::{Condvar, Mutex};

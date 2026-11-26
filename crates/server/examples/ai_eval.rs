@@ -13,7 +13,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use clap::Parser;
 use nexttodo_core::board::{Board, Now, Snapshot};
 use nexttodo_core::dag::find_path;
-use nexttodo_core::model::{AiJob, Date, Due, Period, Remind, Repeat, RepeatFrom, Suggestion, TaskId, Time, days_in_month};
+use nexttodo_core::model::{AiJob, Date, Due, Period, Remind, RemindAt, Repeat, RepeatFrom, Suggestion, TaskId, Time, days_in_month};
 use nexttodo_core::ops::{MAX_OPS, Op};
 use nexttodo_server::ai::llm::{Api, Config, Http, Prompt, Thinking};
 use nexttodo_server::ai::{organize, tidy};
@@ -469,7 +469,9 @@ fn check(e: &Expect, input: &Value, v: &Value, snap: &Snapshot, ops: &[Op]) -> (
 
     if let Some(want) = &e.due {
         let got: Vec<String> = sorted(ops.iter().filter_map(|op| match op {
-            Op::TaskCreate { due: Some(d), .. } => Some(due_text(Some(d))),
+            Op::TaskCreate { due, remind_at, .. } if due.is_some() || !remind_at.is_empty() => {
+                Some(format!("{}{}", due_text(due.as_ref()), more_text(None, &[], remind_at)).trim().to_owned())
+            }
             _ => None,
         }));
         if got != sorted(want.iter().cloned()) {
@@ -490,7 +492,13 @@ fn check(e: &Expect, input: &Value, v: &Value, snap: &Snapshot, ops: &[Op]) -> (
         }
     }
     if let Some(want) = &e.start {
-        let got: Vec<String> = sorted(tasks.iter().map(|t| field(t, "start")).filter(|d| !d.is_empty()));
+        let got: Vec<String> = sorted(ops.iter().filter_map(|op| match op {
+            Op::TaskCreate { start: Some(date), start_time, start_reminders, .. } => {
+                let time = start_time.as_ref().map_or(String::new(), |t| format!(" {}", t.as_str()));
+                Some(format!("{}{time}{}", date.as_str(), more_text(start_time.as_ref(), start_reminders, &[])))
+            }
+            _ => None,
+        }));
         if got != sorted(want.iter().cloned()) {
             problems.push(format!("开始时间 {got:?}，应为 {want:?}"));
         }
@@ -585,20 +593,12 @@ fn check(e: &Expect, input: &Value, v: &Value, snap: &Snapshot, ops: &[Op]) -> (
 /// the due date's own weekday or day of the month alone without it, where that comes to the same.
 fn due_text(d: Option<&Due>) -> String {
     let Some(d) = d else { return String::new() };
-    let minutes = |t: &Time| {
-        let (h, m) = t.as_str().split_once(':').expect("HH:MM");
-        h.parse::<i64>().expect("hours") * 60 + m.parse::<i64>().expect("minutes")
-    };
     let mut s = d.date.as_str().to_owned();
     if let Some(at) = &d.at {
         s += &format!(" {}", at.time.as_str());
     }
     for r in d.reminders() {
-        s += &match (r, &d.at) {
-            (Remind::Before(b), _) => format!(" !{}", b.before),
-            (Remind::On(o), Some(at)) => format!(" !{}", i64::from(o.days) * 1440 + minutes(&at.time) - minutes(&o.time)),
-            (Remind::On(o), None) => format!(" !{}d{}", o.days, o.time.as_str()),
-        };
+        s += &format!(" !{}", before_text(&r, d.at.as_ref().map(|at| &at.time)));
     }
     if let Some(r) = &d.repeat {
         let monday = Date::try_from("2026-11-23".to_owned()).expect("a Monday");
@@ -625,6 +625,27 @@ fn due_text(d: Option<&Due>) -> String {
         }
     }
     s
+}
+
+/// How long before a time a reminder is, for comparing: in minutes, `1440`, but by the day,
+/// `1d20:00`, on a date alone.
+fn before_text(r: &Remind, time: Option<&Time>) -> String {
+    let minutes = |t: &Time| {
+        let (h, m) = t.as_str().split_once(':').expect("HH:MM");
+        h.parse::<i64>().expect("hours") * 60 + m.parse::<i64>().expect("minutes")
+    };
+    match (r, time) {
+        (Remind::Before(b), _) => b.before.to_string(),
+        (Remind::On(o), Some(at)) => (i64::from(o.days) * 1440 + minutes(at) - minutes(&o.time)).to_string(),
+        (Remind::On(o), None) => format!("{}d{}", o.days, o.time.as_str()),
+    }
+}
+
+/// The reminders by the start and at times of their own, after a due's or a start's for comparing:
+/// ` s!30` as `before_text` has it from the start, ` @2026-12-15 10:00`.
+fn more_text(start_time: Option<&Time>, by_start: &[Remind], at: &[RemindAt]) -> String {
+    let by_start = by_start.iter().map(|r| format!(" s!{}", before_text(r, start_time)));
+    by_start.chain(at.iter().map(|r| format!(" @{} {}", r.date.as_str(), r.time.as_str()))).collect()
 }
 
 /// The spoken words in `prose`, if any.
@@ -729,7 +750,28 @@ fn tidy_data(input: &Value) -> (Snapshot, AiJob) {
     let done = list("done_tasks");
     for (i, t) in open.iter().chain(&done).enumerate() {
         let n = t["number"].as_i64().expect("tasks have numbers");
-        let reminders = t["remind"].as_u64().map(|before| json!([{ "before": before }]));
+        // As the server writes them: minutes before the due, `start 30` before the start, `2026-12-15 10:00`.
+        let (mut by_due, mut by_start, mut at) = (Vec::new(), Vec::new(), Vec::new());
+        let items = match &t["remind"] {
+            Value::Array(all) => all.clone(),
+            Value::Null => Vec::new(),
+            one => vec![one.clone()],
+        };
+        for r in items {
+            match (r.as_u64(), r.as_str()) {
+                (Some(before), _) => by_due.push(json!({ "before": before })),
+                (_, Some(text)) => match text.strip_prefix("start ") {
+                    Some(m) => by_start.push(json!({ "before": m.parse::<u32>().expect("minutes before the start") })),
+                    None => {
+                        let (date, time) = text.split_once(' ').expect("a date and a time");
+                        at.push(json!({ "date": date, "time": time }));
+                    }
+                },
+                _ => panic!("reminders are numbers or text"),
+            }
+        }
+        let reminders = (!by_due.is_empty()).then(|| json!(by_due));
+        let start = t["start"].as_str().map(|s| s.split_once(' ').map_or((s, None), |(d, t)| (d, Some(t))));
         let due = t["due"].as_str().map(|d| {
             let (date, time) = d.split_once(' ').map_or((d, None), |(d, t)| (d, Some(t)));
             let repeat = t["repeat"].as_str().map(|r| {
@@ -760,6 +802,7 @@ fn tidy_data(input: &Value) -> (Snapshot, AiJob) {
             "id": task_id(n), "number": n, "folder_id": folder, "title": t["title"], "description": t["description"].as_str().unwrap_or_default(),
             // Listed latest first.
             "done_at": (i >= open.len()).then(|| 10_000 - i), "due": due, "due_after": due_after, "sort_key": format!("a{i:02}1"),
+            "start": start.map(|s| s.0), "start_time": start.and_then(|s| s.1), "start_reminders": by_start, "remind_at": at,
             "assignees": [], "created_at": 0, "updated_at": 0, "created_by": ME, "updated_by": ME, "created_via": null, "updated_via": null,
         }));
         for b in t["requires"].as_array().into_iter().flatten() {
@@ -836,7 +879,7 @@ fn check_tidy(e: &TidyExpect, snap: &Snapshot, input: &Value, s: &[Suggestion]) 
                 for (kind, on) in [
                     ("title", t.title.is_some()),
                     ("description", t.description.is_some()),
-                    ("due", t.due.is_some()),
+                    ("due", t.due.is_some() || t.start_reminders.is_some() || t.remind_at.is_some()),
                     ("done", t.done == Some(true)),
                     ("reopen", t.done == Some(false)),
                     ("folder", t.folder.is_some()),
@@ -854,8 +897,12 @@ fn check_tidy(e: &TidyExpect, snap: &Snapshot, input: &Value, s: &[Suggestion]) 
                     text.1 = x.as_str().into();
                     rewritten.push(x.as_str().to_owned());
                 }
-                if let Some(d) = &t.due {
-                    due.push((n, due_text(d.as_ref())));
+                if t.due.is_some() || t.start_reminders.is_some() || t.remind_at.is_some() {
+                    let now = b.task(t.task).expect("edits are of tasks there");
+                    let d = t.due.as_ref().map_or(now.due.as_ref(), Option::as_ref);
+                    let by_start = t.start_reminders.as_ref().unwrap_or(&now.start_reminders);
+                    let at = t.remind_at.as_ref().unwrap_or(&now.remind_at);
+                    due.push((n, format!("{}{}", due_text(d), more_text(now.start_time.as_ref(), by_start, at)).trim().to_owned()));
                 }
                 match t.done {
                     Some(true) => done.push(n),

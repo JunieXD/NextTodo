@@ -153,6 +153,12 @@ impl World {
             .map(|t| (self.names[t["id"].as_str().unwrap()].clone(), t["due"]["date"].clone()))
             .collect();
         seen.insert("due".into(), due.into());
+        let start_reminders: Map<String, Value> = all("tasks")
+            .iter()
+            .filter(|t| !t["start_reminders"].is_null())
+            .map(|t| (self.names[t["id"].as_str().unwrap()].clone(), t["start_reminders"].clone()))
+            .collect();
+        seen.insert("start_reminders".into(), start_reminders.into());
         let ended: Map<String, Value> = all("tasks")
             .iter()
             .filter(|t| !t["done_at"].is_null())

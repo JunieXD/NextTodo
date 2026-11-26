@@ -3,11 +3,11 @@
 
 pub(crate) mod args;
 mod read;
-mod text;
+pub(crate) mod text;
 pub(crate) mod write;
 
 pub use write::plan_into;
-pub(crate) use write::{Edit, RepeatGiven, edit_fields, new_due};
+pub(crate) use write::{Edit, RepeatGiven, edit_fields, new_due, others};
 
 use std::sync::Arc;
 

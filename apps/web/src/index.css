@@ -923,7 +923,10 @@ a.text-btn { display: inline-flex; align-items: center; }
 .menu-item.danger-text { color: var(--error); }
 /* A menu to choose from: the current one ticked, the rest scrolled to past its room. */
 .menu.choose { max-height: min(400px, var(--radix-select-content-available-height)); }
-.menu.choose.multi { max-height: min(400px, var(--radix-dropdown-menu-content-available-height)); overflow-y: auto; }
+.menu.choose.multi { max-height: min(400px, var(--radix-dropdown-menu-content-available-height)); display: flex; flex-direction: column; }
+.menu.multi .menu-scroll { min-height: 0; overflow-y: auto; }
+.menu-item.noted { color: var(--on-surface-variant); }
+.menu-note { font-size: 12px; }
 .menu .tick { margin-left: auto; color: var(--primary); display: grid; }
 .menu.suggest { min-width: 0; width: var(--radix-popover-trigger-width); max-height: min(280px, var(--radix-popover-content-available-height)); overflow-y: auto; font-weight: 400; }
 .menu.suggest .menu-item { display: block; height: 40px; line-height: 40px; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

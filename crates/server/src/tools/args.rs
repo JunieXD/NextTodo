@@ -161,7 +161,7 @@ pub struct AddArgs {
     pub due_after: Option<DueAfterText>,
     #[schemars(
         with = "Option<RemindInput>",
-        description = "提醒，一个或几个（列表）：提前多久写 \"30m\"、\"2h\"、\"1d\"、\"1w\" 或分钟数，0 是截止时，要有带具体时间的截止（只有日期的截止上，整天的如 \"1d\"、0 是提前那么多天的 09:00）；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设。如 [\"30m\", \"1d 20:00\"]"
+        description = "提醒，一个或几个（列表）：提前多久写 \"30m\"、\"2h\"、\"1d\"、\"1w\" 或分钟数，0 是截止时，要有带具体时间的截止（只有日期的截止上，整天的如 \"1d\"、0 是提前那么多天的 09:00）；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设；按开始时间算的前面加 start，如 \"start 30m\"、\"start 0\"，要有开始时间；某个时刻提醒一次的写日期和几点，如 \"2026-12-15 10:00\"，没有截止也能设。如 [\"30m\", \"1d 20:00\"]"
     )]
     pub remind: Option<RemindText>,
     #[schemars(
@@ -224,7 +224,7 @@ pub struct EditArgs {
     #[serde(default, deserialize_with = "nullable")]
     #[schemars(
         with = "Option<RemindInput>",
-        description = "提醒，一个或几个（列表），整个换掉原来的：提前多久写 \"30m\"、\"2h\"、\"1d\"、\"1w\" 或分钟数，0 是截止时，要有带具体时间的截止（只有日期的截止上，整天的如 \"1d\"、0 是提前那么多天的 09:00）；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设；null 或 [] 清除"
+        description = "提醒，一个或几个（列表），整个换掉原来的：提前多久写 \"30m\"、\"2h\"、\"1d\"、\"1w\" 或分钟数，0 是截止时，要有带具体时间的截止（只有日期的截止上，整天的如 \"1d\"、0 是提前那么多天的 09:00）；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设；按开始时间算的前面加 start，如 \"start 30m\"、\"start 0\"，要有开始时间；某个时刻提醒一次的写日期和几点，如 \"2026-12-15 10:00\"，没有截止也能设；null 或 [] 清除"
     )]
     pub remind: Option<Option<RemindText>>,
     #[serde(default, deserialize_with = "nullable")]
@@ -459,7 +459,7 @@ pub struct PlanTask {
     pub due_after: Option<DueAfterText>,
     #[schemars(
         with = "Option<RemindInput>",
-        description = "提醒，一个或几个（列表）：提前多久写 \"30m\"、\"2h\"、\"1d\"、\"1w\" 或分钟数，0 是截止时，要有带具体时间的截止（只有日期的截止上，整天的如 \"1d\"、0 是提前那么多天的 09:00）；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设。如 [\"30m\", \"1d 20:00\"]"
+        description = "提醒，一个或几个（列表）：提前多久写 \"30m\"、\"2h\"、\"1d\"、\"1w\" 或分钟数，0 是截止时，要有带具体时间的截止（只有日期的截止上，整天的如 \"1d\"、0 是提前那么多天的 09:00）；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设；按开始时间算的前面加 start，如 \"start 30m\"、\"start 0\"，要有开始时间；某个时刻提醒一次的写日期和几点，如 \"2026-12-15 10:00\"，没有截止也能设。如 [\"30m\", \"1d 20:00\"]"
     )]
     pub remind: Option<RemindText>,
     #[schemars(
@@ -648,13 +648,25 @@ pub fn due_after_text(a: &DueAfter) -> String {
     }
 }
 
-/// Reminders as typed: one or a list of minutes before the due time, `60`, or as long in minutes,
-/// hours, days or weeks, `"30m"`, `"2h"`, `"1d"`, `"1w"`, `"2h30m"`; a time on the due date,
-/// `"09:00"`, or so many days or weeks before it, `"1d 20:00"`, `"1w 09:00"`. A list may also be
-/// one string, `"1d, 60"`: models write them all so.
-#[derive(Clone, Deserialize)]
+/// Reminders as typed (docs/agent.md#引用): one or a list of minutes before the due time, `60`, or as
+/// long in minutes, hours, days or weeks, `"30m"`, `"2h"`, `"1d"`, `"1w"`, `"2h30m"`; a time on the due
+/// date, `"09:00"`, or so many days or weeks before it, `"1d 20:00"`, `"1w 09:00"`. By the start the
+/// same after `start`, `"start 30m"`; at a time of its own, a date and the time, `"2026-12-15 10:00"`.
+/// A list may also be one string, `"1d, 60"`: models write them all so.
+#[derive(Clone, Default, Deserialize)]
 #[serde(try_from = "RemindInput")]
-pub struct RemindText(pub Vec<Remind>);
+pub struct RemindText {
+    pub due: Vec<Remind>,
+    pub start: Vec<Remind>,
+    /// Each with its time.
+    pub at: Vec<WhenText>,
+}
+
+impl RemindText {
+    pub fn is_empty(&self) -> bool {
+        self.due.is_empty() && self.start.is_empty() && self.at.is_empty()
+    }
+}
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(untagged)]
@@ -678,25 +690,41 @@ impl TryFrom<RemindInput> for RemindText {
             RemindInput::One(item) => vec![item],
             RemindInput::Many(items) => items,
         };
-        let mut all = Vec::new();
+        let mut all = RemindText::default();
         for item in items {
             match item {
-                RemindItem::Minutes(before) => all.push(Remind::Before(RemindBefore { before })),
+                RemindItem::Minutes(before) => all.due.push(Remind::Before(RemindBefore { before })),
                 RemindItem::Text(s) => {
                     for one in s.split([',', '，']).map(str::trim) {
-                        all.push(remind(one).ok_or_else(|| {
-                            if one.is_empty() && s.contains([',', '，']) {
-                                return format!("提醒“{s}”里逗号之间不能留空");
-                            }
+                        if one.is_empty() && s.contains([',', '，']) {
+                            return Err(format!("提醒“{s}”里逗号之间不能留空"));
+                        }
+                        let wrong = || {
                             format!(
-                                "提醒“{one}”格式错误，应为提前的分钟数如 60，提前多久如 \"30m\"、\"2h\"、\"1d\"、\"1w\"，截止那天的几点如 \"09:00\"，或提前几天的几点如 \"1d 20:00\""
+                                "提醒“{one}”格式错误，应为提前的分钟数如 60，提前多久如 \"30m\"、\"2h\"、\"1d\"、\"1w\"，截止那天的几点如 \"09:00\"，提前几天的几点如 \"1d 20:00\"；按开始时间的前面加 start，如 \"start 30m\"；某个时刻的写日期和几点，如 \"2026-12-15 10:00\""
                             )
-                        })?);
+                        };
+                        if let Some(start) = one.strip_prefix("start") {
+                            let start = start.trim();
+                            all.start.push(if start.is_empty() {
+                                Remind::Before(RemindBefore { before: 0 })
+                            } else {
+                                remind(start).ok_or_else(wrong)?
+                            });
+                        } else if let Some(r) = remind(one) {
+                            all.due.push(r);
+                        } else {
+                            let at = WhenText::try_from(one.to_owned()).map_err(|_| wrong())?;
+                            if at.time.is_none() {
+                                return Err(format!("提醒“{one}”要写几点，如 \"{one} 09:00\""));
+                            }
+                            all.at.push(at);
+                        }
                     }
                 }
             }
         }
-        Ok(RemindText(all))
+        Ok(all)
     }
 }
 
@@ -706,6 +734,15 @@ pub fn remind_text(r: &Remind) -> serde_json::Value {
         Remind::Before(RemindBefore { before }) => (*before).into(),
         Remind::On(RemindOn { days: 0, time }) => time.as_str().into(),
         Remind::On(RemindOn { days, time }) => format!("{days}d {}", time.as_str()).into(),
+    }
+}
+
+/// One by the start as it is typed: `start 60`, `start 09:00`, `start 1d 20:00`.
+pub fn start_remind_text(r: &Remind) -> String {
+    match r {
+        Remind::Before(RemindBefore { before }) => format!("start {before}"),
+        Remind::On(RemindOn { days: 0, time }) => format!("start {}", time.as_str()),
+        Remind::On(RemindOn { days, time }) => format!("start {days}d {}", time.as_str()),
     }
 }
 

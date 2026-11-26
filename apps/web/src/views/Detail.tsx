@@ -23,6 +23,7 @@ import { useWide } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { composing } from "../ui/keys";
 import { Description } from "../ui/lazy-markdown";
+import { ListButtons } from "../ui/md-lists";
 import { useTaskActions } from "./actions";
 import { type Adding, useAddFiles, useAttachments } from "./attachments";
 import { DueEditor, StartEditor } from "./due";
@@ -589,6 +590,8 @@ function DescriptionSection({
   onAttachment(a: Attachment): void;
 }) {
   const [draft, setDraft] = useState<Draft | null>(null);
+  // How many times another's description was taken instead of the draft: undo starts again from it.
+  const [taken, setTaken] = useState(0);
   const area = useRef<HTMLTextAreaElement>(null);
   const { snack } = useFeedback();
   const keep = useKeepEdit("description", "描述");
@@ -645,7 +648,12 @@ function DescriptionSection({
   /** Saves on leaving the box while still editing: what is saved, or kept instead, is the base from then on. */
   const blur = async () => {
     const kept = await save(draft, task, onSave);
-    if (kept) setDraft((d) => d && (kept.mine ? { ...d, base: kept.value } : { text: kept.value, base: kept.value }));
+    if (!kept) return;
+    if (kept.mine) setDraft((d) => d && { ...d, base: kept.value });
+    else {
+      if (kept.value !== area.current?.value) setTaken((n) => n + 1);
+      setDraft((d) => d && { text: kept.value, base: kept.value });
+    }
   };
   return (
     <>
@@ -662,7 +670,7 @@ function DescriptionSection({
           onChange={mode}
         />
       </div>
-      <div className="group">
+      <div className={draft === null ? "group" : "group writing"}>
         {draft === null ? (
           <div className="md">
             <Suspense>
@@ -691,6 +699,7 @@ function DescriptionSection({
             }}
           />
         )}
+        {draft !== null && <ListButtons key={taken} area={area} />}
       </div>
     </>
   );

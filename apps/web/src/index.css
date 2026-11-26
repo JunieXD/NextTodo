@@ -485,6 +485,14 @@ label.row { cursor: pointer; }
 .md blockquote { margin: 8px 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--primary-container); color: var(--on-surface-variant); }
 .md code { font: 13px ui-monospace, Menlo, monospace; background: var(--surface-container); padding: 1px 5px; border-radius: 5px; }
 .md-edit { display: block; width: 100%; min-height: 200px; border: 0; outline: none; resize: vertical; padding: 14px 16px; background: var(--group-bg); font: 14px/1.6 ui-monospace, Menlo, monospace; }
+/* The list buttons below a description being written, in sight at the bottom when the box runs past it,
+   as above the keyboard. Its group clips without scrolling, which would keep them inside it. */
+.group.writing { overflow: clip; }
+.md-tools { position: sticky; bottom: 0; display: flex; padding: 0 6px; border-top: .5px solid var(--outline-variant); background: var(--group-bg); }
+.md-tools .icon-btn { width: 44px; height: 44px; border-radius: 10px; }
+.md-tools > :last-child { margin-left: auto; }
+.md-tools .icon-btn:disabled { opacity: .38; }
+@media (pointer: fine) { .md-tools .icon-btn { width: 32px; height: 32px; border-radius: 8px; } }
 /* The changelog (views/Changelog.tsx): after an update, what changed since, by kind, each item with
    its version when there are several; in the settings, a section for each release, its version and day. */
 .release-since { margin: 0 16px; font-size: 13px; color: var(--on-surface-variant); }

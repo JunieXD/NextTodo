@@ -1,0 +1,3 @@
+-- A tidying may suggest a folder's colour and icon (docs/ai.md#整理文件夹). The table stays as it is; the
+-- version goes up so that an older version, which can't read such suggestions, turns the database down
+-- rather than taking it in.

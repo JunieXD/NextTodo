@@ -4,10 +4,11 @@
 import { useState } from "react";
 import type { AiJob } from "../api/types/AiJob";
 import type { Board } from "../domain/board";
-import { type Group, type Part, groups, ops } from "../domain/tidy";
+import { type Group, type LookChange, type Part, groups, ops } from "../domain/tidy";
 import { useCommit, useUndo } from "../session";
 import { Box } from "../ui/controls";
 import { Modal, useFeedback } from "../ui/feedback";
+import { LookValue } from "./folder-look";
 
 export function Suggestions({ job: j, board, onRetry, onClose }: { job: AiJob; board: Board; onRetry(): void; onClose(): void }) {
   const commit = useCommit();
@@ -53,7 +54,7 @@ export function Suggestions({ job: j, board, onRetry, onClose }: { job: AiJob; b
       }
     >
       <p className="empty">
-        {shown.length ? "勾选要采纳的修改，一起应用；应用后可以撤销。" : "暂无可采纳的修改：AI 认为不需要改，或涉及的事项已完成、已删除。"}
+        {shown.length ? "勾选要采纳的修改，一起应用；应用后可以撤销。" : "暂无可采纳的修改：AI 认为不需要改，或建议已不再适用。"}
       </p>
       {shown.map((g) => (
         <section key={g.key} className="suggestion">
@@ -66,7 +67,7 @@ export function Suggestions({ job: j, board, onRetry, onClose }: { job: AiJob; b
                   <Box checked={isTaken(g, p)} />
                   <span className="suggestion-text">
                     <b>{p.label}</b>
-                    {p.text}
+                    {typeof p.text === "string" ? p.text : <Look {...p.text} />}
                     {p.now !== undefined && <span className="suggestion-now">{p.now}</span>}
                   </span>
                 </div>
@@ -76,5 +77,15 @@ export function Suggestions({ job: j, board, onRetry, onClose }: { job: AiJob; b
         </section>
       ))}
     </Modal>
+  );
+}
+
+/** `蓝色 → 绿色`, each drawn, `默认` for the default. */
+function Look({ field, was, to }: LookChange) {
+  const value = (code: string | null) => (code === null ? "默认" : <LookValue field={field} code={code} />);
+  return (
+    <>
+      {value(was)} → {value(to)}
+    </>
   );
 }

@@ -159,7 +159,7 @@ const TIMEOUT: Duration = Duration::from_secs(300);
 #[serde(deny_unknown_fields)]
 struct TidyExpect {
     /// What may be done at all, of `title`, `description`, `due`, `done`, `reopen`, `folder`,
-    /// `after`, `unlink`, `delete`, `create` and `order`.
+    /// `after`, `unlink`, `delete`, `create`, `order` and `style`.
     allowed: Option<Vec<String>>,
     /// The tasks deleted, done and opened again: exactly these.
     deleted: Option<Vec<i64>>,
@@ -197,7 +197,16 @@ struct TidyExpect {
     /// Tasks in the order a reordering is to put them.
     #[serde(default)]
     order: Vec<i64>,
+    /// Folders given a colour or an icon, exactly these: `[path, colours, icons]`.
+    styled: Option<Vec<(String, Looks, Looks)>>,
+    /// Folders whose colours are all different once everything is taken.
+    #[serde(default)]
+    apart: Vec<String>,
 }
+
+/// The colours or icons a folder may get, `"*"` for any, `"default"` for back to that; `null` for left
+/// as it is.
+type Looks = Option<Vec<String>>;
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -667,19 +676,27 @@ fn copied(prose: &str, text: &str, run: usize) -> f64 {
 }
 
 /// The data a tidying case shows: its folder and subfolders, their tasks in the order listed, done
-/// ones done in it, and the job.
+/// ones done in it, and the job. A path `@alice/装修` is a folder Alice shares with the user.
 fn tidy_data(input: &Value) -> (Snapshot, AiJob) {
     let id = |n: usize| format!("00000000-0000-7000-8000-{n:012}");
     let mut folders = Vec::new();
     let mut paths: HashMap<String, String> = HashMap::new();
     let list = |k: &str| input[k].as_array().cloned().unwrap_or_default();
-    let mut folder_of = |path: &str, folders: &mut Vec<Value>| -> Option<String> {
+    let mut shares = Vec::new();
+    let mut folder_of = |path: &str, folders: &mut Vec<Value>, shares: &mut Vec<Value>| -> Option<String> {
+        let (owner, names) = match path.strip_prefix('@') {
+            Some(p) => p.split_once('/').map(|(owner, names)| (Some(owner), names)).expect("@owner/folder"),
+            None => (None, path),
+        };
         let mut parent: Option<String> = None;
-        let mut full = String::new();
-        for name in path.split('/').filter(|s| !s.is_empty()) {
+        let mut full = owner.map_or(String::new(), |o| format!("@{o}"));
+        for name in names.split('/').filter(|s| !s.is_empty()) {
             full = format!("{full}/{name}");
             let next = paths.len() + 1000;
             let f = paths.entry(full.clone()).or_insert_with(|| {
+                if let (Some(owner), None) = (owner, &parent) {
+                    shares.push(json!({ "folder_id": id(next), "owner": owner, "members": [ME] }));
+                }
                 folders
                     .push(json!({ "id": id(next), "parent_id": parent, "name": name, "sort_key": "a0", "created_at": 0, "updated_at": 0 }));
                 id(next)
@@ -688,9 +705,17 @@ fn tidy_data(input: &Value) -> (Snapshot, AiJob) {
         }
         parent
     };
-    let folder = folder_of(input["folder"].as_str().expect("a folder"), &mut folders);
+    let folder = folder_of(input["folder"].as_str().expect("a folder"), &mut folders, &mut shares);
     for p in list("subfolders") {
-        folder_of(p.as_str().expect("folder paths"), &mut folders);
+        folder_of(p.as_str().expect("folder paths"), &mut folders, &mut shares);
+    }
+    let people: Vec<Value> =
+        shares.iter().map(|s| json!({ "id": s["owner"], "username": s["owner"], "display_name": s["owner"] })).collect();
+    for look in list("looks") {
+        let at = &paths[look["folder"].as_str().expect("looks are of folders")];
+        let f = folders.iter_mut().find(|f| f["id"] == at.as_str()).expect("folders listed");
+        f["color"] = look["color"].clone();
+        f["icon"] = look["icon"].clone();
     }
     let task_id = |n: i64| id(n as usize);
     let mut tasks = Vec::new();
@@ -737,7 +762,7 @@ fn tidy_data(input: &Value) -> (Snapshot, AiJob) {
         }
     }
     let snap = serde_json::from_value(
-        json!({ "folders": folders, "tasks": tasks, "dependencies": dependencies, "ai_jobs": [], "shares": [], "people": [] }),
+        json!({ "folders": folders, "tasks": tasks, "dependencies": dependencies, "ai_jobs": [], "shares": shares, "people": people }),
     )
     .expect("a snapshot");
     let job = serde_json::from_value(json!({
@@ -796,6 +821,7 @@ fn check_tidy(e: &TidyExpect, snap: &Snapshot, s: &[Suggestion]) -> (Vec<String>
     let mut created = Vec::new();
     let mut rewritten = Vec::new();
     let mut order = Vec::new();
+    let mut styled = Vec::new();
     for x in s {
         match x {
             Suggestion::Edit(t) => {
@@ -865,6 +891,14 @@ fn check_tidy(e: &TidyExpect, snap: &Snapshot, s: &[Suggestion]) -> (Vec<String>
                 // Those that change places among themselves.
                 let listed: Vec<i64> = b.tasks_in(snap.tasks[0].folder_id).iter().map(|t| t.number).filter(|n| order.contains(n)).collect();
                 touched.extend(order.iter().zip(&listed).filter(|(a, b)| a != b).map(|(a, _)| *a));
+            }
+            Suggestion::Style(r) => {
+                kinds.insert("style");
+                styled.push((
+                    b.path(Some(r.style)),
+                    r.color.map(|c| c.map(String::from)),
+                    r.icon.map(|i| i.map(|i| i.as_str().to_owned())),
+                ));
             }
         }
     }
@@ -947,6 +981,41 @@ fn check_tidy(e: &TidyExpect, snap: &Snapshot, s: &[Suggestion]) -> (Vec<String>
         if got != e.order {
             problems.push(format!("顺序 {got:?}，应为 {:?}", e.order));
         }
+    }
+    if let Some(want) = &e.styled {
+        // Whether a colour or an icon given is one of those wanted; or none given, none wanted.
+        let fits = |want: &Looks, got: &Option<Option<String>>| match (want, got) {
+            (None, None) => true,
+            (Some(w), Some(g)) => w.iter().any(|w| g.as_ref().map_or(w == "default", |g| w == "*" || w == g)),
+            _ => false,
+        };
+        for (path, color, icon) in &styled {
+            match want.iter().find(|(p, ..)| p == path) {
+                None => problems.push(format!("不该改 {path} 的颜色和图标")),
+                Some((_, c, i)) => {
+                    if !fits(c, color) {
+                        problems.push(format!("{path} 的颜色 {color:?}，应为 {c:?}"));
+                    }
+                    if !fits(i, icon) {
+                        problems.push(format!("{path} 的图标 {icon:?}，应为 {i:?}"));
+                    }
+                }
+            }
+        }
+        for (path, ..) in want.iter().filter(|(p, ..)| !styled.iter().any(|(s, ..)| s == p)) {
+            problems.push(format!("没有改 {path} 的颜色和图标"));
+        }
+    }
+    let colors: Vec<Option<String>> = e
+        .apart
+        .iter()
+        .map(|path| match styled.iter().find(|(p, ..)| p == path) {
+            Some((_, Some(c), _)) => c.clone(),
+            _ => b.folder(b.find_folder(path).flatten().expect("apart lists folders the case has")).and_then(|f| f.color).map(String::from),
+        })
+        .collect();
+    if colors.iter().enumerate().any(|(i, c)| colors[..i].contains(c)) {
+        problems.push(format!("{} 的颜色有重复：{colors:?}", e.apart.join("、")));
     }
     let all: String = texts.values().map(|(t, d)| format!("{t}\n{d}\n")).collect();
     let flat = squash(&all);

@@ -4,6 +4,8 @@
 import type { AiJob } from "../api/types/AiJob";
 import type { Due } from "../api/types/Due";
 import type { DueAfter } from "../api/types/DueAfter";
+import type { FolderColor } from "../api/types/FolderColor";
+import type { FolderIcon } from "../api/types/FolderIcon";
 import type { FolderId } from "../api/types/FolderId";
 import type { NewTask } from "../api/types/NewTask";
 import type { Op } from "../api/types/Op";
@@ -23,13 +25,17 @@ type Act =
   | { unlink: [before: TaskId, after: TaskId] }
   | { remove: TaskId }
   | { create: NewTask }
-  | { order: TaskId[] };
+  | { order: TaskId[] }
+  | { restyle: FolderId; color?: FolderColor | null; icon?: FolderIcon | null };
 
-/** One change a suggestion makes. When what it changes has changed since the model saw it, `now`
- * says so, and `current` holds what is there now. */
-export type Part = { key: string; label: string; text: string; now?: string; current?: string; act: Act };
+/** A folder's colour or icon as it was and is to be, by its code, `null` the default. */
+export type LookChange = { field: "color" | "icon"; was: string | null; to: string | null };
 
-/** What is suggested for a task, a new task, or the order. */
+/** One change a suggestion makes, `text` in words or a folder's look. When what it changes has changed
+ * since the model saw it, `now` says so, and `current` holds what is there now. */
+export type Part = { key: string; label: string; text: string | LookChange; now?: string; current?: string; act: Act };
+
+/** What is suggested for a task, a new task, the order, or a folder's look. */
 export type Group = { key: string; heading: string; reason: string; parts: Part[] };
 
 const sameDue = (a: Due | null, b: Due | null) =>
@@ -54,13 +60,26 @@ const sameAfter = (a: DueAfter | undefined, b: DueAfter | undefined) =>
 const deadlineText = (d: Due | null, after: DueAfter | undefined, now: Date) =>
   !after ? dueText(d, now) : d ? `${dueText(d, now)}（${dueAfterLabel(after)}）` : dueAfterLabel(after);
 
-/** What `s` would still do: to tasks there and in the state it found them, and links not made yet. */
+/** What `s` would still do: to tasks and folders there and in the state it found them, and links not
+ * made yet. */
 function group(s: Suggestion, j: AiJob, board: Board, created: Map<TaskId, string>): Group | null {
   const now = new Date();
   const name = (id: TaskId) => {
     const t = board.task(id);
     return t ? `#${t.number} ${t.title}` : `“${created.get(id)}”`;
   };
+  if ("style" in s) {
+    const f = board.folder(s.style);
+    if (!f) return null;
+    const part = (field: "color" | "icon", label: string, to: string | null | undefined, act: Act): Part[] => {
+      const is = f[field] ?? null;
+      if (to === undefined || to === is) return [];
+      const changed = is !== s.was[field] && { now: `整理后改过${label}`, current: is ?? "" };
+      return [{ key: field, label, text: { field, was: s.was[field], to }, act, ...changed }];
+    };
+    const parts = [...part("color", "颜色", s.color, { restyle: f.id, color: s.color }), ...part("icon", "图标", s.icon, { restyle: f.id, icon: s.icon })];
+    return parts.length ? { key: s.style, heading: `文件夹“${board.place(f.id)}”`, reason: s.reason, parts } : null;
+  }
   if ("order" in s) {
     const open = board.tasksIn(j.folder_id).filter((t) => t.done_at === null);
     const tasks = s.order.flatMap((id) => open.filter((t) => t.id === id));
@@ -144,6 +163,7 @@ export function ops(parts: Part[], j: AiJob, board: Board): Op[] {
   const updates = new Map<TaskId, Fields>();
   const links: [TaskId, TaskId][] = [];
   const unlinks: [TaskId, TaskId][] = [];
+  const looks = new Map<FolderId, { color?: FolderColor | null; icon?: FolderIcon | null }>();
   let order: TaskId[] = [];
   for (const { act: a } of parts) {
     if ("create" in a) {
@@ -155,7 +175,10 @@ export function ops(parts: Part[], j: AiJob, board: Board): Op[] {
     else if ("remove" in a) removed.add(a.remove);
     else if ("link" in a) links.push(a.link);
     else if ("unlink" in a) unlinks.push(a.unlink);
-    else order = a.order;
+    else if ("restyle" in a) {
+      const { restyle, ...look } = a;
+      looks.set(restyle, { ...looks.get(restyle), ...look });
+    } else order = a.order;
   }
   // A link to a new task left out, or to a task deleted, goes with it; its deletion takes its links.
   const there = (id: TaskId) => made.has(id) || (board.task(id) !== undefined && !removed.has(id));
@@ -169,6 +192,7 @@ export function ops(parts: Part[], j: AiJob, board: Board): Op[] {
     ...[...new Map(links.filter(([b, a]) => there(b) && there(a)).map((l) => [`${l[0]}>${l[1]}`, l])).values()].map(
       ([before, after]): Op => ({ op: "dep.add", before, after }),
     ),
+    ...[...looks].map(([id, look]): Op => ({ op: "folder.update", id, ...look })),
   ];
   if (order.length) {
     // The tasks still in the folder, those in the order taking the places they hold in it, in its sequence.

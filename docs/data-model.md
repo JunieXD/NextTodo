@@ -201,7 +201,7 @@
 | reminders | TEXT，可空 | 提交（或重试）整理的设备的[默认提醒](ai.md#提示词和结果)，JSON `{timed, dated}`：`timed` 是 `[{before}]`，`dated` 是 `[{days, time}]`，各自排好序、不重复，每样最多 100 个；那台设备没设的为空 |
 | state | TEXT | `waiting`（等待）、`running`（整理中）、`failed`（失败）或 `ready`（整理文件夹的建议待确认） |
 | error | TEXT，可空 | 失败的原因，只在 `failed` 时有 |
-| suggestions | TEXT，可空 | 建议，JSON 数组，每条按独有的字段区分：修改 `{task, title?, description?, due?, done?, folder?, after, unlink?, reason, was}`（`due` 为 `null` 是清除）、删除 `{delete, reason, was}`、新建 `{create, title, description?, due?, after, before, reason}`（`create` 是新事项的 ID）、调整顺序 `{order, reason}`；`was` 是整理时事项的 `{title, description, due}`。只在 `ready` 时有 |
+| suggestions | TEXT，可空 | 建议，JSON 数组，每条按独有的字段区分：修改 `{task, title?, description?, due?, done?, folder?, after, unlink?, reason, was}`（`due` 为 `null` 是清除）、删除 `{delete, reason, was}`、新建 `{create, title, description?, due?, after, before, reason}`（`create` 是新事项的 ID）、调整顺序 `{order, reason}`、改文件夹的颜色和图标 `{style, color?, icon?, reason, was}`（`style` 是文件夹 ID，`null` 是改回默认）；修改和删除的 `was` 是整理时事项的 `{title, description, due}`，改颜色和图标的是文件夹的 `{color, icon}`。只在 `ready` 时有 |
 | run | TEXT，可空 | 借网盘同步时正在整理的这一轮：开始那次改动的 ID，只在 `running` 时有，见[运行](local.md#运行) |
 | created_at / updated_at | INTEGER | |
 

@@ -6,8 +6,8 @@ use std::collections::{HashMap, HashSet};
 use nexttodo_core::board::{Board, Now, Snapshot};
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
-    AiJob, Date, DefaultReminders, Description, FolderId, NewTask, Period, Reorder, Repeat, RepeatFrom, Suggestion, Task, TaskDeletion,
-    TaskEdit, TaskId, Title, Was,
+    AiJob, Date, DefaultReminders, Description, Folder, FolderColor, FolderIcon, FolderId, FolderLook, NewTask, Period, Reorder, Repeat,
+    RepeatFrom, Restyle, Suggestion, Task, TaskDeletion, TaskEdit, TaskId, Title, Was,
 };
 use nexttodo_core::ops::MAX_OPS;
 use serde::Deserialize;
@@ -34,6 +34,7 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
 - folder：这个文件夹；
 - request：用户这次的要求；
 - subfolders：这个文件夹下的子文件夹，可以把事项移进去；
+- looks：能改颜色和图标的文件夹，即这个文件夹和子文件夹，根目录和别人共享给我的文件夹本身除外；color、icon 是现在的，没写的是默认的；
 - open_tasks：文件夹里未完成的事项，按现在的顺序。number 是编号；requires 是它已有的前置事项的编号，那些事项要先做完才能做它；due 是截止时间，due_after 是前置都完成后几天内截止（如 "30d"、"3d 18:00"，从前置都完成那天算），前置都完成以后才有 due，remind 是提醒（数字是提前多少分钟，"09:00" 是截止那天的几点，"1d 20:00" 是提前 1 天的 20:00，几个时是列表），repeat 是重复，写成间隔数加单位 d（天）、w（周）、m（月）或 y（年，就是 12 个月），如 1d 每天、2w 每两周、1m 每月、3m 每三个月、1y 每年；按周重复在某几天的，冒号后写周几（1 是周一，7 是周日），如 1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五、2w:2,4 每两周的周二和周四；按月重复在某几号的，冒号后写几号（1–31，没有这天的月份取最后一天），如 1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；repeat_from 为 done 表示下一次从完成那天算；repeat_until 是重复到哪天（含这天），做完这天以前的最后一次，事项就完成了；description_omitted 为 true 的事项描述太长，没有发来；
 - done_tasks：最近完成的事项，只有编号和标题。
 
@@ -42,10 +43,11 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
   {"number": 12, "title": "…", "description": "…", "due": "2026-11-20 18:00", "requires": [3], "reason": "…"},
   {"number": 15, "delete": true, "reason": "…"},
   {"ref": "a", "title": "…", "required_by": [12], "reason": "…"},
-  {"order": [14, 12, 13], "reason": "…"}
+  {"order": [14, 12, 13], "reason": "…"},
+  {"folder": "/学习/英语", "color": "blue", "icon": "book", "reason": "…"}
 ]}
 
-每条建议是下面四种之一，都要写 reason，用一句话说明做什么、为什么。requires、required_by、drop_requires、clear、order 都是列表，只有一项也写成列表，如 [3]：
+每条建议是下面五种之一，都要写 reason，用一句话说明做什么、为什么。requires、required_by、drop_requires、clear、order 都是列表，只有一项也写成列表，如 [3]：
 1. 修改已有的事项：写 number，再只写要改的字段，不改的省略，不要写空字符串或 null。同一个事项的几处修改写在同一条里，每个事项最多出现一次：
    - title：新标题，一行，简短（最好不超过 30 个字），以动作开头；原标题没说是什么动作的，不要为了以动作开头而猜一个动作或删词。
    - description：新描述，是改好后的完整内容，不是修改说明；Markdown，步骤可以写成清单“- [ ] ”。
@@ -60,9 +62,10 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
 2. 删除已有的事项：写 number 和 "delete": true。
 3. 新建事项，放进这个文件夹：写 ref，依次是 "a"、"b"、"c"……，和 title；选填 description、due、remind、repeat、repeat_from、repeat_until，以及 requires（要先做完、才能做它的事项）和 required_by（要等它做完才能做的事项），写事项的编号或新建事项的 ref：新建的事项还没有编号，只能用 ref 指它。request 明确说新建的事项不用提醒的，写 "remind": []；没说提醒的不写 remind，会按用户自己设的默认提醒加上。
 4. 调整顺序：order 是 open_tasks 里事项的编号，按新的顺序排；只写要调整的那些，它们在原来占着的位置之间重新排列。order 只改列表里的位置，前置总排在后续前面。request 要的顺序和已有的先后冲突时（如要把“上线”排到最前，而它要等“测试”），保留先后，只排没有冲突的那些；除非 request 明说要改先后，不要为了排序去掉或反转前置。
+5. 改文件夹的颜色和图标：写 folder，照抄 looks 里的一个路径，不在 looks 里的文件夹不能改；再只写要改的 color、icon，每个文件夹最多出现一次。color 是 red、orange、amber、yellow、lime、green、teal、cyan、blue、indigo、purple、pink、brown、gray 之一，或 # 加六位十六进制数，如 #3478f6；icon 是 briefcase、graduation-cap、book、pen、file、laptop、code、flask、calculator、lightbulb、target、house、cart、utensils、coffee、shirt、baby、paw、heart、gift、dumbbell、bike、heart-pulse、pill、wallet、piggy-bank、plane、car、map-pin、music、camera、palette、gamepad、star、flag、rocket、trophy、wrench、leaf、users 之一，只能用这些名字，没有贴切的就选意思最接近的。改回默认的写 clear: ["color"] 或 clear: ["icon"]。
 
 整理时：
-1. 只做 request 说了的事，没说的一律不做。例如 request 是“把交报告推迟到周五”，就只改“交报告”的 due：别的事项不列出，也不要顺手改标题，或给“写报告”这类相关的事项补先后。request 要求把标题改清楚、描述改成书面语、补上先后时，才做这些整理；这时标题或描述里写明了要在什么时候之前完成、事项又还没有截止时间的，加上 due；只是提到某个时间（如“周四下午有空”）不算截止时间，也不要自己编出原文没有的几点几分。新建、删除、完成、重新打开、移动、改已有的截止时间、设置或改提醒和重复、去掉前置、调整顺序，都只在 request 要求时才做；“每月 5 号前”这类说法写在描述里就行，request 没要求就不设重复。
+1. 只做 request 说了的事，没说的一律不做。例如 request 是“把交报告推迟到周五”，就只改“交报告”的 due：别的事项不列出，也不要顺手改标题，或给“写报告”这类相关的事项补先后。request 要求把标题改清楚、描述改成书面语、补上先后时，才做这些整理；这时标题或描述里写明了要在什么时候之前完成、事项又还没有截止时间的，加上 due；只是提到某个时间（如“周四下午有空”）不算截止时间，也不要自己编出原文没有的几点几分。新建、删除、完成、重新打开、移动、改已有的截止时间、设置或改提醒和重复、去掉前置、调整顺序、改文件夹的颜色和图标，都只在 request 要求时才做；“每月 5 号前”这类说法写在描述里就行，request 没要求就不设重复。
 2. request 说的是一类事项（如“写文档的”“买东西的”“今天到期的”“复习相关的”）时，逐条对照 open_tasks，属于这一类的都包括进来，不要只挑标题里有那个词的；不属于的不动。“今天到期”“过期”按 local_time 和事项的 due 判断，没有 due 的事项不算。
 3. 改写不能丢信息：原标题和描述里的每一条要求、细节、理由、背景和疑问，都要留在新标题或新描述里，不要概括掉；不要编造原文没有的内容。改了标题时，原标题提到的每个对象都要留在新标题里，例如“报销单和发票整理”改成“整理报销单和发票”，不能只剩“整理报销单”；放不下的细节写进描述。
 4. 描述常是语音输入的口语。改写成简洁的书面语：去掉语气词、重复、说到一半的改口和“我觉得”“就是说”这类口头填充，但不能因此丢掉信息：改口只留改过的说法，改口的理由（如“周三有课”）要留下。
@@ -175,12 +178,27 @@ pub fn prompt(job: &AiJob, snap: Snapshot, user: &str, notes: Vec<Value>) -> (Pr
             json!({ "number": t.number, "title": t.title.as_str() })
         })
         .collect();
-    let subfolders: Vec<String> = board
-        .folder_tree()
-        .into_iter()
-        .filter(|&f| f != job.folder_id && board.in_subtree(f, job.folder_id))
-        .take(FOLDERS_SHOWN)
-        .map(|f| board.path(f))
+    let inside: Vec<Option<FolderId>> =
+        board.folder_tree().into_iter().filter(|&f| f != job.folder_id && board.in_subtree(f, job.folder_id)).take(FOLDERS_SHOWN).collect();
+    let subfolders: Vec<String> = inside.iter().map(|&f| board.path(f)).collect();
+    // Those it may restyle, by the paths it is to write. Told in words which it may not, models
+    // restyled those anyway, and made up paths.
+    let looks: Vec<Value> = std::iter::once(job.folder_id)
+        .chain(inside)
+        .filter_map(|f| {
+            let folder = board.folder(f?)?;
+            if !stylable(&board, job.folder_id, folder) {
+                return None;
+            }
+            let mut v = json!({ "folder": board.path(f) });
+            if let Some(c) = folder.color {
+                v["color"] = String::from(c).into();
+            }
+            if let Some(i) = folder.icon {
+                v["icon"] = i.as_str().into();
+            }
+            Some(v)
+        })
         .collect();
     let mut input = json!({
         "local_time": job.local_time.as_str(),
@@ -190,6 +208,9 @@ pub fn prompt(job: &AiJob, snap: Snapshot, user: &str, notes: Vec<Value>) -> (Pr
         "open_tasks": open_tasks,
         "done_tasks": done_tasks,
     });
+    if !looks.is_empty() {
+        input["looks"] = looks.into();
+    }
     if !notes.is_empty() {
         input["notes"] = notes.into();
     }
@@ -250,8 +271,8 @@ struct Answer {
     suggestions: Vec<Suggested>,
 }
 
-/// A suggestion as the model writes it: a change to the task `number`, its deletion, a new task, or
-/// an `order`.
+/// A suggestion as the model writes it: a change to the task `number`, its deletion, a new task, an
+/// `order`, or a `folder`'s colour and icon.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Suggested {
@@ -272,6 +293,8 @@ struct Suggested {
     clear: Vec<Setting>,
     done: Option<bool>,
     folder: Option<String>,
+    color: Option<FolderColor>,
+    icon: Option<FolderIcon>,
     #[serde(default, rename = "requires")]
     after: Vec<PlanRef>,
     #[serde(default, rename = "required_by")]
@@ -286,6 +309,11 @@ struct Suggested {
 impl Suggested {
     /// Whether it says to do anything: models write some for a task with nothing to do in it.
     fn says(&self) -> bool {
+        self.of_task() || self.folder.is_some() || self.styles()
+    }
+
+    /// Whether it changes anything of a task's own, the folder it is in aside.
+    fn of_task(&self) -> bool {
         self.delete
             || self.title.is_some()
             || self.description.is_some()
@@ -294,22 +322,26 @@ impl Suggested {
             || self.repeat.is_some()
             || self.repeat_from.is_some()
             || self.repeat_until.is_some()
-            || !self.clear.is_empty()
+            || self.clear.iter().any(|c| !matches!(c, Setting::Color | Setting::Icon))
             || self.done.is_some()
-            || self.folder.is_some()
             || !self.after.is_empty()
             || !self.before.is_empty()
             || !self.unlink.is_empty()
     }
 
-    /// The one suggestion `self` and `later`, for the same task, make: what both change, the later
+    /// Whether it gives a folder a colour or an icon.
+    fn styles(&self) -> bool {
+        self.color.is_some() || self.icon.is_some() || self.clear.iter().any(|c| matches!(c, Setting::Color | Setting::Icon))
+    }
+
+    /// The one suggestion `self` and `later`, for the same task or folder, make: what both change, the later
     /// one's way where they differ.
     fn merge(&mut self, later: Suggested) {
         if !later.says() {
             return;
         }
         self.reason = match (self.says(), self.reason.is_empty(), later.reason.is_empty()) {
-            (true, false, false) => format!("{}；{}", self.reason, later.reason),
+            (true, false, false) => format!("{}；{}", self.reason.trim_end_matches('。'), later.reason),
             (_, _, false) => later.reason,
             _ => std::mem::take(&mut self.reason),
         };
@@ -320,6 +352,8 @@ impl Suggested {
             Setting::Remind => later.remind.is_none(),
             Setting::Repeat => later.repeat.is_none(),
             Setting::RepeatUntil => later.repeat_until.is_none(),
+            Setting::Color => later.color.is_none(),
+            Setting::Icon => later.icon.is_none(),
         });
         self.unset(&later.clear);
         self.title = later.title.or(self.title.take());
@@ -332,6 +366,8 @@ impl Suggested {
         self.clear.extend(later.clear);
         self.done = later.done.or(self.done);
         self.folder = later.folder.or(self.folder.take());
+        self.color = later.color.or(self.color);
+        self.icon = later.icon.or(self.icon);
         self.after.extend(later.after);
         self.before.extend(later.before);
         self.unlink.extend(later.unlink);
@@ -345,6 +381,8 @@ impl Suggested {
                 Setting::Remind => self.remind = None,
                 Setting::Repeat => (self.repeat, self.repeat_from, self.repeat_until) = (None, None, None),
                 Setting::RepeatUntil => self.repeat_until = None,
+                Setting::Color => self.color = None,
+                Setting::Icon => self.icon = None,
             }
         }
     }
@@ -358,6 +396,8 @@ enum Setting {
     Remind,
     Repeat,
     RepeatUntil,
+    Color,
+    Icon,
 }
 
 /// What the model suggests, for tasks it was shown, leaving out what would change nothing. Checked
@@ -371,17 +411,30 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
         }
     }
     let Answer { suggestions: all } = from_value(v).map_err(|e| format!("模型返回的结果不符合格式：{}", e.describe()))?;
-    // Models split what they suggest for a task at times, however they are told.
+    let board = Board::new(&shown.snap, shown.now.clone(), &shown.user);
+    // Models split what they suggest for a task, or a folder, at times, however they are told.
     let mut suggestions: Vec<Suggested> = Vec::new();
     for mut s in all {
+        // Before it is merged into another, which would hide what does not go with a folder's look.
+        if s.styles() && (s.order.is_some() || s.number.is_some() || s.name.is_some() || s.of_task()) {
+            return Err("修改文件夹颜色和图标的建议只能写 folder、color、icon、clear 和 reason".into());
+        }
         // A setting one suggestion both sets and clears is cleared.
         s.unset(&s.clear.clone());
-        match suggestions.iter_mut().find(|x| x.order.is_none() && s.order.is_none() && x.number.is_some() && x.number == s.number) {
+        let folder = |x: &Suggested| x.folder.as_deref().and_then(|p| board.find_folder(p));
+        let same = |x: &Suggested| {
+            x.order.is_none()
+                && s.order.is_none()
+                && match x.number {
+                    Some(_) => x.number == s.number,
+                    None => x.styles() && s.styles() && folder(x).is_some() && folder(x) == folder(&s),
+                }
+        };
+        match suggestions.iter_mut().find(|x| same(x)) {
             Some(first) => first.merge(s),
             None => suggestions.push(s),
         }
     }
-    let board = Board::new(&shown.snap, shown.now.clone(), &shown.user);
     // The folder's tasks all have its owner's numbers.
     let owner = board.owner_of(shown.folder);
     let task = |n: i64| -> Result<(&Task, Seen), String> {
@@ -392,7 +445,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
     let mut refs = HashMap::new();
     let mut new = HashMap::new();
     let ids: Vec<Option<TaskId>> =
-        suggestions.iter().map(|s| (s.number.is_none() && s.order.is_none()).then(|| TaskId(Uuid::now_v7()))).collect();
+        suggestions.iter().map(|s| (s.number.is_none() && s.order.is_none() && !s.styles()).then(|| TaskId(Uuid::now_v7()))).collect();
     for (s, id) in suggestions.iter().zip(&ids) {
         let (Some(id), Some(name)) = (id, &s.name) else { continue };
         if task_ref(name).is_some() {
@@ -425,6 +478,10 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             if order.replace((numbers, s.reason)).is_some() {
                 return Err("结果里调整顺序的建议不止一条".into());
             }
+            continue;
+        }
+        if s.styles() {
+            out.extend(restyle(&board, shown, s)?.map(Suggestion::Style));
             continue;
         }
         let Some(n) = s.number else {
@@ -571,10 +628,14 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
                 c.after.retain(|b| !deleted.contains(b));
                 c.before.retain(|a| !deleted.contains(a));
             }
-            Suggestion::Delete(_) | Suggestion::Order(_) => {}
+            Suggestion::Delete(_) | Suggestion::Order(_) | Suggestion::Style(_) => {}
         }
     }
-    out.retain(|s| !matches!(s, Suggestion::Edit(e) if !changes(e) && e.done.is_none()));
+    out.retain(|s| match s {
+        Suggestion::Edit(e) => changes(e) || e.done.is_some(),
+        Suggestion::Style(r) => r.color.is_some() || r.icon.is_some(),
+        Suggestion::Delete(_) | Suggestion::Create(_) | Suggestion::Order(_) => true,
+    });
     let mut links = Vec::new();
     let mut unlinks = HashSet::new();
     for s in &out {
@@ -584,7 +645,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
                 unlinks.extend(e.unlink.iter().map(|&b| (b, e.task)));
             }
             Suggestion::Create(c) => links.extend(c.after.iter().map(|&b| (b, c.create)).chain(c.before.iter().map(|&a| (c.create, a)))),
-            Suggestion::Delete(_) | Suggestion::Order(_) => {}
+            Suggestion::Delete(_) | Suggestion::Order(_) | Suggestion::Style(_) => {}
         }
     }
 
@@ -632,7 +693,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
                     + e.after.len()
                     + e.unlink.len()
             }
-            Suggestion::Delete(_) => 1,
+            Suggestion::Delete(_) | Suggestion::Style(_) => 1,
             Suggestion::Create(c) => 1 + c.after.len() + c.before.len(),
             Suggestion::Order(o) => o.order.len(),
         })
@@ -641,6 +702,35 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
         return Err("建议的修改太多，一次应用不了，请缩小范围后重试".into());
     }
     Ok(out)
+}
+
+/// The colour and icon `s` gives a folder: the one tidied or one inside it, leaving out what it has
+/// already. None for the root, which has none, and one not [`stylable`]: not in `looks`, but models
+/// restyle them when asked to, and the rest still holds.
+fn restyle(board: &Board, shown: &Shown, s: Suggested) -> Result<Option<Restyle>, String> {
+    let path = s.folder.as_deref().ok_or("修改颜色和图标的建议缺少 folder")?;
+    let f = match board.find_folder(path) {
+        Some(None) => return Ok(None),
+        Some(Some(id)) if board.in_subtree(Some(id), shown.folder) => board.folder(id).expect("found by path"),
+        _ => return Err(format!("建议修改 {path} 的颜色和图标，但它不是这个文件夹或其中的子文件夹")),
+    };
+    if !stylable(board, shown.folder, f) {
+        return Ok(None);
+    }
+    let clear = |x| s.clear.contains(&x);
+    Ok(Some(Restyle {
+        style: f.id,
+        color: if clear(Setting::Color) { Some(None) } else { s.color.map(Some) }.filter(|&c| c != f.color),
+        icon: if clear(Setting::Icon) { Some(None) } else { s.icon.map(Some) }.filter(|&i| i != f.icon),
+        reason: s.reason,
+        was: FolderLook { color: f.color, icon: f.icon },
+    }))
+}
+
+/// Whether a tidying of `tidied` may restyle `f`, a folder inside it. Not a folder someone shares with
+/// the user, which only they can restyle; what is inside it, only when tidying in there, not the root.
+fn stylable(board: &Board, tidied: Option<FolderId>, f: &Folder) -> bool {
+    board.owner_of(Some(f.id)) == board.owner_of(tidied) && !board.shared_with_me().iter().any(|x| x.id == f.id)
 }
 
 /// Whether `e` changes anything but whether the task is done.
@@ -663,7 +753,7 @@ fn distinct(refs: impl Iterator<Item = Result<TaskId, String>>) -> Result<Vec<Ta
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nexttodo_core::model::Dependency;
+    use nexttodo_core::model::{ColorPreset, Dependency, Person, Share};
 
     fn id(n: i64) -> String {
         format!("00000000-0000-7000-8000-{n:012}")
@@ -892,6 +982,85 @@ mod tests {
         );
         assert_eq!(err(r#"{"order": [1, 5], "reason": ""}"#), "调整顺序只能排未完成的事项，#5 已完成");
         assert!(err(r#"{"number": 1, "title": "a", "note": "x"}"#).starts_with("模型返回的结果不符合格式"));
+    }
+
+    #[test]
+    fn restyles_the_folder_and_those_inside_it() {
+        let blue = FolderColor::try_from("blue".to_owned()).unwrap();
+        let mut s = snap();
+        s.folders[1].color = Some(blue);
+        let (chat, shown) = prompt(&job(), s.clone(), "me", vec![]);
+        let input: Value = serde_json::from_str(&chat.user).unwrap();
+        assert_eq!(input["looks"], json!([{ "folder": "/官网" }, { "folder": "/官网/文档", "color": "blue" }]));
+        let styles = |s: &str| parse(&format!(r#"{{"suggestions": [{s}]}}"#), &shown);
+        // Split, and the path written another way, it is one; what it has already is left out.
+        let got = styles(
+            r#"{"folder": "/官网/文档", "icon": "book", "color": "blue", "reason": "配上图标。"}, {"folder": "官网/文档/", "color": "green", "reason": "改成绿色。"}"#,
+        )
+        .unwrap();
+        let [Suggestion::Style(r)] = got.as_slice() else { panic!("{got:?}") };
+        assert_eq!(r.style, s.folders[1].id);
+        assert_eq!((r.color.map(|c| c.map(String::from)), r.icon), (Some(Some("green".into())), Some(Some(FolderIcon::Book))));
+        assert_eq!((r.was.color, r.was.icon, r.reason.as_str()), (Some(blue), None, "配上图标；改成绿色。"));
+        let got = styles(r#"{"folder": "/官网", "clear": ["color"], "icon": "code", "reason": ""}"#).unwrap();
+        assert!(matches!(got.as_slice(), [Suggestion::Style(r)] if r.color.is_none() && r.icon == Some(Some(FolderIcon::Code))));
+        let got = styles(r#"{"folder": "/官网/文档", "clear": ["color"], "reason": ""}"#).unwrap();
+        assert!(matches!(got.as_slice(), [Suggestion::Style(r)] if r.color == Some(None)));
+        // Kept with the job, back to the default stays that, apart from leaving it as it is.
+        let kept: Vec<Suggestion> = serde_json::from_value(serde_json::to_value(&got).unwrap()).unwrap();
+        assert_eq!(kept, got);
+        assert!(styles(r#"{"folder": "/官网/文档", "color": "blue", "reason": ""}"#).unwrap().is_empty(), "as it is");
+        let err = |s: &str| styles(s).err().unwrap();
+        assert_eq!(
+            err(r#"{"folder": "/别处", "color": "red", "reason": ""}"#),
+            "建议修改 /别处 的颜色和图标，但它不是这个文件夹或其中的子文件夹"
+        );
+        let mixed = "修改文件夹颜色和图标的建议只能写 folder、color、icon、clear 和 reason";
+        assert_eq!(err(r#"{"number": 1, "folder": "/官网", "color": "red", "reason": ""}"#), mixed);
+        assert_eq!(err(r#"{"order": [2, 1], "color": "red", "reason": ""}"#), mixed);
+        // Not hidden by merging into a suggestion for the same folder.
+        assert_eq!(
+            err(r#"{"folder": "/官网", "color": "red", "reason": ""}, {"folder": "/官网", "ref": "a", "icon": "book", "reason": ""}"#),
+            mixed
+        );
+        assert_eq!(err(r#"{"icon": "book", "reason": ""}"#), "修改颜色和图标的建议缺少 folder");
+
+        // Shared with the user, the folder itself is its owner's to restyle, and not shown as one to; what
+        // is inside it is the user's too. Suggested all the same, it is left out, and the rest kept.
+        s.shares = vec![Share { folder_id: s.folders[0].id, owner: "alice".into(), members: vec!["me".into()] }];
+        s.people = vec![Person { id: "alice".into(), username: "alice".into(), display_name: "Alice".into() }];
+        let (chat, shown) = prompt(&job(), s.clone(), "me", vec![]);
+        let input: Value = serde_json::from_str(&chat.user).unwrap();
+        assert_eq!(input["looks"], json!([{ "folder": "@alice/官网/文档", "color": "blue" }]));
+        let styles = |s: &str| parse(&format!(r#"{{"suggestions": [{s}]}}"#), &shown);
+        let got = styles(
+            r#"{"folder": "@alice/官网", "icon": "book", "reason": ""}, {"folder": "@alice/官网/文档", "icon": "book", "reason": ""}"#,
+        );
+        assert!(matches!(got.unwrap().as_slice(), [Suggestion::Style(r)] if r.style == s.folders[1].id));
+        assert!(styles(r#"{"folder": "/", "icon": "book", "reason": ""}"#).unwrap().is_empty(), "the root has none");
+        // Tidying the root, not what is inside it either: only the user's own.
+        let (chat, shown) = prompt(&AiJob { folder_id: None, ..job() }, s.clone(), "me", vec![]);
+        let input: Value = serde_json::from_str(&chat.user).unwrap();
+        assert_eq!(input["looks"], json!([{ "folder": "/别处" }]));
+        let got = parse(
+            r#"{"suggestions": [{"folder": "@alice/官网/文档", "icon": "book", "reason": ""}, {"folder": "/别处", "icon": "book", "reason": ""}]}"#,
+            &shown,
+        );
+        assert!(matches!(got.unwrap().as_slice(), [Suggestion::Style(r)] if r.style == s.folders[2].id));
+        // The user's own, shared with others, is theirs.
+        s.shares[0] = Share { folder_id: s.folders[0].id, owner: "me".into(), members: vec!["alice".into()] };
+        let (_, shown) = prompt(&job(), s, "me", vec![]);
+        assert_eq!(parse(r#"{"suggestions": [{"folder": "/官网", "icon": "book", "reason": ""}]}"#, &shown).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn lists_the_colours_and_icons_there_are() {
+        let listed = |after: &str| {
+            let rest = &SYSTEM[SYSTEM.find(after).unwrap() + after.len()..];
+            rest[..rest.find(" 之一").unwrap()].split('、').map(str::to_owned).collect::<Vec<_>>()
+        };
+        assert_eq!(listed("color 是 "), ColorPreset::ALL.iter().map(|c| c.as_str()).collect::<Vec<_>>());
+        assert_eq!(listed("icon 是 "), FolderIcon::ALL.iter().map(|i| i.as_str()).collect::<Vec<_>>());
     }
 
     #[test]

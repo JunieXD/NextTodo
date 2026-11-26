@@ -1209,8 +1209,8 @@ sql_text_enum!(JobState { Waiting = "waiting", Running = "running", Failed = "fa
 sql_text_enum!(JobKind { Organize = "organize", Tidy = "tidy" });
 
 /// What AI suggests doing in the folder it tidies, for the user to take or leave part by part. Each
-/// kind is told by a field only it has (`task`, `delete`, `create`, `order`), with no tag: changes
-/// to a task came first, and are kept as they were then.
+/// kind is told by a field only it has (`task`, `delete`, `create`, `order`, `style`), with no tag:
+/// changes to a task came first, and are kept as they were then.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(untagged)]
 #[ts(export)]
@@ -1219,6 +1219,7 @@ pub enum Suggestion {
     Delete(TaskDeletion),
     Create(NewTask),
     Order(Reorder),
+    Style(Restyle),
 }
 
 /// Changes to a task, the fields given set and the dependencies given added or removed.
@@ -1288,6 +1289,30 @@ pub struct NewTask {
 pub struct Reorder {
     pub order: Vec<TaskId>,
     pub reason: String,
+}
+
+/// A colour or an icon for the folder tidied or one inside it; `null` is the default.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Restyle {
+    pub style: FolderId,
+    #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub color: Option<Option<FolderColor>>,
+    #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub icon: Option<Option<FolderIcon>>,
+    pub reason: String,
+    /// The folder's as the model saw them.
+    pub was: FolderLook,
+}
+
+/// A folder's colour and icon, `None` the default.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct FolderLook {
+    pub color: Option<FolderColor>,
+    pub icon: Option<FolderIcon>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]

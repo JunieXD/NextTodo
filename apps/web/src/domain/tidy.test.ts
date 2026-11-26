@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import type { AiJob } from "../api/types/AiJob";
+import type { Folder } from "../api/types/Folder";
 import type { Suggestion } from "../api/types/Suggestion";
 import type { Task } from "../api/types/Task";
 import { apply, fromSnapshot, toSnapshot } from "./apply";
@@ -36,12 +37,19 @@ function task(n: number, title: string, extra: Partial<Task> = {}): Task {
   };
 }
 
-/** The tasks and dependencies (by number), a tidying of the root suggesting `suggestions`, and what
- * taking every part of them, or the parts `keep` keeps, leaves. */
-function tidy(tasks: Task[], deps: [number, number][], suggestions: Suggestion[], keep: (key: string) => boolean = () => true) {
-  const job: AiJob = { id: id(99), folder_id: null, kind: "tidy", text: "整理", local_time: "2026-11-09 10:00 星期一", state: "ready", error: null, suggestions, created_at: 0, updated_at: 0 };
+/** The tasks and dependencies (by number), a tidying of the root or folder `at` suggesting
+ * `suggestions`, and what taking every part of them, or the parts `keep` keeps, leaves. */
+function tidy(
+  tasks: Task[],
+  deps: [number, number][],
+  suggestions: Suggestion[],
+  keep: (key: string) => boolean = () => true,
+  folders: Folder[] = [],
+  at: number | null = null,
+) {
+  const job: AiJob = { id: id(99), folder_id: at === null ? null : id(at), kind: "tidy", text: "整理", local_time: "2026-11-09 10:00 星期一", state: "ready", error: null, suggestions, created_at: 0, updated_at: 0 };
   const dependencies = deps.map(([b, a]) => ({ before: id(b), after: id(a), created_at: 0 }));
-  const board = new Board({ folders: [], tasks, dependencies, completions: [], attachments: [], ai_jobs: [job], shares: [], people: [] }, { today: "2026-11-12" }, ME);
+  const board = new Board({ folders, tasks, dependencies, completions: [], attachments: [], ai_jobs: [job], shares: [], people: [] }, { today: "2026-11-12" }, ME);
   const shown = groups(job, board);
   const taken = shown.flatMap((g) => g.parts.filter((p) => keep(p.key)));
   const d = fromSnapshot(board.snapshot);
@@ -129,4 +137,36 @@ test("a date for a task due some days after its prerequisites shows what it was,
   expect(visit.text).toMatch(/（前置完成后 7 天内） → /);
   expect(visit.now).toBeUndefined();
   expect([after.task(id(2))!.due, after.task(id(2))!.due_after]).toEqual([{ date: "2026-12-02" }, undefined]);
+});
+
+test("a folder's colour and icon are taken or left each, and one changed since is told of", () => {
+  const folder = (n: number, name: string, look: Pick<Folder, "color" | "icon">, parent: number | null = null): Folder => ({
+    id: id(n),
+    parent_id: parent === null ? null : id(parent),
+    name,
+    sort_key: "a0",
+    created_at: 0,
+    updated_at: 0,
+    ...look,
+  });
+  const { shown, after } = tidy(
+    [],
+    [],
+    [
+      { style: id(60), color: "blue", icon: "book", reason: "", was: { color: null, icon: null } },
+      // Made green on another device since, given the icon suggested, and moved out of the folder tidied.
+      { style: id(61), color: null, icon: "code", reason: "", was: { color: "red", icon: null } },
+      // Of the name of the folder tidied, which it is in: told apart by its path.
+      { style: id(62), icon: "pen", reason: "", was: { color: null, icon: null } },
+    ],
+    (key) => key !== "icon",
+    [folder(60, "英语", { color: null, icon: null }), folder(61, "编程", { color: "green", icon: "code" }), folder(62, "英语", { color: null, icon: null }, 60)],
+    60,
+  );
+  expect(shown.map((g) => [g.heading, g.parts.map((p) => [p.label, p.now])])).toEqual([
+    ["文件夹“英语”", [["颜色", undefined], ["图标", undefined]]],
+    ["文件夹“编程”", [["颜色", "整理后改过颜色"]]],
+    ["文件夹“英语 / 英语”", [["图标", undefined]]],
+  ]);
+  expect([60, 61].map((n) => [after.folder(id(n))!.color, after.folder(id(n))!.icon])).toEqual([["blue", null], [null, "code"]]);
 });

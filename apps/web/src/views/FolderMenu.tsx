@@ -116,21 +116,25 @@ export function usePlaceFolder() {
 /** What a tidying asks for unless told otherwise. */
 const TIDY = "把标题改清楚，描述改成简洁的书面语，补上漏掉的先后关系。";
 
-/** Asks what to do with the tasks directly in `folder` and hands them to AI, which suggests it
- * (docs/ai.md#整理文件夹); `panel` is where it asks. */
+/** Asks what to do with the tasks directly in `folder`, or the looks of it and the folders in it, and
+ * hands that to AI, which suggests it (docs/ai.md#整理文件夹); `panel` is where it asks. */
 function useTidy(folder: FolderId | null): { start(): void; panel: ReactNode } {
   const { snack } = useFeedback();
   const commit = useCommit();
   const { user, store } = useSession();
   const [, navigate] = useLocation();
-  const [asking, setAsking] = useState(false);
+  // The request it starts with, the usual one where there are tasks.
+  const [asking, setAsking] = useState<string | null>(null);
   const start = async () => {
-    if (!store.getView().board.contents(folder).length) return snack("这里没有事项");
+    const board = store.getView().board;
+    const tasks = board.contents(folder).length > 0;
+    // Nor a folder whose look it could change: the root has none, and only its owner restyles a shared one.
+    if (!tasks && !board.subfolders(folder).length && (folder === null || sharer(board, folder))) return snack("这里没有事项");
     if (!(await aiReady(user.id))) {
       snack("先选好 AI 整理用的模型");
       return navigate(settingsUrl("ai"));
     }
-    setAsking(true);
+    setAsking(tasks ? TIDY : "");
   };
   const submit = (text: string) => {
     const reminders = jobReminders();
@@ -145,17 +149,17 @@ function useTidy(folder: FolderId | null): { start(): void; panel: ReactNode } {
     } as const;
     if (commit([op])) snack("已提交整理，完成后在列表顶部确认建议");
   };
-  return { start, panel: asking && <TidyRequest onSubmit={submit} onClose={() => setAsking(false)} /> };
+  return { start, panel: asking !== null && <TidyRequest initial={asking} onSubmit={submit} onClose={() => setAsking(null)} /> };
 }
 
 /** The request for a tidying, in a box of many lines, sent by the keys set on the device. */
-function TidyRequest({ onSubmit, onClose }: { onSubmit(text: string): void; onClose(): void }) {
-  const [text, setText] = useState(TIDY);
+function TidyRequest({ initial, onSubmit, onClose }: { initial: string; onSubmit(text: string): void; onClose(): void }) {
+  const [text, setText] = useState(initial);
   const [enterSends] = useEnterSends();
   const [error, setError] = useState("");
   const area = useRef<HTMLTextAreaElement>(null);
   // At the end of what is there, to add to it.
-  useEffect(() => area.current!.setSelectionRange(TIDY.length, TIDY.length), []);
+  useEffect(() => area.current!.setSelectionRange(initial.length, initial.length), [initial]);
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     const c = checkJobText(text);
@@ -203,7 +207,7 @@ function TidyRequest({ onSubmit, onClose }: { onSubmit(text: string): void; onCl
               {error}
             </span>
           ) : (
-            <span className="hint">可新建、修改、完成、删除、移动事项，调整先后和顺序，执行前逐条确认</span>
+            <span className="hint">可新建、修改、完成、删除、移动事项，调整先后和顺序，设置文件夹的颜色和图标，执行前逐条确认</span>
           )}
         </label>
       </form>

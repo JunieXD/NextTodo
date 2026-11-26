@@ -25,7 +25,8 @@ const AROUND = 4;
 /** Hour labels this close to now, in minutes, make way for its time. */
 const NEAR_NOW = 20;
 
-const keyOf = (b: Block) => (b.record ? `record ${completionKey(b.record)}` : `${b.later ? "later" : "task"} ${b.task.id}`);
+/** A block's key among a day's. */
+export const keyOf = (b: Block) => (b.record ? `record ${completionKey(b.record)}` : `${b.later ? "later" : "task"} ${b.task.id}`);
 
 /** Where a block goes in its half hour: `i`th of `k` side by side. */
 const place = (slot: number, i: number, k: number): CSSProperties => ({
@@ -95,12 +96,7 @@ export function TimeGrid({
   // A block's menu and the picker it opens send their clicks to the day too, by React's tree.
   const onDay = (e: React.MouseEvent) => e.currentTarget.contains(e.target as Node);
 
-  const blockButton = (b: Block, style?: CSSProperties) =>
-    b.later || b.record ? (
-      <BlockButton key={keyOf(b)} block={b} style={style} onOpen={() => actions.open(b.task)} />
-    ) : (
-      <TaskBlock key={keyOf(b)} block={b} now={now} actions={actions} style={style} />
-    );
+  const blockButton = (b: Block, style?: CSSProperties) => <DayBlock key={keyOf(b)} block={b} now={now} actions={actions} style={style} />;
   return (
     <div className="tg">
       <div ref={head} className="tg-head">
@@ -218,24 +214,34 @@ export function TimeGrid({
   );
 }
 
-/** A block, or for one due on a day alone a label in the row of the day, which opens its task; `rest`,
- * where it goes and what a menu around it adds. */
-function BlockButton({ block, onOpen, ...rest }: { block: Block; onOpen(): void } & ComponentProps<"button">) {
+/** What is on a day, which opens its task: a block at its time, or a `label`, for one due on the day
+ * alone or in the month with titles. That of a task as it is now has the task's menu on a right click. */
+export function DayBlock({
+  block,
+  now,
+  actions,
+  label,
+  ...rest
+}: { block: Block; now: Date; actions: RowActions; label?: boolean } & Pick<ComponentProps<"button">, "style" | "tabIndex">) {
+  const button = <BlockButton {...rest} block={block} label={label || !block.time} onOpen={() => actions.open(block.task)} />;
+  return block.later || block.record ? button : <TaskMenu block={block} now={now} actions={actions}>{button}</TaskMenu>;
+}
+
+/** A block or a label; `rest`, where it goes and what a menu around it adds. */
+function BlockButton({ block, label, onOpen, ...rest }: { block: Block; label: boolean; onOpen(): void } & ComponentProps<"button">) {
   return (
-    <button {...rest} type="button" className={`${block.time ? "tg-block" : "tg-label"} ${block.look}`} title={block.task.title} onClick={(e) => (e.stopPropagation(), onOpen())}>
+    <button {...rest} type="button" className={`${label ? "tg-label" : "tg-block"} ${block.look}`} title={block.task.title} onClick={(e) => (e.stopPropagation(), onOpen())}>
       <span>{block.task.title}</span>
     </button>
   );
 }
 
-/** That of a task as it is now, with the task's menu on a right click. */
-function TaskBlock({ block, now, actions, style }: { block: Block; now: Date; actions: RowActions; style?: CSSProperties }) {
+/** The task's menu around `children`, on a right click. */
+function TaskMenu({ block, now, actions, children }: { block: Block; now: Date; actions: RowActions; children: React.ReactElement }) {
   const { menu, picker } = useTaskMenu(block.task, now, actions, {});
   return (
     <>
-      <ContextMenu items={menu}>
-        <BlockButton block={block} style={style} onOpen={() => actions.open(block.task)} />
-      </ContextMenu>
+      <ContextMenu items={menu}>{children}</ContextMenu>
       {picker}
     </>
   );

@@ -102,6 +102,7 @@ svg { display: block; flex: none; }
 .icon-btn { width: 40px; height: 40px; border-radius: 20px; display: grid; place-items: center; color: var(--on-surface-variant); transition: background-color .15s; }
 .icon-btn:active { background: var(--press); }
 .icon-btn.sm { width: 32px; height: 32px; }
+.cal-bar .icon-btn[aria-pressed="true"] { background: var(--secondary-container); color: var(--on-secondary-container); }
 
 .scroll { flex: 1; overflow-y: auto; padding-top: calc(56px + var(--safe-top)); padding-bottom: calc(var(--tabbar-h) + 84px); scroll-padding-top: calc(56px + var(--safe-top)); }
 .scroll.fill { display: flex; flex-direction: column; overflow: hidden; padding-bottom: var(--tabbar-h); }
@@ -961,7 +962,7 @@ a.text-btn { display: inline-flex; align-items: center; }
 
 /* The calendar page (docs/ui.md#日历): a month or a week of days tinted by how much was done on each,
    or a year of small ones. As wide as the settings' column on desktops. */
-.desk .cal-page:not(.time) { max-width: 600px; margin-inline: auto; }
+.desk .cal-page:not(.time, .titles) { max-width: 600px; margin-inline: auto; }
 /* Sideways is the page's own, to turn it; up and down scroll. */
 .cal-swipe { touch-action: pan-y pinch-zoom; }
 /* As high with “今天” as without it. */
@@ -1016,7 +1017,7 @@ a.text-btn { display: inline-flex; align-items: center; }
 .cal-date { margin: 20px 32px 0; font-size: 16px; font-weight: 600; }
 .cal-lunar { margin-left: 8px; font-size: 14px; font-weight: 400; color: var(--on-surface-variant); }
 /* Festivals, solar terms, 休 and 班 (docs/ui.md#日历). */
-:is(.cal-grid, .cal-days, .tg-day) small.day-note, .cal-date .day-note { color: var(--primary); }
+:is(.cal-grid, .cal-days, .tg-day, .cal-titled) small.day-note, .cal-date .day-note { color: var(--primary); }
 .day-mark { position: absolute; top: 3px; right: 4px; font-size: 9px; line-height: 1; font-weight: 700; font-style: normal; }
 .cal-days .day-mark { top: 2px; right: 3px; }
 /* By the number, not in the corner of a column that may be wide. */
@@ -1027,6 +1028,23 @@ a.text-btn { display: inline-flex; align-items: center; }
 .cal-grid .out :is(small.day-note, .day-mark), .cal-days :is(.out, [aria-pressed="true"], :disabled) :is(small.day-note, .day-mark) { color: inherit; }
 /* The primary colour and the amber, small, are too faint on the two deepest tints. */
 .cal-grid :is(.heat-3, .heat-4) :is(small.day-note, .day-mark) { color: var(--on-primary-container); }
+/* The month with titles: a day a cell, edge to edge as the time grid, a line over each week. */
+.cal-page.titles .cal-week { margin: 0; }
+.cal-titles { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cal-titled { position: relative; min-width: 0; height: 92px; display: flex; flex-direction: column; gap: 2px; padding: 2px 2px 0; border-top: 1px solid var(--outline-variant); overflow: hidden; cursor: pointer; }
+.desk .cal-titled { height: 112px; }
+.cal-titled.today::before { content: ""; position: absolute; inset: 0; background: var(--primary); opacity: .05; pointer-events: none; }
+.cal-titled.picked::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 2px var(--primary); pointer-events: none; }
+/* What is written with the day under its number: a phone's cells, and a computer's beside both side
+   panes, are too narrow for “国庆节” beside “15”. */
+.cal-titled-day { display: flex; flex-direction: column; align-items: flex-start; padding: 0 3px; min-width: 0; outline: none; font-variant-numeric: tabular-nums; }
+.cal-titled-day:focus-visible { box-shadow: inset 0 0 0 2px var(--primary); border-radius: 4px; }
+.cal-titled .cal-num { font-size: 13px; line-height: 16px; font-weight: 600; }
+.cal-titled small { max-width: 100%; font-size: 10px; line-height: 12px; color: var(--on-surface-variant); white-space: nowrap; overflow: hidden; }
+.cal-titled.today .cal-num { color: var(--primary); font-weight: 700; }
+.cal-titled.out { color: var(--outline); }
+.cal-titled.out :is(small, .day-mark) { color: inherit; }
+.cal-titled .tg-label { flex: none; text-align: start; }
 .cal-day .empty { margin-inline: 32px; }
 .occurrence .check { cursor: default; }
 

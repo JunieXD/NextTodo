@@ -1,7 +1,7 @@
 // The calendar page (docs/ui.md#日历): a month, a week or a year, what is due and done on each day,
 // and the day picked listed under it.
 
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, LetterText } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useLocation, useSearchParams } from "wouter";
@@ -17,6 +17,7 @@ import { Tip } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { useTaskActions } from "./actions";
 import { DayNote, DayNotes, daySpoken, useHolidayMarks } from "./daynote";
+import { MonthTitles } from "./monthtitles";
 import { ARROWS, WEEKDAYS } from "./due";
 import { useSelection } from "./nav";
 import { Occurrence, TaskRow } from "./rows";
@@ -27,11 +28,18 @@ export type CalendarView = (typeof VIEWS)[number];
 
 const VIEW_KEY = "nexttodo.calendarView";
 const GRID_KEY = "nexttodo.timeGrid";
+const TITLES_KEY = "nexttodo.monthTitles";
 
 /** Whether the calendar offers the time grid, set on this device in the settings; on unless turned off. */
 export function useTimeGridOn(): [boolean, (on: boolean) => void] {
   const [on, keep] = useKept(GRID_KEY);
   return [on !== "off", (v) => keep(v ? "on" : "off")];
+}
+
+/** Whether the month shows the titles of what is on each day, rather than dots, as picked on this device. */
+function useMonthTitles(): [boolean, (on: boolean) => void] {
+  const [on, keep] = useKept(TITLES_KEY);
+  return [on === "on", (v) => keep(v ? "on" : "off")];
 }
 
 /** Which of a month, a week, a year or the time grid the calendar shows, remembered on this device
@@ -101,6 +109,8 @@ export function CalendarBody({ now, view, onView, pick: { picked, at, pick } }: 
   const on = params.get("on");
   const [timeGrid] = useTimeGridOn();
   const [marks] = useHolidayMarks();
+  const [titled, setTitled] = useMonthTitles();
+  const titles = view === "month" && titled;
   useEffect(() => {
     if (asked === null) return;
     if (linked) {
@@ -160,9 +170,16 @@ export function CalendarBody({ now, view, onView, pick: { picked, at, pick } }: 
     if (view !== "time") bar.current!.scrollIntoView({ block: "nearest" });
   }, [view]);
   return (
-    <div className={`cal-page${view === "time" ? " time" : ""}`}>
+    <div className={`cal-page${view === "time" ? " time" : titles ? " titles" : ""}`}>
       <div ref={bar} className="cal-bar">
         <span aria-live="polite">{view === "year" ? `${shown.getFullYear()}年` : `${shown.getFullYear()}年${shown.getMonth() + 1}月`}</span>
+        {view === "month" && (
+          <Tip label="显示标题">
+            <button type="button" className="icon-btn sm" aria-pressed={titled} onClick={() => setTitled(!titled)}>
+              <Icon of={LetterText} size={18} />
+            </button>
+          </Tip>
+        )}
         {!current && (
           <button type="button" className="text-btn" onClick={() => setPicked(today)}>
             今天
@@ -210,6 +227,15 @@ export function CalendarBody({ now, view, onView, pick: { picked, at, pick } }: 
           />
         ) : view === "time" ? (
           <TimeGrid days={isoDays} today={today} picked={picked} at={at} now={now} onPick={pick} />
+        ) : titles ? (
+          <>
+            <div className="cal-week" aria-hidden>
+              {[...WEEKDAYS].map((w) => (
+                <span key={w}>{w}</span>
+              ))}
+            </div>
+            <MonthTitles days={isoDays} month={shown.getMonth()} today={today} picked={picked} now={now} onPick={setPicked} onMove={(e, d) => move(e, day(d))} />
+          </>
         ) : (
           <>
             <div className="cal-week" aria-hidden>

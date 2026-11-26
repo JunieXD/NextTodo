@@ -171,10 +171,10 @@ ESLint 拦下两种吞掉错误的写法：
 | `repeat.json` | 重复的下一次 | `domain/repeat.ts` | `crates/core/src/repeat.rs` |
 | `lunar.json` | 农历 | `domain/lunar.ts` | `crates/core/src/lunar.rs` |
 | `holidays.json` | 节日、节气和放假、补班 | `domain/holidays.ts` | `crates/core/src/holidays.rs` |
-| `undo-done.json` | 撤销完成时是否仍是最后一次 | `domain/apply.ts` | `crates/server/src/mutate.rs` |
+| `undo-done.json` | 撤销完成时是否仍是最后一次 | `domain/apply.ts` | `crates/server/src/mutate/undo.rs` |
 | `ai-pictures.json` | 发给模型的图片 | `attach.ts` | `crates/server/src/ai/organize.rs` |
 | `text.json` | 标题、名称、描述等文本的校验 | `domain/text.ts` | `crates/core/src/model.rs` |
-| `apply.json` | 应用改动：共享的文件夹里的连线和负责人、移进移出时剪掉的依赖、同级重名、文件夹和依赖成环、删除和移动时的附件、AI 整理请求的状态、被拒的一批什么也不留 | `domain/apply.ts` | `crates/server/src/mutate.rs` |
+| `apply.json` | 应用改动：共享的文件夹里的连线和负责人、移进移出时剪掉的依赖、同级重名、文件夹和依赖成环、删除和移动时的附件、AI 整理请求的状态、被拒的一批什么也不留 | `domain/apply.ts` | `crates/server/src/mutate/` |
 
 `text.json` 的每条：`kind` 是哪种文本（`title`、`folder_name`、`description`、`file_name`、`job_text`、`note_text`），`input` 是输入，有 `times` 时重复这么多遍；结果是 `error`（错误信息），或者 `value`（网页端整理后的值，和输入一样时不写）。网页端先去掉控制字符、把标题里的制表符换成空格再交给服务端，所以服务端校验：`value` 原样通过；输入本身得到 `server_error`（网页端要整理、服务端直接收到时拒绝的输入才写），没写时得到 `error`。
 

@@ -1,4 +1,4 @@
-// Applies operations to a local copy the way the server does (`crates/server/src/mutate.rs`), and
+// Applies operations to a local copy the way the server does (`crates/server/src/mutate/`), and
 // yields the same kind of effects, so the app shows a change at once and can undo it locally.
 // What only the server knows stays unknown: a new task's number, or that of one moved to someone
 // else's, is 0 until the server's copy arrives. Sharing and leaving a folder go to the server
@@ -313,7 +313,7 @@ class Applier {
           t.unlocked_on = undefined;
         }
         if (op.due_after !== undefined) {
-          // As in mutate.rs: turned to or from counting after the prerequisites, the due date goes.
+          // As in mutate/ops.rs: turned to or from counting after the prerequisites, the due date goes.
           if (!t.due_after !== (op.due_after === null)) {
             t.unlocked_on = undefined;
             t.due = null;
@@ -555,7 +555,7 @@ class Applier {
     set(this.d, e, "after");
   }
 
-  /** As `Cx::settle` in mutate.rs: of the tasks due some days after their prerequisites are done that
+  /** As `Cx::settle` in mutate/mod.rs: of the tasks due some days after their prerequisites are done that
    * the change concerns, gives those with all of them done the day it was made, and takes that back
    * from those a prerequisite came to hold up in it, but for a repeating one done before, its time come
    * round again (docs/design.md#前置完成后的截止). */
@@ -977,7 +977,7 @@ export const lastKey = (keys: string[]): string => lastKeys(keys, 1)[0];
 /** Whether a change that took how often a task was done from `before` to `after` is still the last
  * that counts, as `later`, how changes since took it, have it: each since took back the one before it
  * that still counted, or counted itself (docs/design.md#改动记录和撤销). As `still_last` in
- * crates/server/src/mutate.rs; both are checked against fixtures/undo-done.json. */
+ * crates/server/src/mutate/undo.rs; both are checked against fixtures/undo-done.json. */
 export function stillLast<T>(before: T, after: T, later: [T, T][]): boolean {
   const changes: [T, T][] = [[before, after], ...later];
   const counting: number[] = [];

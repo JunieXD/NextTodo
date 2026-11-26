@@ -66,8 +66,10 @@ describe("rail", () => {
   });
 
   test("a branch does not cross another line when sharing lanes would make it", () => {
-    // Sharing 0's lane, 0 → 2 would bend across 1 → 3.
-    const rail = layout(4, [[0, 2], [0, 3], [1, 3]]);
+    // Sharing 0's lane, 0 → 2 would bend across 1 → 3. In a folder 2 follows 0 right after it; the
+    // rail takes the list in any order the dependencies allow.
+    const { board: b, list } = board(4, [[0, 2], [0, 3], [1, 3]]);
+    const rail = railLayout([...list].sort((x, y) => x.number - y.number), b, Infinity)!;
     expect([rail.crossings, rail.lanes]).toEqual([0, 3]);
     expect(layout(6, [[0, 1], [0, 2], [0, 3], [0, 4], [1, 5], [2, 5], [3, 5], [4, 5]]).crossings).toBe(0);
   });

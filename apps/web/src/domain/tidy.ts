@@ -11,9 +11,9 @@ import type { NewTask } from "../api/types/NewTask";
 import type { Op } from "../api/types/Op";
 import type { Suggestion } from "../api/types/Suggestion";
 import type { TaskId } from "../api/types/TaskId";
-import type { Board } from "./board";
+import { Board } from "./board";
 import { dueAfterLabel, formatDue, isoDate, remindLabel } from "./dates";
-import { rekey } from "./reorder";
+import { arrange } from "./reorder";
 import { lastTime, repeatText } from "./repeat";
 
 type Fields = { title?: string; description?: string; due?: Due | null; done?: boolean; folder_id?: FolderId };
@@ -84,11 +84,13 @@ function group(s: Suggestion, j: AiJob, board: Board, created: Map<TaskId, strin
   }
   if ("order" in s) {
     const open = board.tasksIn(j.folder_id).filter((t) => t.done_at === null);
-    const tasks = s.order.flatMap((id) => open.filter((t) => t.id === id));
-    const placed = open.filter((t) => tasks.includes(t));
-    if (tasks.length < 2 || tasks.every((t, i) => t === placed[i])) return null;
-    const text = tasks.map((t, i) => `${i + 1}. #${t.number} ${t.title}`).join("\n");
-    return { key: "order", heading: "调整顺序", reason: s.reason, parts: [{ key: "order", label: "新的顺序", text, act: { order: tasks.map((t) => t.id) } }] };
+    const then = arrange(board, open, s.order).list;
+    if (then.every((t, i) => t === open[i])) return null;
+    const text = then
+      .filter((t) => s.order.includes(t.id))
+      .map((t, i) => `${i + 1}. #${t.number} ${t.title}`)
+      .join("\n");
+    return { key: "order", heading: "调整顺序", reason: s.reason, parts: [{ key: "order", label: "新的顺序", text, act: { order: s.order } }] };
   }
   if ("create" in s) {
     const text = [
@@ -197,19 +199,34 @@ export function ops(parts: Part[], j: AiJob, board: Board): Op[] {
     ...[...looks].map(([id, look]): Op => ({ op: "folder.update", id, ...look })),
   ];
   if (order.length) {
-    // The tasks still in the folder, those in the order taking the places they hold in it, in its sequence.
-    const list = board.tasksIn(j.folder_id).filter((t) => t.done_at === null && !removed.has(t.id) && updates.get(t.id)?.folder_id === undefined);
-    const queue = order.flatMap((id) => list.filter((t) => t.id === id));
-    const wanted = list.map((t) => (order.includes(t.id) ? queue.shift()! : t));
-    out.push(...rekey(wanted, "").map((k): Op => ({ op: "task.update", ...k })));
+    const then = relinked(board, unlinks, links);
+    const list = then.tasksIn(j.folder_id).filter((t) => t.done_at === null && !removed.has(t.id) && updates.get(t.id)?.folder_id === undefined);
+    out.push(...arrange(then, list, order).keys.map((k): Op => ({ op: "task.update", ...k })));
   }
   out.push({ op: "ai_job.delete", id: j.id });
   return out;
 }
 
-/** What `j`'s suggestions would still do, those with nothing left to do left out. */
-export function groups(j: AiJob, board: Board): Group[] {
+/** What `j`'s suggestions would still do, those with nothing left to do left out; a new order as the
+ * parts `taken` of the others leave the dependencies. */
+export function groups(j: AiJob, board: Board, taken: (g: Group, p: Part) => boolean): Group[] {
   const suggestions = j.suggestions ?? [];
   const created = new Map(suggestions.flatMap((s) => ("create" in s ? [[s.create, s.title] as const] : [])));
-  return suggestions.map((s) => group(s, j, board, created)).filter((g) => g !== null);
+  const rest = suggestions.map((s) => ("order" in s ? null : group(s, j, board, created)));
+  const acts = rest.flatMap((g) => (g ? g.parts.filter((p) => taken(g, p)).map((p) => p.act) : []));
+  const then = relinked(
+    board,
+    acts.flatMap((a) => ("unlink" in a ? [a.unlink] : [])),
+    acts.flatMap((a) => ("link" in a ? [a.link] : [])),
+  );
+  return suggestions.map((s, i) => ("order" in s ? group(s, j, then, created) : rest[i])).filter((g) => g !== null);
+}
+
+/** `board` with the dependencies `unlinks` taken away and `links` added, those between tasks on it. */
+function relinked(board: Board, unlinks: [TaskId, TaskId][], links: [TaskId, TaskId][]): Board {
+  const deps = board.snapshot.dependencies.filter((d) => !unlinks.some(([b, a]) => d.before === b && d.after === a));
+  for (const [before, after] of links) {
+    if (board.task(before) && board.task(after) && !deps.some((d) => d.before === before && d.after === after)) deps.push({ before, after, created_at: 0 });
+  }
+  return new Board({ ...board.snapshot, dependencies: deps }, board.now, board.me);
 }

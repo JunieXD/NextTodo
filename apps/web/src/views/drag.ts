@@ -154,8 +154,8 @@ function hearDrags(el: HTMLElement, rows: string, g: Gesture): { cancel(): void;
 }
 
 export interface Drag {
-  /** Where the row at `from` may go, as places in the list without it. */
-  range(from: number): { min: number; max: number };
+  /** Where the row at `from` may go, first to last. */
+  places(from: number): Place[];
   /** The row at `from` was let go at place `to` in the list without it, which may be further up or
    * down than it may go. */
   drop(from: number, to: number): void;
@@ -166,6 +166,25 @@ export interface Drag {
   into(from: number, folder: FolderId | null): void;
   /** Rows stay put, as while tasks are being chosen. */
   off?: boolean;
+}
+
+/** A place a row may go, `at` that in the list without it, and the order the rows take then. */
+export interface Place {
+  at: number;
+  /** Where each row is now, top to bottom. */
+  rows(): number[];
+}
+
+/** Of `places`, first to last, the one closest to `target`. */
+export function nearest<P extends Place>(places: P[], target: number): P {
+  return places.reduce((best, p) => (Math.abs(p.at - target) < Math.abs(best.at - target) ? p : best));
+}
+
+/** The order of `count` rows with the one at `from` put at place `to`. */
+export function moved(count: number, from: number, to: number): number[] {
+  const rows = [...Array(count).keys()].filter((i) => i !== from);
+  rows.splice(to, 0, from);
+  return rows;
 }
 
 /** Drags the children of `list` that match `rows`, all as tall as each other. A drag stops without
@@ -188,8 +207,9 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, rows: string,
       startScroll: number;
       x: number;
       y: number;
-      min: number;
-      max: number;
+      places: Place[];
+      /** Where the rows are shown making way for it. */
+      shown?: Place;
       /** The rows take others in, as folders do: then the top or bottom quarter of one puts the row
        * before or after it. */
       nests: boolean;
@@ -225,10 +245,11 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, rows: string,
       // row lifted, those below it are one further up.
       const beside = i === s.from || !s.nests ? i : i - Number(i > s.from) + Number(part >= 0.5);
       s.target = over ? s.from : Math.min(Math.max(beside, 0), s.rows.length - 1);
-      const to = Math.min(Math.max(s.target, s.min), s.max);
-      s.rows.forEach((r, k) => {
-        const shift = s.from < k && k <= to ? -s.height : to <= k && k < s.from ? s.height : 0;
-        r.style.transform = shift ? `translateY(${shift}px)` : "";
+      const place = nearest(s.places, s.target);
+      if (place === s.shown) return;
+      s.shown = place;
+      place.rows().forEach((r, k) => {
+        s.rows[r].style.transform = k === r ? "" : `translateY(${(k - r) * s.height}px)`;
       });
     };
     // Near the top or bottom of the scrolling area, keep scrolling while the row is held there.
@@ -245,7 +266,7 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, rows: string,
       lift(row, x, y) {
         const all = [...el.querySelectorAll<HTMLElement>(`:scope > ${rows}`)];
         const from = all.indexOf(row);
-        const { min, max } = latest.current.range(from);
+        const places = latest.current.places(from);
         const nests = all.some((r) => "into" in r.dataset);
         // The row in a copy of the list, which its look depends on, over the app.
         const ghost = el.cloneNode() as HTMLElement;
@@ -255,7 +276,7 @@ export function useRowDrag(list: RefObject<HTMLDivElement | null>, rows: string,
         const box = row.getBoundingClientRect();
         Object.assign(ghost.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px` });
         el.closest(".app")!.append(ghost);
-        l = { row, rows: all, height: row.offsetHeight, from, startY: y, startScroll: scroller.scrollTop, x, y, min, max, nests, target: from, into: null, ghost, frame: 0 };
+        l = { row, rows: all, height: row.offsetHeight, from, startY: y, startScroll: scroller.scrollTop, x, y, places, nests, target: from, into: null, ghost, frame: 0 };
         row.dataset.lifted = "";
         el.classList.add("reordering");
         l.frame = requestAnimationFrame(scroll);

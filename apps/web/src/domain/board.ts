@@ -526,13 +526,15 @@ export class Board {
   }
 
   /** Orders tasks so that every task comes after the tasks it depends on, directly or through other
-   * tasks for which `through` holds; otherwise in folder order and manual order. Among the tasks
-   * that can go next, the one earliest in manual order goes first. */
+   * tasks for which `through` holds, right after the last of them, with its own after it in turn
+   * (docs/design.md#排序); otherwise in folder order and manual order. Among the tasks freed by the
+   * same one, the one earliest in manual order goes first, by the sort keys of `tasks`, which may be
+   * ones they are yet to have. */
   order(tasks: Task[], through: (t: Task) => boolean): Task[] {
-    const members = new Set(tasks.map((t) => t.id));
+    const members = new Map(tasks.map((t) => [t.id, t]));
     // The members and the tasks through which they depend on each other.
     const relevant = new Set<TaskId>();
-    const stack = [...members];
+    const stack = [...members.keys()];
     while (stack.length) {
       const id = stack.pop()!;
       if (relevant.has(id)) continue;
@@ -541,34 +543,36 @@ export class Board {
         if (members.has(p) || through(this.tasks.get(p)!)) stack.push(p);
       }
     }
-    // Kahn's algorithm. The other tasks go as soon as nothing holds them back; members wait in the
-    // heap for their turn in manual order.
+    // Kahn's algorithm. The other tasks go as soon as nothing holds them back; members wait in heaps
+    // for their turn in manual order, those freed by the member listed last in a heap of their own,
+    // which goes before the ones below it.
     const waiting = new Map<TaskId, number>();
     for (const id of relevant) waiting.set(id, (this.prerequisites.get(id) ?? []).filter((p) => relevant.has(p)).length);
     const free = [...waiting].filter(([, n]) => n === 0).map(([id]) => id);
-    const heap = new Heap<Task>((a, b) => compare(this.key(a), this.key(b)));
-    const list: Task[] = [];
-    for (;;) {
-      let id: TaskId;
-      if (free.length) {
-        id = free.pop()!;
-        if (members.has(id)) {
-          heap.push(this.tasks.get(id)!);
-          continue;
-        }
-      } else if (heap.size) {
-        const t = heap.pop();
-        list.push(t);
-        id = t.id;
-      } else {
-        break;
-      }
+    const release = (id: TaskId) => {
       for (const next of this.dependents.get(id) ?? []) {
         const n = waiting.get(next);
         if (n === undefined) continue;
         waiting.set(next, n - 1);
         if (n === 1) free.push(next);
       }
+    };
+    const byKey = (a: Task, b: Task) => compare(this.key(a), this.key(b));
+    const heaps = [new Heap<Task>(byKey)];
+    const list: Task[] = [];
+    for (;;) {
+      while (free.length) {
+        const id = free.pop()!;
+        const member = members.get(id);
+        if (member) heaps.at(-1)!.push(member);
+        else release(id);
+      }
+      while (heaps.length > 1 && !heaps.at(-1)!.size) heaps.pop();
+      if (!heaps.at(-1)!.size) break;
+      const t = heaps.at(-1)!.pop();
+      list.push(t);
+      heaps.push(new Heap<Task>(byKey));
+      release(t.id);
     }
     return list;
   }

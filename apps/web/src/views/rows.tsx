@@ -11,7 +11,7 @@ import type { Board, Dated } from "../domain/board";
 import { dueAfterLabel, dueKind, formatDue, isoDate, startLabel } from "../domain/dates";
 import { plainRail, railLayout } from "../domain/rail";
 import { doneToday, skippable } from "../domain/repeat";
-import { range, rekey } from "../domain/reorder";
+import { moves } from "../domain/reorder";
 import { inPanel } from "../desktop";
 import { useCommit, useView } from "../session";
 import { Tip, useFeedback } from "../ui/feedback";
@@ -20,7 +20,7 @@ import { Box, Check } from "../ui/controls";
 import { Icon, Inbound, Outbound } from "../ui/icons";
 import { ContextMenu, type MenuItem } from "../ui/menu";
 import { useChoice } from "./batch";
-import { useRowDrag } from "./drag";
+import { nearest, useRowDrag } from "./drag";
 import { FolderContextMenu } from "./FolderMenu";
 import { useFolderView } from "./nav";
 import { useMarks } from "./marks";
@@ -385,18 +385,16 @@ export function RailList({
   const choice = useChoice();
   useRowDrag(list, ".row.task", {
     off: choice.on,
-    range: (from) => range(board, tasks, from),
-    drop(from, to) {
+    places: (from) => moves(board, tasks, from).to,
+    drop(from, target) {
       const t = tasks[from];
-      const { min, max, above, below } = range(board, tasks, from);
-      // The earlier one may be done already, kept in the list.
-      const after = (first: Task, then: Task) => (first.done_at === null ? `“${then.title}”需等待“${first.title}”完成` : `“${then.title}”在“${first.title}”之后`);
-      if (to < min) snack(`${after(above!, t)}，只能排在其后`);
-      else if (to > max) snack(`${after(t, below!)}，“${t.title}”只能排在其前`);
-      else if (to !== from) {
-        const wanted = tasks.filter((x) => x !== t);
-        wanted.splice(to, 0, t);
-        commit(rekey(wanted, t.id).map((k): Op => ({ op: "task.update", ...k })));
+      const { to, follows } = moves(board, tasks, from);
+      // The one it follows may be done already, kept in the list.
+      if (target < to[0].at) snack(`${follows!.done_at === null ? `“${t.title}”需等待“${follows!.title}”完成` : `“${t.title}”在“${follows!.title}”之后`}，只能排在其后`);
+      else if (target > to.at(-1)!.at) snack(`“${t.title}”跟在“${follows!.title}”后面，只能在这一串里移动`);
+      else {
+        const place = nearest(to, target);
+        if (place.rows().some((r, i) => r !== i)) commit(place.keys().map((k): Op => ({ op: "task.update", ...k })));
       }
     },
     canInto: (from, folder) => folder !== tasks[from].folder_id,

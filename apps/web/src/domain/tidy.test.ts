@@ -50,7 +50,7 @@ function tidy(
   const job: AiJob = { id: id(99), folder_id: at === null ? null : id(at), kind: "tidy", text: "整理", local_time: "2026-11-09 10:00 星期一", state: "ready", error: null, suggestions, created_at: 0, updated_at: 0 };
   const dependencies = deps.map(([b, a]) => ({ before: id(b), after: id(a), created_at: 0 }));
   const board = new Board({ folders, tasks, dependencies, completions: [], attachments: [], ai_jobs: [job], shares: [], people: [] }, { today: "2026-11-12" }, ME);
-  const shown = groups(job, board);
+  const shown = groups(job, board, (_, p) => keep(p.key));
   const taken = shown.flatMap((g) => g.parts.filter((p) => keep(p.key)));
   const d = fromSnapshot(board.snapshot);
   apply(d, ops(taken, job, board), cx);
@@ -89,6 +89,61 @@ test("a new task left out takes its links with it", () => {
 test("a new order puts the tasks named in the places they held, the others staying put", () => {
   const { after } = tidy([task(1, "看电影"), task(2, "买菜"), task(3, "洗车")], [], [{ order: [id(3), id(1)], reason: "" }]);
   expect(after.tasksIn(null).map((t) => t.number)).toEqual([3, 2, 1]);
+});
+
+test("a task put before one following another goes before that other, and the new order shown is the one it gets", () => {
+  // 1 → 3: listed 1, 3, 2.
+  const { shown, after } = tidy([task(1, "写初稿"), task(2, "买菜"), task(3, "改稿")], [[1, 3]], [{ order: [id(2), id(3)], reason: "" }]);
+  expect(shown[0].parts[0].text).toBe("1. #2 买菜\n2. #3 改稿");
+  expect(after.tasksIn(null).map((t) => t.number)).toEqual([2, 1, 3]);
+});
+
+test("an order the dependencies keep from having any effect is not shown", () => {
+  // 2 → 3: listed 1, 2, 3; 3 can go no further up than after 2.
+  const { shown } = tidy([task(1, "看电影"), task(2, "测试"), task(3, "上线")], [[2, 3]], [{ order: [id(3), id(2)], reason: "" }]);
+  expect(shown).toEqual([]);
+});
+
+test("a new order goes by the dependencies as the suggestions taken with it leave them", () => {
+  // 1 → 2, to be taken away, and 2 to go first.
+  const tasks = [task(1, "买菜"), task(2, "洗车")];
+  const suggestions: Suggestion[] = [
+    { task: id(2), after: [], unlink: [id(1)], reason: "", was: was("洗车") },
+    { order: [id(2), id(1)], reason: "" },
+  ];
+  const { shown, after } = tidy(tasks, [[1, 2]], suggestions);
+  expect(shown.map((g) => g.key)).toEqual([id(2), "order"]);
+  expect(after.tasksIn(null).map((t) => t.number)).toEqual([2, 1]);
+  // Without the dependency taken away, the order can do nothing, and is not shown.
+  const kept = tidy(tasks, [[1, 2]], suggestions, (key) => !key.startsWith("unlink"));
+  expect(kept.shown.map((g) => g.key)).toEqual([id(2)]);
+  expect(kept.after.tasksIn(null).map((t) => t.number)).toEqual([1, 2]);
+  expect(kept.after.snapshot.dependencies).toHaveLength(1);
+});
+
+test("an order the dependency added with it would make anyway is shown only without it", () => {
+  const tasks = [task(1, "买菜"), task(2, "洗车")];
+  const suggestions: Suggestion[] = [
+    { task: id(1), after: [id(2)], reason: "", was: was("买菜") },
+    { order: [id(2), id(1)], reason: "" },
+  ];
+  expect(tidy(tasks, [], suggestions).shown.map((g) => g.key)).toEqual([id(1)]);
+  const alone = tidy(tasks, [], suggestions, (key) => !key.startsWith("after"));
+  expect(alone.shown.map((g) => g.key)).toEqual([id(1), "order"]);
+  expect(alone.after.tasksIn(null).map((t) => t.number)).toEqual([2, 1]);
+  expect(alone.after.snapshot.dependencies).toEqual([]);
+});
+
+test("an order brought no closer leaves the others where they are", () => {
+  // 1 → 4 and 3 → 4: 4 cannot come before 3, and 2, not in the order, stays after 1.
+  const { shown, after } = tidy([task(1, "A"), task(2, "U"), task(3, "X"), task(4, "B")], [[1, 4], [3, 4]], [{ order: [id(4), id(3)], reason: "" }]);
+  expect(shown).toEqual([]);
+  expect(after.tasksIn(null).map((t) => t.number)).toEqual([1, 2, 3, 4]);
+});
+
+test("a task put first goes first with what it waits for, as far as that lets it", () => {
+  const { after } = tidy([task(1, "看电影"), task(2, "测试"), task(3, "上线")], [[2, 3]], [{ order: [id(3), id(1)], reason: "" }]);
+  expect(after.tasksIn(null).map((t) => t.number)).toEqual([2, 3, 1]);
 });
 
 test("done, a repeating task moves on; a deleted one goes with its links", () => {

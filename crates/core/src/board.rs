@@ -505,38 +505,26 @@ impl<'a> Board<'a> {
     }
 
     /// Orders tasks so that every task comes after the tasks it depends on, directly or through
-    /// other tasks for which `through` holds; otherwise in folder order and manual order. Among the
-    /// tasks that can go next, the one earliest in manual order goes first.
+    /// other tasks for which `through` holds, right after the last of them, with its own after it in
+    /// turn (docs/design.md#排序); otherwise in folder order and manual order. Among the tasks freed by
+    /// the same one, the one earliest in manual order goes first.
     pub fn order(&self, tasks: Vec<&'a Task>, through: impl Fn(&Task) -> bool) -> Vec<&'a Task> {
-        let members: HashSet<TaskId> = tasks.iter().map(|t| t.id).collect();
+        let members: HashMap<TaskId, &'a Task> = tasks.iter().map(|t| (t.id, *t)).collect();
         // The members and the tasks through which they depend on each other.
         let mut relevant = HashSet::new();
-        let mut stack: Vec<TaskId> = members.iter().copied().collect();
+        let mut stack: Vec<TaskId> = members.keys().copied().collect();
         while let Some(id) = stack.pop() {
             if relevant.insert(id) {
-                stack.extend(self.before.get(&id).into_iter().flatten().filter(|p| members.contains(p) || through(self.tasks[*p])));
+                stack.extend(self.before.get(&id).into_iter().flatten().filter(|p| members.contains_key(p) || through(self.tasks[*p])));
             }
         }
-        // Kahn's algorithm. The other tasks go as soon as nothing holds them back; members wait
-        // in the heap for their turn in manual order.
+        // Kahn's algorithm. The other tasks go as soon as nothing holds them back; members wait in
+        // heaps for their turn in manual order, those freed by the member listed last in a heap of
+        // their own, which goes before the ones below it.
         let mut waiting: HashMap<TaskId, usize> =
             relevant.iter().map(|id| (*id, self.before.get(id).into_iter().flatten().filter(|p| relevant.contains(*p)).count())).collect();
         let mut free: Vec<TaskId> = waiting.iter().filter(|(_, n)| **n == 0).map(|(id, _)| *id).collect();
-        let mut heap = BinaryHeap::new();
-        let mut list = Vec::with_capacity(tasks.len());
-        loop {
-            let id = if let Some(id) = free.pop() {
-                if members.contains(&id) {
-                    heap.push(Reverse(self.key(self.tasks[&id])));
-                    continue;
-                }
-                id
-            } else if let Some(Reverse((_, _, id))) = heap.pop() {
-                list.push(self.tasks[&id]);
-                id
-            } else {
-                break;
-            };
+        let mut release = |id: TaskId, free: &mut Vec<TaskId>| {
             for next in self.after.get(&id).into_iter().flatten() {
                 if let Some(n) = waiting.get_mut(next) {
                     *n -= 1;
@@ -545,6 +533,24 @@ impl<'a> Board<'a> {
                     }
                 }
             }
+        };
+        let mut heaps = vec![BinaryHeap::new()];
+        let mut list = Vec::with_capacity(tasks.len());
+        loop {
+            while let Some(id) = free.pop() {
+                if let Some(t) = members.get(&id) {
+                    heaps.last_mut().expect("one at least").push(Reverse(self.key(t)));
+                } else {
+                    release(id, &mut free);
+                }
+            }
+            while heaps.len() > 1 && heaps.last().is_some_and(BinaryHeap::is_empty) {
+                heaps.pop();
+            }
+            let Some(Reverse((_, _, id))) = heaps.last_mut().and_then(BinaryHeap::pop) else { break };
+            list.push(members[&id]);
+            heaps.push(BinaryHeap::new());
+            release(id, &mut free);
         }
         list
     }

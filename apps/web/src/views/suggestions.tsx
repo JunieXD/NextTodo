@@ -14,12 +14,12 @@ export function Suggestions({ job: j, board, onRetry, onClose }: { job: AiJob; b
   const commit = useCommit();
   const undo = useUndo();
   const { snack } = useFeedback();
-  const shown = groups(j, board);
   // What the user picked, by part and by what is there now: taken unless told otherwise, but for what
   // changed since, the user's newer word; changed again, it is asked about again.
   const [picked, setPicked] = useState(() => new Map<string, boolean>());
   const choice = (g: Group, p: Part) => `${g.key} ${p.key}\n${p.current ?? ""}`;
   const isTaken = (g: Group, p: Part) => picked.get(choice(g, p)) ?? p.now === undefined;
+  const shown = groups(j, board, isTaken);
   const taken = shown.flatMap((g) => g.parts.filter((p) => isTaken(g, p)));
   const toggle = (g: Group, p: Part) => setPicked((m) => new Map(m).set(choice(g, p), !isTaken(g, p)));
 

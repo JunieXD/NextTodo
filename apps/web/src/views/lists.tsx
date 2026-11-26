@@ -41,7 +41,7 @@ import { ChooseFiles, StagedFiles, useKeepFiles } from "./attachments";
 import { useListed } from "./batch";
 import { Chain, useChains } from "./chain";
 import { type DueGroup, setGroupClosed, useClosedGroups } from "./closed-groups";
-import { useRowDrag } from "./drag";
+import { moved, useRowDrag } from "./drag";
 import { useNewFolder, usePlaceFolder } from "./FolderMenu";
 import { useMarking, useMarks } from "./marks";
 import { folderUrl, settingsUrl, useFolderView, useSelection, useShowing } from "./nav";
@@ -279,7 +279,7 @@ function FolderList({ folder, folders }: { folder: FolderId | null; folders: Fol
   const place = usePlaceFolder();
   const list = useRef<HTMLDivElement>(null);
   useRowDrag(list, ".folder-row", {
-    range: () => ({ min: 0, max: folders.length - 1 }),
+    places: (from) => folders.map((_, at) => ({ at, rows: () => moved(folders.length, from, at) })),
     drop: (from, to) => place(folders[from].id, folder, folders.filter((_, i) => i !== from)[to]?.id ?? null),
     canInto: (from, into) => into !== folder && board.canMove(folders[from].id, into),
     into: (from, into) => place(folders[from].id, into, null),

@@ -242,7 +242,7 @@
   {
     "id": "merge-keeps-order",
     "note": "合并后，留下的那项仍在后续前面",
-    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/做饭", "request": "合并重复的事项", "subfolders": [], "open_tasks": [{ "number": 1, "title": "买菜" }, { "number": 2, "title": "做饭", "requires": [1] }, { "number": 3, "title": "去超市买菜" }, { "number": 4, "title": "洗碗", "requires": [2] }], "done_tasks": [], "looks": [{ "folder": "/做饭" }] },
+    "input": { "local_time": "2026-11-09 10:00 星期一", "folder": "/做饭", "request": "合并重复的事项", "subfolders": [], "open_tasks": [{ "number": 1, "title": "买菜" }, { "number": 2, "title": "做饭", "requires": [1] }, { "number": 4, "title": "洗碗", "requires": [2] }, { "number": 3, "title": "去超市买菜" }], "done_tasks": [], "looks": [{ "folder": "/做饭" }] },
     "expect": { "allowed": ["title", "description", "delete", "after"], "deletes": 1, "linked": [["买菜", 2], [2, 4]] }
   },
   {

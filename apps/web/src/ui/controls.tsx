@@ -1,4 +1,4 @@
-import { Check as CheckIcon, ChevronsUpDown, Copy, type LucideIcon, Minus, Plus, X } from "lucide-react";
+import { Check as CheckIcon, ChevronRight, ChevronsUpDown, Copy, type LucideIcon, Minus, Plus, X } from "lucide-react";
 import { Select as Choice, DropdownMenu, RadioGroup, Switch as Toggle } from "radix-ui";
 import { type ReactNode, useContext, useState } from "react";
 import type { Status } from "../domain/board";
@@ -318,5 +318,19 @@ export function Copyable({ label, hint, text, children }: { label: string; hint?
         </Tip>
       </div>
     </div>
+  );
+}
+
+export function Action({ label, value, onClick }: { label: string; value?: string; onClick(): void }) {
+  return (
+    <button className="row" onClick={onClick}>
+      <div className="row-inner">
+        <span>{label}</span>
+        <span className="row-value">{value}</span>
+        <span className="chev">
+          <Icon of={ChevronRight} size={18} />
+        </span>
+      </div>
+    </button>
   );
 }

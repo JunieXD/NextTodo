@@ -12,7 +12,7 @@ import { draft, keepDraft, keepStaged, stagedFiles } from "../sync/drafts";
 import { useBack } from "../ui/back";
 import { forUser, useFeedback } from "../ui/feedback";
 import { useKeepFiles } from "./attachments";
-import { QuickAdd, type Sent, quickAddPlace } from "./lists";
+import { QuickAdd, type Sent, quickAddPlace } from "./quick-add";
 
 /** Closes the card once what another app shared is in the bar (`shared`), and what was made here is
  * safe, written on this device or confirmed by the server, and the widgets and reminders have it: the

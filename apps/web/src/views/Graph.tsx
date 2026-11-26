@@ -32,7 +32,7 @@ import { Icon, Inbound } from "../ui/icons";
 import { useTaskActions } from "./actions";
 import { useBatch } from "./batch";
 import { type Layout, type Size, edgeKey, layout, widest } from "./graph-layout";
-import { QuickAdd } from "./lists";
+import { QuickAdd } from "./quick-add";
 import { useMarking, useMarks } from "./marks";
 import { useSelection, useShowing } from "./nav";
 import { dueClass } from "./rows";

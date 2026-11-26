@@ -56,7 +56,7 @@ export function remindersOf(board: Board, t: Task, hide: boolean): Reminder[] {
 }
 
 /** When `t` starts, as a due date is: the date, and the time if it has one. */
-export const startOf = (t: Task): Due | null => (t.start ? { date: t.start, ...(t.start_time && { time: t.start_time }) } : null);
+const startOf = (t: Task): Due | null => (t.start ? { date: t.start, ...(t.start_time && { time: t.start_time }) } : null);
 
 /** What each of `t`'s reminders says, `now`, in the order they come; those by a due date still to come
  * after its prerequisites last (docs/ui.md#详情). */

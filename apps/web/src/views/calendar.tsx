@@ -2,13 +2,14 @@
 // and the day picked listed under it.
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { completionKey } from "../domain/apply";
 import { type DoneOn, type DueOn, doneByDay, droppedByDay, dueBetween, heat, lateness, overdue } from "../domain/calendar";
 import { day, dueKind, formatToday, isoDate, monthGrid } from "../domain/dates";
 import type { Task } from "../api/types/Task";
 import { lunarDate, lunarLabel, lunarText } from "../domain/lunar";
+import { useKept } from "../kept";
 import { useView } from "../session";
 import { Seg } from "../ui/controls";
 import { Tip } from "../ui/feedback";
@@ -23,23 +24,6 @@ export type CalendarView = "month" | "week" | "year" | "time";
 
 const VIEW_KEY = "nexttodo.calendarView";
 const GRID_KEY = "nexttodo.timeGrid";
-const listeners = new Set<() => void>();
-
-/** What is kept on this device under `key`, and how to keep another value there. */
-function useKept(key: string): [string | null, (v: string) => void] {
-  const value = useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => listeners.delete(l);
-    },
-    () => localStorage.getItem(key),
-  );
-  const keep = (v: string) => {
-    localStorage.setItem(key, v);
-    for (const l of listeners) l();
-  };
-  return [value, keep];
-}
 
 /** Whether the calendar offers the time grid, set on this device in the settings; on unless turned off. */
 export function useTimeGridOn(): [boolean, (on: boolean) => void] {

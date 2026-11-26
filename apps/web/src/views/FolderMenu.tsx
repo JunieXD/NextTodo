@@ -20,7 +20,7 @@ import { useCommit, useSession, useUndo, useView } from "../session";
 import { dropFiles } from "../sync/files";
 import { Modal, forUser, useFeedback } from "../ui/feedback";
 import { jobReminders } from "../remind-settings";
-import { composing } from "../ui/keys";
+import { isSendKey, useEnterSends } from "../ui/keys";
 import { ContextMenu, type MenuItem, MenuButton } from "../ui/menu";
 import { useAiNote } from "./AiNotes";
 import { useBatch } from "./batch";
@@ -148,9 +148,10 @@ function useTidy(folder: FolderId | null): { start(): void; panel: ReactNode } {
   return { start, panel: asking && <TidyRequest onSubmit={submit} onClose={() => setAsking(false)} /> };
 }
 
-/** The request for a tidying, in a box of many lines: Enter starts a new one, Ctrl or ⌘ + Enter submits. */
+/** The request for a tidying, in a box of many lines, sent by the keys set on the device. */
 function TidyRequest({ onSubmit, onClose }: { onSubmit(text: string): void; onClose(): void }) {
   const [text, setText] = useState(TIDY);
+  const [enterSends] = useEnterSends();
   const [error, setError] = useState("");
   const area = useRef<HTMLTextAreaElement>(null);
   // At the end of what is there, to add to it.
@@ -191,7 +192,7 @@ function TidyRequest({ onSubmit, onClose }: { onSubmit(text: string): void; onCl
             aria-invalid={error ? true : undefined}
             onChange={(e) => (setText(e.target.value), setError(""))}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !composing(e)) {
+              if (isSendKey(e, enterSends)) {
                 e.preventDefault();
                 e.currentTarget.form!.requestSubmit();
               }

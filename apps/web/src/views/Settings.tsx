@@ -24,6 +24,7 @@ import { useTimeGridOn } from "./calendar";
 import { Modal, forUser, useFailure, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
 import { Icon } from "../ui/icons";
+import { useEnterSends } from "../ui/keys";
 import { readBackup, sendImport, uploadBackup } from "../transfer";
 import { newer, usePending } from "../updates";
 import { About } from "./About";
@@ -484,7 +485,8 @@ function Appearance() {
   );
 }
 
-/** How the lists keep what is done, and where quick add puts a task. */
+/** How the lists keep what is done, where quick add puts a task, and which keys send AI organizing's
+ * text. */
 function Lists() {
   const keepDone = useKeepDone();
   return (
@@ -503,6 +505,38 @@ function Lists() {
       </div>
       <h2 className="group-title">快速添加</h2>
       <AddTo />
+      {!phoneApp && <SendKeys />}
+    </>
+  );
+}
+
+/** Which keys send AI organizing's text, of many lines (docs/ui.md#设置). */
+function SendKeys() {
+  const [enterSends, setEnterSends] = useEnterSends();
+  const mod = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘ + Enter" : "Ctrl + Enter";
+  return (
+    <>
+      <h2 className="group-title">AI 整理</h2>
+      <div className="group">
+        <div className="row">
+          <div className="row-inner controls">
+            发送键
+            <span className="row-value">
+              <Seg<"mod" | "enter">
+                small
+                label="AI 整理的发送键"
+                items={[
+                  ["mod", mod],
+                  ["enter", "Enter"],
+                ]}
+                value={enterSends ? "enter" : "mod"}
+                onChange={(to) => setEnterSends(to === "enter")}
+              />
+            </span>
+          </div>
+        </div>
+      </div>
+      <p className="group-note">{enterSends ? "Enter 发送，Shift + Enter 换行" : `Enter 换行，${mod} 发送`}</p>
     </>
   );
 }

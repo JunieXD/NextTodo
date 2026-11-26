@@ -32,7 +32,7 @@ import { Fold } from "../ui/fold";
 import { RootContext, Tip, useFeedback } from "../ui/feedback";
 import { Seg } from "../ui/controls";
 import { Icon } from "../ui/icons";
-import { composing } from "../ui/keys";
+import { composing, isSendKey, useEnterSends } from "../ui/keys";
 import { useLeave } from "../ui/leave";
 import { useWide } from "../ui/hooks";
 import { useTaskActions } from "./actions";
@@ -479,6 +479,7 @@ export function QuickAdd({
   };
   // The device remembers the mode last used.
   const ai = useAiMode() && on === undefined;
+  const [enterSends] = useEnterSends();
   const online = useConnection() === "online";
   const vision = useAiVision(user.id, online && ai && staged.some((f) => isPicture(f.type)));
   const hidden = ai && vision !== undefined ? unseen(staged, vision) : undefined;
@@ -630,10 +631,10 @@ export function QuickAdd({
     onSent?.({ changes, task: id });
   };
 
-  // A title is one line, so Enter adds it; AI organizing's text has many, so Enter starts one and
-  // Ctrl or ⌘ + Enter submits. Not while an input method is still composing.
+  // A title is one line, so Enter adds it; AI organizing's text has many, sent by the keys set on the
+  // device. Not while an input method is still composing.
   const enter = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && (!ai || e.ctrlKey || e.metaKey) && !composing(e)) {
+    if (ai ? isSendKey(e, enterSends) : e.key === "Enter" && !composing(e)) {
       e.preventDefault();
       e.currentTarget.form!.requestSubmit();
     }

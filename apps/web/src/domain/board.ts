@@ -383,23 +383,31 @@ export class Board {
     return share && share.owner !== this.me ? `@${this.username(share.owner)}/${names.join("/")}` : `/${names.join("/")}`;
   }
 
+  /** The folders from the top down to `f`, none for the root. */
+  private path(f: FolderId | null): FolderId[] {
+    const path = [];
+    for (let cur = f; cur !== null; cur = this.folders.get(cur)!.parent_id) path.unshift(cur);
+    return path;
+  }
+
   private names(f: FolderId | null): string[] {
-    const names = [];
-    for (let cur = f; cur !== null; ) {
-      const folder = this.folders.get(cur)!;
-      names.unshift(folder.name);
-      cur = folder.parent_id;
-    }
-    return names;
+    return this.path(f).map((id) => this.folders.get(id)!.name);
   }
 
   /** Where a folder is, as people read it: `学习 / 毕业论文`, `根目录`, or `Alice 的装修 / 水电` in a
    * folder Alice shares. */
   place(f: FolderId | null): string {
-    if (!f) return this.folderName(null);
+    return this.crumbs(f)
+      .map(([, name]) => name)
+      .join(" / ");
+  }
+
+  /** The same, folder by folder from the top: `学习`, `毕业论文`. */
+  crumbs(f: FolderId | null): [FolderId | null, string][] {
+    if (!f) return [[null, this.folderName(null)]];
     const share = this.share(f);
-    const place = this.names(f).join(" / ");
-    return share && share.owner !== this.me ? `${this.name(share.owner)} 的${place}` : place;
+    const theirs = share && share.owner !== this.me ? `${this.name(share.owner)} 的` : "";
+    return this.path(f).map((id, i) => [id, `${i ? "" : theirs}${this.folders.get(id)!.name}`]);
   }
 
   /** A folder's name, or `根目录`. */

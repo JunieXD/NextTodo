@@ -83,12 +83,20 @@ export function DueEditor({
   const defaults = useDefaultReminders();
   const [chosen, setChosen] = useState<Remind[] | null>(timing ? (timing.reminders ?? []) : null);
   const reminders = inOrder(chosen ?? (time ? defaults.timed : defaults.dated), time || undefined);
-  // One not on the menu being added: so far ahead of the time, or on a day before at a time.
+  // One not on the menu being added, on a page of its own: so far ahead of the time, or on a day before
+  // at a time. Left, the first page comes back the other way.
   const [adding, setAdding] = useState(false);
+  const [back, setBack] = useState(false);
   const [byDay, setByDay] = useState(false);
+  const [beforeRows, before] = useRemindBefore();
+  const [onDayRows, onDay] = useRemindOn();
+  const leave = () => {
+    setAdding(false);
+    setBack(true);
+  };
   const add = (r: Remind) => {
     setChosen([...reminders, r]);
-    setAdding(false);
+    leave();
   };
   // From the due time back, as the menu lists them.
   const offered = inOrder([...(time ? REMINDERS.map((before) => ({ before })) : DAY_REMINDERS), ...reminders], time || undefined).reverse();
@@ -142,175 +150,194 @@ export function DueEditor({
     onSave(after ? { due_after: { days: afterDays, ...timed } } : { due: { date, ...timed, ...(repeat && { repeat }) } });
     onClose();
   };
+  const ahead = Boolean(time) && !byDay;
   return (
     <Modal
-      title="截止时间"
+      title={adding ? "自定义提醒" : "截止时间"}
       onClose={onClose}
+      onBack={adding ? leave : undefined}
       footer={
-        <>
-          {tried && (early || ended || unlisted || tooMany) && (
-            <p className="form-error" role="alert">
-              {early
-                ? "截止不能早于开始"
-                : ended
-                  ? "重复到不能早于截止"
-                  : unlisted
-                    ? "按农历重复的截止日期应在 1900 年 1 月 31 日到 2101 年 1 月 28 日之间"
-                    : `提醒最多 ${MAX_REMINDERS} 个`}
-            </p>
-          )}
-          {timing && (
-            <button className="text-btn danger-text" onClick={() => (onSave({ due: null }), onClose())}>
-              清除截止时间
+        adding ? (
+          <>
+            <button className="text-btn" onClick={leave}>
+              取消
             </button>
-          )}
-          <button className="filled-btn" onClick={save}>
-            保存
-          </button>
-        </>
+            <button className="filled-btn" onClick={() => add(ahead ? before : onDay)}>
+              添加
+            </button>
+          </>
+        ) : (
+          <>
+            {tried && (early || ended || unlisted || tooMany) && (
+              <p className="form-error" role="alert">
+                {early
+                  ? "截止不能早于开始"
+                  : ended
+                    ? "重复到不能早于截止"
+                    : unlisted
+                      ? "按农历重复的截止日期应在 1900 年 1 月 31 日到 2101 年 1 月 28 日之间"
+                      : `提醒最多 ${MAX_REMINDERS} 个`}
+              </p>
+            )}
+            {timing && (
+              <button className="text-btn danger-text" onClick={() => (onSave({ due: null }), onClose())}>
+                清除截止时间
+              </button>
+            )}
+            <button className="filled-btn" onClick={save}>
+              保存
+            </button>
+          </>
+        )
       }
     >
-      <div className="due-mode">
-        <Seg<"date" | "after">
-          label="截止方式"
-          items={[
-            ["date", "按日期"],
-            ["after", "前置完成后"],
-          ]}
-          value={after ? "after" : "date"}
-          disabled={repeat ? ["after"] : undefined}
-          onChange={(m) => setAfter(m === "after")}
-        />
-      </div>
-      {repeat && <p className="group-note">重复的事项按日期算截止</p>}
-      {after ? (
-        <>
-          <div className="group settings">
-            <Controls name="几天内">
-              <Stepper label="几天内" min={0} max={365} value={afterDays} onChange={setAfterDays} />
-            </Controls>
-          </div>
-          <p className="group-note">
-            前置都完成的那天起算，0 是当天
-            {dueAfter && due && (
-              <>
-                <br />
-                已定下：{formatDue({ date: due.date }, now)}
-              </>
-            )}
-          </p>
-        </>
+      {adding ? (
+        <div key="custom" className="page-forth">
+          {time && (
+            <div className="due-mode">
+              <Seg<"ahead" | "day">
+                label="提醒方式"
+                items={[
+                  ["ahead", "提前多久"],
+                  ["day", "按日子"],
+                ]}
+                value={byDay ? "day" : "ahead"}
+                onChange={(k) => setByDay(k === "day")}
+              />
+            </div>
+          )}
+          <div className="group settings">{ahead ? beforeRows : onDayRows}</div>
+        </div>
       ) : (
-        <Calendar value={date} min={start ?? undefined} onChange={setDate} />
-      )}
-      <div className="group settings">
-        <TimeRow value={time} extra={timing?.time} min={(after ? afterDays === 0 : date === start) ? startTime : undefined} onChange={setTime} optional />
-        <MultiSelect
-          label="提醒"
-          text={remindersLabel(reminders)}
-          items={offered.map((r) => [key(r), remindLabel(r)])}
-          value={reminders.map(key)}
-          onChange={(keys) => setChosen(offered.filter((r) => keys.includes(key(r))))}
-          none="不提醒"
-          more={["自定义…", () => setAdding(true)]}
-        />
-        {adding && time && (
-          <Controls name="提醒方式">
-            <Seg<"ahead" | "day">
-              label="提醒方式"
-              small
+        <div key="main" className={back ? "page-back" : undefined}>
+          <div className="due-mode">
+            <Seg<"date" | "after">
+              label="截止方式"
               items={[
-                ["ahead", "提前多久"],
-                ["day", "按日子"],
+                ["date", "按日期"],
+                ["after", "前置完成后"],
               ]}
-              value={byDay ? "day" : "ahead"}
-              onChange={(k) => setByDay(k === "day")}
+              value={after ? "after" : "date"}
+              disabled={repeat ? ["after"] : undefined}
+              onChange={(m) => setAfter(m === "after")}
             />
-          </Controls>
-        )}
-        {adding && (time && !byDay ? <AddAhead onAdd={add} /> : <AddOnDay onAdd={add} />)}
-        {!after && <Select<typeof menu>
-          label="重复"
-          row
-          items={[
-            ["off", endedAs ? `${endedAs}的事项不能重复` : "不重复"],
-            ["day", "每天"],
-            ["workdays", "每个工作日"],
-            ["week", "每周"],
-            ...(named ? [["days", named] satisfies [typeof menu, string]] : []),
-            ["month", "每月"],
-            ["year", "每年"],
-            ["custom", "自定义"],
-          ]}
-          value={menu}
-          disabled={endedAs !== null}
-          onChange={(k) => {
-            // For the type: "days" is listed only while it is the value, which isn't picked anew.
-            if (k === "days") return;
-            setKind(k === "workdays" ? "week" : k);
-            setDays(k === "workdays" ? WORKDAYS : null);
-            setLunar(false);
-          }}
-        />}
-        {kind === "custom" && (
-          <Controls name="间隔">
-            <Stepper label="间隔数" min={1} value={every} max={365} onChange={setEvery} />
-            <Seg<RepeatUnit>
-              label="间隔单位"
-              small
-              items={UNITS}
-              value={unit}
-              onChange={(u) => {
-                setUnit(u);
-                setDays(null);
+          </div>
+          {repeat && <p className="group-note">重复的事项按日期算截止</p>}
+          {after ? (
+            <>
+              <div className="group settings">
+                <Controls name="几天内">
+                  <Stepper label="几天内" min={0} max={365} value={afterDays} onChange={setAfterDays} />
+                </Controls>
+              </div>
+              <p className="group-note">
+                前置都完成的那天起算，0 是当天
+                {dueAfter && due && (
+                  <>
+                    <br />
+                    已定下：{formatDue({ date: due.date }, now)}
+                  </>
+                )}
+              </p>
+            </>
+          ) : (
+            <Calendar value={date} min={start ?? undefined} onChange={setDate} />
+          )}
+          <div className="group settings">
+            <TimeRow value={time} extra={timing?.time} min={(after ? afterDays === 0 : date === start) ? startTime : undefined} onChange={setTime} optional />
+            <MultiSelect
+              label="提醒"
+              text={remindersLabel(reminders)}
+              items={offered.map((r) => [key(r), remindLabel(r)])}
+              value={reminders.map(key)}
+              onChange={(keys) => setChosen(offered.filter((r) => keys.includes(key(r))))}
+              none="不提醒"
+              more={["自定义…", () => setAdding(true)]}
+            />
+            {!after && <Select<typeof menu>
+              label="重复"
+              row
+              items={[
+                ["off", endedAs ? `${endedAs}的事项不能重复` : "不重复"],
+                ["day", "每天"],
+                ["workdays", "每个工作日"],
+                ["week", "每周"],
+                ...(named ? [["days", named] satisfies [typeof menu, string]] : []),
+                ["month", "每月"],
+                ["year", "每年"],
+                ["custom", "自定义"],
+              ]}
+              value={menu}
+              disabled={endedAs !== null}
+              onChange={(k) => {
+                // For the type: "days" is listed only while it is the value, which isn't picked anew.
+                if (k === "days") return;
+                setKind(k === "workdays" ? "week" : k);
+                setDays(k === "workdays" ? WORKDAYS : null);
                 setLunar(false);
               }}
-            />
-          </Controls>
-        )}
-        {on === "week" && (
-          <Controls name="周几">
-            <Days label="周几" texts={[...WEEKDAYS]} name={(t) => `周${t}`} value={shownDays} onChange={setDays} />
-          </Controls>
-        )}
-        {monthly && (
-          <Switch
-            label="按农历"
-            sub={lunarDay ? `截止日期是农历${lunarText(lunarDay)}` : "截止日期不在农历的范围里"}
-            on={lunar}
-            onChange={(to) => {
-              setLunar(to);
-              setDays(null);
-            }}
-          />
-        )}
-        {lunar ? (
-          <Controls name="几号">
-            <Days label="几号" lunar texts={LUNAR_DAYS} name={(t) => t} value={shownDays} onChange={setDays} />
-          </Controls>
-        ) : (
-          on === "month" && (
-            <Controls name="几号">
-              <Days label="几号" texts={MONTHDAYS} name={(t) => `${t} 号`} value={shownDays} onChange={setDays} />
-            </Controls>
-          )
-        )}
-        {repeat && (
-          <Controls name="下一次从">
-            <Seg<RepeatFrom>
-              label="下一次从"
-              small
-              items={[
-                ["due", "截止日期算"],
-                ["done", "完成那天算"],
-              ]}
-              value={from}
-              onChange={setFrom}
-            />
-          </Controls>
-        )}
-        {repeat && <UntilRow value={until} min={date} onChange={setUntil} />}
-      </div>
+            />}
+            {kind === "custom" && (
+              <Controls name="间隔">
+                <Stepper label="间隔数" min={1} value={every} max={365} onChange={setEvery} />
+                <Seg<RepeatUnit>
+                  label="间隔单位"
+                  small
+                  items={UNITS}
+                  value={unit}
+                  onChange={(u) => {
+                    setUnit(u);
+                    setDays(null);
+                    setLunar(false);
+                  }}
+                />
+              </Controls>
+            )}
+            {on === "week" && (
+              <Controls name="周几">
+                <Days label="周几" texts={[...WEEKDAYS]} name={(t) => `周${t}`} value={shownDays} onChange={setDays} />
+              </Controls>
+            )}
+            {monthly && (
+              <Switch
+                label="按农历"
+                sub={lunarDay ? `截止日期是农历${lunarText(lunarDay)}` : "截止日期不在农历的范围里"}
+                on={lunar}
+                onChange={(to) => {
+                  setLunar(to);
+                  setDays(null);
+                }}
+              />
+            )}
+            {lunar ? (
+              <Controls name="几号">
+                <Days label="几号" lunar texts={LUNAR_DAYS} name={(t) => t} value={shownDays} onChange={setDays} />
+              </Controls>
+            ) : (
+              on === "month" && (
+                <Controls name="几号">
+                  <Days label="几号" texts={MONTHDAYS} name={(t) => `${t} 号`} value={shownDays} onChange={setDays} />
+                </Controls>
+              )
+            )}
+            {repeat && (
+              <Controls name="下一次从">
+                <Seg<RepeatFrom>
+                  label="下一次从"
+                  small
+                  items={[
+                    ["due", "截止日期算"],
+                    ["done", "完成那天算"],
+                  ]}
+                  value={from}
+                  onChange={setFrom}
+                />
+              </Controls>
+            )}
+            {repeat && <UntilRow value={until} min={date} onChange={setUntil} />}
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }
@@ -699,46 +726,36 @@ function TimeInput({ onChange, onDone }: { onChange(time: string): void; onDone(
 const MONTHDAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
 const LUNAR_DAYS = Array.from({ length: 30 }, (_, i) => dayName(i + 1));
 
-/** The rows under a reminder menu that add one so far ahead of the due time. */
-export function AddAhead({ onAdd }: { onAdd(r: RemindBefore): void }) {
+/** The rows choosing a reminder so far ahead of the due time, and that reminder. */
+export function useRemindBefore(): [ReactNode, RemindBefore] {
   const [ahead, setAhead] = useState<[number, RemindUnit]>([10, "minute"]);
-  return (
-    <>
-      <Controls name="提前">
-        <Stepper label="提前多少" min={1} value={ahead[0]} max={MAX_REMIND / REMIND_UNITS[ahead[1]].minutes} onChange={(n) => setAhead([n, ahead[1]])} />
-        <Seg<RemindUnit>
-          label="提前的单位"
-          small
-          items={AHEAD}
-          value={ahead[1]}
-          onChange={(u) => setAhead([Math.min(ahead[0], MAX_REMIND / REMIND_UNITS[u].minutes), u])}
-        />
-      </Controls>
-      <Controls name="">
-        <button className="text-btn" onClick={() => onAdd({ before: ahead[0] * REMIND_UNITS[ahead[1]].minutes })}>
-          添加
-        </button>
-      </Controls>
-    </>
+  const rows = (
+    <Controls name="提前">
+      <Stepper label="提前多少" min={1} value={ahead[0]} max={MAX_REMIND / REMIND_UNITS[ahead[1]].minutes} onChange={(n) => setAhead([n, ahead[1]])} />
+      <Seg<RemindUnit>
+        label="提前的单位"
+        small
+        items={AHEAD}
+        value={ahead[1]}
+        onChange={(u) => setAhead([Math.min(ahead[0], MAX_REMIND / REMIND_UNITS[u].minutes), u])}
+      />
+    </Controls>
   );
+  return [rows, { before: ahead[0] * REMIND_UNITS[ahead[1]].minutes }];
 }
 
-/** The rows under a reminder menu that add one on the due date, or days before it, at a time. */
-export function AddOnDay({ onAdd }: { onAdd(r: RemindOn): void }) {
+/** The rows choosing a reminder on the due date, or days before it, at a time, and that reminder. */
+export function useRemindOn(): [ReactNode, RemindOn] {
   const [onDay, setOnDay] = useState<[number, string]>([1, "09:00"]);
-  return (
+  const rows = (
     <>
       <Controls name="提前几天">
         <Stepper label="提前几天" min={0} value={onDay[0]} max={MAX_REMIND_DAYS} onChange={(n) => setOnDay([n, onDay[1]])} />
       </Controls>
       <TimeRow label="几点" value={onDay[1]} onChange={(t) => setOnDay([onDay[0], t])} />
-      <Controls name="">
-        <button className="text-btn" onClick={() => onAdd({ days: onDay[0], time: onDay[1] })}>
-          添加
-        </button>
-      </Controls>
     </>
   );
+  return [rows, { days: onDay[0], time: onDay[1] }];
 }
 
 /** A row named on the left with controls for its value on the right, or under the name, to the right,

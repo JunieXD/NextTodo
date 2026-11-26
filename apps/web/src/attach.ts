@@ -181,3 +181,18 @@ export const reference = (a: { id: string; name: string }) => `[${a.name.replace
 
 /** The files in what was pasted or dropped. */
 export const filesIn = (data: DataTransfer | null): File[] => [...(data?.files ?? [])];
+
+/** Whether what is dragged has files. */
+export const draggingFiles = (e: DragEvent | React.DragEvent): boolean => !!e.dataTransfer?.types.includes("Files");
+
+/** Files dropped where nothing takes them aren't taken: the browser, and the app's web view, would
+ * open the file in place of the app. */
+export function refuseStrayDrops() {
+  const refuse = (e: DragEvent) => {
+    if (!draggingFiles(e) || e.defaultPrevented) return;
+    e.preventDefault();
+    e.dataTransfer!.dropEffect = "none";
+  };
+  addEventListener("dragover", refuse);
+  addEventListener("drop", refuse);
+}

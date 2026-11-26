@@ -69,9 +69,9 @@ export function NotificationSettings() {
       <h2 className="group-title">通知</h2>
       <div className="group">
         {notify}
-        <Row title="铃声和振动" sub="提醒响什么铃声、振不振动，在系统设置里选" action={["打开设置", () => NextTodo.openReminderSound()]} />
+        <Row title="铃声和振动" sub="在系统设置中选择" action={["打开设置", () => NextTodo.openReminderSound()]} />
         <Row title="准时提醒" sub={state.exact ? "已允许" : "未允许时提醒可能延迟几分钟"} action={state.exact ? undefined : ["前往设置", () => NextTodo.openExactAlarmSettings()]} />
-        <Switch label="弹窗提醒" sub="到点在屏幕底部弹出卡片，不点不收起" on={state.card} onChange={card} />
+        <Switch label="弹窗提醒" sub="到时在屏幕底部弹出卡片，直到手动关闭" on={state.card} onChange={card} />
         {state.card && !state.overlay && <Row title="显示在其他应用上层" sub="未允许时弹窗提醒改用顶部横幅" action={["前往设置", () => NextTodo.openOverlaySettings()]} />}
       </div>
     </>
@@ -92,7 +92,7 @@ export function SystemSettings() {
 }
 
 /** What HyperOS needs for the widget and reminders: docs/android.md#澎湃-os. */
-const HYPER_OS = "澎湃 OS 需允许自启动、将省电策略设为“无限制”，小组件和提醒才能按时工作；提醒要在屏幕顶部弹出，还需在通知设置的“截止提醒”里允许“悬浮通知”";
+const HYPER_OS = "澎湃 OS 需允许自启动、将省电策略设为“无限制”，小组件和提醒才能按时工作；如需在屏幕顶部弹出提醒，还需在通知设置的“截止提醒”中允许“悬浮通知”";
 
 function Row({ title, sub, action }: { title: string; sub: string; action?: [string, () => unknown] }) {
   return (
@@ -157,7 +157,7 @@ function CalendarSettings({ allowed, onAllowed }: { allowed: boolean; onAllowed(
       </>
     );
   }
-  const where = target === "own" ? "写进 App 新建的“NextTodo”日历，只在这台手机上。" : chosen?.synced ? `日程会随账号 ${chosen.account} 同步到云端。` : "这个日历只在这台手机上。";
+  const where = target === "own" ? "写入 App 新建的“NextTodo”日历，仅存于这台手机。" : chosen?.synced ? `日程会随账号 ${chosen.account} 同步到云端。` : "该日历仅存于这台手机。";
   return (
     <>
       <h2 className="group-title">系统日历</h2>
@@ -177,7 +177,7 @@ export function BackgroundTip() {
   };
   return (
     <div className="tip-card">
-      <p>为确保提醒和小组件按时工作，请在系统设置中允许 NextTodo 自启动，并将省电策略设为“无限制”；要在屏幕顶部弹出提醒，还需在通知设置的“截止提醒”里允许“悬浮通知”。此项也可在设置中找到。</p>
+      <p>为确保提醒和小组件按时工作，请在系统设置中允许 NextTodo 自启动，并将省电策略设为“无限制”；如需在屏幕顶部弹出提醒，还需在通知设置的“截止提醒”中允许“悬浮通知”。此项也可在设置中找到。</p>
       <div className="tip-actions">
         <button className="text-btn" onClick={dismiss}>
           关闭

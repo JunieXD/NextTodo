@@ -185,7 +185,7 @@ export function AiPage() {
   return (
     <>
       <p className="empty">
-        在添加框点 ✦ 切到 AI 整理，写下一段话，由所选的模型整理成事项。原文、文件夹名、其中未完成的事项和 AI 说明会发给这个服务商。<Help to="ai#key">如何获取 API 密钥</Help>
+        在添加框点 ✦ 切换到 AI 整理，由模型把一段话整理成事项。原文、文件夹名、其中未完成的事项和 AI 说明会发送给该服务商。<Help to="ai#key">如何获取 API 密钥</Help>
       </p>
       <div className="field">
         服务商
@@ -231,7 +231,7 @@ export function AiPage() {
       <label className="field">
         识别图片
         <span className="field-switch">
-          <span className="hint">模型能看懂图片时打开，整理时把附件里的图片一起发给它</span>
+          <span className="hint">模型支持图片时打开，整理时一并发送附件中的图片</span>
           <Toggle.Root className="switch" checked={form.vision} onCheckedChange={(vision) => set({ vision })}>
             <Toggle.Thumb />
           </Toggle.Root>
@@ -242,7 +242,7 @@ export function AiPage() {
       {!inLocalMode() && (
         <div className="field">
           <span>
-            保存位置 <span className="hint">{place === "local" ? "这台设备联网时才会整理" : providers.sync ? "提交后设备可以离线，服务器自己整理" : ""}</span>
+            保存位置 <span className="hint">{place === "local" ? "这台设备联网时才会整理" : providers.sync ? "提交后设备可离线，由服务器整理" : ""}</span>
           </span>
           <Seg<Place>
             label="保存位置"

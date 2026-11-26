@@ -2,7 +2,7 @@
 // the main window (docs/desktop.md#菜单栏小窗); the desktop widget too, which it does not close and which
 // is moved by its top row (docs/desktop.md#桌面小组件).
 
-import { AppWindow, Check, ChevronDown, CircleCheck, FolderRoot } from "lucide-react";
+import { AppWindow, Check, ChevronDown, CircleCheck } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { type ReactNode, useContext, useEffect } from "react";
 import { Redirect, useLocation } from "wouter";
@@ -107,7 +107,7 @@ function Pages({ folder }: { folder?: FolderId | null }) {
     </DropdownMenu.Item>
   );
   const tree = (id: FolderId | null, depth: number): ReactNode[] => [
-    item(id ?? "root", folderUrl(id), id ? <FolderGlyph board={board} id={id} /> : <Icon of={FolderRoot} />, <FolderName board={board} id={id} />, folder === id, depth),
+    item(id ?? "root", folderUrl(id), <FolderGlyph board={board} id={id} />, <FolderName board={board} id={id} />, folder === id, depth),
     ...board.subfolders(id).flatMap((f) => tree(f.id, depth + 1)),
   ];
   const theirs = board.sharedWithMe();

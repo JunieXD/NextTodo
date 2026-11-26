@@ -55,7 +55,7 @@ function useCopyFolder() {
       title: `复制“${f.name}”`,
       label: "名称",
       value: copyName(f.name, taken),
-      hint: "连同子文件夹、事项、附件和先后关系一起复制，事项都变回待办",
+      hint: "连同子文件夹、事项、附件和先后关系一起复制，事项均恢复为待办",
       ok: "复制",
       check: checkFolderName,
     });
@@ -202,7 +202,7 @@ function TidyRequest({ onSubmit, onClose }: { onSubmit(text: string): void; onCl
               {error}
             </span>
           ) : (
-            <span className="hint">新建、修改、完成、删除、移动事项，调整先后和顺序都可以，执行前由你逐条确认</span>
+            <span className="hint">可新建、修改、完成、删除、移动事项，调整先后和顺序，执行前逐条确认</span>
           )}
         </label>
       </form>

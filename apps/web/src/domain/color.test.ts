@@ -14,11 +14,11 @@ test("the square and the bar give back the colour picked", () => {
   for (const c of colours) expect(hexOf(rgbOfHsv(hsvOfRgb(rgbOf(c))))).toBe(c);
 });
 
-test("a folder colour's icon is seen on its fill and on the page in either theme", () => {
+test("a mark on a folder colour is seen, and its icon on the page in either theme", () => {
   for (const c of colours) {
     const r = roles(c);
     expect([r.light, r.dark].map(parseHex)).toEqual([r.light, r.dark]);
-    expect(contrast(r.on, r.fill)).toBeGreaterThanOrEqual(ON_LIGHT);
+    expect(contrast(r.on, c)).toBeGreaterThanOrEqual(ON_LIGHT);
     expect(contrast(r.light, LIGHT_PAGE)).toBeGreaterThanOrEqual(ON_LIGHT);
     expect(contrast(r.dark, DARK_PAGE)).toBeGreaterThanOrEqual(ON_DARK);
     // Seen there as it is, it stays as it is.

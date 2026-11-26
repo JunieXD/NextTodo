@@ -4,6 +4,7 @@ import { registerSW } from "virtual:pwa-register";
 import { App } from "./App";
 import { loadAiMode } from "./ai";
 import { app, desktopOs, loadServer, native, phoneApp } from "./api/http";
+import { refuseStrayDrops } from "./attach";
 import * as mobile from "./mobile";
 import * as desktop from "./desktop";
 import { loadMode } from "./local";
@@ -22,6 +23,7 @@ import { applyZoom } from "./zoom";
 listenForFailures();
 applyTheme();
 limitBrowserMenu();
+refuseStrayDrops();
 // The macOS app draws under the title bar, around the window's buttons.
 if (app === "desktop" && desktopOs === "macOS") document.documentElement.classList.add("macos");
 if (app === "desktop") void applyZoom();

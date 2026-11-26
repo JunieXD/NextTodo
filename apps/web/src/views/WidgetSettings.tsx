@@ -62,8 +62,8 @@ function DesktopWidget() {
   return (
     <>
       {shown !== null && (
-        <div className="group settings widget-shown">
-          <Switch label="在桌面上显示" sub="摆在桌面上，在其他窗口下面，显示桌面时也在；拖顶上一行移动，拖边缘改大小" on={shown} onChange={(to) => void show(to)} />
+        <div className="group settings">
+          <Switch label="在桌面上显示" sub="常驻桌面，位于其他窗口下方" on={shown} onChange={(to) => void show(to)} />
         </div>
       )}
       <Preview look={look} dark={useDark()} size={size} head={{ title: true, refresh: false, add: false }} />
@@ -108,8 +108,8 @@ function AndroidWidgets() {
       <Colors look={look} change={change} />
       <h2 className="group-title">标题栏</h2>
       <div className="group settings">
-        <Switch label="标题" sub="点了打开 App" on={look.title} onChange={(title) => change({ title })} />
-        <Switch label="刷新按钮" sub="关了也会随 App 和每 15 分钟一次自动刷新" on={look.refresh} onChange={(refresh) => change({ refresh })} />
+        <Switch label="标题" sub="点按打开 App" on={look.title} onChange={(title) => change({ title })} />
+        <Switch label="刷新按钮" sub="关闭后仍会定时自动刷新" on={look.refresh} onChange={(refresh) => change({ refresh })} />
         <Switch label="添加按钮" sub="“日程”没有添加按钮" on={look.add} onChange={(add) => change({ add })} />
       </div>
       <TextSize value={look.size} onChange={(size) => change({ size })} />
@@ -212,46 +212,48 @@ function Preview({
   const headed = head.title || head.refresh || head.add;
   return (
     <div className="widget-stage" aria-label="小组件预览" role="img">
-      <div
-        className="widget-card"
-        style={{
-          paddingTop: headed ? 0 : 10,
-          background: c.background,
-          color: c.text,
-          "--scale": SCALES[size],
-          "--w-divider": c.divider,
-          "--w-primary": c.primary,
-        }}
-      >
-        {headed && (
-          <div className={`widget-head${head.title ? "" : " low"}`}>
-            <b>{head.title && "接下来"}</b>
-            <span className="widget-buttons" style={{ color: c.secondary }}>
-              {head.refresh && <Icon of={RefreshCw} size={18} />}
-              {head.add && <Icon of={Plus} size={20} />}
-            </span>
-          </div>
-        )}
-        {tasks.length ? (
-          tasks.map((t) => {
-            const kind = t.due && dueKind(t.due, now);
-            return (
-              <div key={t.id} className="widget-row">
-                <span className="widget-circle" />
-                <span className="widget-title">{t.title}</span>
-                {t.due && (
-                  <span className="widget-meta" style={{ color: kind === "overdue" ? c.overdue : kind === "today" ? c.today : c.secondary }}>
-                    {formatDue(t.due, now)}
-                  </span>
-                )}
-              </div>
-            );
-          })
-        ) : (
-          <div className="widget-note" style={{ color: c.secondary }}>
-            暂无可做的事项
-          </div>
-        )}
+      <div className="widget-wall">
+        <div
+          className="widget-card"
+          style={{
+            paddingTop: headed ? 0 : 10,
+            background: c.background,
+            color: c.text,
+            "--scale": SCALES[size],
+            "--w-divider": c.divider,
+            "--w-primary": c.primary,
+          }}
+        >
+          {headed && (
+            <div className={`widget-head${head.title ? "" : " low"}`}>
+              <b>{head.title && "接下来"}</b>
+              <span className="widget-buttons" style={{ color: c.secondary }}>
+                {head.refresh && <Icon of={RefreshCw} size={18} />}
+                {head.add && <Icon of={Plus} size={20} />}
+              </span>
+            </div>
+          )}
+          {tasks.length ? (
+            tasks.map((t) => {
+              const kind = t.due && dueKind(t.due, now);
+              return (
+                <div key={t.id} className="widget-row">
+                  <span className="widget-circle" />
+                  <span className="widget-title">{t.title}</span>
+                  {t.due && (
+                    <span className="widget-meta" style={{ color: kind === "overdue" ? c.overdue : kind === "today" ? c.today : c.secondary }}>
+                      {formatDue(t.due, now)}
+                    </span>
+                  )}
+                </div>
+              );
+            })
+          ) : (
+            <div className="widget-note" style={{ color: c.secondary }}>
+              暂无可做的事项
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

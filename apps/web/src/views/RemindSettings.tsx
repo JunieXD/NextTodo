@@ -8,18 +8,18 @@ import { app } from "../api/http";
 import { DAY_REMINDERS, MAX_REMINDERS, REMINDERS, inOrder, remindLabel, remindersLabel } from "../domain/dates";
 import { setDailyDigest, setDefaultReminders, setHideReminders, useDailyDigest, useDefaultReminders, useHideReminders } from "../remind-settings";
 import { MultiSelect, Switch } from "../ui/controls";
-import { useFeedback } from "../ui/feedback";
-import { AddAhead, AddOnDay, TimeRow } from "./due";
+import { Modal, useFeedback } from "../ui/feedback";
+import { TimeRow, useRemindBefore, useRemindOn } from "./due";
 
 /** The menu of `presets` and those of `value`, the reminders picked, ordered as for a task due at
- * `time`; “自定义…” opens the rows `adder` gives to add one more. */
+ * `time`; “自定义…” opens a dialog of the rows of `custom`, which adds its reminder. */
 function Pick<R extends Remind>(p: {
   label: string;
   presets: R[];
   value: R[];
   time: string | undefined;
   onChange(v: R[]): void;
-  adder(add: (r: R) => void): ReactNode;
+  custom: [ReactNode, R];
 }) {
   const [adding, setAdding] = useState(false);
   const { snack } = useFeedback();
@@ -40,17 +40,32 @@ function Pick<R extends Remind>(p: {
         none="不提醒"
         more={["自定义…", () => setAdding(true)]}
       />
-      {adding &&
-        p.adder((r) => {
-          set(inOrder([...value, r], p.time));
-          setAdding(false);
-        })}
+      {adding && (
+        <Modal
+          title="自定义提醒"
+          onClose={() => setAdding(false)}
+          footer={
+            <>
+              <button className="text-btn" onClick={() => setAdding(false)}>
+                取消
+              </button>
+              <button className="filled-btn" onClick={() => (set(inOrder([...value, p.custom[1]], p.time)), setAdding(false))}>
+                添加
+              </button>
+            </>
+          }
+        >
+          <div className="group settings">{p.custom[0]}</div>
+        </Modal>
+      )}
     </>
   );
 }
 
 export function RemindSettings() {
   const defaults = useDefaultReminders();
+  const before = useRemindBefore();
+  const on = useRemindOn();
   const hidden = useHideReminders();
   const digest = useDailyDigest();
   return (
@@ -64,7 +79,7 @@ export function RemindSettings() {
           value={defaults.timed}
           time="00:00"
           onChange={(timed) => setDefaultReminders({ ...defaults, timed })}
-          adder={(add) => <AddAhead onAdd={add} />}
+          custom={before}
         />
         <Pick
           label="只有日期的事项"
@@ -72,7 +87,7 @@ export function RemindSettings() {
           value={defaults.dated}
           time={undefined}
           onChange={(dated) => setDefaultReminders({ ...defaults, dated })}
-          adder={(add) => <AddOnDay onAdd={add} />}
+          custom={on}
         />
       </div>
       {app && (

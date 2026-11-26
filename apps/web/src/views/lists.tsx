@@ -24,7 +24,7 @@ import { blank, checkJobText, checkTitle } from "../domain/text";
 import { useCommit, useConnection, useSession, useView } from "../session";
 import { readyIn, setNextFolders, useNextFolders } from "../next-folders";
 import { defaultReminders, jobReminders } from "../remind-settings";
-import { addOps, filesIn, isPicture, plan, seesAny, unseen } from "../attach";
+import { addOps, draggingFiles, filesIn, isPicture, plan, seesAny, unseen } from "../attach";
 import { type Staged, draft, keepDraft, keepStaged, onDrafts, stagedFiles } from "../sync/drafts";
 import { dropFiles } from "../sync/files";
 import { useBack } from "../ui/back";
@@ -365,6 +365,47 @@ export type Sent = { changes: MutationId[] } & ({ task: TaskId; job?: never } | 
  * for what is next, which adds to a folder picked beside it. */
 export const quickAddPlace = (folder?: FolderId | null, on?: string) => (on !== undefined ? "calendar" : folder === undefined ? "next" : (folder ?? "root"));
 
+/** Files dragged in anywhere on the page but on the details, which take them for their task, for `add`
+ * as they are dropped; while they are dragged there, `on`. None while `off`. */
+function useDropAnywhere(add: (files: File[]) => unknown, off: boolean) {
+  const [on, setOn] = useState(false);
+  const latest = useRef(add);
+  useEffect(() => {
+    latest.current = add;
+  });
+  useEffect(() => {
+    if (off) return;
+    const ours = (e: DragEvent) => draggingFiles(e) && !(e.target instanceof Element && e.target.closest(".detail"));
+    // Entering an element leaves the one before; out of the page once as many as went in are left.
+    let depth = 0;
+    const enter = (e: DragEvent) => draggingFiles(e) && depth++;
+    const leave = (e: DragEvent) => draggingFiles(e) && --depth === 0 && setOn(false);
+    const over = (e: DragEvent) => {
+      setOn(ours(e));
+      if (ours(e)) e.preventDefault();
+    };
+    const drop = (e: DragEvent) => {
+      depth = 0;
+      setOn(false);
+      if (!ours(e)) return;
+      e.preventDefault();
+      void latest.current(filesIn(e.dataTransfer));
+    };
+    document.addEventListener("dragenter", enter);
+    document.addEventListener("dragleave", leave);
+    document.addEventListener("dragover", over);
+    document.addEventListener("drop", drop);
+    return () => {
+      document.removeEventListener("dragenter", enter);
+      document.removeEventListener("dragleave", leave);
+      document.removeEventListener("dragover", over);
+      document.removeEventListener("drop", drop);
+      setOn(false);
+    };
+  }, [off]);
+  return on;
+}
+
 /** Adds tasks by typing, or, switched to AI organizing with ✦, has AI organize what is written into
  * tasks; that text can be expanded to write at length. Files pasted or dropped in go with what is
  * added. In a folder (`null` for the root) it adds there; elsewhere to a folder picked beside it, as
@@ -420,7 +461,7 @@ export function QuickAdd({
     stage(staged.filter((s) => s.id !== f.id));
     void dropFiles(user.id, [f.id]);
   };
-  /** What pasting or dropping files does in the box's text. */
+  /** What pasting files does in the box's text. */
   const files = {
     onPaste: (e: React.ClipboardEvent) => {
       const list = filesIn(e.clipboardData);
@@ -428,14 +469,8 @@ export function QuickAdd({
       e.preventDefault();
       void addFiles(list);
     },
-    onDragOver: (e: React.DragEvent) => e.dataTransfer.types.includes("Files") && e.preventDefault(),
-    onDrop: (e: React.DragEvent) => {
-      const list = filesIn(e.dataTransfer);
-      if (!list.length) return;
-      e.preventDefault();
-      void addFiles(list);
-    },
   };
+  const dropping = useDropAnywhere(addFiles, hide);
   /** Whether the files staged can go; one the server turned down has to be taken out first. */
   const canSend = () => {
     const refused = staged.find((f) => f.error);
@@ -481,8 +516,9 @@ export function QuickAdd({
     resized.observe(el);
     return () => resized.disconnect();
   }, []);
-  // In use from when the focus comes in until it or a tap goes elsewhere in the page: not to a menu or
-  // a dialog the bar opened. Away from the page, to choose a file say, does not count.
+  // In use from when the focus comes in, or a tap, until it or a tap goes elsewhere in the page: not to a
+  // menu or a dialog the bar opened. Away from the page, to choose a file say, does not count. A tap
+  // elsewhere may leave the focus in the field, and one on it again then brings no focus to take.
   const [active, setActive] = useState(false);
   useEffect(() => {
     if (!active) return;
@@ -568,7 +604,7 @@ export function QuickAdd({
     if (empty) return;
     if (ai) return void organize();
     const c = checkTitle(title);
-    if (!c.ok) return snack([...title.trim()].length > 200 && on === undefined ? `${c.error}；长段文字可以点 ✦ 交给 AI 整理` : c.error);
+    if (!c.ok) return snack([...title.trim()].length > 200 && on === undefined ? `${c.error}；长段文字可点 ✦ 交给 AI 整理` : c.error);
     if (!canSend()) return;
     const id = uuidv7();
     const op: Op = {
@@ -643,10 +679,10 @@ export function QuickAdd({
         className={`quick-add${layered ? " layered" : ""}${shut ? " shut" : ""}`}
         hidden={hide}
         onSubmit={submit}
-        onDragOver={files.onDragOver}
-        onDrop={files.onDrop}
         onFocus={() => setActive(true)}
+        onPointerDown={() => setActive(true)}
       >
+        {dropping && <div className="drop-cover">松开添加附件</div>}
         <div className="qa-field">
           <StagedFiles files={staged} unseen={hidden} onRemove={unstage} />
           {/* A title pasted on many lines is joined into one. */}
@@ -717,8 +753,8 @@ function Editor(props: {
   text: string;
   staged: Staged[];
   unseen?: Map<string, string>;
-  /** What pasting or dropping files does. */
-  files: { onPaste(e: React.ClipboardEvent): void; onDragOver(e: React.DragEvent): void; onDrop(e: React.DragEvent): void };
+  /** What pasting files does. */
+  files: { onPaste(e: React.ClipboardEvent): void };
   onEdit(text: string): void;
   onUnstage(f: Staged): void;
   onEnter(e: React.KeyboardEvent<HTMLTextAreaElement>): void;
@@ -775,8 +811,6 @@ function Editor(props: {
               onChange={(e) => props.onEdit(e.target.value)}
               onKeyDown={props.onEnter}
               onPaste={props.files.onPaste}
-              onDragOver={props.files.onDragOver}
-              onDrop={props.files.onDrop}
               placeholder="交给 AI 整理"
               aria-label="交给 AI 整理的内容"
             />

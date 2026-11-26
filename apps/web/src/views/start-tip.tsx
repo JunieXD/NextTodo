@@ -41,7 +41,7 @@ export function StartTip({ ready, now }: { ready: Task[]; now: Date }) {
     <>
       {t && (
         <div className="tip-card">
-          <p>“{t.title}”做完了，会一直在这里等下一次。不想提前看到，可以设成截止前几天才显示。</p>
+          <p>“{t.title}”完成后会留在这里，等待下一次。如不想提前看到，可设为截止前几天才显示。</p>
           <div className="tip-actions">
             <button className="text-btn" onClick={() => startTipSeen(board.me)}>
               知道了

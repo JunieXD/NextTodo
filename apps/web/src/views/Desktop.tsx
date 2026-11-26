@@ -1,7 +1,7 @@
 // The desktop layout: folders on the left, which can be folded away, the list in the middle, and the
 // open task's details on the right.
 
-import { CalendarDays, ChevronLeft, ChevronRight, CircleCheck, FolderRoot, History, ListChecks, Lock, PanelLeft, Search } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, CircleCheck, History, ListChecks, Lock, PanelLeft, Search } from "lucide-react";
 import { Fragment, type ReactNode, useRef, useState } from "react";
 import { Link, Redirect, useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
@@ -15,6 +15,7 @@ import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { BatchTools, batchTitle, useBatch } from "./batch";
 import { useColumns } from "./columns";
+import { Crumbs } from "./crumbs";
 import { Detail } from "./Detail";
 import { useTreeDrag } from "./drag";
 import { FolderContextMenu, FolderMenu, usePlaceFolder } from "./FolderMenu";
@@ -24,11 +25,11 @@ import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, NextFilter,
 import { readyIn, useNextFolders } from "../next-folders";
 import { folderUrl, settingsUrl, useFolderView, useRevealRequest, useSelection } from "./nav";
 import { SettingsHome, SettingsPage, settingsTitle, useSectionAt } from "./Settings";
-import { FolderGlyph, FolderTile, styled } from "./folder-look";
+import { FolderGlyph, styled } from "./folder-look";
 import { FolderName, SharedWith, sharer } from "./share";
 
 export function Desktop({ onSignOut }: { onSignOut(): void }) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const { board } = useView();
   const [sideOpen, setSideOpen] = useState(true);
   const { selected, close } = useSelection();
@@ -151,8 +152,8 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
       </div>
     );
     const by = f && sharer(board, f.id);
-    const crumbs = by ? `${board.name(by)} 共享` : f ? board.place(f.parent_id) : "";
-    const icon = !batch.on && styled(board, id) && <FolderTile board={board} id={id} className="title-ic" />;
+    const crumbs = by ? `${board.name(by)} 共享` : f && <Crumbs board={board} folder={f.parent_id} go={(to) => navigate(folderUrl(to))} />;
+    const icon = !batch.on && styled(board, id) && <FolderGlyph board={board} id={id} size={24} className="title-ic" />;
     main =
       view === "graph" ? (
         <Page title={title} icon={icon} crumbs={crumbs} actions={actions} scroll={false}>
@@ -292,7 +293,7 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ca
             >
               {kids.length > 0 && <Icon of={ChevronRight} size={14} width={2.2} />}
             </span>
-            {id ? <FolderGlyph board={board} id={id} /> : <Icon of={FolderRoot} size={18} />}
+            <FolderGlyph board={board} id={id} />
             <span className="truncate">
               <FolderName board={board} id={id} />
             </span>

@@ -14,7 +14,7 @@ import type { Board } from "../domain/board";
 import { lateness } from "../domain/calendar";
 import { day, dueAfterLabel, dueIn, formatDay, formatDue, formatMoment, isoDate, remindersLabel, startBeforeLabel, startLabel } from "../domain/dates";
 import { daysBefore, doneToday, repeatText, skippable } from "../domain/repeat";
-import { filesIn, reference } from "../attach";
+import { draggingFiles, filesIn, reference } from "../attach";
 import { checkDescription, checkTitle } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
 import { Check, Seg } from "../ui/controls";
@@ -542,21 +542,22 @@ function useFileDrop(task: TaskId, add: (files: File[]) => unknown) {
     document.addEventListener("paste", paste);
     return () => document.removeEventListener("paste", paste);
   }, [task]);
-  const files = (e: React.DragEvent) => e.dataTransfer.types.includes("Files");
+  // Not those over a dialog opened from here, which come by React's tree too: they are the quick add's.
+  const ours = (e: React.DragEvent) => draggingFiles(e) && e.target instanceof Node && e.currentTarget.contains(e.target);
   return {
     on,
     handlers: {
       onDragEnter: (e: React.DragEvent) => {
-        if (!files(e)) return;
+        if (!ours(e)) return;
         depth.current++;
         setOn(true);
       },
       onDragLeave: (e: React.DragEvent) => {
-        if (files(e) && --depth.current === 0) setOn(false);
+        if (ours(e) && --depth.current === 0) setOn(false);
       },
-      onDragOver: (e: React.DragEvent) => files(e) && e.preventDefault(),
+      onDragOver: (e: React.DragEvent) => ours(e) && e.preventDefault(),
       onDrop: (e: React.DragEvent) => {
-        if (!files(e)) return;
+        if (!ours(e)) return;
         depth.current = 0;
         setOn(false);
         // The description's editor has taken them.

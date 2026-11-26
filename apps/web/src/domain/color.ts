@@ -60,9 +60,9 @@ export const ON_DARK = 3;
 const MOST = (luminance(LIGHT_PAGE) + 0.05) / ON_LIGHT - 0.05;
 const LEAST = ON_DARK * (luminance(DARK_PAGE) + 0.05) - 0.05;
 
-/** What folder colour `hex` draws: `fill` behind its icon, `on` the icon on it, white unless that is
- * not seen, and `light`, `dark` the icon drawn on the page in each theme: the colour, mixed with black
- * or white as far as it takes to be seen there. */
+/** What folder colour `hex` draws: `on` a mark on it, as a swatch's tick, white unless that is not seen,
+ * and `light`, `dark` the icon drawn on the page in each theme: the colour, mixed with black or white as
+ * far as it takes to be seen there. */
 export function roles(hex: Hex) {
   const y = luminance(hex);
   const [r, g, b] = rgbOf(hex).map(linear);
@@ -74,7 +74,6 @@ export function roles(hex: Hex) {
     return hexOf([mix(r), mix(g), mix(b)]);
   };
   return {
-    fill: hex,
     on: contrast(hex, WHITE) < ON_LIGHT ? DARK_ICON : WHITE,
     light: y > MOST ? toward(MOST, 0) : hex,
     dark: y < LEAST ? toward(LEAST, 1) : hex,

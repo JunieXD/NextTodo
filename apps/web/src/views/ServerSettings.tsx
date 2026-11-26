@@ -59,7 +59,7 @@ function ServerVersion({ server }: { server: ServerVersions }) {
   const latest = server.latest !== null && newer(server.latest, server.server) ? server.latest : null;
   const howTo = <Help to="server#升级">查看升级方法</Help>;
   const start = async (version: string) => {
-    const body = "服务器会下载约 45 MB，换上新版本时各设备断开几秒。新版本起不来时会自动退回。";
+    const body = "服务器将下载约 45 MB，更新时各设备断开几秒；新版本无法启动时自动回退。";
     if (await confirm({ title: `升级到 ${version}？`, body, ok: "升级" })) await upgrade(version).catch((e) => snack(forUser("升级", e)));
   };
   // Once the server can upgrade itself: those that cannot, and those not asked yet, have the way by hand.
@@ -186,7 +186,7 @@ function AttachmentSettings() {
   };
   return (
     <div className="group">
-      <Switch label="压缩图片" sub="上传前把 JPEG 照片缩到长边 2560 像素以内，并去掉拍摄地点等信息。关闭后一律上传原图。对所有用户生效。" on={on} onChange={(to) => void change(to)} />
+      <Switch label="压缩图片" sub="上传前将 JPEG 照片缩小到长边 2560 像素以内，并去除拍摄地点等信息。对所有用户生效。" on={on} onChange={(to) => void change(to)} />
     </div>
   );
 }

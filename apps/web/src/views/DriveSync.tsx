@@ -53,7 +53,7 @@ function Syncing({ sync, onStopped, onClose }: { sync: DriveSync; onStopped(): v
   const { confirm, snack } = useFeedback();
   const [busy, setBusy] = useState(false);
   const stop = async () => {
-    const body = "这台设备上的数据留着，之后的改动只在这台设备上，网盘里的不动。再开启时，会用网盘里的数据替换这台设备上的数据。";
+    const body = "这台设备的数据保留，之后的改动不再同步，网盘中的数据不变。再次开启时，将用网盘中的数据替换这台设备的数据。";
     if (!(await confirm({ title: "停止同步？", body, ok: "停止同步", danger: true }))) return;
     const anyway = (body: string) => confirm({ title: "仍然停止同步？", body, ok: "仍然停止", danger: true });
     setBusy(true);

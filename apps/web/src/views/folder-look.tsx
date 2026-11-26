@@ -16,6 +16,7 @@ import {
   Flag,
   FlaskConical,
   Folder as FolderDefault,
+  FolderRoot,
   FolderUsers,
   Gamepad2,
   Gift,
@@ -142,7 +143,7 @@ const glyph = (look: Pick<Folder, "icon">, shared: boolean): LucideIcon =>
 function tint(className: string, hex: Hex | null): { className: string; style?: CSSProperties } {
   if (!hex) return { className };
   const r = roles(hex);
-  return { className: `${className} fc`, style: { "--fc-fill": r.fill, "--fc-on": r.on, "--fc-light": r.light, "--fc-dark": r.dark } };
+  return { className: `${className} fc`, style: { "--fc-light": r.light, "--fc-dark": r.dark } };
 }
 
 /** What gives an element of `className` folder `f`'s colour. */
@@ -151,9 +152,11 @@ const folderTint = (board: Board, f: FolderId | null, className: string) => {
   return tint(className, color ? hexOfColor(color) : null);
 };
 
-/** The icon folder `f` shows: the one chosen, else a folder, with two people when it is shared. */
+/** The icon folder `f` shows: the one chosen, else a folder, with two people when it is shared; the
+ * root's own. */
 const folderIcon = (board: Board, f: FolderId | null): LucideIcon => {
-  const folder = f ? board.folder(f) : undefined;
+  if (!f) return FolderRoot;
+  const folder = board.folder(f);
   return folder ? glyph(folder, board.sharedRoot(f) === f) : FolderDefault;
 };
 
@@ -163,19 +166,10 @@ export const styled = (board: Board, f: FolderId | null): boolean => {
   return !!((folder?.color && hexOfColor(folder.color)) || folder?.icon);
 };
 
-/** Folder `f`'s icon in a square of its colour, as in lists. */
-export function FolderTile({ board, id, size = 18, className = "" }: { board: Board; id: FolderId | null; size?: number; className?: string }) {
+/** Folder `f`'s icon in its colour, or the root's. */
+export function FolderGlyph({ board, id, size = 18, className = "" }: { board: Board; id: FolderId | null; size?: number; className?: string }) {
   return (
-    <span {...folderTint(board, id, `folder-ic${className && ` ${className}`}`)}>
-      <Icon of={folderIcon(board, id)} size={size} />
-    </span>
-  );
-}
-
-/** Folder `f`'s icon in its colour, as drawn on the page. */
-export function FolderGlyph({ board, id, size = 18 }: { board: Board; id: FolderId; size?: number }) {
-  return (
-    <span {...folderTint(board, id, "folder-glyph")}>
+    <span {...folderTint(board, id, `folder-glyph${className && ` ${className}`}`)}>
       <Icon of={folderIcon(board, id)} size={size} />
     </span>
   );
@@ -246,8 +240,8 @@ export function FolderLookDialog({ board, folder: f, onClose }: { board: Board; 
       }
     >
       <div className="look-preview">
-        <span {...tint("folder-ic", hex)}>
-          <Icon of={glyph({ icon }, shared)} size={22} />
+        <span {...tint("folder-glyph", hex)}>
+          <Icon of={glyph({ icon }, shared)} size={28} />
         </span>
         <span className="truncate">{f.name}</span>
       </div>

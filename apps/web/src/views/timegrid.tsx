@@ -79,7 +79,8 @@ export function TimeGrid({
   const mark = useRef<HTMLDivElement>(null);
   const first = days[0];
   useLayoutEffect(() => {
-    mark.current!.style.scrollMarginTop = `${head.current!.offsetHeight}px`;
+    // Below the days and what stays on top over them.
+    mark.current!.style.scrollMarginTop = `${head.current!.offsetHeight + parseFloat(getComputedStyle(head.current!).top)}px`;
     mark.current!.scrollIntoView({ block: "start" });
   }, [first]);
   const minutes = now.getHours() * 60 + now.getMinutes();

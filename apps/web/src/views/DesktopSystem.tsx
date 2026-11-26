@@ -35,7 +35,7 @@ function StartAtLogin() {
       snack(forUser(`${to ? "开启" : "关闭"}开机自启`, e));
     }
   };
-  return <Switch label="登录时启动" sub={`登录电脑后自动启动，只显示在${windows ? "系统托盘" : "菜单栏"}，提醒照常`} on={on} onChange={toggle} />;
+  return <Switch label="登录时启动" sub={`登录电脑后自动启动，只显示在${windows ? "系统托盘" : "菜单栏"}`} on={on} onChange={toggle} />;
 }
 
 /** The modifier keys, as the app's shortcuts name them, in the order the system writes them. */

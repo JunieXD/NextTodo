@@ -41,10 +41,10 @@ function useKept(key: string): [string | null, (v: string) => void] {
   return [value, keep];
 }
 
-/** Whether the calendar offers the time grid, set on this device in the settings; off unless turned on. */
+/** Whether the calendar offers the time grid, set on this device in the settings; on unless turned off. */
 export function useTimeGridOn(): [boolean, (on: boolean) => void] {
   const [on, keep] = useKept(GRID_KEY);
-  return [on === "on", (v) => keep(v ? "on" : "off")];
+  return [on !== "off", (v) => keep(v ? "on" : "off")];
 }
 
 /** Which of a month, a week, a year or the time grid the calendar shows, remembered on this device;
@@ -306,10 +306,12 @@ function DayList({ date, now, overdue, due, dropped, done }: { date: string; now
   const { selected } = useSelection();
   const actions = useTaskActions();
   const lunar = lunarDate(date);
-  const title = `${formatToday(day(date))}${lunar ? ` · ${lunarText(lunar)}` : ""}`;
   return (
     <section className="cal-day">
-      <h2 className="cal-date">{title}</h2>
+      <h2 className="cal-date">
+        {formatToday(day(date))}
+        {lunar && <span className="cal-lunar">农历{lunarText(lunar)}</span>}
+      </h2>
       {!overdue.length && !due.length && !dropped.length && !done.length && <p className="empty">这天没有事项</p>}
       {overdue.length > 0 && (
         <>

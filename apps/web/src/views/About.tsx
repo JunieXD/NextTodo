@@ -120,7 +120,7 @@ export function About() {
           <div className="row-inner">
             <span className="folder-main">
               <span>GitHub</span>
-              <span className="folder-sub">开源项目，欢迎加 Star 支持</span>
+              <span className="folder-sub">开源项目，欢迎 Star 支持</span>
             </span>
             <a className="text-btn" href={REPOSITORY} target="_blank" rel="noreferrer">
               打开

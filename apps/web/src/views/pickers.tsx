@@ -10,7 +10,8 @@ import { useView } from "../session";
 import { Box } from "../ui/controls";
 import { Modal } from "../ui/feedback";
 import { Icon } from "../ui/icons";
-import { FolderTile } from "./folder-look";
+import { Crumbs } from "./crumbs";
+import { FolderGlyph } from "./folder-look";
 import { FolderName } from "./share";
 
 /** Picks a folder or the root, checking `current`: to add to, the one picked so far; to move to, where
@@ -35,7 +36,7 @@ export function FolderPicker({
     return (
       <button key={f ?? "root"} className="row" disabled={disabled} onClick={() => (onPick(f), onClose())}>
         <div className="row-inner" style={{ paddingLeft: 16 + Math.max(0, board.depth(f) - 1) * 22 }}>
-          <FolderTile board={board} id={f} />
+          <FolderGlyph board={board} id={f} size={22} />
           <span className="folder-main">
             <span>
               <FolderName board={board} id={f} />
@@ -87,7 +88,7 @@ export function FolderChecks({
     return (
       <button key={f ?? "root"} className="row" role="checkbox" aria-checked={on || within} disabled={within} onClick={toggle}>
         <div className="row-inner" style={{ paddingLeft: 16 + Math.max(0, board.depth(f) - 1) * 22 }}>
-          <FolderTile board={board} id={f} />
+          <FolderGlyph board={board} id={f} size={22} />
           <span className="folder-main">
             <span>
               <FolderName board={board} id={f} />
@@ -137,8 +138,9 @@ export function TaskPicker({
   // `move`: the last step, into a subfolder or up, whose way the folder's page slides in.
   const [nav, setNav] = useState<{ folder: FolderId | null; move?: "forth" | "back" }>({ folder: task.folder_id });
   const top = board.sharedRoot(task.folder_id) ?? null;
-  // Deleted meanwhile, on another device say: from the top.
-  const at = board.hasFolder(nav.folder) ? nav.folder : top;
+  // Deleted meanwhile, on another device say, or out of the task's shared folder, the task moved: from
+  // the top.
+  const at = board.hasFolder(nav.folder) && (board.sharedRoot(nav.folder) ?? null) === top ? nav.folder : top;
   const go = (folder: FolderId | null, move: "forth" | "back") => setNav({ folder, move });
   const field = useRef<HTMLLabelElement>(null);
   const searching = query.trim() !== "";
@@ -207,7 +209,11 @@ export function TaskPicker({
     list = (
       // Gone back to the root by itself, it doesn't slide in: that answers no step of the user's.
       <div key={at ?? "root"} className={at === nav.folder && nav.move ? `page-${nav.move}` : undefined}>
-        <h2 className="group-title">{board.place(at)}</h2>
+        <h2 className="group-title">
+          <span>
+            <Crumbs board={board} folder={at} from={top} here go={(to) => go(to, "back")} />
+          </span>
+        </h2>
         <div className="group picker">
           {at !== null && at !== top && (
             <button className="row" onClick={() => go(board.parent(at), "back")}>
@@ -222,7 +228,7 @@ export function TaskPicker({
           {subs.map(({ f, n }) => (
             <button key={f.id} className="row" onClick={() => go(f.id, "forth")}>
               <div className="row-inner">
-                <FolderTile board={board} id={f.id} />
+                <FolderGlyph board={board} id={f.id} size={22} />
                 <span className="folder-main">
                   <span>{f.name}</span>
                   <span className="folder-sub">{n} 项可选</span>

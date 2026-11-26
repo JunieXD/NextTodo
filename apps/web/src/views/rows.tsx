@@ -25,7 +25,7 @@ import { FolderContextMenu } from "./FolderMenu";
 import { useFolderView } from "./nav";
 import { useMarks } from "./marks";
 import { FolderPicker } from "./pickers";
-import { FolderGlyph, FolderTile, styled } from "./folder-look";
+import { FolderGlyph, styled } from "./folder-look";
 import { Avatars, FolderName } from "./share";
 
 export interface RowActions {
@@ -305,7 +305,7 @@ export function FolderRow({ folder, board, onOpen }: { folder: Folder; board: Bo
     <FolderContextMenu folder={folder.id}>
       <button className="row folder-row" data-into={folder.id} onClick={onOpen}>
         <div className="row-inner">
-          <FolderTile board={board} id={folder.id} />
+          <FolderGlyph board={board} id={folder.id} size={22} />
           <span className="folder-main">
             <span>
               <FolderName board={board} id={folder.id} />

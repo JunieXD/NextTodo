@@ -323,7 +323,7 @@ function Backups() {
     const current = goingAsNow();
     try {
       const backup = await readBackup(file);
-      const body = "备份里的文件夹和事项会加进这个账号，放在根目录，账号里原有的不动；导入后可以撤销。";
+      const body = "备份中的文件夹和事项将加入这个账号的根目录，原有数据不变，导入后可撤销。";
       if (!(await confirm({ title: "导入备份？", body, ok: "导入" }))) return;
       setImporting("正在上传");
       uploaded = await uploadBackup(backup, (done, all) => setImporting(`已上传 ${done}/${all}`), current);
@@ -353,7 +353,7 @@ function Backups() {
         <Action label="导出备份" value={exporting ? "正在导出" : undefined} onClick={() => !exporting && void exportData()} />
         <Action label="导入备份" value={importing ?? undefined} onClick={() => importing === null && pick.current!.click()} />
       </div>
-      <p className="group-note">导出的备份可以在本机模式里恢复，也可以导入别的账号。本机模式的备份也能导入这里。</p>
+      <p className="group-note">备份可在本机模式中恢复，或导入其他账号；本机模式的备份也可导入这里。</p>
       <input
         ref={pick}
         type="file"
@@ -400,14 +400,14 @@ function LocalMode() {
       .restore((body) => confirm({ title: "用备份替换这台设备上的全部数据？", body, ok: "恢复", danger: true }), session)
       .catch((e) => snack(forUser("恢复", e)));
   const leave = async () => {
-    const body = "本机的数据会留在这台设备上，以后再选“在本机使用”就能接着用。NextTodo 会重新启动。";
+    const body = "本机数据保留在这台设备上，再次选择“在本机使用”即可继续使用。NextTodo 将重新启动。";
     if (!(await confirm({ title: "改用服务器？", body, ok: "改用服务器" }))) return;
     await local.leave(session).catch((e) => snack(forUser("改用服务器", e)));
   };
   return (
     <>
       <p className="empty">
-        {sync?.drive ? "数据存在这台设备上，借网盘和其他设备同步。" : "数据只存在这台设备上。可以借网盘和其他设备同步。"}定期备份，换设备时用备份恢复。
+        {sync?.drive ? "数据存在这台设备上，通过网盘与其他设备同步。" : "数据只存在这台设备上，可通过网盘与其他设备同步。"}请定期备份，换设备时用备份恢复。
         <Help to="local">说明</Help>
       </p>
       <div className="group">
@@ -472,13 +472,13 @@ function Appearance() {
       {own && (
         <div hidden={!picking}>
           <ColorPicker value={own} onChange={tuneAccent} hueOnly />
-          {hue !== null && hue >= 10 && hue <= 100 && <p className="group-note">和逾期的红色、今天到期的琥珀色相近，可能分不清</p>}
+          {hue !== null && hue >= 10 && hue <= 100 && <p className="group-note">与逾期的红色、今天到期的琥珀色相近，可能难以区分</p>}
         </div>
       )}
       {app === "desktop" && <Zooms />}
       <h2 className="group-title">日历</h2>
       <div className="group settings">
-        <Switch label="时间轴视图" sub="日历里多一种按钟点排的一周，看什么时候要交什么" on={grid} onChange={setGrid} />
+        <Switch label="时间轴视图" sub="在日历中按小时查看一周的事项" on={grid} onChange={setGrid} />
       </div>
     </>
   );
@@ -542,10 +542,10 @@ function AddTo() {
       </div>
       <p className="group-note">
         {fixed === undefined
-          ? "“接下来”和日历的快速添加栏放进上次在栏里选的文件夹。"
+          ? "“接下来”和日历的快速添加栏使用上次选择的文件夹。"
           : gone
-            ? "这个文件夹已删除或不再共享，它回来了才接着用；在这之前，没在栏里临时选别的，就放进默认的位置。也可以另选一个。"
-            : "“接下来”和日历的快速添加栏总是放进这个文件夹；在栏里临时选了别的，只用一次。"}
+            ? "该文件夹已删除或不再共享，恢复前改用默认位置，也可另选一个。"
+            : "“接下来”和日历的快速添加栏总是使用该文件夹，在栏中临时选择的只用一次。"}
       </p>
       {picking && <FolderPicker mode="add" current={fixed} onPick={(f) => fixAddTo(board.me, f)} onClose={() => setPicking(false)} />}
     </>

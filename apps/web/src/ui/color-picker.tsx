@@ -60,7 +60,7 @@ function Pad({
       onPointerMove={(e) => e.currentTarget.hasPointerCapture(e.pointerId) && point(e)}
       onKeyDown={key}
     >
-      <span className="picker-thumb" style={{ left: `${at[0] * 100}%`, top: `${at[1] * 100}%` }} />
+      <span className="color-thumb" style={{ left: `${at[0] * 100}%`, top: `${at[1] * 100}%` }} />
     </div>
   );
 }
@@ -109,10 +109,10 @@ export function ColorPicker({ value, onChange, hueOnly = false }: { value: Hex; 
     type(CHANNELS[i], String(next[i]), hexOf(next));
   };
   return (
-    <div className="picker">
+    <div className="color-picker">
       {!hueOnly && (
         <Pad
-          className="picker-sv"
+          className="color-sv"
           style={{ "--hue": h, "--thumb": value }}
           label="饱和度和亮度"
           text={`饱和度 ${Math.round(s * 100)}%，亮度 ${Math.round(v * 100)}%`}
@@ -123,7 +123,7 @@ export function ColorPicker({ value, onChange, hueOnly = false }: { value: Hex; 
         />
       )}
       <Pad
-        className="picker-hue"
+        className="color-hue"
         style={{ "--thumb": `hsl(${h} 100% 50%)` }}
         label="色相"
         text={`色相 ${Math.round(h)}°`}
@@ -134,11 +134,10 @@ export function ColorPicker({ value, onChange, hueOnly = false }: { value: Hex; 
         // Of the colour under the thumb, when only the hue counts: grey has none to move.
         onAt={(x) => drag([x * 360, hueOnly ? 1 : s, hueOnly ? 1 : v])}
       />
-      <div className="picker-fields">
+      <div className="color-fields">
         <label>
           #
           <input
-            className="picker-hex"
             aria-label="十六进制"
             autoComplete="off"
             spellCheck={false}

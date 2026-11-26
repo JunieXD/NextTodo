@@ -84,19 +84,26 @@ private fun WeekContent(context: Context, week: Week, picked: LocalDate?) {
             return@Card
         }
         Days(week, day, today, look.scale)
-        DayTitle(context, day, today, look.scale)
-        // Today's list starts with what is overdue, as the agenda's does.
-        val entries = (if (day == today) week.overdue else emptyList()) + week.due[day].orEmpty()
+        // Today's list starts with what is overdue, in a group of its own, as the agenda's does.
+        val overdue = if (day == today) week.overdue else emptyList()
+        val entries = overdue + week.due[day].orEmpty()
         val compact = LocalSize.current.height < COMPACT_BELOW
         if (entries.isEmpty()) {
+            DayTitle(context, day, today, look.scale)
             Note(if (day.isBefore(today)) "这天没有没完成的事项" else "这天没有截止的事项", calendar)
             return@Card
         }
+        val shown = entries.take(Agenda.MOST)
+        val late = shown.take(overdue.size)
+        val due = shown.drop(overdue.size)
         // Under the list, all the rest of the widget, as in the “接下来” widget.
         Box(GlanceModifier.defaultWeight().fillMaxWidth()) {
             Box(GlanceModifier.fillMaxSize().clickable(calendar)) {}
             LazyColumn(GlanceModifier.fillMaxWidth()) {
-                itemsIndexed(entries.take(Agenda.MOST)) { i, entry -> WeekEntry(context, entry, i == 0, week.ticked.any(entry::same), day, now, compact, look.scale) }
+                if (late.isNotEmpty()) item { DayTitle(context, null, today, look.scale) }
+                itemsIndexed(late) { i, entry -> WeekEntry(context, entry, i == 0, week.ticked.any(entry::same), day, now, compact, look.scale) }
+                if (due.isNotEmpty()) item { DayTitle(context, day, today, look.scale) }
+                itemsIndexed(due) { i, entry -> WeekEntry(context, entry, i == 0, week.ticked.any(entry::same), day, now, compact, look.scale) }
                 if (entries.size > Agenda.MOST) item { AgendaMore(context, entries.size - Agenda.MOST, look.scale) }
             }
         }

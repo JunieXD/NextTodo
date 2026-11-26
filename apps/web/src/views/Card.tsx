@@ -41,8 +41,12 @@ export function Card() {
     return { promise: new Promise<void>((r) => (done = r)), done };
   });
   const [sent, setSent] = useState<Sent>();
-  /** The day it adds to, opened from a day of the “一周” widget: as the calendar's quick add. */
-  const [on] = useState(() => new URLSearchParams(window.location.search).get("on") ?? undefined);
+  /** The day it adds to, and the time on it, opened from a day of the “一周” widget or an hour of the
+   * “时间轴” one: as the calendar's quick add. */
+  const [{ on, at }] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return { on: params.get("on") ?? undefined, at: params.get("at") };
+  });
   const place = quickAddPlace(undefined, on);
   /** The server would not start the AI job sent with the settings on this device. */
   const [unstarted, setUnstarted] = useState(false);
@@ -118,6 +122,7 @@ export function Card() {
         taken && (
           <QuickAdd
             on={on}
+            at={at}
             onSent={(s) => {
               setSent(s);
               setUnstarted(false);

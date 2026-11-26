@@ -69,14 +69,14 @@ object Agenda {
     private const val SEQ = "seq"
     private const val FOLDERS = "folders"
 
-    /** Until when what is drawn holds: the next deadline, which turns a time red, or midnight, when the
-     * days move on. */
+    /** Until when what is drawn holds: the next deadline, which turns a time red, midnight, when the
+     * days move on, or the next hour, which the time grid shows (`until`). */
     private const val UNTIL = "until"
 
     private const val EMPTY = """{"overdue":[],"days":[]}"""
 
-    /** Whether a widget of its data, “日程” or “一周”, is on the home screen. */
-    fun placed(context: Context) = Widget.placed(context, AgendaWidgetReceiver::class.java) || Widget.placed(context, WeekWidgetReceiver::class.java)
+    /** Whether a widget of its data, “日程”, “一周” or “时间轴”, is on the home screen. */
+    fun placed(context: Context) = listOf(AgendaWidgetReceiver::class.java, WeekWidgetReceiver::class.java, TimelineWidgetReceiver::class.java).any { Widget.placed(context, it) }
 
     private val writing = Mutex()
 
@@ -89,12 +89,13 @@ object Agenda {
             val now = LocalDateTime.now()
             val holdsUntil = prefs.getString(UNTIL, null)?.let(LocalDateTime::parse)?.takeIf { it.isAfter(now) }
             val draw = change(prefs) || holdsUntil == null
-            redrawAt(context, holdsUntil.takeUnless { draw } ?: until(prefs, now).also { prefs.edit().putString(UNTIL, it.toString()).apply() })
+            redrawAt(context, holdsUntil.takeUnless { draw } ?: until(context, prefs, now).also { prefs.edit().putString(UNTIL, it.toString()).apply() })
             draw
         }
         if (draw) {
             AgendaWidget().updateAll(context)
             WeekWidget().updateAll(context)
+            TimelineWidget().updateAll(context)
         }
     }
 
@@ -126,14 +127,20 @@ object Agenda {
     /** Draws the widgets again, `anyway` or should what they show of the time no longer hold. */
     suspend fun redraw(context: Context, anyway: Boolean = false) = update(context) { anyway }
 
-    /** A widget of its data put on the home screen, or the last taken off: the alarm is set for what is
-     * kept, offline too, or goes. */
-    fun placedChanged(context: Context) = redrawAt(context, prefs(context).getString(UNTIL, null)?.let(LocalDateTime::parse) ?: LocalDateTime.now())
+    /** A widget of its data put on the home screen, or the last of a kind taken off, which may change
+     * until when what is drawn holds: drawn again at once, offline too, and the alarm set for what is
+     * drawn then; or it goes. */
+    fun placedChanged(context: Context) {
+        prefs(context).edit().remove(UNTIL).apply()
+        redrawAt(context, LocalDateTime.now())
+    }
 
-    private fun until(prefs: SharedPreferences, now: LocalDateTime): LocalDateTime {
+    /** The next deadline, midnight, or with a “时间轴” widget, which shows the hour now, the next hour. */
+    private fun until(context: Context, prefs: SharedPreferences, now: LocalDateTime): LocalDateTime {
         val (overdue, days) = kept(prefs)
         val deadlines = (overdue + days.flatMap { it.second }).map { it.due.deadline }
-        return (deadlines + now.toLocalDate().plusDays(1).atStartOfDay()).filter { it.isAfter(now) }.min()
+        val hour = now.truncatedTo(ChronoUnit.HOURS).plusHours(1).takeIf { Widget.placed(context, TimelineWidgetReceiver::class.java) }
+        return (deadlines + listOfNotNull(hour) + now.toLocalDate().plusDays(1).atStartOfDay()).filter { it.isAfter(now) }.min()
     }
 
     /** Keeps `data` for `folders` as of the change `seq`, unless what is kept is as of a later one;

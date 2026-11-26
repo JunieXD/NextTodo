@@ -35,7 +35,10 @@ const PALETTES = {
     divider: "#DDE4DF",
     primary: "#1B6B51",
     onPrimary: "#FFFFFF",
+    primaryContainer: "#A6F2D1",
+    onPrimaryContainer: "#002116",
     error: "#BA1A1A",
+    errorContainer: "#FFDAD6",
     warn: "#8A5100",
   },
   dark: {
@@ -46,7 +49,10 @@ const PALETTES = {
     divider: "#2A302D",
     primary: "#8BD6B6",
     onPrimary: "#003827",
+    primaryContainer: "#00513B",
+    onPrimaryContainer: "#A6F2D1",
     error: "#FFB4AB",
+    errorContainer: "#93000A",
     warn: "#FFB870",
   },
 } satisfies Record<string, Record<string, Hex>>;
@@ -82,6 +88,10 @@ export function widgetColors(look: Pick<WidgetLook, "background" | "opacity" | "
     onPrimary: tone.onPrimary,
     overdue: tone.error,
     today: tone.warn,
+    /** The time grid's blocks of what can be done and what is overdue: solid, the wallpaper under. */
+    primaryContainer: tone.primaryContainer,
+    onPrimaryContainer: tone.onPrimaryContainer,
+    errorContainer: tone.errorContainer,
     /** Under the text where the desktop widget can't be see-through: a row as it is swiped. */
     surface: tone.surface,
   };

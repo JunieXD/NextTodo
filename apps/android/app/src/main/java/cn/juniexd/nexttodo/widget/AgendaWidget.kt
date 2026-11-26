@@ -134,12 +134,12 @@ internal fun AgendaMore(context: Context, more: Int, scale: Float) {
     )
 }
 
-/** With the “接下来” widget's list too while there is a widget that ticks tasks off, for the next start
- * in it (`Widget.ticks`). */
+/** With the “接下来” widget's list too while there is a widget that shows which tasks can be done, for
+ * the next start in it (`Widget.showsReady`). */
 class AgendaRefreshAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) = refreshing(context) {
         Agenda.refresh(context)
-        if (Widget.ticks(context)) Widget.refresh(context)
+        if (Widget.showsReady(context)) Widget.refresh(context)
     }
 }
 
@@ -171,7 +171,7 @@ class AgendaWidgetReceiver : GlanceAppWidgetReceiver() {
                 val clock = intent.action == Intent.ACTION_TIME_CHANGED || intent.action == Intent.ACTION_TIMEZONE_CHANGED
                 Agenda.redraw(context, anyway = clock)
                 // What has started is told by the clock here too, and the start's alarm was set by it.
-                if (clock && Widget.ticks(context)) Widget.started(context)
+                if (clock && Widget.showsReady(context)) Widget.started(context)
             } finally {
                 pending.finish()
             }

@@ -13,6 +13,7 @@ import type { Mutation } from "./api/types/Mutation";
 import type { Task } from "./api/types/Task";
 import { type Board, nowOf } from "./domain/board";
 import { agenda } from "./domain/calendar";
+import { day as parseDay, isoDate } from "./domain/dates";
 import { digests, reminders } from "./domain/reminders";
 import { type Digest, dailyDigest, hideReminders, onRemindSettings } from "./remind-settings";
 import type { Started } from "./local";
@@ -411,13 +412,18 @@ export const clear = async (failed: (e: unknown) => void = () => {}) => {
 export const forget = () => NextTodo.forgetChanges();
 
 /** Opens what a notification or a widget points at: `nexttodo://task/<id>`, `nexttodo://home`,
- * or `nexttodo://calendar`; or the quick add card, `nexttodo://page/<path>`, another page. */
+ * `nexttodo://calendar`, or its time grid, on a day, `nexttodo://calendar/time/2026-11-26`; or the quick
+ * add card, `nexttodo://page/<path>`, another page. */
 function open(url: string) {
   const [, kind, id] = /^nexttodo:\/\/(task|home|calendar|page)\/?(.*)$/.exec(url) ?? [];
   if (kind === "task") navigate(`/?open=${id}`);
   else if (kind === "home") navigate("/");
-  else if (kind === "calendar") navigate("/calendar");
-  else if (kind === "page") navigate(`/${id}`);
+  else if (kind === "calendar") {
+    const [, time, on] = /^(time)?\/?(\d{4}-\d{2}-\d{2})?$/.exec(id) ?? [];
+    // A day there is, from another app too.
+    const day = on && isoDate(parseDay(on)) === on ? `&on=${on}` : "";
+    navigate(time ? `/calendar?view=time${day}` : "/calendar");
+  } else if (kind === "page") navigate(`/${id}`);
 }
 
 /** Listens for taps on notifications and the widget, and for Android's back button. The plugin keeps

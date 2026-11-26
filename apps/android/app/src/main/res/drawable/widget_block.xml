@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A block of the “时间轴” widget, tinted by the state of what is in it, 1dp in from its cell's sides. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android" android:inset="1dp">
+    <shape android:shape="rectangle">
+        <corners android:radius="6dp" />
+        <solid android:color="#FFFFFF" />
+    </shape>
+</inset>

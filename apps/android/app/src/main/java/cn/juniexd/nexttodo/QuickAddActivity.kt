@@ -14,7 +14,9 @@ import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.format.DateTimeParseException
+import java.time.temporal.ChronoUnit
 
 /** The quick add card over another app (docs/android.md#快速添加小窗): the web app's page `/quick-add`
  * in a window of its own, the app it was opened over showing dimmed behind it. Opened by the widget's
@@ -39,19 +41,24 @@ class QuickAddActivity : BridgeActivity() {
         open()
     }
 
-    /** The page, with `?add` for typing at once, the keyboard up; and `on`, the day it adds to, when
-     * opened from a day of the “一周” widget. */
+    /** The page, with `?add` for typing at once, the keyboard up; `on`, the day it adds to, when opened
+     * from a day of the “一周” or “时间轴” widget; and `at`, the time on it, from an hour of the latter. */
     private fun open() {
-        // From another app, as the activity is exported for sharing, it may be anything.
-        val on = intent.getStringExtra(ON)?.let {
-            try {
-                LocalDate.parse(it)
-            } catch (e: DateTimeParseException) {
-                null
-            }
-        }
-        bridge.webView.loadUrl(bridge.appUrl.trimEnd('/') + "/quick-add?add" + (on?.let { "&on=$it" } ?: ""))
+        // From another app, as the activity is exported for sharing, they may be anything.
+        val on = intent.getStringExtra(ON)?.let { parsed(it, LocalDate::parse) }
+        val at = on?.let { intent.getStringExtra(AT)?.let { parsed(it, LocalTime::parse) } }
+        val url = Uri.parse(bridge.appUrl).buildUpon().path("/quick-add").appendQueryParameter("add", "")
+        on?.let { url.appendQueryParameter("on", it.toString()) }
+        at?.let { url.appendQueryParameter("at", it.truncatedTo(ChronoUnit.MINUTES).toString()) }
+        bridge.webView.loadUrl(url.build().toString())
     }
+
+    private fun <T> parsed(text: String, parse: (String) -> T): T? =
+        try {
+            parse(text)
+        } catch (e: DateTimeParseException) {
+            null
+        }
 
     /** Capacitor's theme, opaque, put in place as it starts: this one's instead. */
     override fun setTheme(resid: Int) = super.setTheme(R.style.QuickAdd)
@@ -131,6 +138,9 @@ class QuickAddActivity : BridgeActivity() {
     companion object {
         /** The day, `2026-11-26`, to add a task due on. */
         const val ON = "on"
+
+        /** The time on it, `09:00`, to add a task due at. */
+        const val AT = "at"
 
         /** Where shared files are copied, emptied at the next share. */
         private const val SHARED = "shared"

@@ -164,6 +164,17 @@ internal class Colors(look: Look) {
     val overdue = of { error }
     val today = of { warn }
 
+    /** The time grid's blocks, by state, as the app's: the ground of one to do and the text on it, of one
+     * overdue (in `overdue`), and of one waiting; a later time is in the primary colour, `rail` around it. */
+    val ready = of { primaryContainer }
+    val onReady = of { onPrimaryContainer }
+    val late = of { errorContainer }
+    val waiting = of { surfaceHighest }
+    val onWaiting = of { onSurfaceVariant }
+
+    /** Today's column of the time grid. */
+    val todayColumn = of { primary.copy(alpha = 0.06f) }
+
     private companion object {
         /** How much of one's own text colour what is less to the fore has. */
         const val SECONDARY = 0.7f

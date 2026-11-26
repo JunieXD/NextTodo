@@ -56,6 +56,9 @@ export function paintWidget() {
     root.setProperty("--w-overdue", c.overdue);
     root.setProperty("--w-today", c.today);
     root.setProperty("--w-surface", c.surface);
+    root.setProperty("--w-primary-container", c.primaryContainer);
+    root.setProperty("--w-on-primary-container", c.onPrimaryContainer);
+    root.setProperty("--w-error-container", c.errorContainer);
   };
   paint();
   onLook(paint);

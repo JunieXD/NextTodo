@@ -97,6 +97,7 @@ object Widget {
         }
         AgendaWidget().updateAll(context)
         WeekWidget().updateAll(context)
+        TimelineWidget().updateAll(context)
     }
 
     /** The paths of the folders the widgets list, as a JSON array; none for all of them. */
@@ -290,9 +291,9 @@ object Widget {
     /** Whether there is a “接下来” widget on the home screen to keep up to date. */
     fun placed(context: Context) = placed(context, NextWidgetReceiver::class.java)
 
-    /** Whether there is a widget on the home screen that ticks tasks off, “接下来” or “一周”: what it
-     * may tick off changes as tasks start (`refreshAt`). */
-    fun ticks(context: Context) = placed(context) || placed(context, WeekWidgetReceiver::class.java)
+    /** Whether there is a widget on the home screen that shows which tasks can be done, “接下来”, “一周” or
+     * “时间轴”: that changes as tasks start (`refreshAt`). */
+    fun showsReady(context: Context) = placed(context) || placed(context, WeekWidgetReceiver::class.java) || placed(context, TimelineWidgetReceiver::class.java)
 
     /** Whether there is a widget of `receiver`'s on the home screen. */
     fun placed(context: Context, receiver: Class<*>) =
@@ -311,8 +312,8 @@ object Widget {
     /** Fetches the list when the next task starts, `2026-11-16` or `2026-11-16 20:05` here, as the
      * `next` tool's `next_start` gives it: it comes into the list also with the app not running, and
      * that list sets the one after. An alarm, as reminders have, on time and in place of the one set
-     * before; none without a start, or without a widget that ticks tasks off. Set only with the list it
-     * came with, as that is kept. */
+     * before; none without a start, or without a widget that shows which tasks can be done. Set only
+     * with the list it came with, as that is kept. */
     private fun refreshAt(context: Context, start: String?) {
         val alarms = context.getSystemService(AlarmManager::class.java)
         val alarm = PendingIntent.getBroadcast(
@@ -321,7 +322,7 @@ object Widget {
             Intent(context, NextWidgetReceiver::class.java).setAction(NextWidgetReceiver.STARTED),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        if (start == null || !ticks(context)) {
+        if (start == null || !showsReady(context)) {
             alarms.cancel(alarm)
             return
         }
@@ -342,10 +343,10 @@ object Widget {
     }
 
     /** The last of a kind of widget is gone: the refreshes go with the last of all, the start's alarm
-     * with the last that ticks tasks off. */
+     * with the last that shows which can be done. */
     fun unschedule(context: Context) {
         if (!placed(context) && !Agenda.placed(context)) WorkManager.getInstance(context).cancelUniqueWork(WORK)
-        if (!ticks(context)) refreshAt(context, null)
+        if (!showsReady(context)) refreshAt(context, null)
     }
 
     private const val WORK = "widget-refresh"
@@ -358,7 +359,7 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             // Syncing through a drive, with what other devices did meanwhile.
             if (Local.on(applicationContext)) withContext(Dispatchers.IO) { Local.pull(PULL_WAIT_MS) }
             // For the “一周” widget too, the list's next start.
-            if (Widget.ticks(applicationContext)) Widget.refresh(applicationContext)
+            if (Widget.showsReady(applicationContext)) Widget.refresh(applicationContext)
             if (Agenda.placed(applicationContext)) Agenda.refresh(applicationContext)
             Result.success()
         } catch (e: Exception) {

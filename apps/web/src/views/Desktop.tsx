@@ -48,9 +48,10 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
     setQuery(q);
     batch.end();
   };
-  // Quick add (`/?add`) is on the page of what to do next, which a search covers.
+  // Quick add (`/?add`) is on the page of what to do next, and the calendar on a day (`/calendar?view=`)
+  // on its page, which a search covers.
   const [params] = useSearchParams();
-  if (params.has("add") && query) setQuery("");
+  if ((params.has("add") || (location === "/calendar" && params.has("view"))) && query) setQuery("");
   // And a task to show, on its folder's: each time it is asked, a search made while it waits staying.
   const request = useRevealRequest();
   const [asked, setAsked] = useState(request);
@@ -195,7 +196,7 @@ export function Desktop({ onSignOut }: { onSignOut(): void }) {
 }
 
 function CalendarPage({ now }: { now: Date }) {
-  const [view] = useCalendarView();
+  const [view, setView] = useCalendarView();
   const pick = useCalendarPick(now, view);
   return (
     <Page
@@ -208,7 +209,7 @@ function CalendarPage({ now }: { now: Date }) {
       add={<QuickAdd key="calendar" on={pick.picked} at={pick.at} hide={view === "year"} />}
       narrow={view !== "time"}
     >
-      <CalendarBody now={now} pick={pick} />
+      <CalendarBody now={now} view={view} onView={setView} pick={pick} />
     </Page>
   );
 }

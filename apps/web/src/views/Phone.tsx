@@ -166,7 +166,7 @@ function NextScreen({ anim, now }: { anim: string; now: Date }) {
 }
 
 function CalendarScreen({ anim, now }: { anim: string; now: Date }) {
-  const [view] = useCalendarView();
+  const [view, setView] = useCalendarView();
   const pick = useCalendarPick(now, view);
   return (
     <Screen title="日历" anim={anim} after={<QuickAdd key="calendar" on={pick.picked} at={pick.at} hide={view === "year"} />}>
@@ -176,7 +176,7 @@ function CalendarScreen({ anim, now }: { anim: string; now: Date }) {
           <CalendarViewSeg />
         </span>
       </div>
-      <CalendarBody now={now} pick={pick} />
+      <CalendarBody now={now} view={view} onView={setView} pick={pick} />
     </Screen>
   );
 }

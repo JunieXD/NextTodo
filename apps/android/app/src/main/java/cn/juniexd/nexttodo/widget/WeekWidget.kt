@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -15,6 +16,7 @@ import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalSize
+import androidx.glance.action.Action
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
@@ -64,9 +66,10 @@ class WeekWidget : GlanceAppWidget() {
     }
 }
 
-private val PICKED = stringPreferencesKey("picked")
+/** The day picked, in the widget's own state: also the “时间轴” widget's. */
+internal val PICKED = stringPreferencesKey("picked")
 
-private val DayKey = ActionParameters.Key<String>("day")
+internal val DayKey = ActionParameters.Key<String>("day")
 
 @Composable
 private fun WeekContent(context: Context, week: Week, picked: LocalDate?) {
@@ -83,7 +86,7 @@ private fun WeekContent(context: Context, week: Week, picked: LocalDate?) {
             Note("打开 NextTodo 登录", open(context, "nexttodo://home"))
             return@Card
         }
-        Days(week, day, today, look.scale)
+        Days(week, day, today, look.scale, { actionRunCallback<PickDayAction>(actionParametersOf(DayKey to it.toString())) })
         // Today's list starts with what is overdue, in a group of its own, as the agenda's does.
         val overdue = if (day == today) week.overdue else emptyList()
         val entries = overdue + week.due[day].orEmpty()
@@ -110,25 +113,35 @@ private fun WeekContent(context: Context, week: Week, picked: LocalDate?) {
     }
 }
 
-/** The seven days, side by side, each picked by a tap: what day of the week, `今` today; its number,
- * filled in the day picked; and a dot for each of up to three tasks due on it, red for one overdue. */
+/** The seven days, side by side, each picked by a tap, as `pick` has it: what day of the week, `今`
+ * today; its number, filled in the day picked; and, with `dots`, a dot for each of up to three tasks due
+ * on it, red for one overdue. After a `gutter` as wide as the time grid's hours, should there be one,
+ * which opens what its action does. */
 @Composable
-private fun Days(week: Week, picked: LocalDate, today: LocalDate, scale: Float) {
+internal fun Days(week: Week, picked: LocalDate, today: LocalDate, scale: Float, pick: (LocalDate) -> Action, dots: Boolean = true, gutter: Pair<Dp, Action>? = null) {
     val colors = LocalColors.current
     // Each day from edge to edge of its share of the width, the first and last to the widget's: no gap
     // (see `EDGE`).
+    val box = (if (dots) 40.dp else 32.dp) * scale
     Row(GlanceModifier.fillMaxWidth()) {
+        gutter?.let { (width, action) ->
+            // Laid out as a day with nothing in it, as tall: what fills the row's height takes all there is.
+            Column(GlanceModifier.width(width).padding(vertical = 2.dp).clickable(action)) {
+                Text("", style = TextStyle(fontSize = 12.sp * scale))
+                Spacer(GlanceModifier.height(box))
+            }
+        }
         for (d in week.days) {
             val chosen = d == picked
             Column(
-                GlanceModifier.defaultWeight().padding(horizontal = 2.dp, vertical = 2.dp).clickable(actionRunCallback<PickDayAction>(actionParametersOf(DayKey to d.toString()))),
+                GlanceModifier.defaultWeight().padding(horizontal = 2.dp, vertical = 2.dp).clickable(pick(d)),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
                     if (d == today) "今" else "${"一二三四五六日"[d.dayOfWeek.value - 1]}",
                     style = TextStyle(color = colors.secondary, fontSize = 12.sp * scale),
                 )
-                Box(GlanceModifier.fillMaxWidth().height(40.dp * scale).padding(top = 2.dp), contentAlignment = Alignment.Center) {
+                Box(GlanceModifier.fillMaxWidth().height(box).padding(top = 2.dp), contentAlignment = Alignment.Center) {
                     if (chosen) Image(ImageProvider(R.drawable.widget_day), null, GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(colors.primary))
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
@@ -139,7 +152,7 @@ private fun Days(week: Week, picked: LocalDate, today: LocalDate, scale: Float) 
                                 fontWeight = if (d == today) FontWeight.Bold else FontWeight.Normal,
                             ),
                         )
-                        Row(GlanceModifier.height(7.dp).padding(top = 3.dp)) {
+                        if (dots) Row(GlanceModifier.height(7.dp).padding(top = 3.dp)) {
                             week.due[d].orEmpty().take(3).forEachIndexed { i, entry ->
                                 if (i > 0) Spacer(GlanceModifier.width(3.dp))
                                 val dot = when {
@@ -211,6 +224,8 @@ class WeekWidgetReceiver : GlanceAppWidgetReceiver() {
         super.onEnabled(context)
         Widget.schedule(context)
         Agenda.placedChanged(context)
+        // The list now, which has when the next task starts, for the alarm: there may have been none.
+        Widget.started(context)
     }
 
     override fun onDisabled(context: Context) {

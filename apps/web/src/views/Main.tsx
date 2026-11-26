@@ -32,11 +32,11 @@ export function Main({ session, onSignedOut }: { session: Session; onSignedOut(n
   const wide = useWide();
   // Opened from outside the app: quick add from the widget or the panel opening (`?add`); a task from
   // the widget or a reminder, on the page of what to do next, or from the panel, on the page it shows
-  // (`?open=<task>`). Dialogs make way.
+  // (`?open=<task>`); the calendar on a day from a widget or the panel (`?view=`). Dialogs make way.
   const [params] = useSearchParams();
   const [location, navigate] = useLocation();
   const open = params.get("open");
-  const outside = !!open || params.has("add");
+  const outside = !!open || params.has("add") || (location === "/calendar" && params.has("view"));
   // On top of the page without details, which closing them goes back to: there may be no page before.
   useEffect(() => {
     if (!open) return;

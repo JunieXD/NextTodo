@@ -2,8 +2,9 @@
 // and the day picked listed under it.
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { useLocation, useSearchParams } from "wouter";
 import { completionKey } from "../domain/apply";
 import { type DoneOn, type DueOn, doneByDay, droppedByDay, dueBetween, heat, lateness, overdue } from "../domain/calendar";
 import { day, dueKind, formatToday, isoDate, monthGrid } from "../domain/dates";
@@ -20,7 +21,8 @@ import { useSelection } from "./nav";
 import { Occurrence, TaskRow } from "./rows";
 import { TimeGrid } from "./timegrid";
 
-export type CalendarView = "month" | "week" | "year" | "time";
+const VIEWS = ["month", "week", "year", "time"] as const;
+export type CalendarView = (typeof VIEWS)[number];
 
 const VIEW_KEY = "nexttodo.calendarView";
 const GRID_KEY = "nexttodo.timeGrid";
@@ -31,10 +33,10 @@ export function useTimeGridOn(): [boolean, (on: boolean) => void] {
   return [on !== "off", (v) => keep(v ? "on" : "off")];
 }
 
-/** Which of a month, a week, a year or the time grid the calendar shows, remembered on this device;
- * the week once the time grid is turned off. */
-export function useCalendarView(): [CalendarView, (v: CalendarView) => void] {
-  const [view, keep] = useKept(VIEW_KEY);
+/** Which of a month, a week, a year or the time grid the calendar shows, remembered on this device
+ * under `key`, the panel's apart; the week once the time grid is turned off. */
+export function useCalendarView(key = VIEW_KEY): [CalendarView, (v: CalendarView) => void] {
+  const [view, keep] = useKept(key);
   const [grid] = useTimeGridOn();
   return [view === "time" && !grid ? "week" : ((view as CalendarView | null) ?? "month"), keep];
 }
@@ -86,9 +88,26 @@ function turned(date: string, view: CalendarView, by: number): string {
   return isoDate(new Date(y, m, Math.min(d.getDate(), last)));
 }
 
-export function CalendarBody({ now, pick: { picked, at, pick } }: { now: Date; pick: CalendarPick }) {
+/** The calendar in `view`, which the year turns into the month of a day picked in it. */
+export function CalendarBody({ now, view, onView, pick: { picked, at, pick } }: { now: Date; view: CalendarView; onView(v: CalendarView): void; pick: CalendarPick }) {
   const { board } = useView();
-  const [view, setView] = useCalendarView();
+  // A view and a day in it, as the “时间轴” widget and the panel link to them (`?view=time&on=2026-11-26`):
+  // taken once, the link then put away.
+  const [params] = useSearchParams();
+  const [location, navigate] = useLocation();
+  const asked = params.get("view");
+  const linked = VIEWS.find((v) => v === asked);
+  const on = params.get("on");
+  const [timeGrid] = useTimeGridOn();
+  useEffect(() => {
+    if (asked === null) return;
+    if (linked) {
+      // With the time grid turned off, the week it would show.
+      onView(linked === "time" && !timeGrid ? "week" : linked);
+      if (on) pick(on);
+    }
+    navigate(location, { replace: true });
+  });
   const setPicked = (date: string) => pick(date);
   const today = isoDate(now);
   const shown = day(picked);
@@ -181,7 +200,7 @@ export function CalendarBody({ now, pick: { picked, at, pick } }: { now: Date; p
             onPick={(d) => {
               flushSync(() => {
                 setPicked(d);
-                setView("month");
+                onView("month");
               });
               focus(d);
             }}

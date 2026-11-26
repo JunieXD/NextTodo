@@ -744,6 +744,9 @@ a.text-btn { display: inline-flex; align-items: center; }
   --primary: var(--w-primary); --on-primary: var(--w-on-primary); --error: var(--w-overdue); --warn: var(--w-today);
   --surface: var(--w-surface); --group-bg: transparent; --bar-bg: transparent; --surface-container: var(--w-divider);
   --secondary-container: var(--w-divider); --on-secondary-container: var(--w-text); --press: color-mix(in srgb, var(--w-text) 8%, transparent);
+  /* The time grid's blocks, in its colours, as the text on them is: the theme's would be off it. */
+  --primary-container: var(--w-primary-container); --on-primary-container: var(--w-on-primary-container);
+  --error-container: var(--w-error-container); --surface-highest: var(--w-divider);
   color: var(--w-text);
 }
 /* The lock screen's fields, clear, are seen by their edges. */

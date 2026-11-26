@@ -34,7 +34,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `tree` | `tree` | | 文件夹树，每个文件夹里（含子文件夹）的待办数和可做数；共享的文件夹注明成员，别人共享给我的列在后面 |
 | `list` | `ls [文件夹] [--all] [--limit 条数]` | `folder?`、`all?`、`limit?` | 文件夹的子文件夹和事项，按[文件夹内顺序](design.md#排序)；默认不含已完成；文件夹里有 [AI 整理](ai.md)请求时开头注明；在共享的文件夹里时开头写共享人和成员 |
 | `next` | `next [--folder 路径…] [--limit 条数]` | `folders?`、`limit?` | 接下来：[我的事项](design.md#共享)里可做的，按[接下来的顺序](design.md#排序)；给了 `folders` 只列这些文件夹（含子文件夹）里的，有 `/` 时就是全部 |
-| `agenda` | `agenda [--days 天数] [--folder 路径…]` | `days?`、`folders?` | 日程：今天起几天（默认 7，最多 31）每天截止的[我的事项](design.md#共享)，[重复](design.md#重复)事项以后的每一次也算，同[日历](design.md#日历)；前面另列截止日期在今天以前、还没完成的；`folders` 同 `next` |
+| `agenda` | `agenda [--days 天数] [--folder 路径…]` | `days?`、`folders?` | 日程：今天起几天（默认 7，最多 31）每天截止的[我的事项](design.md#共享)，[重复](design.md#重复)事项以后的每一次也算，同[日历](design.md#日历)；前面另列截止日期在今天以前、还没完成的；也写出这几天的[节日、节气和放假、补班](design.md#节日和放假)，写在日期后面，如“2027-02-05（明天，除夕，放假）：”，没有事项的日子只有这一行；`folders` 同 `next` |
 | `show` | `show <事项>` | `task` | 事项详情：负责人、开始、截止、提醒、完成次数和最近的完成记录（重复的事项）、前置、后续、附件（ID、名称、类型、大小）、来源、描述 |
 | `search` | `search <关键词> [--limit 条数]` | `query`、`limit?` | 标题和描述里包含关键词的事项（不区分大小写） |
 | `graph` | `graph [文件夹] [--all] [--mermaid]` | `folder?`、`all?`、`mermaid?` | 文件夹（含子文件夹）里的事项和依赖，按先后顺序；连到外面的事项也列出并注明文件夹 |
@@ -168,7 +168,7 @@ $ nexttodo graph 工作
 | `tree` | `[{path, name, depth, pending, ready}]`，先序排列，第一项是根目录，别人共享给我的文件夹在最后；共享的文件夹另有 `owner` 和 `members`（用户名），设了颜色或图标的另有 `color`、`icon` |
 | `list` | `{folder, folders: [{path, name, pending, ready}], tasks: [事项], total}`，`total` 是没截断时的事项数；有 AI 整理请求时另有 `jobs: {waiting, running, failed, ready}`，只含不为 0 的；在共享的文件夹里时另有 `owner` 和 `members` |
 | `next` | `{tasks: [事项], total}`；有前置或后续的事项另有 `step: [2, 5]`（第几步、共几步）；要赶[后续的截止](design.md#后续的截止)的另有 `due_by: {date, time?, number, title}`（那一项的截止和编号、标题）；我的事项里有还没到开始时间的，或者有后续没结束的[重复事项](design.md#重复)这一次还没开始的（包括交给别人的，它开始时，前面的事项要赶的截止可能变），另有 `next_start`：其中最早的那个时刻（`2026-11-14` 或 `2026-11-14 09:30`），到时列表、顺序或 `due_by` 可能变，可以再取一次；它不受 `folders` 和 `limit` 限制 |
-| `agenda` | `{overdue: [事项], days: [{date, tasks: [事项]}]}`：`overdue` 是截止日期在今天以前、还没完成的，按截止时间；`days` 只有有事项的日子，按日期；每天里有具体时间的按时间排在前面；重复事项以后的一次另有 `later: true`，它的 `due` 仍是现在这一次的 |
+| `agenda` | `{overdue: [事项], days: [{date, tasks: [事项]}], marks}`：`overdue` 是截止日期在今天以前、还没完成的，按截止时间；`days` 只有有事项的日子，按日期；每天里有具体时间的按时间排在前面；重复事项以后的一次另有 `later: true`，它的 `due` 仍是现在这一次的；`marks` 是这几天里有节日、节气或放假、补班的日子，`{date, festival?, term?, holiday?}`，按日期，`holiday` 是 `off`（放假）或 `work`（补班），不受 `folders` 限制 |
 | `show` | 事项加上 `created_at, updated_at`；`description`、`created_by`、`updated_by`（用户名，自己时没有）、`created_via`、`updated_via`（令牌名，没用令牌时没有）、`before: [事项]`、`after: [事项]` 有内容时才有 |
 | `search` | `{tasks: [事项], total}` |
 | `graph` | `{tasks: [事项], edges: [{before, after}]}`，边用编号，别人共享给我的文件夹里的事项写成 `"@alice#42"` |

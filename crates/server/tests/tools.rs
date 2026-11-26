@@ -644,7 +644,7 @@ async fn agenda_lists_what_is_due_each_day_and_what_is_overdue() {
     assert_eq!(
         text(&agenda),
         "已逾期：\n  #1 [可做] 交报告 · /工作 · 截止 2026-11-18\n2026-11-20（今天）：\n  #2 [可做] 开例会 · /工作 · 截止 2026-11-20 10:00，每周\n\
-         2026-11-21（明天）：\n  #3 [可做] 买菜 · 截止 2026-11-21\n2026-11-27：\n  #2 开例会 · /工作 · 截止 2026-11-20 10:00，每周 · 以后的一次"
+         2026-11-21（明天）：\n  #3 [可做] 买菜 · 截止 2026-11-21\n2026-11-22（小雪）\n2026-11-27：\n  #2 开例会 · /工作 · 截止 2026-11-20 10:00，每周 · 以后的一次"
     );
     let data = &agenda["data"];
     assert_eq!(numbers(&data["overdue"]), [1]);
@@ -653,16 +653,49 @@ async fn agenda_lists_what_is_due_each_day_and_what_is_overdue() {
     let later = &data["days"][2]["tasks"][0];
     assert_eq!((later["later"].as_bool(), later["due"]["date"].as_str()), (Some(true), Some("2026-11-20")), "due as it is now");
     assert!(data["days"][0]["tasks"][0].get("later").is_none());
+    assert_eq!(data["marks"], json!([{ "date": "2026-11-22", "term": "小雪" }]));
 
     let work = t.ok(&s, "agenda", json!({ "today": "2026-11-20", "folders": ["/工作"] })).await;
     assert_eq!((numbers(&work["data"]["overdue"]), numbers(&work["data"]["days"][0]["tasks"])), (vec![1], vec![2]), "a week, in /工作");
     assert_eq!(work["data"]["days"].as_array().unwrap().len(), 1);
     let none = t.ok(&s, "agenda", json!({ "today": "2026-11-01", "days": 1 })).await;
     assert_eq!(text(&none), "今天起 1 天没有截止的事项，也没有逾期的。");
-    assert_eq!(none["data"], json!({ "overdue": [], "days": [] }));
+    assert_eq!(none["data"], json!({ "overdue": [], "days": [], "marks": [] }));
     for days in [0, 32] {
         assert_eq!(t.tool(&s, "agenda", json!({ "days": days })).await.status, StatusCode::BAD_REQUEST);
     }
+}
+
+#[tokio::test]
+async fn agenda_says_the_festivals_and_the_days_off() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let none = t.ok(&s, "agenda", json!({ "today": "2027-02-06", "days": 1 })).await;
+    assert_eq!(text(&none), "今天起 1 天没有截止的事项，也没有逾期的。\n2027-02-06（今天，春节，放假）");
+    t.ok(&s, "add", json!({ "title": "贴春联", "due": "2027-02-05" })).await;
+    let agenda = t.ok(&s, "agenda", json!({ "today": "2027-02-04", "days": 4 })).await;
+    assert_eq!(
+        text(&agenda),
+        "2027-02-04（今天，立春）\n2027-02-05（明天，除夕，放假）：\n  #1 [可做] 贴春联 · 截止 2027-02-05\n2027-02-06（春节，放假）\n2027-02-07（放假）"
+    );
+    assert_eq!(
+        agenda["data"]["marks"],
+        json!([
+            { "date": "2027-02-04", "term": "立春" },
+            { "date": "2027-02-05", "festival": "除夕", "holiday": "off" },
+            { "date": "2027-02-06", "festival": "春节", "holiday": "off" },
+            { "date": "2027-02-07", "holiday": "off" },
+        ])
+    );
+    let work = t.ok(&s, "agenda", json!({ "today": "2027-02-14", "days": 1 })).await;
+    assert_eq!(work["data"]["marks"], json!([{ "date": "2027-02-14", "holiday": "work" }]));
+    t.ok(&s, "add", json!({ "title": "写总结", "folder": "/工作", "due": "2027-03-01" })).await;
+    let work = t.ok(&s, "agenda", json!({ "today": "2027-02-04", "days": 2, "folders": ["/工作"] })).await;
+    assert_eq!(
+        text(&work),
+        "这些文件夹里今天起 2 天没有截止的事项，也没有逾期的。\n2027-02-04（今天，立春）\n2027-02-05（明天，除夕，放假）"
+    );
+    assert_eq!((&work["data"]["days"], work["data"]["marks"].as_array().unwrap().len()), (&json!([]), 2), "whatever the folders");
 }
 
 #[tokio::test]

@@ -9,13 +9,14 @@ import { completionKey } from "../domain/apply";
 import { type DoneOn, type DueOn, doneByDay, droppedByDay, dueBetween, heat, lateness, overdue } from "../domain/calendar";
 import { day, dueKind, formatToday, isoDate, monthGrid } from "../domain/dates";
 import type { Task } from "../api/types/Task";
-import { lunarDate, lunarLabel, lunarText } from "../domain/lunar";
+import { lunarDate, lunarText } from "../domain/lunar";
 import { useKept } from "../kept";
 import { useView } from "../session";
 import { Seg } from "../ui/controls";
 import { Tip } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { useTaskActions } from "./actions";
+import { DayNote, DayNotes, daySpoken, useHolidayMarks } from "./daynote";
 import { ARROWS, WEEKDAYS } from "./due";
 import { useSelection } from "./nav";
 import { Occurrence, TaskRow } from "./rows";
@@ -99,12 +100,14 @@ export function CalendarBody({ now, view, onView, pick: { picked, at, pick } }: 
   const linked = VIEWS.find((v) => v === asked);
   const on = params.get("on");
   const [timeGrid] = useTimeGridOn();
+  const [marks] = useHolidayMarks();
   useEffect(() => {
     if (asked === null) return;
     if (linked) {
       // With the time grid turned off, the week it would show.
       onView(linked === "time" && !timeGrid ? "week" : linked);
-      if (on) pick(on);
+      // A day there is, from a link typed in too.
+      if (on && /^\d{4}-\d{2}-\d{2}$/.test(on) && isoDate(day(on)) === on) pick(on);
     }
     navigate(location, { replace: true });
   });
@@ -219,7 +222,6 @@ export function CalendarBody({ now, view, onView, pick: { picked, at, pick } }: 
                 const iso = isoDays[i];
                 const dots = due.get(iso) ?? [];
                 const n = done.get(iso)?.length ?? 0;
-                const lunar = lunarDate(iso);
                 // The other months' days, in their faint colour, aren't tinted: on a tint it would be hard to read.
                 const out = view === "month" && d.getMonth() !== shown.getMonth();
                 return (
@@ -231,13 +233,13 @@ export function CalendarBody({ now, view, onView, pick: { picked, at, pick } }: 
                     tabIndex={iso === picked ? 0 : -1}
                     aria-pressed={iso === picked}
                     aria-current={iso === today ? "date" : undefined}
-                    aria-label={`${d.getMonth() + 1}月${d.getDate()}日${lunar ? `，农历${lunarText(lunar)}` : ""}，${dots.length} 项截止${n ? `，完成 ${n} 项` : ""}`}
+                    aria-label={`${d.getMonth() + 1}月${d.getDate()}日${daySpoken(iso, marks)}，${dots.length} 项截止${n ? `，完成 ${n} 项` : ""}`}
                     onClick={() => setPicked(iso)}
                     onKeyDown={(e) => move(e, d)}
                   >
                     <span className={n && !out ? `heat-${heat(n)}` : undefined}>
                       <span className="cal-num">{d.getDate()}</span>
-                      <small>{lunarLabel(iso)}</small>
+                      <DayNote date={iso} marks={marks} />
                       <span className="cal-dots">
                         {dots.slice(0, 3).map((o, j) => (
                           <i key={j} className={!o.later && dueKind(o.task.due!, now) === "overdue" ? "overdue" : undefined} />
@@ -309,11 +311,13 @@ function DayList({ date, now, overdue, due, dropped, done }: { date: string; now
   const { selected } = useSelection();
   const actions = useTaskActions();
   const lunar = lunarDate(date);
+  const [marks] = useHolidayMarks();
   return (
     <section className="cal-day">
       <h2 className="cal-date">
         {formatToday(day(date))}
         {lunar && <span className="cal-lunar">农历{lunarText(lunar)}</span>}
+        <DayNotes date={date} marks={marks} />
       </h2>
       {!overdue.length && !due.length && !dropped.length && !done.length && <p className="empty">这天没有事项</p>}
       {overdue.length > 0 && (

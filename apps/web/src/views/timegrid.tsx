@@ -6,7 +6,6 @@ import { type ComponentProps, type CSSProperties, useLayoutEffect, useRef, useSt
 import { completionKey } from "../domain/apply";
 import { lateness } from "../domain/calendar";
 import { day, isoTime } from "../domain/dates";
-import { lunarLabel } from "../domain/lunar";
 import { type Block, fit, firstLook, opensAt, slotOf, slotTime, weekBlocks } from "../domain/timegrid";
 import { useView } from "../session";
 import { Modal } from "../ui/feedback";
@@ -14,6 +13,7 @@ import { useWide } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { ContextMenu } from "../ui/menu";
 import { useTaskActions } from "./actions";
+import { DayNote, daySpoken, useHolidayMarks } from "./daynote";
 import { WEEKDAYS } from "./due";
 import { useSelection } from "./nav";
 import { Occurrence, type RowActions, TaskRow, useTaskMenu } from "./rows";
@@ -60,6 +60,7 @@ export function TimeGrid({
 }) {
   const { board } = useView();
   const wide = useWide();
+  const [marks] = useHolidayMarks();
   const actions = useTaskActions();
   const { selected } = useSelection();
   const week = weekBlocks(board, days, now);
@@ -106,10 +107,18 @@ export function TimeGrid({
         <div className="tg-row">
           <span />
           {days.map((d, i) => (
-            <button key={d} type="button" className="tg-day" aria-pressed={d === picked} aria-current={d === today ? "date" : undefined} onClick={() => onPick(d)}>
+            <button
+              key={d}
+              type="button"
+              className="tg-day"
+              aria-pressed={d === picked}
+              aria-current={d === today ? "date" : undefined}
+              aria-label={`星期${WEEKDAYS[i]}，${Number(d.slice(5, 7))}月${Number(d.slice(8))}日${daySpoken(d, marks)}`}
+              onClick={() => onPick(d)}
+            >
               <small>{d === today ? "今" : WEEKDAYS[i]}</small>
               <span className="cal-num">{Number(d.slice(8))}</span>
-              <small>{lunarLabel(d)}</small>
+              <DayNote date={d} marks={marks} />
             </button>
           ))}
         </div>

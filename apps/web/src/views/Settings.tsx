@@ -21,6 +21,7 @@ import { type Zoom, type Zoomed, setZoom, useZoom } from "../zoom";
 import { ColorPicker } from "../ui/color-picker";
 import { Copyable, Seg, Stepper, Swatch, Switch } from "../ui/controls";
 import { useTimeGridOn } from "./calendar";
+import { useHolidayMarks } from "./daynote";
 import { Modal, forUser, useFailure, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
 import { Icon } from "../ui/icons";
@@ -439,6 +440,7 @@ function Action({ label, value, onClick }: { label: string; value?: string; onCl
 function Appearance() {
   const theme = useTheme();
   const [grid, setGrid] = useTimeGridOn();
+  const [marks, setMarks] = useHolidayMarks();
   const accent = useAccent();
   const dark = useDark();
   const own = accent === "emerald" || isPreset(accent) ? null : accent;
@@ -480,6 +482,7 @@ function Appearance() {
       <h2 className="group-title">日历</h2>
       <div className="group settings">
         <Switch label="时间轴视图" sub="在日历中按小时查看一周的事项" on={grid} onChange={setGrid} />
+        <Switch label="放假和补班" sub="在日历中标出国家规定的放假和补班" on={marks} onChange={setMarks} />
       </div>
     </>
   );

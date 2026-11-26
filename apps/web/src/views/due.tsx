@@ -31,7 +31,7 @@ import {
   remindersLabel,
   startLabel,
 } from "../domain/dates";
-import { dayName, lunarDate, lunarLabel, lunarText } from "../domain/lunar";
+import { dayName, lunarDate, lunarText } from "../domain/lunar";
 import { WORKDAYS, daysBefore, plus, repeatLabel } from "../domain/repeat";
 import { useDefaultReminders } from "../remind-settings";
 import { useBack } from "../ui/back";
@@ -40,6 +40,7 @@ import { Modal, RootContext, Tip } from "../ui/feedback";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { composing } from "../ui/keys";
+import { DayNote, daySpoken, useHolidayMarks } from "./daynote";
 
 const UNITS: [RepeatUnit, string][] = [
   ["day", "天"],
@@ -473,6 +474,7 @@ function Calendar({
   onPicked?(): void;
 }) {
   const today = isoDate(useNow());
+  const [marks] = useHolidayMarks();
   const [shown, setShown] = useState(() => monthOf(day(value || (min && min > today ? min : today))));
   const out = (iso: string) => (min !== undefined && iso < min) || (max !== undefined && iso > max);
   const days = useRef<HTMLDivElement>(null);
@@ -520,7 +522,6 @@ function Calendar({
       <div className="cal-days" ref={days}>
         {weeks.map((d) => {
           const iso = isoDate(d);
-          const l = lunarDate(iso);
           return (
             <button
               key={iso}
@@ -530,13 +531,13 @@ function Calendar({
               aria-pressed={iso === value}
               aria-current={iso === today ? "date" : undefined}
               disabled={out(iso)}
-              aria-label={`${d.getMonth() + 1}月${d.getDate()}日${l ? `，农历${lunarText(l)}` : ""}`}
+              aria-label={`${d.getMonth() + 1}月${d.getDate()}日${daySpoken(iso, marks)}`}
               onClick={() => (pick(d), onPicked?.())}
               onKeyDown={(e) => move(e, d)}
             >
               <span>
                 {d.getDate()}
-                <small aria-hidden>{lunarLabel(iso)}</small>
+                <DayNote date={iso} marks={marks} />
               </span>
             </button>
           );

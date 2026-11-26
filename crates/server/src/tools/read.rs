@@ -6,7 +6,8 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use nexttodo_core::board::{Board, Status};
 use nexttodo_core::calendar;
-use nexttodo_core::model::{Attachment, Completion, Effect, FolderId, Holder, JobState, Share, Task, TaskId};
+use nexttodo_core::holidays::Holiday;
+use nexttodo_core::model::{Attachment, Completion, Date, Effect, FolderId, Holder, JobState, Share, Task, TaskId};
 use nexttodo_core::ops::Op;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
@@ -196,6 +197,19 @@ fn picked(b: &Board, folders: Option<&[String]>) -> Result<Option<HashSet<TaskId
 /// How many days `agenda` lists, unless told otherwise.
 const AGENDA_DAYS: u32 = 7;
 
+/// A day's festival, solar term, and whether it is a day off or a made-up working day
+/// (docs/design.md#节日和放假), whatever the folders asked for.
+#[derive(Serialize)]
+struct Mark {
+    date: Date,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    festival: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    term: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    holiday: Option<Holiday>,
+}
+
 pub fn agenda(c: &Connection, cx: &Cx, a: AgendaArgs) -> Result<Output, ApiError> {
     let days = match a.days.unwrap_or(AGENDA_DAYS) {
         n @ 1..=31 => n,
@@ -216,25 +230,41 @@ pub fn agenda(c: &Connection, cx: &Cx, a: AgendaArgs) -> Result<Output, ApiError
         let line = task_line(&b, t, t.folder_id.is_some(), !later, None);
         if later { format!("  {line} · 以后的一次") } else { format!("  {line}") }
     };
+    // The days asked for, which stop at the last date there is.
+    let mut dates: Vec<Date> = (0..days).map(|i| b.now().today.plus(i)).collect();
+    dates.dedup();
+    let marks: Vec<Mark> = dates
+        .iter()
+        .cloned()
+        .map(|date| Mark { festival: date.festival(), term: date.solar_term(), holiday: date.holiday(), date })
+        .filter(|m| m.festival.is_some() || m.term.is_some() || m.holiday.is_some())
+        .collect();
     let mut lines = Vec::new();
+    if agenda.overdue.is_empty() && agenda.days.is_empty() {
+        lines.push(format!("{}今天起 {days} 天没有截止的事项，也没有逾期的。", if a.folders.is_some() { "这些文件夹里" } else { "" }));
+    }
     if !agenda.overdue.is_empty() {
         lines.push("已逾期：".to_owned());
         lines.extend(agenda.overdue.iter().map(|t| line(t, false)));
     }
-    for (date, list) in &agenda.days {
+    for date in &dates {
+        let list = agenda.days.get(date);
+        let mark = marks.iter().find(|m| m.date == *date);
+        if list.is_none() && mark.is_none() {
+            continue;
+        }
         let when = match date.days_after(&b.now().today) {
-            0 => "（今天）",
-            1 => "（明天）",
-            _ => "",
+            0 => Some("今天"),
+            1 => Some("明天"),
+            _ => None,
         };
-        lines.push(format!("{}{when}：", date.as_str()));
-        lines.extend(list.iter().map(|d| line(d.task, d.later)));
+        let holiday = mark.and_then(|m| m.holiday).map(|h| if h == Holiday::Off { "放假" } else { "补班" });
+        let notes: Vec<&str> = [when, mark.and_then(|m| m.festival), mark.and_then(|m| m.term), holiday].into_iter().flatten().collect();
+        let notes = if notes.is_empty() { String::new() } else { format!("（{}）", notes.join("，")) };
+        lines.push(format!("{}{notes}{}", date.as_str(), if list.is_some() { "：" } else { "" }));
+        lines.extend(list.into_iter().flatten().map(|d| line(d.task, d.later)));
     }
-    let text = if lines.is_empty() {
-        format!("{}今天起 {days} 天没有截止的事项，也没有逾期的。", if a.folders.is_some() { "这些文件夹里" } else { "" })
-    } else {
-        lines.join("\n")
-    };
+    let text = lines.join("\n");
     let view = |t: &Task, later: bool| {
         let mut v = task_view(&b, t);
         if later {
@@ -248,7 +278,7 @@ pub fn agenda(c: &Connection, cx: &Cx, a: AgendaArgs) -> Result<Output, ApiError
         .iter()
         .map(|(date, list)| json!({ "date": date, "tasks": list.iter().map(|d| view(d.task, d.later)).collect::<Vec<_>>() }))
         .collect();
-    Ok(Output { text, data: json!({ "overdue": overdue, "days": days }) })
+    Ok(Output { text, data: json!({ "overdue": overdue, "days": days, "marks": marks }) })
 }
 
 pub fn show(c: &Connection, cx: &Cx, a: ShowArgs) -> Result<Output, ApiError> {

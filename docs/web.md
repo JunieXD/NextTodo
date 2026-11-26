@@ -163,13 +163,14 @@ ESLint 拦下两种吞掉错误的写法：
 
 ### 共用的测试数据
 
-两边各写一份的规则，用 `fixtures/` 里的同一份数据校验，改一边忘了另一边时测试失败。每个文件是一组用例，每条用例有中文的 `name`，其余是输入和期望的结果。
+两边各写一份的规则，用 `fixtures/` 里的同一份数据校验，改一边忘了另一边时测试失败。每个文件是一组用例，每条用例有中文的 `name`（农历和节日的以日期为名），其余是输入和期望的结果。
 
 | 文件 | 规则 | 网页端 | 服务端 |
 |---|---|---|---|
 | `board.json` | 依赖状态和排序 | `domain/board.ts` | `crates/core/src/board.rs` |
 | `repeat.json` | 重复的下一次 | `domain/repeat.ts` | `crates/core/src/repeat.rs` |
 | `lunar.json` | 农历 | `domain/lunar.ts` | `crates/core/src/lunar.rs` |
+| `holidays.json` | 节日、节气和放假、补班 | `domain/holidays.ts` | `crates/core/src/holidays.rs` |
 | `undo-done.json` | 撤销完成时是否仍是最后一次 | `domain/apply.ts` | `crates/server/src/mutate.rs` |
 | `ai-pictures.json` | 发给模型的图片 | `attach.ts` | `crates/server/src/ai/organize.rs` |
 | `text.json` | 标题、名称、描述等文本的校验 | `domain/text.ts` | `crates/core/src/model.rs` |

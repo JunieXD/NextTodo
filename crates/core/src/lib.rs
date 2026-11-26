@@ -5,6 +5,7 @@
 pub mod board;
 pub mod calendar;
 pub mod dag;
+pub mod holidays;
 pub mod lunar;
 pub mod model;
 pub mod ops;

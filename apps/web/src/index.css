@@ -947,7 +947,7 @@ a.text-btn { display: inline-flex; align-items: center; }
 .cal-week span { height: 28px; display: grid; place-items: center; font-size: 12px; color: var(--outline); }
 .cal-days button { height: 46px; display: grid; place-items: center; font-size: 15px; font-variant-numeric: tabular-nums; outline: none; }
 /* The day, and under it the lunar day (docs/design.md#农历). */
-.cal-days span { width: 100%; max-width: 42px; height: 42px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.15; transition: background-color .15s, color .15s; }
+.cal-days span { position: relative; width: 100%; max-width: 42px; height: 42px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.15; transition: background-color .15s, color .15s; }
 .cal-days small { font-size: 10px; color: var(--on-surface-variant); }
 .cal-days .out, .cal-days .out small, .cal-days [aria-pressed="true"] small, .cal-days :disabled small { color: inherit; }
 .cal-days .out { color: var(--outline); }
@@ -976,7 +976,7 @@ a.text-btn { display: inline-flex; align-items: center; }
 .cal-grid button { height: 56px; display: grid; place-items: center; font-variant-numeric: tabular-nums; outline: none; }
 /* The whole cell takes a click; the day in it is a tile with room around it, so that tinted ones don't
    run together. Outlines, as they draw over the tint. */
-.cal-grid button > span { width: min(100% - 6px, 48px); height: 50px; display: flex; flex-direction: column; align-items: center; padding-top: 6px; border-radius: 12px; outline: 1px solid transparent; outline-offset: -1px; transition: outline-color .15s, outline-width .15s, outline-offset .15s; }
+.cal-grid button > span { position: relative; width: min(100% - 6px, 48px); height: 50px; display: flex; flex-direction: column; align-items: center; padding-top: 6px; border-radius: 12px; outline: 1px solid transparent; outline-offset: -1px; transition: outline-color .15s, outline-width .15s, outline-offset .15s; }
 .cal-num { font-size: 15px; line-height: 1.2; }
 .cal-grid small { font-size: 10px; line-height: 1.3; color: var(--on-surface-variant); }
 .cal-dots { display: flex; gap: 3px; height: 4px; margin-top: 4px; }
@@ -1015,6 +1015,18 @@ a.text-btn { display: inline-flex; align-items: center; }
 .cal-mini [aria-current="date"], .cal-mini button:focus-visible { box-shadow: 0 0 0 1.5px var(--primary); }
 .cal-date { margin: 20px 32px 0; font-size: 16px; font-weight: 600; }
 .cal-lunar { margin-left: 8px; font-size: 14px; font-weight: 400; color: var(--on-surface-variant); }
+/* Festivals, solar terms, 休 and 班 (docs/ui.md#日历). */
+:is(.cal-grid, .cal-days, .tg-day) small.day-note, .cal-date .day-note { color: var(--primary); }
+.day-mark { position: absolute; top: 3px; right: 4px; font-size: 9px; line-height: 1; font-weight: 700; font-style: normal; }
+.cal-days .day-mark { top: 2px; right: 3px; }
+/* By the number, not in the corner of a column that may be wide. */
+.tg-day .day-mark { top: 17px; right: auto; left: calc(50% + 11px); }
+.cal-holiday { margin-left: 8px; font-size: 14px; }
+:is(.day-mark, .cal-holiday).off { color: var(--primary); }
+:is(.day-mark, .cal-holiday).work { color: var(--warn); }
+.cal-grid .out :is(small.day-note, .day-mark), .cal-days :is(.out, [aria-pressed="true"], :disabled) :is(small.day-note, .day-mark) { color: inherit; }
+/* The primary colour and the amber, small, are too faint on the two deepest tints. */
+.cal-grid :is(.heat-3, .heat-4) :is(small.day-note, .day-mark) { color: var(--on-primary-container); }
 .cal-day .empty { margin-inline: 32px; }
 .occurrence .check { cursor: default; }
 
@@ -1024,7 +1036,7 @@ a.text-btn { display: inline-flex; align-items: center; }
 .desk .tg { --gutter: 40px; }
 .tg-head { position: sticky; top: 0; z-index: 5; background: var(--surface); }
 .tg-row { display: grid; grid-template-columns: var(--gutter) repeat(7, minmax(0, 1fr)); }
-.tg-day { height: 52px; margin: 2px 1px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 10px; font-variant-numeric: tabular-nums; outline: none; transition: box-shadow .15s; }
+.tg-day { position: relative; height: 52px; margin: 2px 1px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 10px; font-variant-numeric: tabular-nums; outline: none; transition: box-shadow .15s; }
 .tg-day small { font-size: 10px; line-height: 1.3; color: var(--on-surface-variant); }
 .tg-day[aria-current="date"] :is(small:first-child, .cal-num) { color: var(--primary); font-weight: 700; }
 .tg-day[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--primary); }

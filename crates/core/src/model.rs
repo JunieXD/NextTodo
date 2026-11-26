@@ -529,20 +529,22 @@ impl std::fmt::Display for Misfit {
 
 /// What `every` counts: days; weeks, on some days of the week or the due date's; months, on some days
 /// of the month or the due date's; lunar months, always on some days of them, the 1st to the 30th. A
-/// year is 12 months.
+/// year is 12 months. Or every week, Monday to Friday as the State Council sets the days around public
+/// holidays: those off taken out, the weekends worked to make up for them put in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Period {
     Day,
     Week(Option<Weekdays>),
     Month(Option<Monthdays>),
     LunarMonth(Monthdays),
+    LegalWorkdays,
 }
 
 impl Period {
     pub fn unit(self) -> RepeatUnit {
         match self {
             Period::Day => RepeatUnit::Day,
-            Period::Week(_) => RepeatUnit::Week,
+            Period::Week(_) | Period::LegalWorkdays => RepeatUnit::Week,
             Period::Month(_) | Period::LunarMonth(_) => RepeatUnit::Month,
         }
     }
@@ -565,6 +567,11 @@ pub struct RepeatFields {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[ts(as = "Option<bool>", optional)]
     lunar: bool,
+    /// Whether one every week, Monday to Friday, goes by the days off and worked the State Council
+    /// sets: 每个法定工作日.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[ts(as = "Option<bool>", optional)]
+    legal: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     until: Option<Date>,
@@ -574,6 +581,13 @@ impl TryFrom<RepeatFields> for Repeat {
     type Error = &'static str;
 
     fn try_from(f: RepeatFields) -> Result<Self, Self::Error> {
+        if f.legal {
+            let workdays = f.days.map(Weekdays::try_from).transpose()? == Some(Weekdays::WORKDAYS);
+            if f.unit != RepeatUnit::Week || f.every.get() != 1 || f.lunar || !workdays {
+                return Err("每个法定工作日只能整组用，不能自选周几、每隔几周或按农历");
+            }
+            return Ok(Repeat { every: f.every, period: Period::LegalWorkdays, from: f.from, until: f.until });
+        }
         let period = match (f.unit, f.days, f.lunar) {
             (RepeatUnit::Day, Some(_), _) => return Err("按天重复不能选周几或几号"),
             (RepeatUnit::Day | RepeatUnit::Week, _, true) => return Err("只有按月重复能按农历"),
@@ -594,9 +608,11 @@ impl From<Repeat> for RepeatFields {
             Period::Week(days) => days.map(Vec::from),
             Period::Month(days) => days.map(Vec::from),
             Period::LunarMonth(days) => Some(Vec::from(days)),
+            Period::LegalWorkdays => Some(Vec::from(Weekdays::WORKDAYS)),
         };
         let lunar = matches!(r.period, Period::LunarMonth(_));
-        RepeatFields { every: r.every, unit: r.period.unit(), from: r.from, days, lunar, until: r.until }
+        let legal = r.period == Period::LegalWorkdays;
+        RepeatFields { every: r.every, unit: r.period.unit(), from: r.from, days, lunar, legal, until: r.until }
     }
 }
 
@@ -1449,6 +1465,24 @@ impl<T: Clone> From<Link<T>> for Sides<T> {
 mod tests {
     use super::*;
     use serde_json::{from_value, json, to_value};
+
+    #[test]
+    fn every_statutory_working_day_is_monday_to_friday_every_week() {
+        let workdays = json!({ "every": 1, "unit": "week", "from": "due", "days": [1, 2, 3, 4, 5], "legal": true });
+        let r = from_value::<Repeat>(workdays.clone()).unwrap();
+        assert_eq!((r.period, to_value(&r).unwrap()), (Period::LegalWorkdays, workdays));
+        for wrong in [
+            json!({ "every": 2, "unit": "week", "from": "due", "days": [1, 2, 3, 4, 5], "legal": true }),
+            json!({ "every": 1, "unit": "week", "from": "due", "days": [1, 3, 5], "legal": true }),
+            json!({ "every": 1, "unit": "week", "from": "due", "legal": true }),
+            json!({ "every": 1, "unit": "month", "from": "due", "days": [1, 2, 3, 4, 5], "legal": true }),
+        ] {
+            assert!(from_value::<Repeat>(wrong.clone()).is_err(), "{wrong}");
+        }
+        // Not written for the others: servers from before it refuse what they don't know.
+        let plain = from_value::<Repeat>(json!({ "every": 1, "unit": "week", "from": "due", "days": [1, 2, 3, 4, 5] })).unwrap();
+        assert_eq!(to_value(plain).unwrap().get("legal"), None);
+    }
 
     #[test]
     fn validates_text() {

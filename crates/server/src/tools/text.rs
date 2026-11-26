@@ -85,7 +85,7 @@ pub fn deadline(t: &Task) -> Option<String> {
     }
 }
 
-/// `每天`, `每 2 周`, `每个工作日`, `每 2 周的周二、四`, `每月 1、15 号`, `每年`, `每 3 个月，从完成那天算`,
+/// `每天`, `每 2 周`, `每个工作日`, `每个法定工作日`, `每 2 周的周二、四`, `每月 1、15 号`, `每年`, `每 3 个月，从完成那天算`,
 /// `每天，到 2026-12-19`; by the lunar calendar, `农历每月初一、十五`, `每年农历八月十五`, its month that of
 /// the task `due`. The web app's `repeatLabel` has them so too, but for the last day.
 pub fn repeat(r: &Repeat, due: &Date) -> String {
@@ -102,6 +102,7 @@ pub fn repeat(r: &Repeat, due: &Date) -> String {
             }
         }
         (1, Period::Week(Some(Weekdays::WORKDAYS))) => "每个工作日".to_owned(),
+        (_, Period::LegalWorkdays) => "每个法定工作日".to_owned(),
         (n, Period::Week(Some(days))) => {
             let names: Vec<&str> =
                 (0..7).filter(|&i| days.has(i)).map(|i| ["一", "二", "三", "四", "五", "六", "日"][i as usize]).collect();

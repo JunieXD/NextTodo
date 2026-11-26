@@ -5,6 +5,7 @@ import type { Occurrence } from "../api/types/Occurrence";
 import type { Repeat } from "../api/types/Repeat";
 import type { Task } from "../api/types/Task";
 import { formatDue } from "./dates";
+import { holiday } from "./holidays";
 import { dayName, dayOf, lunarDate, monthName, monthOf, monthOn } from "./lunar";
 
 /** Midnight UTC of a day, years before 100 included (`Date.UTC` takes them for 19xx). */
@@ -17,6 +18,14 @@ function utc(y: number, m: number, d: number): Date {
 const DAY = 86_400_000;
 const daysIn = (y: number, m: number) => utc(y, m + 1, 0).getUTCDate();
 const pad = (n: number, width = 2) => String(n).padStart(width, "0");
+const iso = (t: Date) => `${pad(t.getUTCFullYear(), 4)}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
+
+/** Whether `day` is worked as the State Council sets it: Monday to Friday unless it is a day off, or a
+ * weekend day worked to make up for one. Past the table, Monday to Friday. */
+function legalWorkday(day: Date): boolean {
+  const h = holiday(iso(day));
+  return h ? h === "work" : day.getUTCDay() % 6 !== 0;
+}
 
 /** Monday to Friday, as `Repeat.days` has them. */
 export const WORKDAYS = [1, 2, 3, 4, 5];
@@ -76,11 +85,24 @@ export function nextDue(r: Repeat, due: string, today: string): string | null {
       }
     }
   };
-  const next = !r.days ? stepped() : r.lunar ? onLunarDays(r.days) : r.unit === "week" ? onWeekdays(r.days) : onMonthdays(r.days);
+  const onLegalWorkdays = () => {
+    for (let i = 1; ; i++) {
+      const day = utc(y, m, d + i);
+      if (counts(day) && legalWorkday(day)) return day;
+    }
+  };
+  const next = r.legal
+    ? onLegalWorkdays()
+    : !r.days
+      ? stepped()
+      : r.lunar
+        ? onLunarDays(r.days)
+        : r.unit === "week"
+          ? onWeekdays(r.days)
+          : onMonthdays(r.days);
   if (!next) return null;
-  const year = next.getUTCFullYear();
-  const date = `${pad(year, 4)}-${pad(next.getUTCMonth() + 1)}-${pad(next.getUTCDate())}`;
-  return year > 9999 || (r.until && date > r.until) ? null : date;
+  const date = iso(next);
+  return next.getUTCFullYear() > 9999 || (r.until && date > r.until) ? null : date;
 }
 
 /** Whether a repeating task was done `today` and is next due after it: catching up on a time missed
@@ -104,7 +126,7 @@ export const occurrence = (t: Task): Occurrence | undefined => (t.due?.repeat ? 
 export function plus(date: string, days: number): string {
   const [y, m, d] = date.split("-").map(Number);
   const t = utc(y, m, d + days);
-  return t.getUTCFullYear() > 9999 ? "9999-12-31" : `${pad(t.getUTCFullYear(), 4)}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
+  return t.getUTCFullYear() > 9999 ? "9999-12-31" : iso(t);
 }
 
 /** The moment `date` begins in UTC, to count days by alike in every time zone. */
@@ -118,11 +140,10 @@ export const daysBefore = (date: string, due: string) => Math.round((utcDay(due)
 
 /** `date` moved as many days as `from` moved to `to`: a start date kept as far before its due date. */
 export function shifted(date: string, from: string, to: string): string {
-  const t = new Date(utcDay(date) + utcDay(to) - utcDay(from));
-  return `${pad(t.getUTCFullYear(), 4)}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
+  return iso(new Date(utcDay(date) + utcDay(to) - utcDay(from)));
 }
 
-/** `每天`, `每 2 周`, `每 3 个月`, `每个工作日`, `每 2 周的周二、四`, `每月 1、15 号`, `每年`; by the lunar
+/** `每天`, `每 2 周`, `每 3 个月`, `每个工作日`, `每个法定工作日`, `每 2 周的周二、四`, `每月 1、15 号`, `每年`; by the lunar
  * calendar `农历每月初一、十五`, `每年农历八月十五`, its month that of the task `due`. As the command
  * line has them too. */
 export function repeatLabel(r: Repeat, due: string): string {
@@ -135,6 +156,7 @@ export function repeatLabel(r: Repeat, due: string): string {
     if (r.every === 12) return `每年农历${month}${days}`;
     return r.every % 12 === 0 ? `每 ${r.every / 12} 年的农历${month}${days}` : `农历每 ${r.every} 个月的${days}`;
   }
+  if (r.legal) return "每个法定工作日";
   if (r.days && r.unit === "week") {
     if (r.every === 1 && r.days.join() === WORKDAYS.join()) return "每个工作日";
     const names = r.days.map((d) => "一二三四五六日"[d - 1]).join("、");

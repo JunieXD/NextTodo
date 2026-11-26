@@ -139,6 +139,24 @@ test("a date for a task due some days after its prerequisites shows what it was,
   expect([after.task(id(2))!.due, after.task(id(2))!.due_after]).toEqual([{ date: "2026-12-02" }, undefined]);
 });
 
+test("every statutory working day and every Monday to Friday are told apart", () => {
+  const weekdays = { every: 1, unit: "week" as const, from: "due" as const, days: [1, 2, 3, 4, 5] };
+  const legal = { ...weekdays, legal: true };
+  const { shown, after } = tidy(
+    [task(1, "写日报", { due: { date: "2026-11-13", repeat: weekdays } }), task(2, "打卡", { due: { date: "2026-11-13", repeat: legal } })],
+    [],
+    [
+      { task: id(1), due: { date: "2026-11-13", repeat: legal }, after: [], reason: "", was: { ...was("写日报"), due: { date: "2026-11-13", repeat: weekdays } } },
+      // Made every statutory working day on another device since.
+      { task: id(2), due: { date: "2026-11-13", time: "09:00", repeat: weekdays }, after: [], reason: "", was: { ...was("打卡"), due: { date: "2026-11-13", repeat: weekdays } } },
+    ],
+  );
+  const [report, clockIn] = shown.map((g) => g.parts[0]);
+  expect(report.now).toBeUndefined();
+  expect(after.task(id(1))!.due!.repeat).toEqual(legal);
+  expect(clockIn.now).toMatch(/^整理后已改为：.*每个法定工作日$/);
+});
+
 test("a folder's colour and icon are taken or left each, and one changed since is told of", () => {
   const folder = (n: number, name: string, look: Pick<Folder, "color" | "icon">, parent: number | null = null): Folder => ({
     id: id(n),

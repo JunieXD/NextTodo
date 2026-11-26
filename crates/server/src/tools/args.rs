@@ -161,7 +161,7 @@ pub struct AddArgs {
     pub remind: Option<RemindText>,
     #[schemars(
         with = "Option<String>",
-        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l 并写几号（1–30，初一到三十），1lm:1,15 农历每月初一和十五、1ly:15 每年农历的十五（在截止日期的农历月）；要有截止时间。完成时顺延截止时间，开始时间跟着顺延，不会真的完成（repeat_until 前的最后一次除外）"
+        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每周一到周五、1w:1,3,5 每周一三五；workdays 每个法定工作日（周一到周五，跳过放假、算上补班的周末），用户说每个工作日的一般是它；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l 并写几号（1–30，初一到三十），1lm:1,15 农历每月初一和十五、1ly:15 每年农历的十五（在截止日期的农历月）；要有截止时间。完成时顺延截止时间，开始时间跟着顺延，不会真的完成（repeat_until 前的最后一次除外）"
     )]
     pub repeat: Option<RepeatText>,
     #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
@@ -225,7 +225,7 @@ pub struct EditArgs {
     #[serde(default, deserialize_with = "nullable")]
     #[schemars(
         with = "Option<String>",
-        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l 并写几号（1–30，初一到三十），1lm:1,15 农历每月初一和十五、1ly:15 每年农历的十五（在截止日期的农历月）；null 不再重复。只改截止时间时重复保留"
+        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每周一到周五、1w:1,3,5 每周一三五；workdays 每个法定工作日（周一到周五，跳过放假、算上补班的周末），用户说每个工作日的一般是它；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l 并写几号（1–30，初一到三十），1lm:1,15 农历每月初一和十五、1ly:15 每年农历的十五（在截止日期的农历月）；null 不再重复。只改截止时间时重复保留"
     )]
     pub repeat: Option<Option<RepeatText>>,
     #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
@@ -456,7 +456,7 @@ pub struct PlanTask {
     pub remind: Option<RemindText>,
     #[schemars(
         with = "Option<String>",
-        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l 并写几号（1–30，初一到三十），1lm:1,15 农历每月初一和十五、1ly:15 每年农历的十五（在截止日期的农历月）；要有截止时间。完成时顺延截止时间，不会真的完成（repeat_until 前的最后一次除外）"
+        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每周一到周五、1w:1,3,5 每周一三五；workdays 每个法定工作日（周一到周五，跳过放假、算上补班的周末），用户说每个工作日的一般是它；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l 并写几号（1–30，初一到三十），1lm:1,15 农历每月初一和十五、1ly:15 每年农历的十五（在截止日期的农历月）；要有截止时间。完成时顺延截止时间，不会真的完成（repeat_until 前的最后一次除外）"
     )]
     pub repeat: Option<RepeatText>,
     #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
@@ -639,9 +639,12 @@ fn minutes(s: &str) -> Option<u32> {
     (number.is_none() && !s.trim().is_empty()).then_some(total)
 }
 
+/// How every statutory working day is typed (docs/design.md#重复).
+pub const LEGAL_WORKDAYS: &str = "workdays";
+
 /// A repeat as typed: `1d`, `2w`, `3m`, `1y` (12 months); weekly on some days, Monday 1 to Sunday 7,
 /// `1w:1,3,5`; monthly on some days of the month, `1m:1,15`; by the lunar calendar, always on some
-/// days, 1–30, `1lm:1,15`, `1ly:15`.
+/// days, 1–30, `1lm:1,15`, `1ly:15`; every statutory working day, `workdays`.
 #[derive(Clone, Copy, Deserialize)]
 #[serde(try_from = "String")]
 pub struct RepeatText {
@@ -655,9 +658,12 @@ impl TryFrom<String> for RepeatText {
     fn try_from(s: String) -> Result<Self, String> {
         let wrong = || {
             format!(
-                "重复“{s}”格式错误，应为间隔数加单位，如 1d、2w、3m、1y；按周的可以在冒号后写周几，如 1w:1,3,5；按月的可以写几号，如 1m:1,15；按农历的在单位前加 l 并写几号，如 1lm:1,15、1ly:15"
+                "重复“{s}”格式错误，应为间隔数加单位，如 1d、2w、3m、1y；按周的可以在冒号后写周几，如 1w:1,3,5；按月的可以写几号，如 1m:1,15；按农历的在单位前加 l 并写几号，如 1lm:1,15、1ly:15；每个法定工作日写 workdays"
             )
         };
+        if s.trim() == LEGAL_WORKDAYS {
+            return Ok(RepeatText { every: 1.try_into()?, period: Period::LegalWorkdays });
+        }
         let (interval, days) = s.trim().split_once(':').map_or((s.trim(), None), |(i, d)| (i, Some(d)));
         let Some(unit) = interval.chars().last() else { return Err(wrong()) };
         let n = &interval[..interval.len() - unit.len_utf8()];

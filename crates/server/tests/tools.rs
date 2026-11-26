@@ -517,6 +517,22 @@ async fn a_repeat_by_the_lunar_calendar_moves_on_by_it_and_says_so() {
 }
 
 #[tokio::test]
+async fn every_statutory_working_day_skips_the_days_off_and_takes_the_weekends_worked() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    // 春节 2027 is off from 2027-02-05 to 02-13, and Sunday 02-14 is worked (crates/core/src/holidays.json).
+    t.ok(&s, "add", json!({ "title": "写日报", "due": "2027-02-04", "repeat": "workdays" })).await;
+    let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
+    assert!(text(&shown).contains("截止：2027-02-04，每个法定工作日"), "{}", text(&shown));
+    let repeat = json!({ "every": 1, "unit": "week", "from": "due", "days": [1, 2, 3, 4, 5], "legal": true });
+    assert_eq!(shown["data"]["due"], json!({ "date": "2027-02-04", "repeat": repeat }));
+    let done = t.ok(&s, "done", json!({ "tasks": [1], "today": "2027-02-04" })).await;
+    assert!(text(&done).starts_with("顺延 #1 写日报 → 2027-02-14"), "{}", text(&done));
+    let skipped = t.ok(&s, "skip", json!({ "tasks": [1], "today": "2027-02-14" })).await;
+    assert!(text(&skipped).starts_with("顺延 #1 写日报 → 2027-02-15"), "{}", text(&skipped));
+}
+
+#[tokio::test]
 async fn a_task_waits_for_its_start_date_and_keeps_it_as_far_before_its_due_date() {
     let t = TestApp::new();
     let s = t.admin().await;

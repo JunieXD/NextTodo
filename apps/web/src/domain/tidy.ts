@@ -46,6 +46,8 @@ const sameDue = (a: Due | null, b: Due | null) =>
   a?.repeat?.unit === b?.repeat?.unit &&
   a?.repeat?.from === b?.repeat?.from &&
   a?.repeat?.days?.join() === b?.repeat?.days?.join() &&
+  !a?.repeat?.lunar === !b?.repeat?.lunar &&
+  !a?.repeat?.legal === !b?.repeat?.legal &&
   a?.repeat?.until === b?.repeat?.until;
 
 /** `11月20日 18:00 · 前一天 20:00、提前 30 分钟 · 每周`, or `无`. */

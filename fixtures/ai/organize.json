@@ -173,9 +173,21 @@
   },
   {
     "id": "repeat-workdays",
-    "note": "每个工作日：今天就是一次，没说几点的不带时间",
+    "note": "每个工作日是法定的：今天就是一次，没说几点的不带时间",
     "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/工作", "open_tasks": [], "text": "每个工作日下班前把日报发到群里" },
-    "expect": { "tasks": [1, 1], "facts": [["日报"], ["群"]], "repeat": [["日报", "2026-11-04 ~1w:1,2,3,4,5"]] }
+    "expect": { "tasks": [1, 1], "facts": [["日报"], ["群"]], "repeat": [["日报", "2026-11-04 ~workdays"]] }
+  },
+  {
+    "id": "repeat-weekdays-literal",
+    "note": "说的是周一到周五，照字面，不是法定工作日",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/生活", "open_tasks": [], "text": "周一到周五每天晚上八点跑步三公里" },
+    "expect": { "tasks": [1, 1], "facts": [["跑步"], ["三公里", "3 公里", "3公里"]], "repeat": [["跑步", "2026-11-04 20:00 ~1w:1,2,3,4,5"]] }
+  },
+  {
+    "id": "repeat-workdays-spoken",
+    "note": "上班的日子就是法定工作日",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/工作", "open_tasks": [], "text": "上班的日子每天下午五点前把考勤表交给行政" },
+    "expect": { "tasks": [1, 1], "facts": [["考勤"], ["行政"]], "repeat": [["考勤", "2026-11-04 17:00 ~workdays"]] }
   },
   {
     "id": "repeat-monthly",
@@ -223,7 +235,7 @@
     "id": "repeat-assigned",
     "note": "共享的文件夹里交给别人按周期做：照样重复；今天的时间已过，从明天开始",
     "input": { "local_time": "2026-11-04 16:30 星期三", "folder": "/销售组", "open_tasks": [], "text": "让小王每个工作日早上九点前把销售数据发到群里", "people": [{ "username": "junie", "name": "Junie", "me": true }, { "username": "wang", "name": "小王" }] },
-    "expect": { "tasks": [1, 1], "facts": [["销售数据"], ["群"]], "repeat": [["销售数据", "2026-11-05 09:00 ~1w:1,2,3,4,5"]] }
+    "expect": { "tasks": [1, 1], "facts": [["销售数据"], ["群"]], "repeat": [["销售数据", "2026-11-05 09:00 ~workdays"]] }
   },
   {
     "id": "repeat-not-vague",

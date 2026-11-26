@@ -86,6 +86,7 @@
 | repeat_days | INTEGER，可空 | 按周重复在周几，按位存：周一是 1，周二是 2，……，周日是 64；只能在 `repeat_unit` 为 `week` 时设置，空表示截止日期那天 |
 | repeat_monthdays | INTEGER，可空 | 按月重复在几号，按位存：1 号是 1，2 号是 2，3 号是 4，……，31 号是 2³⁰；只能在 `repeat_unit` 为 `month` 时设置，空表示截止日期那天 |
 | repeat_lunar | INTEGER | 按[农历](design.md#重复)重复为 1，否则为 0；为 1 时 `repeat_unit` 是 `month`，`repeat_monthdays` 不为空，只到 30 号（初一到三十） |
+| repeat_legal | INTEGER | [每个法定工作日](design.md#重复)为 1，否则为 0；为 1 时 `repeat_every` 是 1，`repeat_unit` 是 `week`，`repeat_days` 是周一到周五 |
 | repeat_until | TEXT，可空 | [重复到](design.md#重复)哪天（含这天），空表示一直重复；只能在有重复时设置，不早于 `due_date` |
 | due_after | TEXT，可空 | [前置完成后几天内](design.md#前置完成后的截止)截止，JSON，写法同 [API](api.md#前置完成后的截止) 的 `due_after`；有它时 `due_date` 等几列是它给的截止时间，前置没都完成时为空 |
 | unlocked_on | TEXT，可空 | 前置都完成的那天，截止日期从它（或更晚的 `start_date`）算起；只能在有 `due_after` 时设置 |

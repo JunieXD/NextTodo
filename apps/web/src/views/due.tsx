@@ -115,6 +115,8 @@ export function DueEditor({
   // due date's lunar day.
   const [days, setDays] = useState(was?.days ?? null);
   const [lunar, setLunar] = useState(was?.lunar ?? false);
+  // Every statutory working day: weekly, Monday to Friday, by the days off and worked.
+  const [legal, setLegal] = useState(was?.legal ?? false);
   // The last day it falls on, or none: on and on.
   const [until, setUntil] = useState(was?.until ?? null);
   const on = kind === "custom" ? unit : kind;
@@ -130,13 +132,16 @@ export function DueEditor({
           from,
           ...(picked && { days: picked }),
           ...(lunar && { lunar }),
+          ...(legal && { legal }),
           ...(until && { until }),
         };
   // Days picked are a menu item of their own, named by them as 每个工作日 is: picking any other item is
   // then a change, all the menu reports, and starts over without them.
   const workdays = repeat?.every === 1 && repeat.unit === "week" && repeat.days?.join() === WORKDAYS.join();
   const named = repeat?.days && !workdays ? repeatLabel(repeat, date) : null;
-  const menu = workdays ? "workdays" : named ? "days" : kind;
+  const menu = legal ? "legal" : workdays ? "workdays" : named ? "days" : kind;
+  // Offered where the days off are marked, or kept as the task has it (docs/design.md#节日和放假).
+  const [marks] = useHolidayMarks();
   // Said once saving is tried, until it is put right.
   const [tried, setTried] = useState(false);
   const early = Boolean(startTime && time && (after ? afterDays === 0 : date === start) && time < startTime);
@@ -262,6 +267,7 @@ export function DueEditor({
                 ["off", endedAs ? `${endedAs}的事项不能重复` : "不重复"],
                 ["day", "每天"],
                 ["workdays", "每个工作日"],
+                ...(marks || menu === "legal" ? [["legal", "每个法定工作日"] satisfies [typeof menu, string]] : []),
                 ["week", "每周"],
                 ...(named ? [["days", named] satisfies [typeof menu, string]] : []),
                 ["month", "每月"],
@@ -273,9 +279,10 @@ export function DueEditor({
               onChange={(k) => {
                 // For the type: "days" is listed only while it is the value, which isn't picked anew.
                 if (k === "days") return;
-                setKind(k === "workdays" ? "week" : k);
-                setDays(k === "workdays" ? WORKDAYS : null);
+                setKind(k === "workdays" || k === "legal" ? "week" : k);
+                setDays(k === "workdays" || k === "legal" ? WORKDAYS : null);
                 setLunar(false);
+                setLegal(k === "legal");
               }}
             />}
             {kind === "custom" && (
@@ -294,7 +301,7 @@ export function DueEditor({
                 />
               </Controls>
             )}
-            {on === "week" && (
+            {on === "week" && !legal && (
               <Controls name="周几">
                 <Days label="周几" texts={[...WEEKDAYS]} name={(t) => `周${t}`} value={shownDays} onChange={setDays} />
               </Controls>

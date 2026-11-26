@@ -81,7 +81,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
   // done_at 是结束的时间，待办为 null；dropped 是[放弃](design.md#放弃)了，这时 done_at 是放弃的时间
   // 开始时间的日期和几点几分：没设时 start 为 null，只有日期时没有 start_time，见 design.md#开始时间
   "due": { "date": "2026-11-02", "time": "18:00", "reminders": [{ "days": 1, "time": "20:00" }, { "before": 60 }], "repeat": { "every": 1, "unit": "week", "from": "due" } },
-  // 没有截止时间时为 null；time、reminders、repeat 可省略；reminders 是提醒：{"before": 分钟} 提前多久（0 是截止时，要有 time，最多 43200），{"days": 天数, "time": "20:00"} 截止那天（0）或提前几天（最多 30）的几点，按到点的先后排、不重复，最多 100 个；旧版本写的 remind_before（提前多少分钟）读入时换成一个提前多久的提醒，不再写出；按周的 repeat 可以带 "days": [1, 3, 5]，在周几（1 是周一，7 是周日）；按月的 days 是几号（1–31）。每年是 every 12、unit month。repeat 可以带 "until": "2026-12-19"，重复到哪天（含这天）。按农历的按月 repeat 带 "lunar": true，这时一定有 days，是农历的几号（1–30，初一到三十），见[重复](design.md#重复)
+  // 没有截止时间时为 null；time、reminders、repeat 可省略；reminders 是提醒：{"before": 分钟} 提前多久（0 是截止时，要有 time，最多 43200），{"days": 天数, "time": "20:00"} 截止那天（0）或提前几天（最多 30）的几点，按到点的先后排、不重复，最多 100 个；旧版本写的 remind_before（提前多少分钟）读入时换成一个提前多久的提醒，不再写出；按周的 repeat 可以带 "days": [1, 3, 5]，在周几（1 是周一，7 是周日）；每个法定工作日是 every 1、unit week、days [1, 2, 3, 4, 5]、不按农历，再带 "legal": true，别的组合带它报错；不是的不写 legal；按月的 days 是几号（1–31）。每年是 every 12、unit month。repeat 可以带 "until": "2026-12-19"，重复到哪天（含这天）。按农历的按月 repeat 带 "lunar": true，这时一定有 days，是农历的几号（1–30，初一到三十），见[重复](design.md#重复)
   "due_after": { "days": 30, "time": "18:00", "reminders": [{ "before": 60 }] }, "unlocked_on": "2026-11-24",
   // 前置完成后几天内截止的才有，见下面的[前置完成后的截止](#前置完成后的截止)：due_after 同 due 去掉 date 和 repeat，days 是 0–365；
   // unlocked_on 是前置都完成的那天，没完成时没有这一项，这时 due 为 null

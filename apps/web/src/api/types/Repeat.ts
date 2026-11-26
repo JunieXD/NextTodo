@@ -16,4 +16,9 @@ days?: Array<number>,
 /**
  * Whether a monthly one goes by the lunar calendar.
  */
-lunar?: boolean, until?: Date, };
+lunar?: boolean, 
+/**
+ * Whether one every week, Monday to Friday, goes by the days off and worked the State Council
+ * sets: 每个法定工作日.
+ */
+legal?: boolean, until?: Date, };

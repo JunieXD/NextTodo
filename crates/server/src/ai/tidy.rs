@@ -17,7 +17,9 @@ use uuid::Uuid;
 use super::llm::Prompt;
 use super::organize::{chat, due_text, unwrap};
 use crate::error::from_value;
-use crate::tools::args::{EditArgs, PlanRef, RemindText, RepeatText, TaskRef, WhenText, due_after_text, remind_text, task_ref};
+use crate::tools::args::{
+    EditArgs, LEGAL_WORKDAYS, PlanRef, RemindText, RepeatText, TaskRef, WhenText, due_after_text, remind_text, task_ref,
+};
 use crate::tools::{Edit, edit_fields, new_due};
 
 /// How many of the folder's open tasks the model is shown, and of its done ones, the latest.
@@ -35,7 +37,7 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
 - request：用户这次的要求；
 - subfolders：这个文件夹下的子文件夹，可以把事项移进去；
 - looks：能改颜色和图标的文件夹，即这个文件夹和子文件夹，根目录和别人共享给我的文件夹本身除外；color、icon 是现在的，没写的是默认的；
-- open_tasks：文件夹里未完成的事项，按现在的顺序。number 是编号；requires 是它已有的前置事项的编号，那些事项要先做完才能做它；due 是截止时间，due_after 是前置都完成后几天内截止（如 "30d"、"3d 18:00"，从前置都完成那天算），前置都完成以后才有 due，remind 是提醒（数字是提前多少分钟，"09:00" 是截止那天的几点，"1d 20:00" 是提前 1 天的 20:00，几个时是列表），repeat 是重复，写成间隔数加单位 d（天）、w（周）、m（月）或 y（年，就是 12 个月），如 1d 每天、2w 每两周、1m 每月、3m 每三个月、1y 每年；按周重复在某几天的，冒号后写周几（1 是周一，7 是周日），如 1w:1,2,3,4,5 每个工作日、1w:1,3,5 每周一三五、2w:2,4 每两周的周二和周四；按月重复在某几号的，冒号后写几号（1–31，没有这天的月份取最后一天），如 1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；repeat_from 为 done 表示下一次从完成那天算；repeat_until 是重复到哪天（含这天），做完这天以前的最后一次，事项就完成了；description_omitted 为 true 的事项描述太长，没有发来；
+- open_tasks：文件夹里未完成的事项，按现在的顺序。number 是编号；requires 是它已有的前置事项的编号，那些事项要先做完才能做它；due 是截止时间，due_after 是前置都完成后几天内截止（如 "30d"、"3d 18:00"，从前置都完成那天算），前置都完成以后才有 due，remind 是提醒（数字是提前多少分钟，"09:00" 是截止那天的几点，"1d 20:00" 是提前 1 天的 20:00，几个时是列表），repeat 是重复，写成间隔数加单位 d（天）、w（周）、m（月）或 y（年，就是 12 个月），如 1d 每天、2w 每两周、1m 每月、3m 每三个月、1y 每年；workdays 是每个工作日（周一到周五，跳过放假、算上补班的周末）；按周重复在某几天的，冒号后写周几（1 是周一，7 是周日），如 1w:1,2,3,4,5 每周一到周五（放假也照常）、1w:1,3,5 每周一三五、2w:2,4 每两周的周二和周四；按月重复在某几号的，冒号后写几号（1–31，没有这天的月份取最后一天），如 1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；repeat_from 为 done 表示下一次从完成那天算；repeat_until 是重复到哪天（含这天），做完这天以前的最后一次，事项就完成了；description_omitted 为 true 的事项描述太长，没有发来；
 - done_tasks：最近完成的事项，只有编号和标题。
 
 只输出一个 json 对象，不要有任何别的文字，格式如下：
@@ -53,7 +55,7 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
    - description：新描述，是改好后的完整内容，不是修改说明；Markdown，步骤可以写成清单“- [ ] ”。
    - due：截止时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"。原来有几点几分、这次只改日期的，带上原来的几点几分；原来和 request 都没说几点的，不要加；原来的提醒和重复保留，新的截止时间不带具体时间的，提前多久的提醒去掉，说了几点的留着。有 due_after 的事项，截止时间和提醒不要改，request 明说要改成某个日期的除外，那时写 due。
    - remind：提醒，整个换掉原来的。提前多久写 "30m"、"2h"、"1d"、"1w"（提前 30 分钟、2 小时、1 天、1 周）或分钟数，0 表示到截止时间时提醒，要有带具体时间的截止时间；说了在几点提醒的写几点："09:00" 是截止那天的几点，"1d 20:00" 是提前 1 天的 20:00。几个提醒写成列表。“不用提醒了”是去掉提醒，写 clear: ["remind"]，不是写 0。
-   - repeat、repeat_from、repeat_until：重复，只在 request 要求设或改重复时写，写法同输入；要有截止时间，事项原来没有截止时间的，同时写 due（第一次）。按天数说的照天数写（每 90 天是 90d，不是 3m）；在一周里某几天的写周几，“每个工作日”是 1w:1,2,3,4,5，不是 1d（1d 周末也会出现）。request 说了重复到哪天为止的写 repeat_until，截止时间不能晚于它。这三项也只写要改的，不写的照旧，如只改间隔时不写 repeat_from 和 repeat_until；新设的重复不写 repeat_from 就是从截止日期算，不写 repeat_until 就是一直重复。
+   - repeat、repeat_from、repeat_until：重复，只在 request 要求设或改重复时写，写法同输入；要有截止时间，事项原来没有截止时间的，同时写 due（第一次）。按天数说的照天数写（每 90 天是 90d，不是 3m）；在一周里某几天的写周几，“每个工作日”是 workdays（周一到周五，跳过放假、算上补班的周末），说了“周一到周五”、放假也照常的才是 1w:1,2,3,4,5，都不是 1d（1d 周末也会出现）。request 说了重复到哪天为止的写 repeat_until，截止时间不能晚于它。这三项也只写要改的，不写的照旧，如只改间隔时不写 repeat_from 和 repeat_until；新设的重复不写 repeat_from 就是从截止日期算，不写 repeat_until 就是一直重复。
    - clear：要清除的设置，是一个列表，可以包含 "due"、"remind"、"repeat"、"repeat_until"（不再重复到哪天，一直重复下去），如 "clear": ["due"]；清除截止时间时，提醒和重复一起清除。去掉前置用 drop_requires，不用 clear。
    - done：true 标为完成（重复的事项会顺延到下一次，做的是 repeat_until 以前的最后一次的直接完成；request 说这件事整个做完了、不再重复的，如书读完了，同时在 clear 里写 "repeat"），false 重新打开 done_tasks 里的事项。done_tasks 里的事项可以删除；要改别的，先重新打开。
    - folder：移进 subfolders 里的哪个文件夹，写它的完整路径。subfolders 里没有的文件夹移不进去，这样的移动不要提。
@@ -253,9 +255,10 @@ fn with_references(was: &Description, new: Description) -> Result<Description, S
     Description::try_from(format!("{}{gap}{}", text.trim_end(), missing.join(" ")))
 }
 
-/// `1d`, `2w`, `3m`, `1w:1,3,5`, `1m:1,15`, `12lm:15`, as the tools take a repeat.
+/// `1d`, `2w`, `3m`, `1w:1,3,5`, `1m:1,15`, `12lm:15`, `workdays`, as the tools take a repeat.
 pub fn repeat_text(r: &Repeat) -> String {
     let (unit, days) = match r.period {
+        Period::LegalWorkdays => return LEGAL_WORKDAYS.to_owned(),
         Period::Day => ("d", None),
         Period::Week(days) => ("w", days.map(Vec::from)),
         Period::Month(days) => ("m", days.map(Vec::from)),

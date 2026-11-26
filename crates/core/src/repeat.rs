@@ -2,6 +2,7 @@
 //! days it takes. The web app has a TypeScript twin, `apps/web/src/domain/repeat.ts`; both are checked
 //! against `fixtures/repeat.json`.
 
+use crate::holidays::Holiday;
 use crate::lunar;
 use crate::model::{Date, Period, Repeat, RepeatFrom, days_in_month};
 
@@ -43,6 +44,7 @@ impl Repeat {
             Period::Month(Some(days)) => (0..)
                 .flat_map(|k: u32| (1..=31).filter(move |&d| days.has(d)).map(move |d| in_month(k * every, d)))
                 .find(|&n| n > start && n >= today),
+            Period::LegalWorkdays => (start + 1..).find(|&n| n >= today && legal_workday(n)),
             Period::LunarMonth(days) => {
                 let month = lunar::Month::of(start)?;
                 (0..)
@@ -80,6 +82,18 @@ impl Date {
     pub fn utc(ms: i64) -> Date {
         let (y, m, d) = civil(ms.div_euclid(86_400_000));
         Date::try_from(format!("{y:04}-{m:02}-{d:02}")).expect("a time this side of the year 9999")
+    }
+}
+
+/// Whether day `n` is worked as the State Council sets it: Monday to Friday unless it is a day off, or
+/// a weekend day worked to make up for one. Past the table, Monday to Friday.
+fn legal_workday(n: i64) -> bool {
+    let (y, m, d) = civil(n);
+    match Date::try_from(format!("{y:04}-{m:02}-{d:02}")).ok().and_then(|d| d.holiday()) {
+        Some(Holiday::Off) => false,
+        Some(Holiday::Work) => true,
+        // 1970-01-01 was a Thursday.
+        None => (n + 3).rem_euclid(7) < 5,
     }
 }
 

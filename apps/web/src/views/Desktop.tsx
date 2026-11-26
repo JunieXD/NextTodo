@@ -1,7 +1,7 @@
 // The desktop layout: folders on the left, which can be folded away, the list in the middle, and the
 // open task's details on the right.
 
-import { CalendarDays, ChevronLeft, ChevronRight, CircleCheck, History, ListChecks, Lock, PanelLeft, Search } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, CircleCheck, History, ListChecks, Lock, PanelLeft, Search } from "lucide-react";
 import { Fragment, type ReactNode, useRef, useState } from "react";
 import { Link, Redirect, useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
@@ -20,7 +20,7 @@ import { Detail } from "./Detail";
 import { useTreeDrag } from "./drag";
 import { FolderContextMenu, FolderMenu, usePlaceFolder } from "./FolderMenu";
 import { CalendarBody, CalendarViewSeg, useCalendarPick, useCalendarView } from "./calendar";
-import { setFolderClosed, useClosedFolders } from "./closed-folders";
+import { setClosedFolders, setFolderClosed, useClosedFolders } from "./closed-folders";
 import { DoneBody, FolderBody, FolderGraph, FolderViewSeg, NextBody, NextFilter, QuickAdd, SearchResults } from "./lists";
 import { readyIn, useNextFolders } from "../next-folders";
 import { folderUrl, settingsUrl, useFolderView, useRevealRequest, useSelection } from "./nav";
@@ -252,6 +252,9 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ca
   const lock = usePrivacyLock();
   const [, navigate] = useLocation();
   const collapsed = useClosedFolders(board.me);
+  // Folded all the way, whether or not the root is: folding them all leaves it open, showing the first level.
+  const nested = board.folderTree().filter((f) => f !== null && board.subfolders(f).length > 0);
+  const folded = nested.every((f) => collapsed.has(f));
   const go = (to: string) => {
     setQuery("");
     navigate(to);
@@ -334,7 +337,16 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ca
             <Icon of={CalendarDays} size={18} />
             <span>日历</span>
           </button>
-          <div className="sb-label">文件夹</div>
+          <div className="sb-label">
+            文件夹
+            {nested.length > 0 && (
+              <Tip label={folded ? "全部展开" : "全部收起"}>
+                <button className="icon-btn sb-fold" onClick={() => setClosedFolders(board.me, folded ? [] : nested)}>
+                  <Icon of={folded ? ChevronsUpDown : ChevronsDownUp} size={16} />
+                </button>
+              </Tip>
+            )}
+          </div>
           {tree(null, null, 0)}
           {board.sharedWithMe().length > 0 && (
             <div data-theirs>

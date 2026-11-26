@@ -27,7 +27,12 @@ export function setFolderClosed(user: string, folder: FolderId | null, closed: b
   const all = parse(stored(user));
   if (closed) all.add(folder);
   else all.delete(folder);
-  if (all.size) localStorage.setItem(PREFIX + user, JSON.stringify([...all]));
+  setClosedFolders(user, [...all]);
+}
+
+/** Folds away just `folders`, unfolding the rest. */
+export function setClosedFolders(user: string, folders: (FolderId | null)[]) {
+  if (folders.length) localStorage.setItem(PREFIX + user, JSON.stringify(folders));
   else localStorage.removeItem(PREFIX + user);
   for (const l of listeners) l();
 }

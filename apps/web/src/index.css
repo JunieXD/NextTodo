@@ -478,9 +478,9 @@ label.row { cursor: pointer; }
 .md hr { border: 0; border-top: .5px solid var(--outline-variant); margin: 12px 0; }
 .md table { border-collapse: collapse; } .md :is(th, td) { border: .5px solid var(--outline-variant); padding: 4px 8px; }
 .md ul.contains-task-list { list-style: none; padding-left: 0; }
-.md li.task-list-item ul.contains-task-list { padding-left: 28px; }
-.md li.ck { display: flex; gap: 10px; align-items: flex-start; padding: 3px 0; cursor: pointer; }
-.md li.ck .box { margin-top: 4px; }
+/* The box beside the text, which flows as a paragraph does: lines broken in it start under the first. */
+.md li.ck { position: relative; padding: 3px 0 3px 28px; list-style: none; cursor: pointer; }
+.md li.ck .box { position: absolute; left: 0; top: 7px; }
 .md li.ck.on { color: var(--outline); text-decoration: line-through; }
 .md blockquote { margin: 8px 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--primary-container); color: var(--on-surface-variant); }
 .md code { font: 13px ui-monospace, Menlo, monospace; background: var(--surface-container); padding: 1px 5px; border-radius: 5px; }

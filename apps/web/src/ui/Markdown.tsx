@@ -20,6 +20,24 @@ export function toggleLine(source: string, line: number): string {
   return lines.join("\n");
 }
 
+/** Of the syntax tree, what turning line breaks into breaks needs. */
+type Node = { type: string; value?: string; children?: Node[] };
+
+/** Line endings, as Markdown has them. */
+const LINE = /\r\n?|\n/;
+
+/** A line break typed is one shown, as in GitHub's comments: Markdown takes a single one for a space. */
+function breaks() {
+  const within = (node: Node): Node[] => {
+    if (node.type === "text" && LINE.test(node.value!)) {
+      return node.value!.split(LINE).flatMap((line, i) => [...(i ? [{ type: "break" }] : []), { type: "text", value: line }]);
+    }
+    if (node.children) node.children = node.children.flatMap(within);
+    return [node];
+  };
+  return (tree: Node) => void within(tree);
+}
+
 const REFERENCE = "attachment:";
 
 /** Links as react-markdown allows them, `http`, `https`, `mailto` and the like, and references. */
@@ -71,7 +89,7 @@ export function Description({
     );
   return (
     <Markdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, breaks]}
       urlTransform={urlTransform}
       components={{
         a: link,

@@ -212,8 +212,8 @@ struct Mark {
 
 pub fn agenda(c: &Connection, cx: &Cx, a: AgendaArgs) -> Result<Output, ApiError> {
     let days = match a.days.unwrap_or(AGENDA_DAYS) {
-        n @ 1..=31 => n,
-        _ => return Err(ApiError::invalid("days 要在 1 到 31 之间", Some("days".into()))),
+        n @ 1..=90 => n,
+        _ => return Err(ApiError::invalid("days 要在 1 到 90 之间", Some("days".into()))),
     };
     let snap = store::snapshot(c, cx.user)?;
     let b = Board::new(&snap, cx.local.clone(), cx.user);

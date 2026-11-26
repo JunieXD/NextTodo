@@ -41,24 +41,40 @@ data class Day(val date: LocalDate?, val entries: List<Entry>)
 data class Agendas(val signedIn: Boolean, val days: List<Day>, val more: Int, val look: Look, val now: LocalDateTime)
 
 /** What the “一周” widget shows: its seven `days`, what is due on each of them, open and due before
- * today for the days before it, and what is overdue; the tasks being ticked off; as `Agendas`. */
+ * today for the days before it, and what is overdue; the tasks being ticked off; what is written with
+ * the days; as `Agendas`. Also what the “时间轴” and “月历” widgets show. */
 data class Week(
     val signedIn: Boolean,
     val days: List<LocalDate>,
     val due: Map<LocalDate, List<Entry>>,
     val overdue: List<Entry>,
     val ticked: List<Entry>,
+    val labels: Map<LocalDate, DayLabel>,
     val look: Look,
     val now: LocalDateTime,
 )
 
-/** The agenda widget's data, the `agenda` tool's for the next `DAYS` days, kept in its own preferences:
- * written by the app, or fetched from the server, as the “接下来” widget's list is (`Widget`). */
+/** What a calendar writes with a day (docs/design.md#节日和放假), as the app works it out: its festival or
+ * solar term, a `note`, or else its lunar day; and whether it is a day off, `off`, or a made-up working
+ * day, `work`, unless the app's settings leave those out. */
+data class DayLabel(val text: String, val note: Boolean, val holiday: String?)
+
+/** The agenda widgets' data, the `agenda` tool's for the days from today the “月历” widget may show
+ * (`span`), kept in its own preferences: written by the app, or fetched from the server, as the “接下来”
+ * widget's list is (`Widget`). */
 object Agenda {
     private fun prefs(context: Context) = context.getSharedPreferences("agenda", Context.MODE_PRIVATE)
 
-    /** How many days from today it lists. */
+    /** How many days from today the agenda widget lists. */
     const val DAYS = 7
+
+    /** How many days from `today` the data has: to the last of next month's six weeks, which the “月历”
+     * widget shows (docs/android.md#月历). The app's data has as many (`apps/web/src/mobile.ts`). */
+    fun span(today: LocalDate): Int {
+        val next = today.withDayOfMonth(1).plusMonths(1)
+        val last = next.minusDays(next.dayOfWeek.value - 1L).plusDays(41)
+        return ChronoUnit.DAYS.between(today, last).toInt() + 1
+    }
 
     /** The most tasks it lists, the rest only counted: see `Widget`'s. */
     const val MOST = 30
@@ -75,8 +91,13 @@ object Agenda {
 
     private const val EMPTY = """{"overdue":[],"days":[]}"""
 
-    /** Whether a widget of its data, “日程”, “一周” or “时间轴”, is on the home screen. */
-    fun placed(context: Context) = listOf(AgendaWidgetReceiver::class.java, WeekWidgetReceiver::class.java, TimelineWidgetReceiver::class.java).any { Widget.placed(context, it) }
+    /** What is written with each day, as the app hands it over (`label`): kept apart from the data, which
+     * the server's replaces, and on signing out. */
+    private const val LABELS = "labels"
+
+    /** Whether a widget of its data, “日程”, “一周”, “时间轴” or “月历”, is on the home screen. */
+    fun placed(context: Context) =
+        listOf(AgendaWidgetReceiver::class.java, WeekWidgetReceiver::class.java, TimelineWidgetReceiver::class.java, MonthWidgetReceiver::class.java).any { Widget.placed(context, it) }
 
     private val writing = Mutex()
 
@@ -96,6 +117,7 @@ object Agenda {
             AgendaWidget().updateAll(context)
             WeekWidget().updateAll(context)
             TimelineWidget().updateAll(context)
+            MonthWidget().updateAll(context)
         }
     }
 
@@ -180,6 +202,25 @@ object Agenda {
     /** Shows a task again whose completion, of its time `occurrence`, the server turned down. */
     suspend fun unhide(context: Context, task: String, occurrence: Occurrence?) = update(context) { Done.unhide(it, task, occurrence) }
 
+    /** Keeps what is written with each day, the app's `labels`: `{from, days: [{text, note?, holiday?}]}`,
+     * a day each from `from` on. */
+    suspend fun label(context: Context, labels: String) = update(context) { prefs ->
+        val changed = prefs.getString(LABELS, null) != labels
+        prefs.edit().putString(LABELS, labels).apply()
+        changed
+    }
+
+    /** What is kept of what is written with each day. */
+    private fun labels(prefs: SharedPreferences): Map<LocalDate, DayLabel> {
+        val kept = JSONObject(prefs.getString(LABELS, null) ?: return emptyMap())
+        val from = LocalDate.parse(kept.getString("from"))
+        val days = kept.getJSONArray("days")
+        return (0 until days.length()).associate { i ->
+            val d = days.getJSONObject(i)
+            from.plusDays(i.toLong()) to DayLabel(d.getString("text"), d.optBoolean("note"), d.optString("holiday").ifEmpty { null })
+        }
+    }
+
     /** Empties it: signed out, or its data is there no more. Drawn again, empty as it may have been, to
      * say so. */
     suspend fun forget(context: Context) = update(context) { keep(it, EMPTY, null, null).first }
@@ -191,7 +232,7 @@ object Agenda {
         val token = Server.token(context) ?: return
         val picked = Widget.folders(context)
         val (data, seq) = try {
-            Server.agenda(context, token, DAYS, picked?.let(::JSONArray))
+            Server.agenda(context, token, span(LocalDate.now()), picked?.let(::JSONArray))
         } catch (e: HttpError) {
             if (e.status == 401) return Widget.ended(context, token)
             if (e.status == 404 && picked != null) return
@@ -231,7 +272,7 @@ object Agenda {
         for ((i, t) in late) overdue.add(minOf(i, overdue.size), t)
         val due = coming.associate { (date, entries) -> date to entries.toMutableList() }.toMutableMap()
         for ((i, t) in soon) due.getOrPut(t.due.date) { mutableListOf() }.let { it.add(minOf(i, it.size), t) }
-        return Week(Server.token(context) != null, (0L..6L).map(first::plusDays), due + overdue.groupBy { it.due.date }, overdue, ticked.map { it.value }, look, now)
+        return Week(Server.token(context) != null, (0L..6L).map(first::plusDays), due + overdue.groupBy { it.due.date }, overdue, ticked.map { it.value }, labels(prefs(context)), look, now)
     }
 
     /** Where `task`'s time `occurrence`, the one due now, is in the “一周” widget's lists: with what is

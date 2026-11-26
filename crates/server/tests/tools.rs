@@ -661,7 +661,9 @@ async fn agenda_lists_what_is_due_each_day_and_what_is_overdue() {
     let none = t.ok(&s, "agenda", json!({ "today": "2026-11-01", "days": 1 })).await;
     assert_eq!(text(&none), "今天起 1 天没有截止的事项，也没有逾期的。");
     assert_eq!(none["data"], json!({ "overdue": [], "days": [], "marks": [] }));
-    for days in [0, 32] {
+    // The most it takes: the “月历” widget fetches up to 73.
+    t.ok(&s, "agenda", json!({ "days": 90 })).await;
+    for days in [0, 91] {
         assert_eq!(t.tool(&s, "agenda", json!({ "days": days })).await.status, StatusCode::BAD_REQUEST);
     }
 }

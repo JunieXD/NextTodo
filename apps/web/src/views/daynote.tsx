@@ -14,6 +14,9 @@ export function useHolidayMarks(): [boolean, (on: boolean) => void] {
   return [on !== "off", (v) => keep(v ? "on" : "off")];
 }
 
+/** The same, read now, as the widgets' labels are worked out outside the page's components. */
+export const holidayMarksOn = () => localStorage.getItem(MARKS_KEY) !== "off";
+
 /** Under a day's number: its festival, solar term or lunar day; with `marks`, 休 or 班 in the corner of
  * the tile, which is positioned. */
 export function DayNote({ date, marks }: { date: string; marks: boolean }) {

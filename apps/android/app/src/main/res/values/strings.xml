@@ -10,5 +10,7 @@
     <string name="week_widget_description">选一天，看那天截止的事项，点圆圈即可完成</string>
     <string name="timeline_widget_name">时间轴</string>
     <string name="timeline_widget_description">按钟点看一周截止的事项，点空格子添加到那个钟点</string>
+    <string name="month_widget_name">月历</string>
+    <string name="month_widget_description">按月看每天截止的事项</string>
     <string name="quick_add">快速添加</string>
 </resources>

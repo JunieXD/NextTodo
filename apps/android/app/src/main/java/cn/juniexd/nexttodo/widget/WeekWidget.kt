@@ -46,6 +46,7 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextDecoration
 import androidx.glance.text.TextStyle
+import androidx.glance.unit.ColorProvider
 import cn.juniexd.nexttodo.QuickAddActivity
 import cn.juniexd.nexttodo.R
 import java.time.LocalDate
@@ -143,6 +144,7 @@ internal fun Days(week: Week, picked: LocalDate, today: LocalDate, scale: Float,
                 )
                 Box(GlanceModifier.fillMaxWidth().height(box).padding(top = 2.dp), contentAlignment = Alignment.Center) {
                     if (chosen) Image(ImageProvider(R.drawable.widget_day), null, GlanceModifier.fillMaxSize(), colorFilter = ColorFilter.tint(colors.primary))
+                    week.labels[d]?.holiday?.let { HolidayMark(it, if (chosen) colors.onPrimary else null, scale) }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             "${d.dayOfMonth}",
@@ -168,6 +170,22 @@ internal fun Days(week: Week, picked: LocalDate, today: LocalDate, scale: Float,
             }
         }
     }
+}
+
+/** 休 or 班 in the top corner of a day, over what the day's box has. */
+@Composable
+internal fun HolidayMark(holiday: String, color: ColorProvider?, scale: Float) {
+    Box(GlanceModifier.fillMaxSize().padding(top = 1.dp, end = 3.dp), contentAlignment = Alignment.TopEnd) { HolidayText(holiday, color, scale) }
+}
+
+/** 休 or 班, as `holiday` has it (docs/ui.md#日历), in `color` or else in the primary colour or the amber. */
+@Composable
+internal fun HolidayText(holiday: String, color: ColorProvider?, scale: Float) {
+    val colors = LocalColors.current
+    Text(
+        if (holiday == "off") "休" else "班",
+        style = TextStyle(color = color ?: if (holiday == "off") colors.primary else colors.today, fontSize = 8.sp * scale, fontWeight = FontWeight.Bold),
+    )
 }
 
 /** A task on the day picked, as the agenda's, with a circle: one to do ticks it off, as in the “接下来”

@@ -27,7 +27,7 @@ test("a reminder can't be done straight away once a repeating prerequisite holds
   expect([waiting("2026-11-12T23:59:30"), waiting("2026-11-13T00:00:02")]).toEqual([[1], [1]]);
 });
 
-test("the agenda widget lists what is due in the folders picked, with the later times of repeating ones, and only days with some", () => {
+test("the agenda widget lists what is due in the folders picked, with the later times of repeating ones to the end of next month's six weeks, and only days with some", () => {
   const folder = (n: number, name: string) => ({ id: id(n), parent_id: null, name, sort_key: `a${n}`, color: null, icon: null, created_at: 0, updated_at: 0 });
   const snapshot: Snapshot = {
     folders: [folder(10, "工作"), folder(11, "生活")],
@@ -40,7 +40,9 @@ test("the agenda widget lists what is due in the folders picked, with the later 
   };
   const { overdue, days } = widgetAgenda(new Board(snapshot, { today: "2026-11-20" }, ME), [id(10)]);
   expect(overdue.map((t) => [t.title, "later" in t])).toEqual([["开例会", false], ["交报告", false]]);
-  expect(days.map((d) => [d.date, d.tasks.map((t) => [t.title, t.folder, t.due?.date, "later" in t])])).toEqual([["2026-11-26", [["开例会", "/工作", "2026-11-19", true]]]]);
+  expect(days[0].tasks.map((t) => [t.title, t.folder, t.due?.date, "later" in t])).toEqual([["开例会", "/工作", "2026-11-19", true]]);
+  // December's six weeks end on Sunday 10 January.
+  expect(days.map((d) => d.date)).toEqual(["2026-11-26", "2026-12-03", "2026-12-10", "2026-12-17", "2026-12-24", "2026-12-31", "2027-01-07"]);
 });
 
 test("the agenda widget says which tasks can be done now, and which time of a repeating one, to tick them off", () => {

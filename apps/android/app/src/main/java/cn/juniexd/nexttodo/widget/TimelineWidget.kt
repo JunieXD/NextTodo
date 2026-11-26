@@ -42,6 +42,7 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
+import androidx.glance.unit.ColorProvider
 import cn.juniexd.nexttodo.QuickAddActivity
 import cn.juniexd.nexttodo.R
 import java.time.LocalDate
@@ -65,14 +66,27 @@ class TimelineWidget : GlanceAppWidget() {
 }
 
 /** How a block looks, by what is in it, as in the app's time grid: also how much it matters, the first
- * most, which a block of a few takes. */
-private enum class State { OVERDUE, READY, WAITING, LATER }
+ * most, which a block of a few takes. Also the “月历” widget's labels. */
+internal enum class State { OVERDUE, READY, WAITING, LATER }
 
-private fun stateOf(entry: Entry, now: LocalDateTime) = when {
+internal fun stateOf(entry: Entry, now: LocalDateTime) = when {
     entry.later -> State.LATER
     entry.due.overdue(now) -> State.OVERDUE
     entry.ready -> State.READY
     else -> State.WAITING
+}
+
+/** A block of `state`: its ground, an image tinted, and the colour of the text on it. */
+@Composable
+internal fun blockOf(state: State): Triple<ImageProvider, ColorProvider, ColorProvider> {
+    val colors = LocalColors.current
+    val (ground, text) = when (state) {
+        State.OVERDUE -> colors.late to colors.overdue
+        State.READY -> colors.ready to colors.onReady
+        State.WAITING -> colors.waiting to colors.onWaiting
+        State.LATER -> colors.rail to colors.primary
+    }
+    return Triple(ImageProvider(if (state == State.LATER) R.drawable.widget_block_line else R.drawable.widget_block), ground, text)
 }
 
 /** The hours' column, on the left. */
@@ -163,14 +177,7 @@ private fun Cell(modifier: GlanceModifier, context: Context, day: LocalDate, hou
         return
     }
     val one = entries.singleOrNull()
-    val state = entries.minOf { stateOf(it, now) }
-    val (ground, text) = when (state) {
-        State.OVERDUE -> colors.late to colors.overdue
-        State.READY -> colors.ready to colors.onReady
-        State.WAITING -> colors.waiting to colors.onWaiting
-        State.LATER -> colors.rail to colors.primary
-    }
-    val block = ImageProvider(if (state == State.LATER) R.drawable.widget_block_line else R.drawable.widget_block)
+    val (block, ground, text) = blockOf(entries.minOf { stateOf(it, now) })
     Box(
         modifier.fillMaxHeight().background(block, colorFilter = ColorFilter.tint(ground)).padding(horizontal = 4.dp)
             .clickable(if (one != null) open(context, "nexttodo://task/${one.id}") else open(context, "nexttodo://calendar/time/$day")),

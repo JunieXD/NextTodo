@@ -99,6 +99,7 @@ object Widget {
         AgendaWidget().updateAll(context)
         WeekWidget().updateAll(context)
         TimelineWidget().updateAll(context)
+        MonthWidget().updateAll(context)
     }
 
     /** The paths of the folders the widgets list, as a JSON array; none for all of them. */
@@ -293,9 +294,10 @@ object Widget {
     /** Whether there is a “接下来” widget on the home screen to keep up to date. */
     fun placed(context: Context) = placed(context, NextWidgetReceiver::class.java)
 
-    /** Whether there is a widget on the home screen that shows which tasks can be done, “接下来”, “一周” or
-     * “时间轴”: that changes as tasks start (`refreshAt`). */
-    fun showsReady(context: Context) = placed(context) || placed(context, WeekWidgetReceiver::class.java) || placed(context, TimelineWidgetReceiver::class.java)
+    /** Whether there is a widget on the home screen that shows which tasks can be done, “接下来”, “一周”,
+     * “时间轴” or “月历”: that changes as tasks start (`refreshAt`). */
+    fun showsReady(context: Context) =
+        placed(context) || listOf(WeekWidgetReceiver::class.java, TimelineWidgetReceiver::class.java, MonthWidgetReceiver::class.java).any { placed(context, it) }
 
     /** Whether there is a widget of `receiver`'s on the home screen. */
     fun placed(context: Context, receiver: Class<*>) =

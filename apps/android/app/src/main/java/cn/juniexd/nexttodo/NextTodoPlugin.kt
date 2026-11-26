@@ -242,6 +242,16 @@ class NextTodoPlugin : Plugin() {
         }
     }
 
+    /** Hands the widgets what is written with each day: see `Agenda.label`. */
+    @PluginMethod
+    fun updateDays(call: PluginCall) {
+        val days = call.getString("days")!!
+        work(call, "更新小组件的日子") {
+            Agenda.label(context, days)
+            JSObject()
+        }
+    }
+
     /** How the widgets look: see `Look`. */
     @PluginMethod
     fun widgetLook(call: PluginCall) {

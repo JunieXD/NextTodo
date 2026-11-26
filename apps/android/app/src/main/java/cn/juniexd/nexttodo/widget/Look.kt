@@ -197,13 +197,13 @@ internal val LocalColors = staticCompositionLocalOf { Colors(Look()) }
  * and do nothing. */
 @Composable
 internal fun Header(look: Look, title: String, onTitle: Action, refresh: Action, add: Action?) {
-    val adding = add != null && look.add
-    if (LocalSize.current.height < NO_HEADER_BELOW || LocalSize.current.width < TINY_BELOW || (!look.title && !look.refresh && !adding)) {
+    val height = headerHeight(look, add != null && look.add)
+    if (height == TOP) {
         Box(GlanceModifier.fillMaxWidth().height(TOP).clickable(onTitle)) {}
         return
     }
     val top = if (look.title) TOP else LOW_TOP
-    Row(GlanceModifier.fillMaxWidth().height(top + 32.dp + if (look.title) UNDER_HEADER else 0.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(GlanceModifier.fillMaxWidth().height(height), verticalAlignment = Alignment.CenterVertically) {
         Box(
             GlanceModifier.defaultWeight().fillMaxHeight().padding(start = EDGE, top = top, bottom = if (look.title) UNDER_HEADER else 0.dp).clickable(onTitle),
             contentAlignment = Alignment.CenterStart,
@@ -211,9 +211,26 @@ internal fun Header(look: Look, title: String, onTitle: Action, refresh: Action,
             if (look.title) Text(title, style = TextStyle(color = LocalColors.current.text, fontSize = 17.sp * look.scale, fontWeight = FontWeight.Bold))
         }
         val bottom = if (look.title) UNDER_HEADER else 0.dp
-        if (look.refresh) Icon(R.drawable.ic_widget_refresh, "刷新", refresh, top, bottom, if (adding) 4.dp else EDGE)
-        if (adding) Icon(R.drawable.ic_add, "添加事项", add!!, top, bottom, EDGE)
+        Buttons(look, refresh, add, top, bottom)
     }
+}
+
+/** How high `Header` is, `adding` should it have the add button: only the room above the list, `TOP`,
+ * with nothing in it or in a widget too small for it. */
+@Composable
+internal fun headerHeight(look: Look, adding: Boolean): Dp = when {
+    LocalSize.current.height < NO_HEADER_BELOW || LocalSize.current.width < TINY_BELOW || (!look.title && !look.refresh && !adding) -> TOP
+    look.title -> TOP + 32.dp + UNDER_HEADER
+    else -> LOW_TOP + 32.dp
+}
+
+/** The header's refresh button and add button, should `look` have them and the widget `add`; at its
+ * end, `top` and `bottom` its own. */
+@Composable
+internal fun Buttons(look: Look, refresh: Action, add: Action?, top: Dp, bottom: Dp) {
+    val adding = add != null && look.add
+    if (look.refresh) Icon(R.drawable.ic_widget_refresh, "刷新", refresh, top, bottom, if (adding) 4.dp else EDGE)
+    if (adding) Icon(R.drawable.ic_add, "添加事项", add!!, top, bottom, EDGE)
 }
 
 /** A button of the header, 22dp across, tapped anywhere in the header's height, `top` and `bottom`

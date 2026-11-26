@@ -13,7 +13,8 @@ import type { Mutation } from "./api/types/Mutation";
 import type { Task } from "./api/types/Task";
 import { type Board, nowOf } from "./domain/board";
 import { agenda } from "./domain/calendar";
-import { day as parseDay, isoDate } from "./domain/dates";
+import { day as parseDay, isoDate, monthGrid } from "./domain/dates";
+import { dayLabel, holiday } from "./domain/holidays";
 import { digests, reminders } from "./domain/reminders";
 import { type Digest, dailyDigest, hideReminders, onRemindSettings } from "./remind-settings";
 import type { Started } from "./local";
@@ -22,6 +23,8 @@ import type { WidgetLook } from "./domain/widget-look";
 import { back } from "./ui/back";
 import { forUser } from "./ui/feedback";
 import { nextFolders, onNextFolders, readyIn } from "./next-folders";
+import { onKept } from "./kept";
+import { holidayMarksOn } from "./views/daynote";
 
 /** A calendar on the device the app may write to; `synced` unless it is on this device alone. */
 export interface DeviceCalendar {
@@ -81,6 +84,8 @@ interface NextTodoPlugin {
   /** Hands the agenda widget its data, as JSON in the shape of the `agenda` tool's, as of the change
    * `seq`; without one, as when signing out, it replaces whatever the widget has. */
   updateAgenda(o: { agenda: string; seq?: number }): Promise<void>;
+  /** Hands the widgets what is written with each day (`widgetDays`), as JSON. */
+  updateDays(o: { days: string }): Promise<void>;
   /** How the widgets look, which they keep. */
   widgetLook(): Promise<WidgetLook>;
   setWidgetLook(look: WidgetLook): Promise<void>;
@@ -239,14 +244,19 @@ function dueBy(board: Board, t: Task) {
   return by && { due_by: { date: by.due.date, ...(by.due.time && { time: by.due.time }), number: by.number, title: by.title } };
 }
 
-/** How many days from today the agenda widget lists (docs/android.md#日程). */
-const AGENDA_DAYS = 7;
+/** How many days from `today` the widgets' data has: to the last of next month's six weeks, which the
+ * “月历” widget shows (docs/android.md#月历). The widgets ask the server for as many (`Agenda.span`). */
+function agendaSpan(today: string): number {
+  const d = parseDay(today);
+  const last = monthGrid(d.getFullYear(), d.getMonth() + 1)[41];
+  return Math.round((last.getTime() - d.getTime()) / 86_400_000) + 1;
+}
 
 /** What the agenda widgets list: what is due in the folders “接下来” lists, as the `agenda` tool gives
  * it; with whether each can be done now, and the times a repeating one was done, for “一周” to tick
  * them off. */
 export function widgetAgenda(board: Board, folders: (FolderId | null)[]) {
-  const { overdue, days } = agenda(board, AGENDA_DAYS);
+  const { overdue, days } = agenda(board, agendaSpan(board.now.today));
   const listed = (t: Task) => folders.some((f) => board.inSubtree(t.folder_id, f));
   const entry = (t: Task, later: boolean) => ({
     id: t.id,
@@ -263,6 +273,29 @@ export function widgetAgenda(board: Board, folders: (FolderId | null)[]) {
       .map(([date, list]) => ({ date, tasks: list.filter((d) => listed(d.task)).map((d) => entry(d.task, d.later)) }))
       .filter((d) => d.tasks.length > 0),
   };
+}
+
+/** How many days the widgets get written with them: from the first of this month's six weeks, a year
+ * and more, which lasts them until the app is next opened. */
+const LABELLED = 400;
+
+/** The first of `today`'s month's six weeks, from which the widgets are given what is written with the days. */
+function labelledFrom(today: string): string {
+  const d = parseDay(today);
+  return isoDate(monthGrid(d.getFullYear(), d.getMonth())[0]);
+}
+
+/** What the widgets write with each day (docs/design.md#节日和放假), `from` on: its festival, solar term
+ * or lunar day, and with `marks`, whether it is a day off or a made-up working day. */
+function widgetDays(from: string, marks: boolean) {
+  const start = parseDay(from);
+  const days = Array.from({ length: LABELLED }, (_, i) => {
+    const date = isoDate(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
+    const { text, note } = dayLabel(date);
+    const h = marks ? holiday(date) : undefined;
+    return { text, ...(note && { note }), ...(h && { holiday: h }) };
+  });
+  return { from, days };
 }
 
 /** What the device reminds of (docs/android.md#截止提醒): every reminder, past ones too, with its
@@ -337,6 +370,11 @@ export function setCalendarFolders(userId: string, folders: (FolderId | null)[])
  * `failed`; the next change tries again. Returns how to stop and clear them. */
 export function watch(store: Store, user: string, failed: (e: unknown) => void): () => Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  // What the widgets were last given to write with the days: from which day, and whether marking days off.
+  let labelled: { from: string; marks: boolean } | undefined;
+  // The setting as last seen: turned back while the widgets are being given the days, it is to be given
+  // again, though it is what they were given last.
+  let marks = holidayMarksOn();
   const update = async () => {
     // With the change the copy is as of, read together before any wait: the widgets keep lists they
     // fetched since, should the copy be behind the server.
@@ -350,6 +388,12 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
       const folders = listed.includes(null) ? undefined : JSON.stringify(listed.map((f) => board.folderPath(f)));
       await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board, listed)), seq, nextStart, folders });
       await NextTodo.updateAgenda({ agenda: JSON.stringify(widgetAgenda(board, listed)), seq });
+      const from = labelledFrom(board.now.today);
+      const marks = holidayMarksOn();
+      if (labelled?.from !== from || labelled.marks !== marks) {
+        await NextTodo.updateDays({ days: JSON.stringify(widgetDays(from, marks)) });
+        labelled = { from, marks };
+      }
     }
     const hide = hideReminders();
     await NextTodo.setReminders({ reminders: JSON.stringify(deviceReminders(board, hide)), digest: JSON.stringify(deviceDigests(board, dailyDigest(), hide)), seq });
@@ -381,6 +425,11 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
   const unsubscribe = store.subscribe(changed);
   const unpicked = onNextFolders(changed);
   const unset = onRemindSettings(changed);
+  const unkept = onKept(() => {
+    if (holidayMarksOn() === marks) return;
+    marks = !marks;
+    changed();
+  });
   document.addEventListener("visibilitychange", shown);
   if (app === "android") writeCalendar = calendar;
   updateNow = waiting;
@@ -393,6 +442,7 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
     unsubscribe();
     unpicked();
     unset();
+    unkept();
     document.removeEventListener("visibilitychange", shown);
     clearTimeout(timer);
     await clear(failed);
@@ -420,17 +470,17 @@ export const clear = async (failed: (e: unknown) => void = () => {}) => {
 export const forget = () => NextTodo.forgetChanges();
 
 /** Opens what a notification or a widget points at: `nexttodo://task/<id>`, `nexttodo://home`,
- * `nexttodo://calendar`, or its time grid, on a day, `nexttodo://calendar/time/2026-11-26`; or the quick
- * add card, `nexttodo://page/<path>`, another page. */
+ * `nexttodo://calendar`, or its month or time grid on a day, `nexttodo://calendar/time/2026-11-26`; or
+ * the quick add card, `nexttodo://page/<path>`, another page. */
 function open(url: string) {
   const [, kind, id] = /^nexttodo:\/\/(task|home|calendar|page)\/?(.*)$/.exec(url) ?? [];
   if (kind === "task") navigate(`/?open=${id}`);
   else if (kind === "home") navigate("/");
   else if (kind === "calendar") {
-    const [, time, on] = /^(time)?\/?(\d{4}-\d{2}-\d{2})?$/.exec(id) ?? [];
+    const [, view, on] = /^(time|month)?\/?(\d{4}-\d{2}-\d{2})?$/.exec(id) ?? [];
     // A day there is, from another app too.
     const day = on && isoDate(parseDay(on)) === on ? `&on=${on}` : "";
-    navigate(time ? `/calendar?view=time${day}` : "/calendar");
+    navigate(view ? `/calendar?view=${view}${day}` : "/calendar");
   } else if (kind === "page") navigate(`/${id}`);
 }
 

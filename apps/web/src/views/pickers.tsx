@@ -241,7 +241,7 @@ export function TaskPicker({
           ))}
           {here.map((t) => row(t, false))}
         </div>
-        {subs.length + here.length === 0 && <p className="empty">{at === top ? "暂无可选的事项。" : "这里没有可选的事项。"}</p>}
+        {subs.length + here.length === 0 && <p className="empty">{at === top ? "暂无可选的事项。" : "这里没有可选的事项。"}可在上方输入标题新建。</p>}
       </div>
     );
   }
@@ -250,7 +250,7 @@ export function TaskPicker({
       <label className="search" ref={field}>
         <Icon of={Search} size={18} />
         {/* Back from the results, the folder's page shows again without sliding in. */}
-        <input value={query} onChange={(e) => (setQuery(e.target.value), setNav({ folder: at }))} placeholder="搜索所有文件夹" autoComplete="off" />
+        <input value={query} onChange={(e) => (setQuery(e.target.value), setNav({ folder: at }))} placeholder="搜索或新建" autoComplete="off" />
       </label>
       {list}
     </Modal>

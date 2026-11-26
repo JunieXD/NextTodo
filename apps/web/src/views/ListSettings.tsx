@@ -8,6 +8,7 @@ import { useEnterSends } from "../ui/keys";
 import { fixAddTo, unfixAddTo, useAddTo, useFixedAddTo } from "./add-to";
 import { MAX_KEEP_DONE, setKeepDone, useKeepDone } from "./keep-done";
 import { FolderPicker } from "./pickers";
+
 /** How the lists keep what is done, where quick add puts a task, and which keys send AI organizing's
  * text. */
 export function Lists() {

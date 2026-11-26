@@ -9,6 +9,7 @@ import { Seg, Swatch, Switch } from "../ui/controls";
 import { useTimeGridOn } from "./calendar";
 import { useHolidayMarks } from "./daynote";
 import { forUser, useFeedback } from "../ui/feedback";
+
 const THEMES: [Theme, string][] = [
   ["system", "跟随系统"],
   ["light", "浅色"],

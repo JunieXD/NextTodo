@@ -15,6 +15,7 @@ import { readBackup, sendImport, uploadBackup } from "../transfer";
 import { saveFile } from "./attachments";
 import { TokenRow, useTokens, used } from "./tokens";
 import { Action } from "../ui/controls";
+
 export function Account({ onSignOut }: { onSignOut(): void }) {
   const session = useSession();
   const [user, setUser] = useState(session.user);

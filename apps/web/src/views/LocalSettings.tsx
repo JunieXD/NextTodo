@@ -7,6 +7,7 @@ import { forUser, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
 import { DriveSyncDialog, useDriveSync } from "./DriveSync";
 import { Action } from "../ui/controls";
+
 /** In place of the account: the data is on this device, syncing it with others through a drive, its
  * backups, and how to move to a server. */
 export function LocalMode() {

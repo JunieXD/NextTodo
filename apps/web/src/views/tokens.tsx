@@ -7,6 +7,7 @@ import type { TokenInfo } from "../api/types/TokenInfo";
 import { ago } from "../domain/dates";
 import { useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
+
 /** The tokens of a kind, loaded once the page opens, and taking one away. */
 export function useTokens(kind: TokenInfo["kind"], failed: (e: unknown) => void) {
   const { confirm } = useFeedback();

@@ -25,6 +25,7 @@ import { LocalMode } from "./LocalSettings";
 import { Appearance } from "./AppearanceSettings";
 import { Lists } from "./ListSettings";
 import { Agent } from "./AgentSettings";
+
 const TITLES: Record<SettingsSection, string> = {
   account: "账号",
   local: "本机模式",

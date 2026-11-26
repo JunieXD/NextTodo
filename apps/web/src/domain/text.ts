@@ -1,4 +1,4 @@
-// The same checks the server makes on text (`crates/core/src/model.rs`), so the app can say what is
+// The same checks the server makes on text (`crates/core/src/model/`), so the app can say what is
 // wrong before anything is sent. Each returns the cleaned value or an error message.
 
 export type Checked = { ok: true; value: string } | { ok: false; error: string };

@@ -9,7 +9,7 @@ import { MAX_FILE_SIZE } from "./attach";
 
 const NOT_OURS = "这不是 NextTodo 的备份，或者文件已损坏";
 
-/** How backups are written that this version reads: `BACKUP_FORMAT` in crates/core/src/model.rs. */
+/** How backups are written that this version reads: `BACKUP_FORMAT` in crates/core/src/model/mod.rs. */
 const BACKUP_FORMAT = 1;
 
 /** Why an import stops when the device is no longer signed in as it was: its files would go to

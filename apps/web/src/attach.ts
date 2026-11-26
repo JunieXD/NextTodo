@@ -13,7 +13,7 @@ import type { Staged } from "./sync/drafts";
 export const PICTURES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"]);
 export const isPicture = (type: string) => PICTURES.has(type);
 
-/** The largest file an attachment can have: `MAX_FILE_SIZE` in crates/core/src/model.rs. */
+/** The largest file an attachment can have: `MAX_FILE_SIZE` in crates/core/src/model/attachment.rs. */
 export const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
 const SETTINGS = "nexttodo.serverSettings";

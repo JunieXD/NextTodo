@@ -107,9 +107,10 @@ svg { display: block; flex: none; }
 .scroll { flex: 1; overflow-y: auto; padding-top: calc(56px + var(--safe-top)); padding-bottom: calc(var(--tabbar-h) + 84px); scroll-padding-top: calc(56px + var(--safe-top)); }
 .scroll.fill { display: flex; flex-direction: column; overflow: hidden; padding-bottom: var(--tabbar-h); }
 /* Nothing scrolls here, so a long folder name keeps to two lines and leaves the graph its room. */
-.scroll.fill .large-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.scroll.fill .large-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .hero { display: flex; align-items: flex-end; justify-content: space-between; padding: 4px 16px 0; }
-.large-title { margin: 0; font-size: 32px; line-height: 1.2; font-weight: 700; letter-spacing: -.01em; }
+/* A long name breaks anywhere, before it would push the buttons beside it off the screen. */
+.large-title { margin: 0; font-size: 32px; line-height: 1.2; font-weight: 700; letter-spacing: -.01em; min-width: 0; overflow-wrap: anywhere; }
 .subtitle { margin: 4px 16px 6px; font-size: 15px; color: var(--on-surface-variant); }
 .avatar { width: 36px; height: 36px; border-radius: 18px; background: var(--primary); color: var(--on-primary); font-weight: 600; font-size: 15px; display: grid; place-items: center; margin-bottom: 4px; }
 .tab .avatar { width: 26px; height: 26px; font-size: 12px; margin: 0; }

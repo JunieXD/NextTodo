@@ -1,7 +1,7 @@
 // What can be done to a folder: make one inside it, tidy it with AI, share, rename, move, delete. From
-// its "…" button, or by right-clicking it on a computer.
+// the buttons on its page, or by right-clicking it on a computer.
 
-import { Copy, FolderInput, FolderPlus, ListChecks, NotebookPen, Palette, Pencil, Sparkles, Trash2, Users } from "lucide-react";
+import { Copy, FolderInput, FolderPlus, ListChecks, NotebookPen, Palette, Pencil, Trash2, Users, WandSparkles } from "lucide-react";
 import { type ReactElement, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { v7 as uuidv7 } from "uuid";
 import { useLocation } from "wouter";
@@ -18,7 +18,8 @@ import { rekey } from "../domain/reorder";
 import { checkFolderName, checkJobText } from "../domain/text";
 import { useCommit, useSession, useUndo, useView } from "../session";
 import { dropFiles } from "../sync/files";
-import { Modal, forUser, useFeedback } from "../ui/feedback";
+import { Modal, Tip, forUser, useFeedback } from "../ui/feedback";
+import { Icon } from "../ui/icons";
 import { jobReminders } from "../remind-settings";
 import { isSendKey, useEnterSends } from "../ui/keys";
 import { ContextMenu, type MenuItem, MenuButton } from "../ui/menu";
@@ -215,10 +216,13 @@ function TidyRequest({ initial, onSubmit, onClose }: { initial: string; onSubmit
   );
 }
 
-/** The actions on `folder`, and the panel that moving, tidying or sharing it opens; in the root, only
- * making a folder and tidying; in a folder someone shares with the user, not changing that folder
- * itself, which is its owner's to do; none for a folder deleted meanwhile, say on another device. */
-function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: ReactNode } {
+type FolderActions = { create: MenuItem; tidy: MenuItem; note: MenuItem; rest: MenuItem[]; panel: ReactNode };
+
+/** The actions on `folder`, and the panel that moving, tidying or sharing it opens: making a folder in
+ * it, the two of AI, and the rest; in the root, no more; in a folder someone shares with the user, not
+ * changing that folder itself, which is its owner's to do. None for a folder deleted meanwhile, say on
+ * another device. */
+function useFolderActions(folder: FolderId | null): FolderActions | null {
   const commit = useCommit();
   const undo = useUndo();
   const { prompt, confirm, snack } = useFeedback();
@@ -232,24 +236,21 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
   const [sharing, setSharing] = useState(false);
   const [styling, setStyling] = useState(false);
   const { board } = useView();
+  const ai = {
+    tidy: { icon: WandSparkles, label: "AI 整理事项", onSelect: tidy.start },
+    note: { icon: NotebookPen, label: "AI 说明", onSelect: note.start },
+  };
   if (folder === null) {
-    const items = [
-      { icon: FolderPlus, label: "新建文件夹", onSelect: () => newFolder(null) },
-      { icon: Sparkles, label: "AI 整理事项", onSelect: tidy.start },
-      { icon: NotebookPen, label: "AI 说明", onSelect: note.start },
-    ];
-    return {
-      items,
-      panel: (
-        <>
-          {tidy.panel}
-          {note.panel}
-        </>
-      ),
-    };
+    const panel = (
+      <>
+        {tidy.panel}
+        {note.panel}
+      </>
+    );
+    return { create: { icon: FolderPlus, label: "新建文件夹", onSelect: () => newFolder(null) }, ...ai, rest: [], panel };
   }
   const f = board.folder(folder);
-  if (!f) return { items: [], panel: null };
+  if (!f) return null;
 
   const rename = async () => {
     const name = await prompt({ title: "重命名文件夹", label: "名称", value: f.name, ok: "保存", check: checkFolderName });
@@ -270,10 +271,9 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
   const theirs = sharer(board, f.id);
   const copying = { icon: Copy, label: "复制…", onSelect: () => void copy(f) };
   return {
-    items: [
-      { icon: FolderPlus, label: "新建子文件夹", onSelect: () => newFolder(f.id) },
-      { icon: Sparkles, label: "AI 整理事项", onSelect: tidy.start },
-      { icon: NotebookPen, label: "AI 说明", onSelect: note.start },
+    create: { icon: FolderPlus, label: "新建子文件夹", onSelect: () => newFolder(f.id) },
+    ...ai,
+    rest: [
       ...(shareable(board, f.id) && !inLocalMode() ? [{ icon: Users, label: "共享…", onSelect: () => setSharing(true) }] : []),
       ...(theirs
         ? [copying]
@@ -297,20 +297,25 @@ function useFolderActions(folder: FolderId | null): { items: MenuItem[]; panel: 
   };
 }
 
-/** The "…" button of the folder shown, or of the root: what its right-click menu has, and choosing its
- * tasks for [batch operations](docs/ui.md#批量操作). */
+/** The buttons of the folder shown, or of the root: tidying it, often wanted, on its own, and "…" with
+ * the rest of what its right-click menu has and choosing its tasks for
+ * [batch operations](docs/ui.md#批量操作). */
 export function FolderMenu({ folder }: { folder: FolderId | null }) {
-  const { items: own, panel } = useFolderActions(folder);
+  const actions = useFolderActions(folder);
   const { snack } = useFeedback();
   const { board } = useView();
   const batch = useBatch();
+  if (!actions) return null;
+  const { create, tidy, note, rest, panel } = actions;
   const choose = () => (board.contents(folder).length ? batch.start() : snack("这里没有事项"));
-  // After making a folder and the two of AI, which the root's menu has alone.
-  const items = own.length ? [...own.slice(0, 3), { icon: ListChecks, label: "批量操作", onSelect: choose }, ...own.slice(3)] : [];
-  if (!items.length) return null;
   return (
     <>
-      <MenuButton label="文件夹操作" items={items} />
+      <Tip label={tidy.label}>
+        <button className="icon-btn" onClick={tidy.onSelect}>
+          <Icon of={tidy.icon} />
+        </button>
+      </Tip>
+      <MenuButton label="文件夹操作" items={[create, note, { icon: ListChecks, label: "批量操作", onSelect: choose }, ...rest]} />
       {panel}
     </>
   );
@@ -318,11 +323,12 @@ export function FolderMenu({ folder }: { folder: FolderId | null }) {
 
 /** Right-clicking `children`, a row standing for the folder (`null` for the root), opens its menu. */
 export function FolderContextMenu({ folder, children }: { folder: FolderId | null; children: ReactElement }) {
-  const { items, panel } = useFolderActions(folder);
+  const actions = useFolderActions(folder);
+  const items = actions ? [actions.create, actions.tidy, actions.note, ...actions.rest] : [];
   return (
     <>
       <ContextMenu items={items}>{children}</ContextMenu>
-      {panel}
+      {actions?.panel}
     </>
   );
 }

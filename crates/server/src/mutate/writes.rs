@@ -13,6 +13,7 @@ use crate::store;
 
 use super::check::{check_task, due_after};
 use super::{Cx, Side, Space};
+
 /// Who sees a share: its owner and members.
 fn share_side(s: &Share) -> Side {
     Side::of(std::iter::once(&s.owner).chain(&s.members).cloned().collect())

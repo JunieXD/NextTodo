@@ -13,6 +13,7 @@ use crate::store;
 
 use super::Cx;
 use super::check::{at_times, both_due, by_start, check_assignees};
+
 impl Cx<'_> {
     pub(super) fn op(&mut self, op: &Op) -> Result<(), ApiError> {
         match op {

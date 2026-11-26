@@ -5,6 +5,7 @@ use nexttodo_core::model::{Due, DueAfter, MAX_REMINDERS, Remind, RemindAt, Task}
 use crate::error::ApiError;
 
 use super::Space;
+
 /// Reminders by the start as given, for a start at `time`.
 pub(super) fn by_start(time: Option<&nexttodo_core::model::Time>, given: &[Remind]) -> Result<Vec<Remind>, ApiError> {
     nexttodo_core::model::start_reminders(time, given.to_vec()).map_err(|m| ApiError::invalid(m, Some("start_reminders".into())))

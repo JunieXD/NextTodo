@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use nexttodo_core::board::Board;
-use nexttodo_core::model::{AiJob, Attachment, AttachmentId, Due, FileSize, Task, TaskId};
+use nexttodo_core::model::{AiJob, Attachment, AttachmentId, Date, Due, FileSize, Task, TaskId};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -49,11 +49,11 @@ pub const SYSTEM: &str = r#"你负责把用户随手写下的一段话整理成�
 字段：
 - title：必填，一行，简短（最好不超过 30 个字），以动作开头，如“写开题报告初稿”。原文没说是什么动作的，不要猜，保留原文的说法。
 - description：选填，Markdown，只写标题装不下的信息。
-- start：选填，开始时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"：没到时事项等着，不显示在待办里。不能晚于 due。
-- due：选填，截止时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"。
+- start：选填，开始时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"，按农历说的见第 8 条：没到时事项等着，不显示在待办里。不能晚于 due。
+- due：选填，截止时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"，按农历说的见第 8 条。
 - due_after：选填，代替 due：前置事项（after）都完成后多久以内截止，"30d"（天）、"2w"（周）或 "3d 18:00"，从前置都完成的那天起算，"0d" 是当天。
-- remind：只有原文明确要求提醒时才写。提前多久写 "30m"、"2h"、"1d"、"1w"（提前 30 分钟、2 小时、1 天、1 周）或分钟数，0 表示截止时，只能用在带具体时间的 due 或 due_after 上；说了在几点提醒的写几点："09:00" 是截止那天的几点，"1d 20:00" 是提前 1 天的 20:00，只有日期的 due 也能用。几个提醒写成列表，如 ["30m", "1d"]；原文明确说不用提醒的写 []。
-- repeat：写了的事项每次做完，会带着下一次的截止时间回到待办里，所以只有原文明确说了这件事每个周期都要人再做一次时才写，做的可以是用户自己，也可以是原文说的别人，如“每周五交周报”“每个工作日打卡”“每月 1 号还信用卡”。写法："1d" 每天、"2w" 每两周、"3m" 每三个月、"1y" 每年，"workdays" 每个工作日（周一到周五，跳过放假、算上补班的周末）、"1w:1,2,3,4,5" 每周一到周五（放假也照常）、"1w:1,3,5" 每周一三五，"1m:1,15" 每月 1 号和 15 号、"1m:31" 每月最后一天。写了 repeat 就要写 due，见第 7 条；周期已经由 repeat 表示，不再写进标题和描述。先问自己：这一项做完一次以后，到下个周期还要人再做一遍吗？不用的就不写，即使原文里有“每天”“每周”：
+- remind：只有原文明确要求提醒时才写。提前多久写 "30m"、"2h"、"1d"、"1w"（提前 30 分钟、2 小时、1 天、1 周）或分钟数，0 表示截止时；提前几分钟、几小时的要有带具体时间的 due 或 due_after，只有日期的 due 上 "1d" 这类整天的是提前那么多天的 09:00；说了在几点提醒的写几点："09:00" 是截止那天的几点，"1d 20:00" 是提前 1 天的 20:00，只有日期的 due 也能用。几个提醒写成列表，如 ["30m", "1d"]；原文明确说不用提醒的写 []。
+- repeat：写了的事项每次做完，会带着下一次的截止时间回到待办里，所以只有原文明确说了这件事每个周期都要人再做一次时才写，做的可以是用户自己，也可以是原文说的别人，如“每周五交周报”“每个工作日打卡”“每月 1 号还信用卡”。写法："1d" 每天、"2w" 每两周、"3m" 每三个月、"1y" 每年，"workdays" 每个工作日（周一到周五，跳过放假、算上补班的周末）、"1w:1,2,3,4,5" 每周一到周五（放假也照常）、"1w:1,3,5" 每周一三五，"1m:1,15" 每月 1 号和 15 号、"1m:31" 每月最后一天；按农历的见第 8 条。写了 repeat 就要写 due，见第 7 条；周期已经由 repeat 表示，不再写进标题和描述。先问自己：这一项做完一次以后，到下个周期还要人再做一遍吗？不用的就不写，即使原文里有“每天”“每周”：
    - “有空就”“多”这类没说周期的；
    - 只是在说情况的，如“这阵子每周都出差”；
    - 做一次就完、之后由程序（脚本、定时任务）自动按周期运行的，如“配一个每天凌晨跑的定时任务”，这时周期写进标题或描述。
@@ -76,7 +76,8 @@ pub const SYSTEM: &str = r#"你负责把用户随手写下的一段话整理成�
 5. 原文说的是几件能分开做的事，就拆成几条，有先后的用 after 或 before 连起来；说的是一件事，就只输出一条，不要硬拆。几条是为了同一个目的的（如“把 CI 修好：先……再……”），这个目的写进每条的标题或描述。
 6. 逐条看 open_tasks：这件事要用到某个已有事项的成果，或要等它做完才能开始，就把那个编号写进这件事的 after，例如“写官网文档”要等“建好官网”；已有事项要等这件事做完才能开始的，把它的编号写进 before，例如“开存款证明”做完才能“提交签证材料”。只是主题相近、没有先后的，不连。
 7. 只有原文明确说了时间才写 due，“明天下午三点”“周五前”这类按 local_time 换算成具体日期，没说年份的按上下文定，看不出的取 local_time 以后最近的那一天；说了几点才带上时间；只说了“上午”“晚上”“下班前”“睡前”这类、没说几点的只写日期，不要替用户定一个时间，写了 repeat 的也一样。原文没说要提醒就不写 remind。只有原文明确说了某个时候以后才能做（“1 号开始领”“下周一起报名”“晚上 8 点开抢”），或者要等到某个时候某件事才发生（“等 11 月底训练营开营”）才写 start，同样换算；这个日子是开始，不是截止，原文没另说什么时候以前做完就不写 due。原文没另说截止、又要在这个时候提醒的除外：提醒只能跟着 due，就把这个时候写成 due 并写 remind，不写 start。写了 repeat 的，due 是第一次，按 local_time 换算：从开始那天（原文说的，如“从明天起”“下周开始”；没说就是今天）起最近的一次，如“每周一”是开始那天或以后的第一个周一，没说周几、几号的（“每天”“每 30 天”）就是开始那天。第一次不能已经过去：算出的是今天、而原文说的几点已经过了的（如 20:00 时说“每天早上八点”），按重复推到下一次。开始那天已由 due 表示，不另写 start。原文的期限是从另一件事做完时算的（“拿到发票后 30 天内报销”“签完合同 3 天内付款”“面试后 24 小时内发感谢信”），这件事要写 after，等的那件事是前置：已有的写编号，没有的另建一个（如“拿到发票”“面试”），再写 due_after，不写 due；没有前置的事项不能写 due_after；不足一天的写 "0d" 或 "1d"。期限是从现在算的（“三天后”“一周内”“周五前”），照样换算成日期写 due，即使这一项有前置。
-8. 用原文的语言写，不要翻译：原文是英文，标题和描述也用英文。
+8. 原文按农历说的日子（“腊月二十三”“农历八月十五”，春节、元宵、端午、中秋、除夕这些节日也是），due 和 start 不要自己换算成公历，写农历日期，如 "农历八月十五"，说了几点的带上，如 "农历腊月廿三 15:00"，没说几点的（如只说“晚上”）只写日期，同第 7 条；会换算成今天起最近的那一天；除夕写 "农历腊月三十"（腊月只有 29 天的年份就是廿九）；只说几号、没说月份的写 "农历初一"，是今天起的第一个初一。原文说了更晚的年份、或从以后某天才开始的，按 local_time 最后写的今天的农历日子自己换算成公历日期。按农历重复的在 repeat 的单位前加 l："1ly" 每年农历的这一天（due 的农历月和日），如每年农历八月十五过生日写 due "农历八月十五"、repeat "1ly"；"1lm:1,15" 农历每月初一和十五，这时 due 写其中一天，如 "农历初一"，会换算成这几天里最先到的那天。
+9. 用原文的语言写，不要翻译：原文是英文，标题和描述也用英文。
 
 例子（只示范写法，不要套用其中的内容）：
 - 原文“嗯那个，就是周报模板我觉得太长了，好多栏目其实根本没人填，可以删掉一些吧，比如风险那栏，下周计划好像也可以合并到本周进展里”，输出：
@@ -204,7 +205,8 @@ pub fn prompt(
 
 /// The chat that gives the model `input`, a job and its folder as `prompt` makes them, with the
 /// instructions `system` and those for what else the input has: the people of a shared folder, the
-/// user's notes, the job's attachments. Without pictures.
+/// user's notes, the job's attachments. Without pictures. The local time has the day in the lunar
+/// calendar after it, `2026-11-26 10:00 星期四 农历十月十八`: models can't work it out.
 pub fn chat(system: &str, input: &Value) -> Prompt {
     let mut system = system.to_owned();
     for (key, more) in [("people", ASSIGN), ("notes", NOTES), ("attachments", ATTACHMENTS)] {
@@ -212,7 +214,13 @@ pub fn chat(system: &str, input: &Value) -> Prompt {
             system = format!("{system}\n\n{more}");
         }
     }
-    Prompt { system, user: serde_json::to_string_pretty(input).expect("JSON values serialize"), pictures: Vec::new() }
+    let mut input = input.clone();
+    if let Some(local) = input["local_time"].as_str()
+        && let Some(lunar) = local.split_whitespace().next().and_then(|d| Date::try_from(d.to_owned()).ok()?.lunar())
+    {
+        input["local_time"] = format!("{local} 农历{lunar}").into();
+    }
+    Prompt { system, user: serde_json::to_string_pretty(&input).expect("JSON values serialize"), pictures: Vec::new() }
 }
 
 /// A minimal chat that answers in JSON, to see whether a config works.

@@ -119,9 +119,16 @@ enum Command {
         folder: Option<String>,
         #[arg(short, long, allow_hyphen_values = true, help = "描述，Markdown")]
         description: Option<String>,
-        #[arg(long, help = "开始时间：2026-11-14 或 \"2026-11-14 09:30\"，没到时事项等着")]
+        #[arg(
+            long,
+            help = "开始时间：2026-11-14 或 \"2026-11-14 09:30\"，按农历的写 农历八月十五、\"农历腊月廿三 18:00\"（今天起最近的那天），没到时事项等着"
+        )]
         start: Option<String>,
-        #[arg(long, conflicts_with = "due_after", help = "截止时间：2026-11-20 或 \"2026-11-20 18:00\"")]
+        #[arg(
+            long,
+            conflicts_with = "due_after",
+            help = "截止时间：2026-11-20 或 \"2026-11-20 18:00\"，按农历的写 农历八月十五、\"农历腊月廿三 18:00\"（今天起最近的那天）；配 1lm:1,15 这类重复时，从写的那个月起、不早于开始时间，取这几天里最先到的那天，要定下第一次的写公历日期"
+        )]
         due: Option<String>,
         #[arg(
             long,
@@ -134,7 +141,7 @@ enum Command {
         #[arg(
             long,
             value_name = "间隔",
-            help = "重复：1d 每天、2w 每两周、3m 每三个月、1y 每年，1w:1,2,3,4,5 每周一到周五、1w:1,3,5 每周一三五，workdays 每个法定工作日（周一到周五，跳过放假、算上补班的周末），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l 并写几号（1–30，初一到三十），1lm:1,15 农历每月初一和十五、1ly:15 每年农历的十五（在截止日期的农历月）；要有截止时间"
+            help = "重复：1d 每天、2w 每两周、3m 每三个月、1y 每年，1w:1,2,3,4,5 每周一到周五、1w:1,3,5 每周一三五，workdays 每个法定工作日（周一到周五，跳过放假、算上补班的周末），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l，可以在冒号后写几号（1–30，初一到三十），不写的是截止日期的农历日子：1ly 每年农历的这一天、1lm:1,15 农历每月初一和十五；要有截止时间"
         )]
         repeat: Option<String>,
         #[arg(long, requires = "repeat", value_parser = ["due", "done"], help = "下一次从哪天算：due 按截止日期（默认），done 从完成那天")]
@@ -172,11 +179,15 @@ enum Command {
         replace: Vec<String>,
         #[arg(long, allow_hyphen_values = true, conflicts_with = "description", help = "在描述末尾另起一行追加")]
         append: Option<String>,
-        #[arg(long, conflicts_with = "no_start", help = "开始时间：2026-11-14 或 \"2026-11-14 09:30\"；只写日期的去掉原来的几点")]
+        #[arg(
+            long,
+            conflicts_with = "no_start",
+            help = "开始时间：2026-11-14 或 \"2026-11-14 09:30\"，按农历的写 农历八月十五、\"农历腊月廿三 18:00\"（今天起最近的那天）；只写日期的去掉原来的几点"
+        )]
         start: Option<String>,
         #[arg(long, help = "清除开始时间")]
         no_start: bool,
-        #[arg(long, conflicts_with_all = ["no_due", "due_after"], help = "截止时间：2026-11-20 或 \"2026-11-20 18:00\"")]
+        #[arg(long, conflicts_with_all = ["no_due", "due_after"], help = "截止时间：2026-11-20 或 \"2026-11-20 18:00\"，按农历的写 农历八月十五、\"农历腊月廿三 18:00\"（今天起最近的那天）；配 1lm:1,15 这类重复时，从写的那个月起、不早于开始时间，取这几天里最先到的那天，要定下第一次的写公历日期")]
         due: Option<String>,
         #[arg(
             long,
@@ -195,7 +206,7 @@ enum Command {
             long,
             value_name = "间隔",
             conflicts_with = "no_repeat",
-            help = "重复：1d 每天、2w 每两周、3m 每三个月、1y 每年，1w:1,2,3,4,5 每周一到周五、1w:1,3,5 每周一三五，workdays 每个法定工作日（周一到周五，跳过放假、算上补班的周末），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l 并写几号，1lm:1,15 农历每月初一和十五、1ly:15 每年农历的十五"
+            help = "重复：1d 每天、2w 每两周、3m 每三个月、1y 每年，1w:1,2,3,4,5 每周一到周五、1w:1,3,5 每周一三五，workdays 每个法定工作日（周一到周五，跳过放假、算上补班的周末），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l，不写几号的是截止日期的农历日子，1ly 每年农历的这一天、1lm:1,15 农历每月初一和十五"
         )]
         repeat: Option<String>,
         #[arg(long, requires = "repeat", value_parser = ["due", "done"], help = "下一次从哪天算：due 按截止日期（默认），done 从完成那天")]

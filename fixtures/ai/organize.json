@@ -452,5 +452,77 @@
     "note": "“两周后”按今天算成日期；要求已是书面的，照写进描述",
     "input": { "local_time": "2026-11-25 10:00 星期三", "folder": "/学期", "open_tasks": [], "text": "两周后交课程论文，字数 5000 以上，参考文献不少于 15 篇" },
     "expect": { "tasks": [1, 1], "facts": [["论文"], ["5000"], ["15"]], "verbatim": ["5000", "15"], "written": true, "due": ["2026-12-09"] }
+  },
+  {
+    "id": "lunar-month-day",
+    "note": "按农历说的月和日：写农历日期，由服务端换成公历",
+    "input": { "local_time": "2026-11-26 10:00 星期四", "folder": "/生活", "open_tasks": [], "text": "腊月二十三前把家里大扫除做完" },
+    "expect": { "tasks": [1, 1], "facts": [["扫除"]], "due": ["2027-01-30"], "repeat": [] }
+  },
+  {
+    "id": "lunar-festival",
+    "note": "农历节日",
+    "input": { "local_time": "2026-11-26 10:00 星期四", "folder": "/家人", "open_tasks": [], "text": "正月十五带孩子去看灯会" },
+    "expect": { "tasks": [1, 1], "facts": [["灯会"]], "due": ["2027-02-20"], "repeat": [] }
+  },
+  {
+    "id": "lunar-laba",
+    "note": "没说“农历”的农历节日",
+    "input": { "local_time": "2026-11-26 10:00 星期四", "folder": "/生活", "open_tasks": [], "text": "腊八那天熬一锅腊八粥" },
+    "expect": { "tasks": [1, 1], "facts": [["腊八粥"]], "due": ["2027-01-15"], "repeat": [] }
+  },
+  {
+    "id": "lunar-birthday",
+    "note": "农历生日每年一次、提前一天提醒：按农历每年重复，只有日期的截止上的 1d 是前一天 09:00",
+    "input": { "local_time": "2026-11-26 10:00 星期四", "folder": "/家人", "open_tasks": [], "text": "每年农历八月十五是妈妈生日，提前一天提醒我" },
+    "expect": { "tasks": [1, 1], "facts": [["妈妈"], ["生日"]], "repeat": [["生日", "2027-09-15 !1d09:00 ~12lm:15"]] }
+  },
+  {
+    "id": "lunar-monthly",
+    "note": "农历每月初一、十五：第一次是今天起最先到的那天（今天农历十月十八）",
+    "input": { "local_time": "2026-11-26 10:00 星期四", "folder": "/家人", "open_tasks": [], "text": "每逢农历初一、十五给奶奶上香" },
+    "expect": { "tasks": [1, 1], "facts": [["上香"]], "repeat": [["上香", "2026-12-09 ~1lm:1,15"]] }
+  },
+  {
+    "id": "lunar-eve-time",
+    "note": "除夕带几点和提醒：腊月最后一天",
+    "input": { "local_time": "2026-11-26 10:00 星期四", "folder": "/家人", "open_tasks": [], "text": "除夕晚上八点全家吃年夜饭，提前两小时提醒我" },
+    "expect": { "tasks": [1, 1], "facts": [["年夜饭"]], "due": ["2027-02-05 20:00 !120"], "repeat": [] }
+  },
+  {
+    "id": "lunar-implicit",
+    "note": "二月二，没说“农历”",
+    "input": { "local_time": "2026-11-26 10:00 星期四", "folder": "/生活", "open_tasks": [], "text": "二月二龙抬头去剪头发" },
+    "expect": { "tasks": [1, 1], "facts": [["头发", "理发"]], "due": ["2027-03-09"], "repeat": [] }
+  },
+  {
+    "id": "lunar-solar-control",
+    "note": "公历的日子照常",
+    "input": { "local_time": "2026-11-26 10:00 星期四", "folder": "/工作", "open_tasks": [], "text": "12 月 8 号交季度报告" },
+    "expect": { "tasks": [1, 1], "facts": [["季度报告"]], "due": ["2026-12-08"], "repeat": [] }
+  },
+  {
+    "id": "lunar-monthly-mid",
+    "note": "今天（农历冬月十二）在初一和十五之间：第一次是十五",
+    "input": { "local_time": "2026-12-20 09:00 星期日", "folder": "/家人", "open_tasks": [], "text": "每个月农历初一和十五去庙里烧香" },
+    "expect": { "tasks": [1, 1], "facts": [["烧香"]], "repeat": [["烧香", "2026-12-23 ~1lm:1,15"]] }
+  },
+  {
+    "id": "lunar-today-passed",
+    "note": "今天就是那个农历日子、说的几点已过：第一次在明年",
+    "input": { "local_time": "2026-11-26 10:00 星期四", "folder": "/家人", "open_tasks": [], "text": "每年农历十月十八早上八点给奶奶打电话" },
+    "expect": { "tasks": [1, 1], "facts": [["奶奶"]], "repeat": [["奶奶", "2027-11-15 08:00 ~12lm:18"]] }
+  },
+  {
+    "id": "lunar-eve-yearly",
+    "note": "每年除夕：按写的腊月三十重复，今年腊月只有 29 天",
+    "input": { "local_time": "2026-11-26 10:00 星期四", "folder": "/家人", "open_tasks": [], "text": "每年除夕晚上全家一起吃年夜饭" },
+    "expect": { "tasks": [1, 1], "facts": [["年夜饭"]], "repeat": [["年夜饭", "2027-02-05 ~12lm:30"]] }
+  },
+  {
+    "id": "lunar-monthly-passed",
+    "note": "今天是初一、说的几点已过：第一次是这个月的十五",
+    "input": { "local_time": "2026-12-09 10:00 星期三", "folder": "/家人", "open_tasks": [], "text": "每月农历初一、十五早上八点上香" },
+    "expect": { "tasks": [1, 1], "facts": [["上香"]], "repeat": [["上香", "2026-12-23 08:00 ~1lm:1,15"]] }
   }
 ]

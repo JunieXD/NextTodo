@@ -14,13 +14,14 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use super::asked;
 use super::llm::Prompt;
 use super::organize::{chat, due_text, unwrap};
 use crate::error::from_value;
 use crate::tools::args::{
-    EditArgs, LEGAL_WORKDAYS, PlanRef, RemindText, RepeatText, TaskRef, WhenText, due_after_text, remind_text, task_ref,
+    EditArgs, LEGAL_WORKDAYS, PeriodText, PlanRef, RemindText, RepeatText, TaskRef, WhenText, due_after_text, remind_text, task_ref,
 };
-use crate::tools::{Edit, edit_fields, new_due};
+use crate::tools::{Edit, RepeatGiven, edit_fields, new_due};
 
 /// How many of the folder's open tasks the model is shown, and of its done ones, the latest.
 const SHOWN: usize = 50;
@@ -37,7 +38,7 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
 - request：用户这次的要求；
 - subfolders：这个文件夹下的子文件夹，可以把事项移进去；
 - looks：能改颜色和图标的文件夹，即这个文件夹和子文件夹，根目录和别人共享给我的文件夹本身除外；color、icon 是现在的，没写的是默认的；
-- open_tasks：文件夹里未完成的事项，按现在的顺序。number 是编号；requires 是它已有的前置事项的编号，那些事项要先做完才能做它；due 是截止时间，due_after 是前置都完成后几天内截止（如 "30d"、"3d 18:00"，从前置都完成那天算），前置都完成以后才有 due，remind 是提醒（数字是提前多少分钟，"09:00" 是截止那天的几点，"1d 20:00" 是提前 1 天的 20:00，几个时是列表），repeat 是重复，写成间隔数加单位 d（天）、w（周）、m（月）或 y（年，就是 12 个月），如 1d 每天、2w 每两周、1m 每月、3m 每三个月、1y 每年；workdays 是每个工作日（周一到周五，跳过放假、算上补班的周末）；按周重复在某几天的，冒号后写周几（1 是周一，7 是周日），如 1w:1,2,3,4,5 每周一到周五（放假也照常）、1w:1,3,5 每周一三五、2w:2,4 每两周的周二和周四；按月重复在某几号的，冒号后写几号（1–31，没有这天的月份取最后一天），如 1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；repeat_from 为 done 表示下一次从完成那天算；repeat_until 是重复到哪天（含这天），做完这天以前的最后一次，事项就完成了；description_omitted 为 true 的事项描述太长，没有发来；
+- open_tasks：文件夹里未完成的事项，按现在的顺序。number 是编号；requires 是它已有的前置事项的编号，那些事项要先做完才能做它；due 是截止时间，due_after 是前置都完成后几天内截止（如 "30d"、"3d 18:00"，从前置都完成那天算），前置都完成以后才有 due，remind 是提醒（数字是提前多少分钟，"09:00" 是截止那天的几点，"1d 20:00" 是提前 1 天的 20:00，几个时是列表），repeat 是重复，写成间隔数加单位 d（天）、w（周）、m（月）或 y（年，就是 12 个月），如 1d 每天、2w 每两周、1m 每月、3m 每三个月、1y 每年；workdays 是每个工作日（周一到周五，跳过放假、算上补班的周末）；按周重复在某几天的，冒号后写周几（1 是周一，7 是周日），如 1w:1,2,3,4,5 每周一到周五（放假也照常）、1w:1,3,5 每周一三五、2w:2,4 每两周的周二和周四；按月重复在某几号的，冒号后写几号（1–31，没有这天的月份取最后一天），如 1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l，冒号后是农历的几号（1–30，初一到三十），如 1lm:1,15 农历每月初一和十五、12lm:15 每年农历的十五（在截止日期的那个农历月），设置时不写几号的 1ly 是每年农历的这一天（截止日期的农历月和日）；repeat_from 为 done 表示下一次从完成那天算；repeat_until 是重复到哪天（含这天），做完这天以前的最后一次，事项就完成了；description_omitted 为 true 的事项描述太长，没有发来；
 - done_tasks：最近完成的事项，只有编号和标题。
 
 只输出一个 json 对象，不要有任何别的文字，格式如下：
@@ -53,8 +54,8 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
 1. 修改已有的事项：写 number，再只写要改的字段，不改的省略，不要写空字符串或 null。同一个事项的几处修改写在同一条里，每个事项最多出现一次：
    - title：新标题，一行，简短（最好不超过 30 个字），以动作开头；原标题没说是什么动作的，不要为了以动作开头而猜一个动作或删词。
    - description：新描述，是改好后的完整内容，不是修改说明；Markdown，步骤可以写成清单“- [ ] ”。
-   - due：截止时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"。原来有几点几分、这次只改日期的，带上原来的几点几分；原来和 request 都没说几点的，不要加；原来的提醒和重复保留，新的截止时间不带具体时间的，提前多久的提醒去掉，说了几点的留着。有 due_after 的事项，截止时间和提醒不要改，request 明说要改成某个日期的除外，那时写 due。
-   - remind：提醒，整个换掉原来的。提前多久写 "30m"、"2h"、"1d"、"1w"（提前 30 分钟、2 小时、1 天、1 周）或分钟数，0 表示到截止时间时提醒，要有带具体时间的截止时间；说了在几点提醒的写几点："09:00" 是截止那天的几点，"1d 20:00" 是提前 1 天的 20:00。几个提醒写成列表。“不用提醒了”是去掉提醒，写 clear: ["remind"]，不是写 0。
+   - due：截止时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"。request 按农历说的日子（“腊月二十三”“中秋”“除夕”），不要自己换算成公历，写农历日期，如 "农历八月十五"、"农历腊月廿三 18:00"，会换算成今天起最近的那一天；request 说了更晚的年份、或从以后某天起算的，按 local_time 最后写的今天的农历日子自己换算成公历日期；除夕写 "农历腊月三十"（腊月只有 29 天的年份就是廿九）；没说月份的写 "农历初一"，是今天起的第一个初一；local_time 最后是今天的农历日子。原来有几点几分、这次只改日期的，带上原来的几点几分；原来和 request 都没说几点的，不要加；原来的提醒和重复保留，新的截止时间不带具体时间的，提前多久的提醒去掉，说了几点的留着。有 due_after 的事项，截止时间和提醒不要改，request 明说要改成某个日期的除外，那时写 due。
+   - remind：提醒，整个换掉原来的。提前多久写 "30m"、"2h"、"1d"、"1w"（提前 30 分钟、2 小时、1 天、1 周）或分钟数，0 表示到截止时间时提醒；提前几分钟、几小时的要有带具体时间的截止时间，只有日期的截止上 "1d" 这类整天的是提前那么多天的 09:00；说了在几点提醒的写几点："09:00" 是截止那天的几点，"1d 20:00" 是提前 1 天的 20:00。几个提醒写成列表。“不用提醒了”是去掉提醒，写 clear: ["remind"]，不是写 0。
    - repeat、repeat_from、repeat_until：重复，只在 request 要求设或改重复时写，写法同输入；要有截止时间，事项原来没有截止时间的，同时写 due（第一次）。按天数说的照天数写（每 90 天是 90d，不是 3m）；在一周里某几天的写周几，“每个工作日”是 workdays（周一到周五，跳过放假、算上补班的周末），说了“周一到周五”、放假也照常的才是 1w:1,2,3,4,5，都不是 1d（1d 周末也会出现）。request 说了重复到哪天为止的写 repeat_until，截止时间不能晚于它。这三项也只写要改的，不写的照旧，如只改间隔时不写 repeat_from 和 repeat_until；新设的重复不写 repeat_from 就是从截止日期算，不写 repeat_until 就是一直重复。
    - clear：要清除的设置，是一个列表，可以包含 "due"、"remind"、"repeat"、"repeat_until"（不再重复到哪天，一直重复下去），如 "clear": ["due"]；清除截止时间时，提醒和重复一起清除。去掉前置用 drop_requires，不用 clear。
    - done：true 标为完成（重复的事项会顺延到下一次，做的是 repeat_until 以前的最后一次的直接完成；request 说这件事整个做完了、不再重复的，如书读完了，同时在 clear 里写 "repeat"），false 重新打开 done_tasks 里的事项。done_tasks 里的事项可以删除；要改别的，先重新打开。
@@ -95,7 +96,7 @@ pub const REFERENCES: &str = "有的描述里引用了附件，写成 [名称](a
 pub struct Shown {
     snap: Snapshot,
     user: String,
-    /// When the board is as of: the job's in UTC, since tidying reads no task's status.
+    /// When the board is as of: when the job was asked on its device, for the dates said from then.
     now: Now,
     folder: Option<FolderId>,
     tasks: HashMap<i64, Seen>,
@@ -122,7 +123,7 @@ enum Seen {
 /// The chat for `job`, a tidying of its folder in `snap` with the user's `notes` along the way to it,
 /// and what was shown in it.
 pub fn prompt(job: &AiJob, snap: Snapshot, user: &str, notes: Vec<Value>) -> (Prompt, Shown) {
-    let now = Now::utc(job.created_at);
+    let now = asked(job);
     let board = Board::new(&snap, now.clone(), user);
     let all = board.tasks_in(job.folder_id);
     let open: Vec<&Task> = all.iter().copied().filter(|t| t.done_at.is_none()).take(SHOWN).collect();
@@ -497,7 +498,8 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
                 ));
             }
             let remind = s.remind.or_else(|| shown.default_reminders(s.due.as_ref()));
-            let (due, _) = new_due(s.due, None, remind, s.repeat, s.repeat_from, s.repeat_until)
+            let repeat = RepeatGiven { rule: s.repeat, from: s.repeat_from, until: s.repeat_until };
+            let (due, _) = new_due(s.due, None, remind, repeat, None, &shown.now)
                 .map_err(|e| format!("新事项“{}”：{}", title.as_str(), e.describe()))?;
             let after = distinct(s.after.iter().map(&resolve))?;
             let before = distinct(s.before.iter().map(&resolve))?;
@@ -549,7 +551,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
                         && (s.repeat.is_some() || s.repeat_from.is_some() || s.repeat_until.is_some() || clear(Setting::RepeatUntil)) =>
                 {
                     (
-                        Some(s.repeat.unwrap_or(RepeatText { every: r.every, period: r.period })),
+                        Some(s.repeat.unwrap_or(RepeatText { every: r.every, period: PeriodText::Is(r.period) })),
                         s.repeat_from.or(Some(r.from)),
                         if clear(Setting::RepeatUntil) { None } else { s.repeat_until.or_else(|| r.until.clone()) },
                     )

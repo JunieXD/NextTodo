@@ -498,8 +498,10 @@ async fn a_repeat_by_the_lunar_calendar_moves_on_by_it_and_says_so() {
     t.ok(&s, "edit", json!({ "task": 1, "repeat": "1lm:1,15" })).await;
     let shown = t.ok(&s, "show", json!({ "task": 1 })).await;
     assert!(text(&shown).contains("截止：2027-09-15（农历八月十五），农历每月初一、十五"), "{}", text(&shown));
-    // Always on some days, 初一 to 三十; and only monthly.
-    for repeat in ["1lm", "1ly", "1lm:31", "1lw:1"] {
+    // Always on some days, 初一 to 三十, the due date's unless said; and only monthly.
+    t.ok(&s, "edit", json!({ "task": 1, "repeat": "1ly" })).await;
+    assert!(text(&t.ok(&s, "show", json!({ "task": 1 })).await).contains("每年农历八月十五"));
+    for repeat in ["1lm:31", "1lw:1"] {
         let r = t.tool(&s, "edit", json!({ "task": 1, "repeat": repeat })).await;
         assert_eq!((r.status, r.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("repeat")), "{repeat}: {}", r.body);
     }
@@ -514,6 +516,80 @@ async fn a_repeat_by_the_lunar_calendar_moves_on_by_it_and_says_so() {
     let r = t.tool(&s, "undo", json!({ "batch": moved["data"]["batch"] })).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.body);
     assert!(text(&t.ok(&s, "show", json!({ "task": 2 })).await).contains("截止：2101-01-28（农历腊月廿九）"));
+}
+
+#[tokio::test]
+async fn a_date_said_by_the_lunar_calendar_is_the_next_day_so() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    // 2026-11-26 is 十月十八; the 腊月 after it has 29 days (fixtures/lunar.json has the calendar checked).
+    let today = "2026-11-26";
+    let plan = json!({ "tasks": [
+        { "title": "给妈妈过生日", "due": "农历八月十五", "remind": "1d", "repeat": "1ly" },
+        { "title": "上香", "start": "农历初一", "due": "农历 十五 09:00" },
+        { "title": "吃年夜饭", "due": "农历腊月三十 18:00", "repeat": "1ly" },
+        { "title": "看灯会", "due": "农历1月15日" },
+        { "title": "今天", "due": "农历十月十八" },
+    ] });
+    t.ok(&s, "apply", json!({ "plan": plan, "today": today })).await;
+    let show = |n: i64| t.ok(&s, "show", json!({ "task": n }));
+    let birthday = show(1).await["data"].clone();
+    assert_eq!(birthday["due"]["date"], "2027-09-15");
+    assert_eq!(birthday["due"]["repeat"]["days"], json!([15]), "by the lunar calendar on the due date's day");
+    assert_eq!(birthday["due"]["reminders"], json!([{ "days": 1, "time": "09:00" }]), "a day before a date alone is at 09:00");
+    let incense = show(2).await["data"].clone();
+    assert_eq!((incense["start"].as_str(), incense["due"].clone()), (Some("2026-12-09"), json!({ "date": "2026-12-23", "time": "09:00" })));
+    let eve = show(3).await["data"]["due"].clone();
+    assert_eq!(eve["date"], "2027-02-05", "a month with no 三十 has its last day");
+    assert_eq!(eve["repeat"]["days"], json!([30]), "the day as said, 三十, not the 廿九 it falls on this year");
+    assert_eq!(show(4).await["data"]["due"]["date"], "2027-02-20");
+    assert_eq!(show(5).await["data"]["due"]["date"], today);
+    t.ok(&s, "edit", json!({ "task": 4, "start": "农历正月初一", "today": today })).await;
+    assert_eq!(show(4).await["data"]["start"], "2027-02-06");
+    // Repeating on some days of every lunar month: the first of them to come from the month said (the one
+    // it is, from now: today's only while its time is still to come) and from the start. 2026-12-09 is
+    // 冬月初一, 2027-01-08 腊月初一.
+    let repeating = json!({ "title": "上香", "due": "农历冬月初一 08:00", "repeat": "1lm:1,15", "today": "2026-12-09", "time": "10:00" });
+    t.ok(&s, "add", repeating).await;
+    assert_eq!(show(6).await["data"]["due"]["date"], "2026-12-23");
+    // Today's only while its time is still to come.
+    t.ok(&s, "add", json!({ "title": "打电话", "due": "农历十月十八 08:00", "today": today, "time": "10:00" })).await;
+    assert_eq!(show(7).await["data"]["due"]["date"], "2027-11-15");
+    let bill = json!({ "title": "交账单", "start": "农历腊月初一", "due": "农历腊月十五", "repeat": "1lm:15", "today": today });
+    t.ok(&s, "add", bill).await;
+    let bill = show(8).await["data"].clone();
+    assert_eq!((bill["start"].as_str(), bill["due"]["date"].as_str()), (Some("2027-01-08"), Some("2027-01-22")));
+    t.ok(&s, "add", json!({ "title": "上供", "due": "农历腊月初一", "repeat": "1lm:1,15", "today": today })).await;
+    assert_eq!(show(9).await["data"]["due"]["date"], "2027-01-08", "from the month said");
+    t.ok(&s, "add", json!({ "title": "去庙里", "start": "2027-01-10", "due": "2027-01-22", "today": today })).await;
+    t.ok(&s, "edit", json!({ "task": 10, "due": "农历初一", "repeat": "1lm:1,15", "today": today })).await;
+    assert_eq!(show(10).await["data"]["due"]["date"], "2027-01-22", "not before the start it keeps");
+    // The month it is stays the one said when its last day's time has passed or the start is in the next.
+    let last = json!({ "title": "对账", "due": "农历十月三十 08:00", "repeat": "1lm:1,30", "today": "2026-12-08", "time": "10:00" });
+    t.ok(&s, "add", last).await;
+    assert_eq!(show(11).await["data"]["due"]["date"], "2026-12-09");
+    t.ok(&s, "add", json!({ "title": "放生", "start": "2026-12-12", "due": "农历十月十五", "repeat": "1lm:1,15", "today": today })).await;
+    assert_eq!(show(12).await["data"]["due"]["date"], "2026-12-23");
+    for bad in [
+        "农历十三月初一",
+        "农历八月三十一",
+        "农历",
+        "农历八月",
+        "农历初一初二",
+        "农历八月初十五",
+        "农历八月十十",
+        "农历十十十",
+        "农历+8月15日",
+        "农历一十月一十三",
+    ] {
+        let r = t.tool(&s, "add", json!({ "title": "x", "due": bad, "today": today })).await;
+        assert_eq!((r.status, r.body["details"]["field"].as_str()), (StatusCode::BAD_REQUEST, Some("due")), "{bad}: {}", r.body);
+    }
+    let r = t.tool(&s, "add", json!({ "title": "x", "repeat": "1lm" })).await;
+    assert_eq!((r.status, r.body["message"].as_str()), (StatusCode::BAD_REQUEST, Some("设置重复需要截止时间")), "{}", r.body);
+    // Not some hours before a day: there is no time to count from.
+    let r = t.tool(&s, "add", json!({ "title": "x", "due": "2026-12-01", "remind": "2h", "today": today })).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.body);
 }
 
 #[tokio::test]

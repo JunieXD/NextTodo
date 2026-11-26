@@ -90,6 +90,18 @@ impl Date {
     }
 }
 
+/// The first day from `from` on that is day `day` (1–30, or its month's last if it has fewer) of lunar
+/// month `month` (1–12, and whether a leap one), or of any month. None past the table.
+pub fn next(month: Option<(u32, bool)>, day: u32, from: &Date) -> Option<Date> {
+    let start = day_number(parts(from));
+    let Month(first) = Month::of(start)?;
+    let n = (first..MONTHS.len())
+        .filter(|&i| month.is_none_or(|(number, leap)| MONTHS[i].number == number && MONTHS[i].leap == leap))
+        .map(|i| Month(i).day(day))
+        .find(|&n| n >= start)?;
+    Some(from.plus(u32::try_from(n - start).expect("not before `from`")))
+}
+
 /// 正月, 二月 … 十月, 冬月, 腊月.
 pub fn month_name(month: u32) -> &'static str {
     ["正月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "冬月", "腊月"][month as usize - 1]

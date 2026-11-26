@@ -1,5 +1,7 @@
 //! Tool arguments. Descriptions are written for the agents that read the tool list.
 
+use nexttodo_core::board::Now;
+use nexttodo_core::lunar;
 use nexttodo_core::model::{
     AttachmentId, Date, Description, DueAfter, Every, FileName, FolderColor, FolderIcon, MediaType, Monthdays, Period, Remind,
     RemindBefore, RemindOn, RepeatFrom, Time, Title, Weekdays,
@@ -144,10 +146,13 @@ pub struct AddArgs {
     pub description: Option<Description>,
     #[schemars(
         with = "Option<String>",
-        description = "开始时间：2026-11-14 或 2026-11-14 09:30，没到时事项等着，不进“接下来”；不能晚于截止"
+        description = "开始时间：2026-11-14 或 2026-11-14 09:30，农历的写法同 due，没到时事项等着，不进“接下来”；不能晚于截止"
     )]
     pub start: Option<WhenText>,
-    #[schemars(with = "Option<String>", description = "截止时间：2026-11-20 或 2026-11-20 18:00")]
+    #[schemars(
+        with = "Option<String>",
+        description = "截止时间：2026-11-20 或 2026-11-20 18:00；按农历的写 农历八月十五、农历腊月廿三 18:00，是今天起最近的那一天（小月没有三十的取最后一天，除夕写农历腊月三十），不写月份的 农历初一 是今天起的第一个初一；配上按农历每个月几号的重复（如 1lm:1,15）时，从写的那个月起（不写月份或写的是本月的，从现在起）、不早于开始时间，取这几天里最先到的那天，要定下第一次的写公历日期"
+    )]
     pub due: Option<WhenText>,
     #[schemars(
         with = "Option<String>",
@@ -156,12 +161,12 @@ pub struct AddArgs {
     pub due_after: Option<DueAfterText>,
     #[schemars(
         with = "Option<RemindInput>",
-        description = "提醒，一个或几个（列表）：提前多久写 \"30m\"、\"2h\"、\"1d\"、\"1w\" 或分钟数，0 是截止时，要有带具体时间的截止；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设。如 [\"30m\", \"1d 20:00\"]"
+        description = "提醒，一个或几个（列表）：提前多久写 \"30m\"、\"2h\"、\"1d\"、\"1w\" 或分钟数，0 是截止时，要有带具体时间的截止（只有日期的截止上，整天的如 \"1d\"、0 是提前那么多天的 09:00）；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设。如 [\"30m\", \"1d 20:00\"]"
     )]
     pub remind: Option<RemindText>,
     #[schemars(
         with = "Option<String>",
-        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每周一到周五、1w:1,3,5 每周一三五；workdays 每个法定工作日（周一到周五，跳过放假、算上补班的周末），用户说每个工作日的一般是它；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l 并写几号（1–30，初一到三十），1lm:1,15 农历每月初一和十五、1ly:15 每年农历的十五（在截止日期的农历月）；要有截止时间。完成时顺延截止时间，开始时间跟着顺延，不会真的完成（repeat_until 前的最后一次除外）"
+        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每周一到周五、1w:1,3,5 每周一三五；workdays 每个法定工作日（周一到周五，跳过放假、算上补班的周末），用户说每个工作日的一般是它；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l，可以在冒号后写几号（1–30，初一到三十），不写的是截止日期的农历日子：1ly 每年农历的这一天、1lm:1,15 农历每月初一和十五；要有截止时间。完成时顺延截止时间，开始时间跟着顺延，不会真的完成（repeat_until 前的最后一次除外）"
     )]
     pub repeat: Option<RepeatText>,
     #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
@@ -201,13 +206,13 @@ pub struct EditArgs {
     #[serde(default, deserialize_with = "nullable")]
     #[schemars(
         with = "Option<String>",
-        description = "开始时间：2026-11-14 或 2026-11-14 09:30，没到时事项等着；只写日期的去掉原来的几点；null 清除。不能晚于截止"
+        description = "开始时间：2026-11-14 或 2026-11-14 09:30，农历的写法同 due，没到时事项等着；只写日期的去掉原来的几点；null 清除。不能晚于截止"
     )]
     pub start: Option<Option<WhenText>>,
     #[serde(default, deserialize_with = "nullable")]
     #[schemars(
         with = "Option<String>",
-        description = "截止时间：2026-11-20 或 2026-11-20 18:00；null 清除。不给 remind 时保留原来的提醒，新时间不带具体时间的去掉提前多少分钟的"
+        description = "截止时间：2026-11-20 或 2026-11-20 18:00；按农历的写 农历八月十五、农历腊月廿三 18:00，是今天起最近的那一天（小月没有三十的取最后一天，除夕写农历腊月三十），不写月份的 农历初一 是今天起的第一个初一；配上按农历每个月几号的重复（如 1lm:1,15）时，从写的那个月起（不写月份或写的是本月的，从现在起）、不早于开始时间，取这几天里最先到的那天，要定下第一次的写公历日期；null 清除。不给 remind 时保留原来的提醒，新时间不带具体时间的去掉提前多少分钟的"
     )]
     pub due: Option<Option<WhenText>>,
     #[serde(default, deserialize_with = "nullable")]
@@ -219,13 +224,13 @@ pub struct EditArgs {
     #[serde(default, deserialize_with = "nullable")]
     #[schemars(
         with = "Option<RemindInput>",
-        description = "提醒，一个或几个（列表），整个换掉原来的：提前多久写 \"30m\"、\"2h\"、\"1d\"、\"1w\" 或分钟数，0 是截止时，要有带具体时间的截止；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设；null 或 [] 清除"
+        description = "提醒，一个或几个（列表），整个换掉原来的：提前多久写 \"30m\"、\"2h\"、\"1d\"、\"1w\" 或分钟数，0 是截止时，要有带具体时间的截止（只有日期的截止上，整天的如 \"1d\"、0 是提前那么多天的 09:00）；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设；null 或 [] 清除"
     )]
     pub remind: Option<Option<RemindText>>,
     #[serde(default, deserialize_with = "nullable")]
     #[schemars(
         with = "Option<String>",
-        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每周一到周五、1w:1,3,5 每周一三五；workdays 每个法定工作日（周一到周五，跳过放假、算上补班的周末），用户说每个工作日的一般是它；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l 并写几号（1–30，初一到三十），1lm:1,15 农历每月初一和十五、1ly:15 每年农历的十五（在截止日期的农历月）；null 不再重复。只改截止时间时重复保留"
+        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每周一到周五、1w:1,3,5 每周一三五；workdays 每个法定工作日（周一到周五，跳过放假、算上补班的周末），用户说每个工作日的一般是它；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l，可以在冒号后写几号（1–30，初一到三十），不写的是截止日期的农历日子：1ly 每年农历的这一天、1lm:1,15 农历每月初一和十五；null 不再重复。只改截止时间时重复保留"
     )]
     pub repeat: Option<Option<RepeatText>>,
     #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
@@ -439,10 +444,13 @@ pub struct PlanTask {
     pub folder: Option<String>,
     #[schemars(
         with = "Option<String>",
-        description = "开始时间：2026-11-14 或 2026-11-14 09:30，没到时事项等着，不进“接下来”；不能晚于截止"
+        description = "开始时间：2026-11-14 或 2026-11-14 09:30，农历的写法同 due，没到时事项等着，不进“接下来”；不能晚于截止"
     )]
     pub start: Option<WhenText>,
-    #[schemars(with = "Option<String>", description = "截止时间：2026-11-20 或 2026-11-20 18:00")]
+    #[schemars(
+        with = "Option<String>",
+        description = "截止时间：2026-11-20 或 2026-11-20 18:00；按农历的写 农历八月十五、农历腊月廿三 18:00，是今天起最近的那一天（小月没有三十的取最后一天，除夕写农历腊月三十），不写月份的 农历初一 是今天起的第一个初一；配上按农历每个月几号的重复（如 1lm:1,15）时，从写的那个月起（不写月份或写的是本月的，从现在起）、不早于开始时间，取这几天里最先到的那天，要定下第一次的写公历日期"
+    )]
     pub due: Option<WhenText>,
     #[schemars(
         with = "Option<String>",
@@ -451,12 +459,12 @@ pub struct PlanTask {
     pub due_after: Option<DueAfterText>,
     #[schemars(
         with = "Option<RemindInput>",
-        description = "提醒，一个或几个（列表）：提前多久写 \"30m\"、\"2h\"、\"1d\"、\"1w\" 或分钟数，0 是截止时，要有带具体时间的截止；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设。如 [\"30m\", \"1d 20:00\"]"
+        description = "提醒，一个或几个（列表）：提前多久写 \"30m\"、\"2h\"、\"1d\"、\"1w\" 或分钟数，0 是截止时，要有带具体时间的截止（只有日期的截止上，整天的如 \"1d\"、0 是提前那么多天的 09:00）；\"09:00\" 是截止那天的几点，\"1d 20:00\" 是提前 1 天的 20:00，只有日期的截止也能设。如 [\"30m\", \"1d 20:00\"]"
     )]
     pub remind: Option<RemindText>,
     #[schemars(
         with = "Option<String>",
-        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每周一到周五、1w:1,3,5 每周一三五；workdays 每个法定工作日（周一到周五，跳过放假、算上补班的周末），用户说每个工作日的一般是它；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l 并写几号（1–30，初一到三十），1lm:1,15 农历每月初一和十五、1ly:15 每年农历的十五（在截止日期的农历月）；要有截止时间。完成时顺延截止时间，不会真的完成（repeat_until 前的最后一次除外）"
+        description = "重复：间隔数加单位，1d 每天、2w 每两周、3m 每三个月、1y 每年；按周的可以在冒号后写周几（1 周一到 7 周日），1w:1,2,3,4,5 每周一到周五、1w:1,3,5 每周一三五；workdays 每个法定工作日（周一到周五，跳过放假、算上补班的周末），用户说每个工作日的一般是它；按月的可以在冒号后写几号（1–31，没有这天的月份取最后一天），1m:1,15 每月 1 号和 15 号、1m:31 每月最后一天；按农历的在单位前加 l，可以在冒号后写几号（1–30，初一到三十），不写的是截止日期的农历日子：1ly 每年农历的这一天、1lm:1,15 农历每月初一和十五；要有截止时间。完成时顺延截止时间，不会真的完成（repeat_until 前的最后一次除外）"
     )]
     pub repeat: Option<RepeatText>,
     #[schemars(with = "Option<String>", description = "下一次从哪天算：due 按截止日期（默认），done 从完成那天；只能和 repeat 一起给")]
@@ -493,12 +501,60 @@ pub struct UndoArgs {
     pub batch: i64,
 }
 
-/// A date as typed, with a time or without: `2026-11-20` or `2026-11-20 18:00`.
+/// A date as typed, with a time or without: `2026-11-20` or `2026-11-20 18:00`; or the next day so in
+/// the lunar calendar, `农历八月十五`, `农历初一 09:00`.
 #[derive(Clone, Deserialize)]
 #[serde(try_from = "String")]
 pub struct WhenText {
-    pub date: Date,
+    day: DayText,
     pub time: Option<Time>,
+}
+
+/// A repeat on some days of every lunar month, and the start of the task repeating so: its first time
+/// is the first of those days on both.
+#[derive(Clone, Copy)]
+pub struct Monthly<'a> {
+    pub days: Monthdays,
+    pub start: Option<&'a Date>,
+}
+
+#[derive(Clone)]
+enum DayText {
+    Date(Date),
+    /// Day 1–30 of lunar month 1–12, a leap one or not, or of any month.
+    Lunar(Option<(u32, bool)>, u32),
+}
+
+impl WhenText {
+    /// The day of a lunar month it says, if it says one.
+    pub fn lunar_day(&self) -> Option<u32> {
+        match self.day {
+            DayText::Lunar(_, day) => Some(day),
+            DayText::Date(_) => None,
+        }
+    }
+
+    /// The date it stands for `now`: a lunar day's next, today's only if its time hasn't passed; of a task
+    /// repeating `monthly`, the first of its days from the month said on, and from its start.
+    pub fn date(&self, now: &Now, monthly: Option<Monthly>) -> Result<Date, String> {
+        let past = || "农历日期只能到 2100 年".to_owned();
+        let (month, day) = match &self.day {
+            DayText::Date(d) => return Ok(d.clone()),
+            DayText::Lunar(month, day) => (*month, *day),
+        };
+        let passed = self.time.as_ref().zip(now.time.as_ref()).is_some_and(|(at, now)| at < now);
+        let from = if passed { now.today.plus(1) } else { now.today.clone() };
+        let Some(Monthly { days, start }) = monthly else { return lunar::next(month, day, &from).ok_or_else(past) };
+        // Of a month to come, from its first day; of the one it is, from now.
+        let month_from = match month {
+            Some(said) if now.today.lunar().is_some_and(|l| (l.month, l.leap) != said) => {
+                Some(lunar::next(month, 1, &now.today).ok_or_else(past)?)
+            }
+            _ => None,
+        };
+        let from = [Some(from), month_from, start.cloned()].into_iter().flatten().max().expect("now is one");
+        (1..=30).filter(|&d| days.has(d)).filter_map(|d| lunar::next(None, d, &from)).min().ok_or_else(past)
+    }
 }
 
 impl TryFrom<String> for WhenText {
@@ -506,8 +562,60 @@ impl TryFrom<String> for WhenText {
 
     fn try_from(s: String) -> Result<Self, String> {
         let s = s.trim();
-        let (date, time) = s.split_once(' ').map_or((s, None), |(d, t)| (d, Some(t.trim())));
-        Ok(WhenText { date: date.to_owned().try_into()?, time: time.map(|t| t.to_owned().try_into()).transpose()? })
+        let (day, time) = match s.rsplit_once(char::is_whitespace) {
+            Some((day, time)) if time.contains(':') => (day.trim_end(), Some(time)),
+            _ => (s, None),
+        };
+        let day = match day.strip_prefix("农历") {
+            Some(lunar) => lunar_day(lunar.trim()).ok_or_else(|| {
+                format!("农历日期“{day}”格式错误，应如 农历八月十五、农历腊月廿三、农历闰六月初一，或不写月份的 农历初一（下一个初一）")
+            })?,
+            None => DayText::Date(day.to_owned().try_into()?),
+        };
+        Ok(WhenText { day, time: time.map(|t| t.to_owned().try_into()).transpose()? })
+    }
+}
+
+/// A lunar day as typed after 农历: `八月十五`, `腊月廿三`, `闰六月初一`, `8月15`, or of any month, `初一`.
+fn lunar_day(s: &str) -> Option<DayText> {
+    let (month, day) = match s.split_once('月') {
+        Some((m, day)) => {
+            let (m, leap) = m.strip_prefix('闰').map_or((m, false), |m| (m, true));
+            let n = match m {
+                "正" => 1,
+                "冬" => 11,
+                "腊" => 12,
+                m => number(m).filter(|n| (1..=12).contains(n))?,
+            };
+            (Some((n, leap)), day)
+        }
+        None => (None, s),
+    };
+    let day = day.strip_suffix('日').unwrap_or(day);
+    let day = match day.strip_prefix('初') {
+        Some(d) => number(d).filter(|d| *d <= 10)?,
+        None => number(day)?,
+    };
+    (1..=30).contains(&day).then_some(DayText::Lunar(month, day))
+}
+
+/// A number up to 99 as typed in digits or in Chinese, as lunar days are: `15`, `五`, `十五`, `二十三`,
+/// `廿三`, `三十`.
+fn number(s: &str) -> Option<u32> {
+    if !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) {
+        return s.parse().ok();
+    }
+    let digit = |c: &char| Some("一二三四五六七八九".chars().position(|d| d == *c)? as u32 + 1);
+    let tens = |c: &char| digit(c).filter(|t| (2..=3).contains(t));
+    match s.chars().collect::<Vec<_>>().as_slice() {
+        ['十'] => Some(10),
+        ['卅'] => Some(30),
+        [d] => digit(d),
+        ['十', d] => Some(10 + digit(d)?),
+        ['廿', d] => Some(20 + digit(d)?),
+        [t, '十'] => Some(tens(t)? * 10),
+        [t, '十', d] => Some(tens(t)? * 10 + digit(d)?),
+        _ => None,
     }
 }
 
@@ -643,13 +751,21 @@ fn minutes(s: &str) -> Option<u32> {
 pub const LEGAL_WORKDAYS: &str = "workdays";
 
 /// A repeat as typed: `1d`, `2w`, `3m`, `1y` (12 months); weekly on some days, Monday 1 to Sunday 7,
-/// `1w:1,3,5`; monthly on some days of the month, `1m:1,15`; by the lunar calendar, always on some
-/// days, 1–30, `1lm:1,15`, `1ly:15`; every statutory working day, `workdays`.
+/// `1w:1,3,5`; monthly on some days of the month, `1m:1,15`; by the lunar calendar on some days, 1–30,
+/// `1lm:1,15`, `1ly:15`, or on the due date's, `1ly`; every statutory working day, `workdays`.
 #[derive(Clone, Copy, Deserialize)]
 #[serde(try_from = "String")]
 pub struct RepeatText {
     pub every: Every,
-    pub period: Period,
+    pub period: PeriodText,
+}
+
+/// What a repeat goes by: as typed, or by the lunar calendar on the due date's day in it, which is
+/// known only once the due date is.
+#[derive(Clone, Copy)]
+pub enum PeriodText {
+    Is(Period),
+    LunarDueDay,
 }
 
 impl TryFrom<String> for RepeatText {
@@ -658,11 +774,11 @@ impl TryFrom<String> for RepeatText {
     fn try_from(s: String) -> Result<Self, String> {
         let wrong = || {
             format!(
-                "重复“{s}”格式错误，应为间隔数加单位，如 1d、2w、3m、1y；按周的可以在冒号后写周几，如 1w:1,3,5；按月的可以写几号，如 1m:1,15；按农历的在单位前加 l 并写几号，如 1lm:1,15、1ly:15；每个法定工作日写 workdays"
+                "重复“{s}”格式错误，应为间隔数加单位，如 1d、2w、3m、1y；按周的可以在冒号后写周几，如 1w:1,3,5；按月的可以写几号，如 1m:1,15；按农历的在单位前加 l，可以写几号，如 1ly、1lm:1,15；每个法定工作日写 workdays"
             )
         };
         if s.trim() == LEGAL_WORKDAYS {
-            return Ok(RepeatText { every: 1.try_into()?, period: Period::LegalWorkdays });
+            return Ok(RepeatText { every: 1.try_into()?, period: PeriodText::Is(Period::LegalWorkdays) });
         }
         let (interval, days) = s.trim().split_once(':').map_or((s.trim(), None), |(i, d)| (i, Some(d)));
         let Some(unit) = interval.chars().last() else { return Err(wrong()) };
@@ -671,13 +787,19 @@ impl TryFrom<String> for RepeatText {
         let n: u32 = n.parse().map_err(|_| wrong())?;
         let days =
             days.map(|d| d.split(',').map(|d| d.trim().parse::<u8>().map_err(|_| wrong())).collect::<Result<Vec<_>, _>>()).transpose()?;
+        let lunar_on = |days: Option<Vec<u8>>| -> Result<PeriodText, String> {
+            Ok(match days {
+                Some(days) => PeriodText::Is(Period::LunarMonth(Monthdays::lunar(days)?)),
+                None => PeriodText::LunarDueDay,
+            })
+        };
         let (n, period) = match (unit, days, lunar) {
-            ('d', None, false) => (n, Period::Day),
-            ('w', days, false) => (n, Period::Week(days.map(Weekdays::try_from).transpose()?)),
-            ('m', days, false) => (n, Period::Month(days.map(Monthdays::try_from).transpose()?)),
-            ('y', None, false) => (n.saturating_mul(12), Period::Month(None)),
-            ('m', Some(days), true) => (n, Period::LunarMonth(Monthdays::lunar(days)?)),
-            ('y', Some(days), true) => (n.saturating_mul(12), Period::LunarMonth(Monthdays::lunar(days)?)),
+            ('d', None, false) => (n, PeriodText::Is(Period::Day)),
+            ('w', days, false) => (n, PeriodText::Is(Period::Week(days.map(Weekdays::try_from).transpose()?))),
+            ('m', days, false) => (n, PeriodText::Is(Period::Month(days.map(Monthdays::try_from).transpose()?))),
+            ('y', None, false) => (n.saturating_mul(12), PeriodText::Is(Period::Month(None))),
+            ('m', days, true) => (n, lunar_on(days)?),
+            ('y', days, true) => (n.saturating_mul(12), lunar_on(days)?),
             _ => return Err(wrong()),
         };
         Ok(RepeatText { every: n.try_into()?, period })

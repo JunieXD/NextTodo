@@ -145,7 +145,7 @@ async fn a_job_becomes_tasks_and_undoing_that_gives_it_back() {
     let (key, shown) = fake.asked().pop().unwrap();
     assert_eq!(key, "sk-test-1234");
     let shown: Value = serde_json::from_str(&shown).unwrap();
-    assert_eq!(shown["local_time"], "2026-11-04 16:30 星期三");
+    assert_eq!(shown["local_time"], "2026-11-04 16:30 星期三 农历九月廿六", "with the day in the lunar calendar");
     assert_eq!(shown["folder"], "/手工");
     assert_eq!(shown["open_tasks"], json!([{ "number": 1, "title": "买材料", "due": "2026-11-06" }]));
     assert_eq!(shown["text"], "先写初稿，写完明天下午三点前改好");

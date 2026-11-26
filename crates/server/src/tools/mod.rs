@@ -7,7 +7,7 @@ mod text;
 pub(crate) mod write;
 
 pub use write::plan_into;
-pub(crate) use write::{Edit, edit_fields, new_due};
+pub(crate) use write::{Edit, RepeatGiven, edit_fields, new_due};
 
 use std::sync::Arc;
 

@@ -8,8 +8,8 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use nexttodo_core::board::{Board, Now, Status};
 use nexttodo_core::model::{
-    Attachment, AttachmentId, Change, Date, Description, Due, DueAfter, Effect, FileName, FileSize, FolderId, MAX_NAME, MediaType, Misfit,
-    MutationId, Name, Remind, Repeat, RepeatFrom, Task, TaskId, Time, Title,
+    Attachment, AttachmentId, Change, Date, Description, Due, DueAfter, Effect, Every, FileName, FileSize, FolderId, MAX_NAME, MediaType,
+    Misfit, Monthdays, MutationId, Name, Period, Remind, RemindBefore, RemindOn, Repeat, RepeatFrom, Task, TaskId, Time, Title,
 };
 use nexttodo_core::ops::{MAX_OPS, Op};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -18,8 +18,8 @@ use uuid::Uuid;
 
 use super::args::{
     AddArgs, ApplyArgs, AttachArgs, CopyArgs, DeleteArgs, DepArgs, DetachArgs, DoneArgs, DropArgs, DueAfterText, EditArgs, MkdirArgs,
-    MoveArgs, Plan, PlanRef, PlanTask, RemindText, RenameArgs, RepeatText, Replace, ShareArgs, StyleArgs, TaskRef, TasksArgs, UndoArgs,
-    UnshareArgs, WhenText, task_ref,
+    Monthly, MoveArgs, PeriodText, Plan, PlanRef, PlanTask, RemindText, RenameArgs, RepeatText, Replace, ShareArgs, StyleArgs, TaskRef,
+    TasksArgs, UndoArgs, UnshareArgs, WhenText, task_ref,
 };
 use super::text::{self, Names, task_view};
 use super::{Output, WriteFn, find_folder, find_task, person};
@@ -224,13 +224,57 @@ impl Folders<'_, '_> {
     }
 }
 
-fn due(due: Option<WhenText>, remind: Vec<Remind>, repeat: Option<Repeat>) -> Result<Option<Due>, ApiError> {
+/// The date and time `w` stands for `now`, of a task repeating `monthly` if it is; `field` is where it
+/// was given.
+fn when(w: WhenText, now: &Now, monthly: Option<Monthly>, field: &str) -> Result<(Date, Option<Time>), ApiError> {
+    Ok((w.date(now, monthly).map_err(|m| ApiError::invalid(m, Some(field.into())))?, w.time))
+}
+
+/// The days of every lunar month a repeat goes on, if that is what it does.
+fn lunar_days(every: Every, period: Period) -> Option<Monthdays> {
+    match period {
+        Period::LunarMonth(days) if every.get() == 1 => Some(days),
+        _ => None,
+    }
+}
+
+fn due(due: Option<(Date, Option<Time>)>, remind: Vec<Remind>, repeat: Option<Repeat>) -> Result<Option<Due>, ApiError> {
     match (due, repeat) {
         (None, _) if !remind.is_empty() => Err(ApiError::invalid("设置提醒需要截止时间", Some("remind".into()))),
         (None, None) => Ok(None),
-        (None, Some(_)) => Err(ApiError::invalid("设置重复需要截止时间", Some("repeat".into()))),
-        (Some(d), repeat) => Due::new(d.date, d.time, remind, repeat).map(Some).map_err(|m| ApiError::invalid(m, Some("due".into()))),
+        (None, Some(_)) => Err(no_due_to_repeat()),
+        (Some((date, time)), repeat) => {
+            let remind = on_days(remind, time.is_some());
+            Due::new(date, time, remind, repeat).map(Some).map_err(|m| ApiError::invalid(m, Some("due".into())))
+        }
     }
+}
+
+fn no_due_to_repeat() -> ApiError {
+    ApiError::invalid("设置重复需要截止时间", Some("repeat".into()))
+}
+
+/// When the day is all there is, as long before as whole days, which is how models and people say a
+/// reminder for a date (`1d`), at 09:00 so many days before, as the app's custom reminder has it.
+fn on_days(remind: Vec<Remind>, timed: bool) -> Vec<Remind> {
+    if timed {
+        return remind;
+    }
+    let nine = || Time::try_from("09:00".to_owned()).expect("a time of day");
+    remind
+        .into_iter()
+        .map(|r| match r {
+            Remind::Before(RemindBefore { before }) if before % 1440 == 0 => Remind::On(RemindOn { days: before / 1440, time: nine() }),
+            r => r,
+        })
+        .collect()
+}
+
+/// A repeat as a tool or a model gives it.
+pub(crate) struct RepeatGiven {
+    pub rule: Option<RepeatText>,
+    pub from: Option<RepeatFrom>,
+    pub until: Option<Date>,
 }
 
 /// A new task's due date as a plan gives it: a date, or some days after its prerequisites are done.
@@ -238,14 +282,21 @@ pub(crate) fn new_due(
     due_text: Option<WhenText>,
     after: Option<DueAfterText>,
     remind: Option<RemindText>,
-    repeat_text: Option<RepeatText>,
-    from: Option<RepeatFrom>,
-    until: Option<Date>,
+    repeat_given: RepeatGiven,
+    start: Option<&Date>,
+    now: &Now,
 ) -> Result<(Option<Due>, Option<DueAfter>), ApiError> {
-    let repeat = repeat(repeat_text, from, until)?;
+    let said = due_text.as_ref().and_then(WhenText::lunar_day);
+    let days = repeat_given.rule.and_then(|r| match r.period {
+        PeriodText::Is(period) => lunar_days(r.every, period),
+        PeriodText::LunarDueDay => None,
+    });
+    let monthly = days.map(|days| Monthly { days, start });
+    let due_at = due_text.map(|d| when(d, now, monthly, "due")).transpose()?;
+    let repeat = repeat(repeat_given, due_at.as_ref().map(|(date, _)| (date, said)))?;
     let remind = remind.map_or_else(Vec::new, |r| r.0);
-    match (due_text, after) {
-        (due_text, None) => Ok((due(due_text, remind, repeat)?, None)),
+    match (due_at, after) {
+        (due_at, None) => Ok((due(due_at, remind, repeat)?, None)),
         (Some(_), Some(_)) => Err(mutate::both_due()),
         (None, Some(_)) if repeat.is_some() => Err(repeating_after()),
         (None, Some(a)) => Ok((None, Some(due_after(a.days, a.time, remind)?))),
@@ -253,6 +304,7 @@ pub(crate) fn new_due(
 }
 
 fn due_after(days: u16, time: Option<Time>, remind: Vec<Remind>) -> Result<DueAfter, ApiError> {
+    let remind = on_days(remind, time.is_some());
     DueAfter::new(days, time, remind).map_err(|m| ApiError::invalid(m, Some("due_after".into())))
 }
 
@@ -260,13 +312,29 @@ fn repeating_after() -> ApiError {
     ApiError::invalid("前置完成后几天内的截止不能重复：重复要从一个具体的截止日期往后推", Some("repeat".into()))
 }
 
-/// The repeat given, from the due date and on and on unless said.
-fn repeat(repeat: Option<RepeatText>, from: Option<RepeatFrom>, until: Option<Date>) -> Result<Option<Repeat>, ApiError> {
-    match (repeat, from, until) {
-        (None, Some(_), _) => Err(ApiError::invalid("repeat_from 只能和 repeat 一起给", Some("repeat_from".into()))),
-        (None, _, Some(_)) => Err(ApiError::invalid("repeat_until 只能和 repeat 一起给", Some("repeat_until".into()))),
-        (r, from, until) => Ok(r.map(|r| Repeat { every: r.every, period: r.period, from: from.unwrap_or(RepeatFrom::Due), until })),
-    }
+/// The repeat given, from the due date and on and on unless said, of a task due on `due`, a date and
+/// the day of the lunar month it was given as, if it was: 三十 in a month of 29 days is still 三十.
+fn repeat(given: RepeatGiven, due: Option<(&Date, Option<u32>)>) -> Result<Option<Repeat>, ApiError> {
+    let RepeatGiven { rule, from, until } = given;
+    let r = match (rule, from, &until) {
+        (None, Some(_), _) => return Err(ApiError::invalid("repeat_from 只能和 repeat 一起给", Some("repeat_from".into()))),
+        (None, _, Some(_)) => return Err(ApiError::invalid("repeat_until 只能和 repeat 一起给", Some("repeat_until".into()))),
+        (None, None, None) => return Ok(None),
+        (Some(r), ..) => r,
+    };
+    let period = match r.period {
+        PeriodText::Is(period) => period,
+        PeriodText::LunarDueDay => {
+            let (date, said) = due.ok_or_else(no_due_to_repeat)?;
+            let off = || ApiError::invalid(Misfit::OffTable.to_string(), Some("repeat".into()));
+            let day = match said {
+                Some(day) => day,
+                None => date.lunar().ok_or_else(off)?.day,
+            };
+            Period::LunarMonth(Monthdays::lunar(vec![u8::try_from(day).expect("1–30")]).expect("a day of a lunar month"))
+        }
+    };
+    Ok(Some(Repeat { every: r.every, period, from: from.unwrap_or(RepeatFrom::Due), until }))
 }
 
 /// The operations adding `tasks` to `folder` as those of a plan for it: what AI organizing adds. The
@@ -335,8 +403,12 @@ fn plan_ops(b: &Board, plan: Plan, number: &dyn Fn(i64) -> Option<TaskId>) -> Re
             Some(p) if p.trim_start().starts_with('/') => folders.ensure(&mut ops, &p)?.0,
             Some(p) => folders.ensure(&mut ops, &format!("{base_path}/{p}"))?.0,
         };
-        let (start, start_time) = start.map_or((None, None), |s| (Some(s.date), s.time));
-        let (due, due_after) = new_due(due_text, due_after, remind, repeat_text, repeat_from, repeat_until)?;
+        let (start, start_time) = match start.map(|s| when(s, b.now(), None, "start")).transpose()? {
+            Some((date, time)) => (Some(date), time),
+            None => (None, None),
+        };
+        let repeat = RepeatGiven { rule: repeat_text, from: repeat_from, until: repeat_until };
+        let (due, due_after) = new_due(due_text, due_after, remind, repeat, start.as_ref(), b.now())?;
         ops.push(Op::TaskCreate {
             id,
             title,
@@ -403,7 +475,7 @@ pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
     let (start, start_time) = match start {
         None => (None, None),
         Some(None) => (Some(None), None),
-        Some(Some(s)) => (Some(Some(s.date)), Some(s.time)),
+        Some(Some((date, time))) => (Some(Some(date)), Some(time)),
     };
     let op = Op::TaskUpdate {
         id,
@@ -430,7 +502,7 @@ pub(crate) struct Edit {
     pub id: TaskId,
     pub title: Option<Title>,
     pub description: Option<Description>,
-    pub start: Option<Option<WhenText>>,
+    pub start: Option<Option<(Date, Option<Time>)>>,
     pub due: Option<Option<Due>>,
     pub due_after: Option<Option<DueAfter>>,
     pub assign: Vec<String>,
@@ -458,18 +530,39 @@ pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiE
         return Err(ApiError::invalid("description 是整段替换，不能和 replace、append 同时给", Some("description".into())));
     }
     let description = if revising { Some(revise(t.description.as_str(), a.replace, a.append)?) } else { a.description };
+    let start = a.start.map(|s| s.map(|s| when(s, b.now(), None, "start")).transpose()).transpose()?;
+    let said = a.due.as_ref().and_then(|d| d.as_ref()?.lunar_day());
     // One due some days after its prerequisites has the date they gave it as its due date, not its own.
     let current = t.due.as_ref().filter(|_| t.due_after.is_none());
+    let days = match a.repeat {
+        Some(Some(RepeatText { every, period: PeriodText::Is(period) })) => lunar_days(every, period),
+        Some(_) => None,
+        None => current.and_then(|c| c.repeat.as_ref()).and_then(|r| lunar_days(r.every, r.period)),
+    };
+    let starts = match &start {
+        Some(start) => start.as_ref().map(|(date, _)| date),
+        None => t.start.as_ref(),
+    };
+    let monthly = days.map(|days| Monthly { days, start: starts });
+    let due_at = a.due.map(|d| d.map(|d| when(d, b.now(), monthly, "due")).transpose()).transpose()?;
     let current_reminders = t.reminders();
     // `Some(empty)` clears them.
     let remind = a.remind.map(|r| r.map_or_else(Vec::new, |r| r.0));
     // `Some(None)` stops it repeating.
-    let new_repeat = if changes_repeat { Some(repeat(a.repeat.flatten(), a.repeat_from, a.repeat_until)?) } else { None };
+    let new_repeat = if changes_repeat {
+        let date = match &due_at {
+            Some(at) => at.as_ref().map(|(date, _)| (date, said)),
+            None => current.map(|c| (&c.date, None)),
+        };
+        Some(repeat(RepeatGiven { rule: a.repeat.flatten(), from: a.repeat_from, until: a.repeat_until }, date)?)
+    } else {
+        None
+    };
     // Some days after the prerequisites, as given, or as it is with other reminders.
     let after = match (a.due_after, &t.due_after) {
-        (Some(_), _) if a.due.is_some() => return Err(mutate::both_due()),
+        (Some(_), _) if due_at.is_some() => return Err(mutate::both_due()),
         (Some(after), _) => Some(after.map(|a| (a.days, a.time))),
-        (None, Some(cur)) if a.due.is_none() && (remind.is_some() || changes_repeat) => {
+        (None, Some(cur)) if due_at.is_none() && (remind.is_some() || changes_repeat) => {
             Some(Some((cur.days, cur.at.as_ref().map(|at| at.time.clone()))))
         }
         _ => None,
@@ -494,14 +587,14 @@ pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiE
             id: t.id,
             title: a.title,
             description,
-            start: a.start,
+            start,
             due: None,
             due_after: (due_after != t.due_after).then_some(due_after),
             assign: people(b, &a.assign)?,
             unassign: people(b, &a.unassign)?,
         });
     }
-    let new_due = match (a.due, remind) {
+    let new_due = match (due_at, remind) {
         (None, None) if new_repeat.is_none() => None,
         (Some(None), remind) => {
             if remind.is_some_and(|r| !r.is_empty()) {
@@ -512,12 +605,12 @@ pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiE
             }
             Some(None)
         }
-        (Some(Some(d)), remind) => {
+        (Some(Some((date, time))), remind) => {
             // Moving the deadline keeps the reminders, those before its time while it has one, and the
             // repeat.
-            let timed = d.time.is_some();
+            let timed = time.is_some();
             let remind = remind.unwrap_or_else(|| current_reminders.into_iter().filter(|r| timed || matches!(r, Remind::On(_))).collect());
-            Some(due(Some(d), remind, new_repeat.unwrap_or(current.and_then(|c| c.repeat.clone())))?)
+            Some(due(Some((date, time)), remind, new_repeat.unwrap_or(current.and_then(|c| c.repeat.clone())))?)
         }
         (None, remind) => match current {
             Some(c) => {
@@ -529,6 +622,7 @@ pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiE
                     Some(Misfit::OffTable) => "repeat",
                     None => "remind",
                 };
+                let remind = remind.map(|r| on_days(r, time.is_some()));
                 let new = Due::new(c.date.clone(), time, remind.unwrap_or(current_reminders), new_repeat.unwrap_or(c.repeat.clone()))
                     .map_err(|m| ApiError::invalid(m, Some(field.into())))?;
                 // Clearing a reminder there isn't changes nothing.
@@ -548,7 +642,7 @@ pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiE
         id: t.id,
         title: a.title,
         description,
-        start: a.start,
+        start,
         due: new_due,
         due_after: None,
         assign: people(b, &a.assign)?,

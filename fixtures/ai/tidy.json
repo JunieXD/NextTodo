@@ -472,5 +472,17 @@
     "note": "整理别人共享给我的文件夹：它本身不改，子文件夹可以",
     "input": { "local_time": "2026-11-26 10:00 星期四", "folder": "@alice/装修", "request": "给这个文件夹和下面的子文件夹都配上图标", "subfolders": ["@alice/装修/水电", "@alice/装修/软装"], "open_tasks": [{ "number": 395, "title": "买瓷砖" }], "done_tasks": [], "looks": [{ "folder": "@alice/装修/水电" }, { "folder": "@alice/装修/软装" }] },
     "expect": { "allowed": ["style"], "styled": [["@alice/装修/水电", null, ["*"]], ["@alice/装修/软装", null, ["*"]]], "untouched": [395] }
+  },
+  {
+    "id": "lunar-yearly",
+    "note": "改成每年按农历重复：截止写农历日期",
+    "input": { "local_time": "2026-11-26 10:00 星期四", "folder": "/家人", "request": "“给爸爸过生日”改成每年按农历过，他的生日是农历腊月初八", "subfolders": [], "open_tasks": [{ "number": 5, "title": "给爸爸过生日", "due": "2026-12-20" }, { "number": 6, "title": "订年夜饭" }], "done_tasks": [], "looks": [{ "folder": "/家人" }] },
+    "expect": { "allowed": ["due"], "due": [[5, "2027-01-15 ~12lm:8"]], "untouched": [6] }
+  },
+  {
+    "id": "lunar-date",
+    "note": "把截止改到一个农历日子",
+    "input": { "local_time": "2026-11-26 10:00 星期四", "folder": "/家人", "request": "大扫除改到腊月二十三之前做完", "subfolders": [], "open_tasks": [{ "number": 7, "title": "大扫除", "due": "2026-12-31" }, { "number": 8, "title": "买春联" }], "done_tasks": [], "looks": [{ "folder": "/家人" }] },
+    "expect": { "allowed": ["due"], "due": [[7, "2027-01-30"]], "untouched": [8] }
   }
 ]

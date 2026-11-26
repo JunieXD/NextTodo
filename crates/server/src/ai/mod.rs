@@ -542,7 +542,7 @@ fn added(
     let owner = actor.user;
     let Some(j) = store::load_job(c, owner, job)?.filter(|j| j.state == JobState::Running) else { return Ok(None) };
     let snap = store::snapshot(c, owner)?;
-    let local = asked(&j, now);
+    let local = asked(&j);
     let board = Board::new(&snap, local.clone(), owner);
     let mut tasks = tasks.to_vec();
     // Those the model gave a due date and no word on reminders get the asking device's
@@ -574,12 +574,12 @@ fn added(
 }
 
 /// The day and time job `j` was asked on its device, as its `local_time` has them first,
-/// `2026-11-04 16:30 星期三`; UTC's now when it doesn't.
-fn asked(j: &AiJob, now: i64) -> Now {
+/// `2026-11-04 16:30 星期三`; UTC's when it was made when it doesn't.
+pub(super) fn asked(j: &AiJob) -> Now {
     let mut parts = j.local_time.as_str().split_whitespace();
     let today = parts.next().and_then(|d| Date::try_from(d.to_owned()).ok());
     let time = parts.next().and_then(|t| Time::try_from(t.to_owned()).ok());
-    today.map_or_else(|| Now::utc(now), |today| Now { today, time })
+    today.map_or_else(|| Now::utc(j.created_at), |today| Now { today, time })
 }
 
 // The API.

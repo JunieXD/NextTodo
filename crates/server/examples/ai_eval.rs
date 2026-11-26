@@ -239,8 +239,8 @@ fn main() -> anyhow::Result<()> {
             let expect = if c.input.get("request").is_some() {
                 let data = tidy_data(&c.input);
                 // So that the case is what the server would send.
-                let sent: Value = serde_json::from_str(&tidy::prompt(&data.1, data.0.clone(), ME, notes(&c.input)).0.user)?;
-                anyhow::ensure!(sent == c.input, "{}：服务端发给模型的会是\n{}", c.id, serde_json::to_string_pretty(&sent)?);
+                let sent = tidy::prompt(&data.1, data.0.clone(), ME, notes(&c.input)).0.user;
+                anyhow::ensure!(sent == organize::chat("", &c.input).user, "{}：服务端发给模型的会是\n{sent}", c.id);
                 Kind::Tidy(serde_json::from_value(c.expect).map_err(|e| anyhow::anyhow!("{}：{e}", c.id))?, Box::new(data))
             } else {
                 Kind::Organize(serde_json::from_value(c.expect).map_err(|e| anyhow::anyhow!("{}：{e}", c.id))?)
@@ -302,9 +302,13 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The checks read no task's status, which is all a board's time is for.
-fn board(snap: &Snapshot) -> Board<'_> {
-    Board::new(snap, Now::utc(0), ME)
+/// The checks read no task's status, which is all a board's time is for, but for when a case is asked,
+/// which dates said from it count from (农历八月十五).
+fn board<'a>(snap: &'a Snapshot, input: &Value) -> Board<'a> {
+    let mut parts = input["local_time"].as_str().expect("a case's local time").split_whitespace();
+    let today = Date::try_from(parts.next().expect("a date").to_owned()).expect("a valid date");
+    let time = parts.next().and_then(|t| Time::try_from(t.to_owned()).ok());
+    Board::new(snap, Now { today, time }, ME)
 }
 
 fn ask(config: &Config, system: Option<&str>, case: &Case, index: usize, run: usize) -> Outcome {
@@ -323,7 +327,8 @@ fn ask(config: &Config, system: Option<&str>, case: &Case, index: usize, run: us
             // As the server adds them: what it refuses fails the job.
             let planned = organize::parse(&text, &shown)
                 .and_then(|(tasks, _)| {
-                    tools::plan_into(&board(&snap), snap.folders.first().map(|f| f.id), tasks, &shown.tasks).map_err(|e| e.describe())
+                    tools::plan_into(&board(&snap, &case.input), snap.folders.first().map(|f| f.id), tasks, &shown.tasks)
+                        .map_err(|e| e.describe())
                 })
                 .and_then(|ops| accepted(&snap, &ops).map(|()| ops));
             let checked = match planned {
@@ -796,7 +801,7 @@ fn ask_tidy(
     let (answer, checked) = match answer {
         Err(e) => (String::new(), Err(format!("出错：{e}"))),
         Ok(text) => {
-            let checked = tidy::parse(&text, &shown).map_err(|e| format!("出错：{e}")).map(|s| check_tidy(e, snap, &s));
+            let checked = tidy::parse(&text, &shown).map_err(|e| format!("出错：{e}")).map(|s| check_tidy(e, snap, input, &s));
             (text, checked)
         }
     };
@@ -808,8 +813,8 @@ fn ask_tidy(
 }
 
 /// What is wrong with the suggestions `s` for `snap`, and how many of the facts all of them taken keep.
-fn check_tidy(e: &TidyExpect, snap: &Snapshot, s: &[Suggestion]) -> (Vec<String>, usize) {
-    let b = board(snap);
+fn check_tidy(e: &TidyExpect, snap: &Snapshot, input: &Value, s: &[Suggestion]) -> (Vec<String>, usize) {
+    let b = board(snap, input);
     let number = |id: &TaskId| b.task(*id).map(|t| t.number);
     let mut problems = Vec::new();
     let mut kinds = BTreeSet::new();

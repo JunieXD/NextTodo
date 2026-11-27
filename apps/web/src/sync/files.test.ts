@@ -131,8 +131,11 @@ test("a file a server from before attachments has nowhere to take is turned down
   await device(u, [m, after], [{ id: id(6), uploaded: false }]);
   vi.stubGlobal("fetch", () => Promise.resolve(new Response(null, { status: 404 })));
   const open = tab(u, [m, after]);
-  await vi.waitFor(() => expect(open.sent).toEqual([after]));
-  expect(open.said).toEqual(["“图片 1.png”上传失败：服务器的版本太旧，还不支持附件，请先升级服务器"]);
+  // The change after it goes as the refused one is dropped; the user is told once that is saved.
+  await vi.waitFor(() => {
+    expect(open.sent).toEqual([after]);
+    expect(open.said).toEqual(["“图片 1.png”上传失败：服务器的版本太旧，还不支持附件，请先升级服务器"]);
+  });
   open.files.stop();
   vi.stubGlobal("fetch", () => Promise.reject(new Error("no server in these tests")));
 });

@@ -3,7 +3,8 @@
 // same colours (docs/desktop.md#桌面小组件).
 
 import { Plus, RefreshCw, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { DropdownMenu } from "radix-ui";
+import { useContext, useEffect, useState } from "react";
 import { app } from "../api/http";
 import { desktopWidget, widgetPageKey } from "../desktop";
 import { type Hex, parseHex } from "../domain/color";
@@ -16,12 +17,13 @@ import { useView } from "../session";
 import { useDark } from "../theme";
 import { ColorPicker } from "../ui/color-picker";
 import { Seg, Switch } from "../ui/controls";
-import { forUser, Tip, useFeedback } from "../ui/feedback";
+import { forUser, RootContext, Tip, useFeedback } from "../ui/feedback";
 import { useMedia } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { type DesktopLook, setDesktopLook, useDesktopLook } from "../widget";
 import { setZoom, useZoom } from "../zoom";
-import { PanelPageName } from "./Panel";
+import { useTimeGridOn } from "./calendar";
+import { PAGES, PanelPageName } from "./Panel";
 
 const SCALES: Record<WidgetTextSize, number> = { small: 0.88, standard: 1, large: 1.15 };
 
@@ -72,7 +74,9 @@ function DesktopWidget() {
       void listening.then((unlisten) => unlisten?.());
     };
   }, [snack]);
-  const add = () => void desktopWidget.add().catch((e: unknown) => snack(forUser("添加桌面小组件", e)));
+  const root = useContext(RootContext);
+  const [grid] = useTimeGridOn();
+  const add = (page: string) => void desktopWidget.add(page).catch((e: unknown) => snack(forUser("添加桌面小组件", e)));
   return (
     <>
       <h2 className="group-title">桌面上的小组件</h2>
@@ -80,12 +84,24 @@ function DesktopWidget() {
         {widgets?.labels.map((label) => (
           <DesktopWidgetRow key={label} label={label} />
         ))}
-        <button type="button" className="row" disabled={!widgets || widgets.full} onClick={add}>
-          <span className="row-inner">
-            <Icon of={Plus} size={18} />
-            <span className="row-name">添加小组件</span>
-          </span>
-        </button>
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger className="row" disabled={!widgets || widgets.full}>
+            <span className="row-inner">
+              <Icon of={Plus} size={18} />
+              <span className="row-name">添加小组件</span>
+            </span>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal container={root}>
+            <DropdownMenu.Content className="menu" align="start" sideOffset={4}>
+              {PAGES.filter((p) => grid || p.path !== "/calendar/time").map((p) => (
+                <DropdownMenu.Item key={p.path} className="menu-item" onSelect={() => add(p.path)}>
+                  <Icon of={p.icon} />
+                  {p.name}
+                </DropdownMenu.Item>
+              ))}
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
       </div>
       <Preview look={look} dark={useDark()} size={size} head={{ title: true, refresh: false, add: false }} />
       <Colors look={look} change={(to) => setDesktopLook({ ...look, ...to })} />

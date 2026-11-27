@@ -121,13 +121,21 @@ export const cli = {
   install: (replace: boolean) => invoke<void>("install_cli", { replace }),
 };
 
+declare global {
+  interface Window {
+    /** The page a desktop widget just added was chosen to show, set by the app as it opens it. */
+    nexttodoFirstPage?: string;
+  }
+}
+
 export const widgetPageKey = (label: string) => `nexttodo.widgetPage.${label}`;
 
 type Widgets = { labels: string[]; full: boolean };
 
 export const desktopWidget = {
   list: () => invoke<Widgets>("widgets"),
-  add: () => invoke<void>("add_widget"),
+  /** A new widget showing `page`, a path of the panel's. */
+  add: (page: string) => invoke<void>("add_widget", { page }),
   remove: (label: string) => invoke<void>("remove_widget", { label }),
   onChange: (changed: (removed: string | null) => void) => getCurrentWindow().listen<string | null>("widgets-changed", ({ payload }) => changed(payload)),
 };

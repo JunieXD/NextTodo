@@ -24,7 +24,7 @@ import { ConnectionNote } from "./status";
 const PANEL_PAGE = "nexttodo.panelPage";
 const PAGE = widgetLabel ? widgetPageKey(widgetLabel) : PANEL_PAGE;
 
-const PAGES = [
+export const PAGES = [
   { path: "/", name: "接下来", icon: CircleCheck },
   { path: "/agenda", name: "日程", icon: List },
   { path: "/calendar/week", name: "一周", icon: CalendarRange, view: "week" },
@@ -46,7 +46,7 @@ const close = () => {
 export function restorePage() {
   const legacy = widgetLabel === "widget-1" ? "nexttodo.widgetPage" : PAGE;
   const calendar = `${legacy}.calendarView`;
-  let path = localStorage.getItem(PAGE) ?? localStorage.getItem(legacy) ?? "/";
+  let path = localStorage.getItem(PAGE) ?? localStorage.getItem(legacy) ?? window.nexttodoFirstPage ?? "/";
   if (path === "/calendar") path = localStorage.getItem(calendar) === "time" ? "/calendar/time" : "/calendar/week";
   if (legacy !== PAGE) localStorage.removeItem(legacy);
   localStorage.removeItem(calendar);

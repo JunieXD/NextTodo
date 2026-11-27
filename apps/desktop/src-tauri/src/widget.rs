@@ -127,7 +127,7 @@ pub fn start(app: &AppHandle) {
                     let size = widget.frame.map_or(SIZE, |f| (f.width, f.height));
                     shifted(corner(app, size), i)
                 });
-                if let Err(e) = build(app, &widget.label(), frame) {
+                if let Err(e) = build(app, &widget.label(), frame, None) {
                     tracing::warn!("desktop widget not shown: {e}");
                 }
             }
@@ -152,11 +152,11 @@ pub fn widgets(app: AppHandle) -> Result<Widgets, String> {
 
 // Asynchronous: on Windows a window made in a synchronous command never shows.
 #[tauri::command]
-pub async fn add_widget(app: AppHandle) -> Result<(), String> {
+pub async fn add_widget(app: AppHandle, page: String) -> Result<(), String> {
     let _turn = TURN.lock().unwrap();
     let frame = placement(&app, &kept(&app)?.widgets);
     let label = update(&app, |kept| kept.add(frame))?;
-    if let Err(e) = build(&app, &label, frame) {
+    if let Err(e) = build(&app, &label, frame, Some(&page)) {
         forget(&app, &label)?;
         return Err(for_user("打开桌面小组件", &e));
     }
@@ -208,8 +208,9 @@ fn frame_of(window: &Window) -> Option<Frame> {
 
 /// Where it was, or the top right corner of the main screen, with the screen it was on gone or scaled
 /// otherwise. Not in the taskbar or Alt+Tab, and never in front of another window: clicked or typed
-/// in, it stays under them. Not focused as it shows.
-fn build(app: &AppHandle, label: &str, frame: Frame) -> tauri::Result<()> {
+/// in, it stays under them. Not focused as it shows. A new one opens at the `first` page chosen for
+/// it, which the page keeps from then on.
+fn build(app: &AppHandle, label: &str, frame: Frame, first: Option<&str>) -> tauri::Result<()> {
     let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::default())
         .title("NextTodo")
         .position(frame.x, frame.y)
@@ -229,6 +230,10 @@ fn build(app: &AppHandle, label: &str, frame: Frame) -> tauri::Result<()> {
         .focused(false)
         // Files dragged in reach the page, as in the panel (docs/desktop.md#附件).
         .disable_drag_drop_handler();
+    let builder = match first {
+        Some(page) => builder.initialization_script(format!("window.nexttodoFirstPage = {};", serde_json::to_string(page)?)),
+        None => builder,
+    };
     #[cfg(windows)]
     let builder = builder.owner_raw(desktop());
     let widget = crate::links(builder).build()?;

@@ -102,12 +102,22 @@ export function Phone({ onSignOut }: { onSignOut(): void }) {
 
 /** A page with a large title that gives way to a small one in a frosted bar once scrolled past.
  * With `fill`, the page doesn't scroll and its last child takes the height left, as the graph does.
- * With `choosing`, its tasks are being chosen, and the bar is for that. */
-function Screen(p: { title: string; nav?: ReactNode; anim?: string; fill?: boolean; choosing?: boolean; children: ReactNode; after?: ReactNode }) {
-  const { title, nav, anim = "", fill, choosing, children, after } = p;
+ * With `pinned`, the large title stays at the top, and the bar stays empty. With `choosing`, its
+ * tasks are being chosen, and the bar is for that. A page with no way back has a lower bar. */
+function Screen(p: {
+  title: string;
+  nav?: ReactNode;
+  anim?: string;
+  fill?: boolean;
+  pinned?: boolean;
+  choosing?: boolean;
+  children: ReactNode;
+  after?: ReactNode;
+}) {
+  const { title, nav, anim = "", fill, pinned, choosing, children, after } = p;
   const [scrolled, setScrolled] = useState(false);
   return (
-    <section className={`screen${scrolled ? " scrolled" : ""}${choosing ? " choosing" : ""}${anim}`}>
+    <section className={`screen${nav ? "" : " top"}${scrolled && !pinned ? " scrolled" : ""}${pinned ? " pinned" : ""}${choosing ? " choosing" : ""}${anim}`}>
       <header className="nav" data-tauri-drag-region="deep">
         {choosing ? (
           <BatchHead />
@@ -173,7 +183,7 @@ function CalendarScreen({ anim, now }: { anim: string; now: Date }) {
   const [view, setView] = useCalendarView();
   const pick = useCalendarPick(now, view);
   return (
-    <Screen title="日历" anim={anim} after={<QuickAdd key="calendar" on={pick.picked} at={pick.at} hide={view === "year"} />}>
+    <Screen title="日历" anim={anim} pinned={view === "time"} after={<QuickAdd key="calendar" on={pick.picked} at={pick.at} hide={view === "year"} />}>
       <div className="hero">
         <h1 className="large-title">日历</h1>
         <span className="hero-actions">

@@ -4,7 +4,10 @@
 @keyframes push-in { from { transform: translateX(100%); box-shadow: -20px 0 40px rgba(0,0,0,.12); } }
 @keyframes pop-in { from { transform: translateX(-28%); opacity: .6; } }
 
-.nav { position: absolute; z-index: 5; top: 0; left: 0; right: 0; height: calc(44px + var(--safe-top)); padding: var(--safe-top) 8px 0;
+/* The bar's height: lower on the pages with no way back, where nothing is in it until scrolled. */
+.screen { --nav-h: 44px; }
+.screen.top { --nav-h: 32px; }
+.nav { position: absolute; z-index: 5; top: 0; left: 0; right: 0; height: calc(var(--nav-h) + var(--safe-top)); padding: var(--safe-top) 8px 0;
   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; transition: background .2s, box-shadow .2s; }
 .screen.scrolled .nav { background: var(--bar-bg); -webkit-backdrop-filter: blur(20px) saturate(1.6); backdrop-filter: blur(20px) saturate(1.6); box-shadow: 0 .5px 0 var(--outline-variant); }
 .nav-title { font-size: 18px; font-weight: 600; opacity: 0; transition: opacity .2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 56vw; }
@@ -15,7 +18,13 @@
 .icon-btn.sm { width: 32px; height: 32px; }
 .cal-bar .icon-btn[aria-pressed="true"] { background: var(--secondary-container); color: var(--on-secondary-container); }
 
-.scroll { flex: 1; overflow-y: auto; padding-top: calc(44px + var(--safe-top)); padding-bottom: calc(var(--tabbar-h) + 84px); scroll-padding-top: calc(44px + var(--safe-top)); }
+.scroll { flex: 1; overflow-y: auto; padding-top: calc(var(--nav-h) + var(--safe-top)); padding-bottom: calc(var(--tabbar-h) + 84px); scroll-padding-top: calc(var(--nav-h) + var(--safe-top)); }
+/* The time grid's page keeps its title and views at the top, with the month and days under them. */
+.screen.pinned { --hero: 46px; }
+.screen.pinned .nav { background: var(--surface); }
+.screen.pinned .hero { position: sticky; top: 0; z-index: 7; height: var(--hero); padding-bottom: 4px; background: var(--surface); }
+.screen.pinned .cal-page.time .cal-bar { top: var(--hero); }
+.screen.pinned .cal-page.time .tg-head { top: calc(var(--hero) + var(--bar)); }
 .scroll.fill { display: flex; flex-direction: column; overflow: hidden; padding-bottom: var(--tabbar-h); }
 /* Nothing scrolls here, so a long folder name keeps to two lines and leaves the graph its room. */
 .scroll.fill .large-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }

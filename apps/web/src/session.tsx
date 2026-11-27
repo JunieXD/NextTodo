@@ -266,7 +266,10 @@ export class Session {
       // Nothing to open: ask the server who is signed in, in turn too, so that the answer still
       // holds when acted on.
       try {
-        return await claim(await api<User>("GET", "/me"), copy);
+        const me = await api<User>("GET", "/me");
+        // Still the latest sign-in, its copy not saved yet: a desktop widget loading while the main
+        // window downloads it. Kept, for signing out there to find it the latest still.
+        return login?.user.id === me.id ? { id: login.id, user: me } : await claim(me, copy);
       } catch (e) {
         if (!(e instanceof ApiError && e.status === 401)) throw e;
         // In the app, the token goes too, as when a session ends.

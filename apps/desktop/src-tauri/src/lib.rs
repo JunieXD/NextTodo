@@ -153,7 +153,8 @@ pub fn run() {
             shortcut::pause_shortcut,
             widget::widgets,
             widget::add_widget,
-            widget::remove_widget
+            widget::remove_widget,
+            widget::close_widget
         ])
         .setup(|app| {
             attachments::clear();

@@ -99,12 +99,24 @@ export const openAttachment = (a: Attachment, file: Blob) => handOver<void>("ope
 /** Asks where to save the file; where it went, nothing when the user cancelled. */
 export const saveAttachment = (a: Pick<Attachment, "id" | "name">, file: Blob) => handOver<string | null>("save_attachment", a, file);
 
+/** What a widget does before it closes: true once its changes are saved, for the main window to send
+ * them (docs/desktop.md#桌面小组件). Nothing to wait for while it shows no data. */
+let beforeRemove = () => Promise.resolve(true);
+
+/** Has the widget run `f` before it closes, until the returned function is called. */
+export function whenRemoved(f: () => Promise<boolean>) {
+  beforeRemove = f;
+  return () => {
+    beforeRemove = () => Promise.resolve(true);
+  };
+}
+
 /** Listens, each window only to what is sent to it: the panel for being opened, to quick add; the main
  * window for what to show, from the panel or a click on a reminder, and for the menu's 锁定, which
- * with no lock set opens its settings. The widget is sent nothing. */
+ * with no lock set opens its settings; a widget for being removed. */
 export async function listen() {
-  if (inWidget) return;
   const here = getCurrentWindow();
+  if (inWidget) return void (await here.listen("widget-remove", async () => (await beforeRemove()) && (await invoke("close_widget"))));
   if (inPanel) return void (await here.listen("shown", () => navigate(`${location.pathname}?add`, { replace: true })));
   await here.listen<string>("open", (e) => navigate(e.payload));
   await here.listen("lock", () => (privacyLock() ? lockNow() : void openMain("/settings/lock")));

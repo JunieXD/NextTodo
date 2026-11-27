@@ -5,9 +5,9 @@ import { DropdownMenu } from "radix-ui";
 import { type ReactNode, useContext, useEffect } from "react";
 import { Redirect, useLocation } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
-import { desktopWidget, hidePanel, inWidget, openMain, widgetLabel, widgetPageKey } from "../desktop";
+import { desktopWidget, hidePanel, inWidget, openMain, whenRemoved, widgetLabel, widgetPageKey } from "../desktop";
 import type { PrivacyLock } from "../lock";
-import { useConnection, useView } from "../session";
+import { useConnection, useSession, useView } from "../session";
 import { forUser, RootContext, Tip, useFeedback } from "../ui/feedback";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
@@ -99,6 +99,17 @@ export function Panel() {
     if (!elsewhere) localStorage.setItem(PAGE, path);
   }, [elsewhere, path]);
   useEscape(() => (batch.on ? batch.end() : close()));
+  const { store } = useSession();
+  const { snack } = useFeedback();
+  useEffect(
+    () =>
+      whenRemoved(async () => {
+        const saved = await store.saved();
+        if (!saved) snack("移除失败：还有改动没有保存，请稍后重试");
+        return saved;
+      }),
+    [store, snack],
+  );
   if (elsewhere) return null;
   if (path !== location) return <Redirect to={path} replace />;
   if (folder && !board.folder(folder)) return <Redirect to="/" replace />;

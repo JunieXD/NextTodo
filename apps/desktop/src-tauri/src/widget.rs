@@ -13,6 +13,8 @@ use tauri::{AppHandle, Emitter, LogicalPosition, Manager, WebviewUrl, WebviewWin
 const PREFIX: &str = "widget-";
 const LIMIT: usize = 6;
 const CHANGED: &str = "widgets-changed";
+/// Asks a widget to save its changes and close.
+const REMOVE: &str = "widget-remove";
 
 const SIZE: (f64, f64) = (340.0, 440.0);
 const LEAST: (f64, f64) = (280.0, 240.0);
@@ -123,10 +125,10 @@ pub fn start(app: &AppHandle) {
     match kept(app) {
         Ok(kept) => {
             for (i, widget) in kept.widgets.iter().enumerate() {
-                let frame = widget.frame.filter(|f| on_screen(app, f)).unwrap_or_else(|| {
-                    let size = widget.frame.map_or(SIZE, |f| (f.width, f.height));
-                    shifted(corner(app, size), i)
-                });
+                let frame = widget
+                    .frame
+                    .filter(|f| on_screen(app, f))
+                    .unwrap_or_else(|| corner(app, widget.frame.map_or(SIZE, |f| (f.width, f.height)), i));
                 if let Err(e) = build(app, &widget.label(), frame, None) {
                     tracing::warn!("desktop widget not shown: {e}");
                 }
@@ -163,17 +165,32 @@ pub async fn add_widget(app: AppHandle, page: String) -> Result<(), String> {
     changed(&app, None)
 }
 
+/// Asks the widget to close: it saves its changes first, for the main window to send them, then
+/// calls `close_widget` (docs/desktop.md#桌面小组件). One no longer open just goes.
 #[tauri::command]
 pub async fn remove_widget(app: AppHandle, label: String) -> Result<(), String> {
-    let _turn = TURN.lock().unwrap();
     if !is_widget(&label) {
         return Err("这不是桌面小组件".into());
     }
-    forget(&app, &label)?;
-    if let Some(widget) = app.get_webview_window(&label) {
-        widget.destroy().map_err(|e| for_user("关闭桌面小组件", &e))?;
+    if app.get_webview_window(&label).is_some() {
+        return app.emit_to(label.as_str(), REMOVE, ()).map_err(|e| for_user("移除桌面小组件", &e));
     }
+    let _turn = TURN.lock().unwrap();
+    forget(&app, &label)?;
     changed(&app, Some(&label))
+}
+
+/// The widget calling it closes, its changes saved.
+#[tauri::command]
+pub async fn close_widget(widget: WebviewWindow) -> Result<(), String> {
+    let app = widget.app_handle();
+    let _turn = TURN.lock().unwrap();
+    if !is_widget(widget.label()) {
+        return Err("这不是桌面小组件".into());
+    }
+    forget(app, widget.label())?;
+    widget.destroy().map_err(|e| for_user("关闭桌面小组件", &e))?;
+    changed(app, Some(widget.label()))
 }
 
 fn forget(app: &AppHandle, label: &str) -> Result<(), String> {
@@ -271,26 +288,28 @@ fn on_screen(app: &AppHandle, frame: &Frame) -> bool {
         })
 }
 
-/// The top right corner of the main screen's work area, or of the desktop when tao finds no screen.
-fn corner(app: &AppHandle, (width, height): (f64, f64)) -> Frame {
-    let Ok(Some(screen)) = app.primary_monitor() else { return Frame { x: MARGIN, y: MARGIN, width, height, scale: 1.0 } };
+/// The top right corner of the main screen's work area, `offset` times a margin to the bottom left, or
+/// of the desktop when tao finds no screen. A widget from a larger screen is made to fit this one,
+/// all of it in sight.
+fn corner(app: &AppHandle, (width, height): (f64, f64), offset: usize) -> Frame {
+    let shift = MARGIN * offset as f64;
+    let Ok(Some(screen)) = app.primary_monitor() else { return Frame { x: MARGIN + shift, y: MARGIN + shift, width, height, scale: 1.0 } };
     let (scale, area) = (screen.scale_factor(), screen.work_area());
-    let right = (f64::from(area.position.x) + f64::from(area.size.width)) / scale;
-    Frame { x: right - width - MARGIN, y: f64::from(area.position.y) / scale + MARGIN, width, height, scale }
+    let (left, top) = (f64::from(area.position.x) / scale, f64::from(area.position.y) / scale);
+    let (across, down) = (f64::from(area.size.width) / scale, f64::from(area.size.height) / scale);
+    let width = width.min(across - 2.0 * MARGIN).max(LEAST.0);
+    let height = height.min(down - 2.0 * MARGIN).max(LEAST.1);
+    let x = (left + across - width - MARGIN - shift).max(left + MARGIN);
+    let y = (top + MARGIN + shift).min(top + down - height - MARGIN).max(top + MARGIN);
+    Frame { x, y, width, height, scale }
 }
 
 fn placement(app: &AppHandle, widgets: &[Widget]) -> Frame {
-    let corner = corner(app, SIZE);
     (0..=widgets.len())
         .rev()
-        .map(|i| shifted(corner, i))
+        .map(|i| corner(app, SIZE, i))
         .find(|frame| !widgets.iter().filter_map(|w| w.frame).any(|f| f.x == frame.x && f.y == frame.y && f.scale == frame.scale))
-        .unwrap_or(corner)
-}
-
-fn shifted(frame: Frame, offset: usize) -> Frame {
-    let shift = MARGIN * offset as f64;
-    Frame { x: frame.x - shift, y: frame.y + shift, ..frame }
+        .unwrap_or_else(|| corner(app, SIZE, 0))
 }
 
 /// Stays where it is as the desktop is shown and in Mission Control, and out of ⌘` (as Übersicht's

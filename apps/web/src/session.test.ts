@@ -168,6 +168,23 @@ test("signing out ends every tab of the user and deletes their data, also tabs n
   expect([await saved(u), login(), marked()]).toEqual([[0, 0], null, undefined]);
 });
 
+test("a window opening while the sign-in downloads keeps it, so that signing out ends both", async () => {
+  const u = user(30);
+  const snapshot = hold("/snapshot");
+  const opening = (await tab()).open(as(u));
+  await snapshot.entered;
+  // A desktop widget loads meanwhile, as one does at every sign-in, with no copy saved yet.
+  const loading = (await tab()).resume();
+  snapshot.release();
+  const [main, widget] = [await opening, (await loading)!];
+  const cookie = server.cookie!;
+  const heard = watch(widget);
+  await main.signOut();
+  await vi.waitFor(() => expect(heard.signedOut).toBe(true));
+  expect(server.ended.has(cookie)).toBe(true);
+  await widget.close();
+});
+
 test("signing out ends the user's tabs of an earlier sign-in too", async () => {
   const u = user(3);
   const a = await signIn(u);

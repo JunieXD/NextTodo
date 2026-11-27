@@ -19,6 +19,7 @@
 .sb-user { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 12px; transition: background-color .15s; }
 .sb-user:hover { background: var(--press); }
 .sb-user.on { background: var(--secondary-container); }
+.sb-user .folder-sub.warn { color: var(--warn); }
 .sb-user .avatar { width: 32px; height: 32px; margin: 0; font-size: 14px; }
 .sb-user .folder-main > span:first-child { font-size: 14px; font-weight: 600; }
 .sb-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 16px 12px 18px; }

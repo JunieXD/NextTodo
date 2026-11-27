@@ -1,7 +1,7 @@
 // The desktop layout: folders on the left, which can be folded away, the list in the middle, and the
 // open task's details on the right.
 
-import { CalendarDays, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, CircleCheck, History, ListChecks, Lock, PanelLeft, Search } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, CircleCheck, History, ListChecks, Lock, PanelLeft, RefreshCw, Search } from "lucide-react";
 import { Fragment, type ReactNode, useRef, useState } from "react";
 import { Link, Redirect, useLocation, useSearchParams } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
@@ -28,6 +28,8 @@ import { folderUrl, settingsUrl, useFolderView, useRevealRequest, useSelection }
 import { SettingsHome, SettingsPage, settingsTitle, useSectionAt } from "./Settings";
 import { FolderGlyph, styled } from "./folder-look";
 import { FolderName, SharedWith, sharer } from "./share";
+import { useSyncNow } from "./DriveSync";
+import * as local from "../local";
 
 export function Desktop({ onSignOut }: { onSignOut(): void }) {
   const [location, navigate] = useLocation();
@@ -247,11 +249,8 @@ function Page(p: {
 }
 
 function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "calendar" | "root" | "settings" | null; query: string; setQuery(q: string): void }) {
-  const { board, pending } = useView();
+  const { board } = useView();
   const listed = useNextFolders(board);
-  const { user } = useSession();
-  const connection = useConnection();
-  const lock = usePrivacyLock();
   const [, navigate] = useLocation();
   const collapsed = useClosedFolders(board.me);
   // Folded all the way, whether or not the root is: folding them all leaves it open, showing the first level.
@@ -358,22 +357,57 @@ function Sidebar({ at, query, setQuery }: { at: FolderId | "next" | "done" | "ca
           )}
         </div>
         <div className="sb-foot">
-          <button className={`sb-user${at === "settings" ? " on" : ""}`} onClick={() => go(settingsUrl())}>
-            <span className="avatar">{[...user.display_name][0]}</span>
-            <span className="folder-main">
-              <span>{user.display_name}</span>
-              <span className="folder-sub">{connection === "offline" ? (pending ? `离线，${pending} 项改动待同步` : "离线") : "设置和令牌"}</span>
-            </span>
-          </button>
-          {lock && (
-            <Tip label="锁定">
-              <button className="icon-btn" onClick={lockNow}>
-                <Icon of={Lock} size={18} />
-              </button>
-            </Tip>
-          )}
+          {local.inLocalMode() ? <LocalFoot on={at === "settings"} go={go} /> : <Foot on={at === "settings"} go={go} sub={null} />}
         </div>
       </div>
     </nav>
+  );
+}
+
+/** The sidebar's bottom row: the user, who opens the settings, and the lock. */
+function Foot({ on, go, sub, children }: { on: boolean; go(to: string): void; sub: { text: string; warn: boolean } | null; children?: ReactNode }) {
+  const { pending } = useView();
+  const { user } = useSession();
+  const connection = useConnection();
+  const lock = usePrivacyLock();
+  return (
+    <>
+      <button className={`sb-user${on ? " on" : ""}`} onClick={() => go(settingsUrl())}>
+        <span className="avatar">{[...user.display_name][0]}</span>
+        <span className="folder-main">
+          <span>{user.display_name}</span>
+          {connection === "offline" ? (
+            <span className="folder-sub">{pending ? `离线，${pending} 项改动待同步` : "离线"}</span>
+          ) : (
+            <span className={`folder-sub${sub?.warn ? " warn" : ""}`}>{sub?.text ?? "设置和令牌"}</span>
+          )}
+        </span>
+      </button>
+      {children}
+      {lock && (
+        <Tip label="锁定">
+          <button className="icon-btn" onClick={lockNow}>
+            <Icon of={Lock} size={18} />
+          </button>
+        </Tip>
+      )}
+    </>
+  );
+}
+
+/** In local mode, how syncing through a drive goes, under the name, and syncing now (docs/ui.md#同步状态);
+ * apart, as it is looked at every few seconds. */
+function LocalFoot({ on, go }: { on: boolean; go(to: string): void }) {
+  const shown = useSyncNow();
+  return (
+    <Foot on={on} go={go} sub={shown}>
+      {shown && !shown.stopped && (
+        <Tip label="立即同步">
+          <button className={`icon-btn${shown.busy ? " spin" : ""}`} onClick={() => void shown.sync()}>
+            <Icon of={RefreshCw} size={18} />
+          </button>
+        </Tip>
+      )}
+    </Foot>
   );
 }

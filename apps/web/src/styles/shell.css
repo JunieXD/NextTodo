@@ -23,6 +23,11 @@
 /* A long name breaks anywhere, before it would push the buttons beside it off the screen. */
 .large-title { margin: 0; font-size: 32px; line-height: 1.2; font-weight: 700; letter-spacing: -.01em; min-width: 0; overflow-wrap: anywhere; }
 .subtitle { margin: 4px 16px 6px; font-size: 15px; color: var(--on-surface-variant); }
+/* How syncing through a drive goes, under the date; the padding makes it easier to tap. */
+.sync-line { display: flex; align-items: center; gap: 5px; max-width: calc(100% - 32px); margin: -6px 16px 0; padding: 6px 0; font-size: 13px; color: var(--outline); }
+.sync-line > span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sync-line svg { flex: none; }
+.sync-line.warn { color: var(--warn); }
 .avatar { width: 36px; height: 36px; border-radius: 18px; background: var(--primary); color: var(--on-primary); font-weight: 600; font-size: 15px; display: grid; place-items: center; margin-bottom: 4px; }
 .tab .avatar { width: 26px; height: 26px; font-size: 12px; margin: 0; }
 

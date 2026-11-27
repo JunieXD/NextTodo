@@ -44,7 +44,8 @@
 | GET | `/tools` | 工具列表，见 [agent 接入](agent.md#工具接口) |
 | POST | `/tools/{name}` | 调用一个工具 |
 | | `/ai/…` | AI 整理的服务商、配置和测试，见 [AI 整理](ai.md#接口) |
-| GET | `/local/sync` | 本机模式：[借网盘同步](local/drive.md)的情况 `{drive, status, stopped}`。开着时 `drive` 是网盘（不含密码和密钥），`status` 是 `{enabling, synced_at, problem}`：还在开启、上次网盘回应的时间、受阻的原因；`stopped` 是同步自己停下的原因。这三个接口只能用会话 |
+| GET | `/local/sync` | 本机模式：[借网盘同步](local/drive.md)的情况 `{drive, status, stopped}`。开着时 `drive` 是网盘（不含密码和密钥），`status` 是 `{enabling, synced_at, problem}`：还在开启、上次同步完的时间、受阻的原因；`stopped` 是同步自己停下的原因。`/local/sync` 的这几个接口只能用会话 |
+| POST | `/local/sync/now` | 本机模式：[立即同步](local/drive.md#立即同步)，读完网盘里的提交、写完排着的改动，或者受阻了，就返回同步的情况，同 `GET`，最多等 15 秒。没在同步时直接返回 |
 | PUT | `/local/sync` | 本机模式：开启，`{config, replace}`。`config` 是 `{kind: "webdav", url, user, password, folder}` 或 `{kind: "s3", endpoint, region, bucket, access_key, secret_key, path_style, folder}`。文件夹里已有数据时，`replace` 为 false 返回 409 `has_data`，为 true 时准备好网盘里的数据，下次启动换上，App 随即重启。成功返回 204 |
 | DELETE | `/local/sync` | 本机模式：停止同步，先下载在用的附件里本机还没有的文件。下载不了时返回 409 `files_not_here`，带 `?force=true` 不下载、直接停止。成功返回 204 |
 

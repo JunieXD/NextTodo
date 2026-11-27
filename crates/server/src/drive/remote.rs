@@ -77,9 +77,18 @@ pub(crate) mod memory {
         RequestLost,
     }
 
+    #[derive(Clone, Copy)]
+    enum Odd {
+        Lost,
+        /// Finds nothing, as one sent before the file was written.
+        Early,
+    }
+
     pub(crate) struct View {
         store: Arc<Store>,
         writes: Mutex<VecDeque<Fault>>,
+        /// Files whose next read goes otherwise.
+        odd_reads: Mutex<Vec<(String, Odd)>>,
         offline: AtomicBool,
         /// Requests turned away while offline.
         refused: AtomicUsize,
@@ -94,12 +103,29 @@ pub(crate) mod memory {
 
     impl View {
         pub(crate) fn new(store: Arc<Store>) -> View {
-            View { store, writes: Mutex::default(), offline: AtomicBool::new(false), refused: AtomicUsize::new(0), gate: Mutex::default() }
+            View {
+                store,
+                writes: Mutex::default(),
+                odd_reads: Mutex::default(),
+                offline: AtomicBool::new(false),
+                refused: AtomicUsize::new(0),
+                gate: Mutex::default(),
+            }
         }
 
         /// The next writes go so.
         pub(crate) fn fail_writes(&self, faults: impl IntoIterator<Item = Fault>) {
             self.writes.lock().unwrap().extend(faults);
+        }
+
+        /// The next read of `path` is lost on the way.
+        pub(crate) fn lose_read(&self, path: &str) {
+            self.odd_reads.lock().unwrap().push((path.to_owned(), Odd::Lost));
+        }
+
+        /// The next read of `path` finds nothing, as one sent before it was written.
+        pub(crate) fn read_early(&self, path: &str) {
+            self.odd_reads.lock().unwrap().push((path.to_owned(), Odd::Early));
         }
 
         /// Turns every request away, or no longer.
@@ -139,7 +165,15 @@ pub(crate) mod memory {
 
     impl Remote for View {
         fn get(&self, path: &str) -> Result<Option<Vec<u8>>, Failed> {
-            self.request(None, |files| files.get(path).cloned())
+            let odd = {
+                let mut odd = self.odd_reads.lock().unwrap();
+                odd.iter().position(|(p, _)| p == path).map(|i| odd.remove(i).1)
+            };
+            match odd {
+                Some(Odd::Lost) => self.request(Some(Fault::RequestLost), |_| None),
+                Some(Odd::Early) => self.request(None, |_| None),
+                None => self.request(None, |files| files.get(path).cloned()),
+            }
         }
 
         fn create(&self, path: &str, body: &[u8]) -> Result<Created, Failed> {

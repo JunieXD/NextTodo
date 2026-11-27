@@ -1,5 +1,6 @@
 // Syncing local mode's data with other devices through a cloud drive (docs/local/drive.md).
 
+import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import { ApiError, api } from "../api/http";
 import type { DriveConfig } from "../api/types/DriveConfig";
@@ -11,22 +12,88 @@ import { useSession } from "../session";
 import { Seg } from "../ui/controls";
 import { Modal, forUser, useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
+import { Icon } from "../ui/icons";
 
 /** How often the settings look at how syncing goes while they show it. */
 const LOOK_MS = 5000;
 
-/** How syncing goes, as the app's server says, looked at again every few seconds when `watch`. */
-export function useDriveSync(watch: boolean): [DriveSync | null, () => Promise<void>] {
+/** How syncing goes, as the app's server says, looked at again every few seconds when `watch`, while the
+ * page is in front. */
+export function useDriveSync(watch: boolean): [DriveSync | null, () => Promise<void>, () => Promise<void>] {
   const { snack } = useFeedback();
   const [sync, setSync] = useState<DriveSync | null>(null);
   const load = useCallback(() => api<DriveSync>("GET", "/local/sync").then(setSync, (e) => snack(forUser("读取同步的状态", e))), [snack]);
+  /** Syncs now, and has how it went then (docs/local/drive.md#立即同步). */
+  const now = useCallback(() => api<DriveSync>("POST", "/local/sync/now").then(setSync), []);
   useEffect(() => {
     void load();
     if (!watch) return;
-    const timer = setInterval(() => void load(), LOOK_MS);
-    return () => clearInterval(timer);
+    const look = () => document.visibilityState === "visible" && void load();
+    const timer = setInterval(look, LOOK_MS);
+    document.addEventListener("visibilitychange", look);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", look);
+    };
   }, [load, watch]);
-  return [sync, load];
+  return [sync, load, now];
+}
+
+/** How syncing through a drive goes, in a few words, kept in view, and syncing now (docs/ui.md#同步状态);
+ * null without a drive. `stopped` when syncing stopped by itself: the reason is in the settings. */
+export function useSyncNow(): { text: string; warn: boolean; busy: boolean; stopped: boolean; sync(): Promise<void> } | null {
+  const { snack } = useFeedback();
+  const [state, , now] = useDriveSync(true);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    // Back online, the drive is looked at at once, not at the next retry (docs/local/drive.md#运行).
+    const back = () => void now().catch((e) => snack(forUser("同步", e)));
+    addEventListener("online", back);
+    return () => removeEventListener("online", back);
+  }, [now, snack]);
+  if (!state || (!state.status && !state.stopped)) return null;
+  const sync = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await now();
+    } catch (e) {
+      snack(forUser("同步", e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!state.status) return { text: "同步已停止", warn: true, busy, stopped: true, sync };
+  const { enabling, problem, synced_at } = state.status;
+  const text = busy
+    ? "正在同步…"
+    : problem
+      ? `同步受阻：${problem}`
+      : enabling
+        ? "正在开启同步…"
+        : synced_at === null
+          ? "尚未同步"
+          : `${ago(synced_at, new Date())}同步`;
+  return { text, warn: !busy && !!problem, busy, stopped: false, sync };
+}
+
+/** The phone's line under the date on “接下来” (docs/ui.md#同步状态). */
+export function SyncLine() {
+  const shown = useSyncNow();
+  const [dialog, setDialog] = useState(false);
+  if (!shown) return null;
+  return (
+    <>
+      <button
+        className={`sync-line${shown.warn ? " warn" : ""}${shown.busy ? " spin" : ""}`}
+        onClick={() => (shown.stopped ? setDialog(true) : void shown.sync())}
+      >
+        <Icon of={RefreshCw} size={14} />
+        <span>{shown.text}</span>
+      </button>
+      {dialog && <DriveSyncDialog onClose={() => setDialog(false)} />}
+    </>
+  );
 }
 
 /** The drive, in a few words: its host or bucket, and the folder. */

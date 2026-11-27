@@ -24,7 +24,7 @@ use tokio::time::Instant;
 
 use crate::AppState;
 use crate::auth::Auth;
-use crate::drive::{self, Route};
+use crate::drive::{self, Route, Synced};
 use crate::error::{ApiError, Json, from_value};
 use crate::files::Files;
 use crate::store;
@@ -84,12 +84,14 @@ pub(crate) type WriteFn = Box<dyn Fn(&WriteCx) -> Result<Write, ApiError> + Send
 enum Call {
     Read(ReadFn),
     Write(WriteFn),
+    /// `sync`, which waits for the drive instead of reading the database.
+    Sync,
 }
 
 macro_rules! tools {
     ($($kind:ident $name:literal($args:ty) => $run:path, $desc:literal;)*) => {
         pub fn list() -> Vec<Tool> {
-            vec![$(Tool { name: $name, description: $desc, kind: Kind::$kind, input_schema: with_common(schema_for_type::<$args>(), Kind::$kind) }),*]
+            vec![$(Tool { name: $name, description: $desc, kind: tools!(@kind $kind), input_schema: with_common(schema_for_type::<$args>(), tools!(@kind $kind)) }),*]
         }
 
         fn parse_call(name: &str, args: Value) -> Result<Call, ApiError> {
@@ -102,7 +104,10 @@ macro_rules! tools {
             }
         }
     };
+    (@kind Sync) => { Kind::Read };
+    (@kind $kind:ident) => { Kind::$kind };
     (@call Read, $run:path, $args:ident) => { Call::Read(Box::new(move |c, cx| $run(c, cx, $args))) };
+    (@call Sync, $run:path, $args:ident) => {{ let _ = $args; Call::Sync }};
     (@call $kind:ident, $run:path, $args:ident) => { Call::Write(Box::new(move |w| $run(w, $args.clone()))) };
 }
 
@@ -117,6 +122,7 @@ tools! {
     Read "log"(LogArgs) => read::log, "最近的改动批次，新的在前，包括其他成员在共享的文件夹里做的。撤销时要用批次号。";
     Read "jobs"(NoArgs) => read::jobs, "用户提交的 AI 整理请求：等待、正在整理和失败的，失败的带原因。整理好的已经变成事项，不在这里。";
     Read "attachment"(AttachmentArgs) => read::attachment, "读一个附件（ID 见 show）：PNG、JPEG、WebP、GIF 图片（5 MB 以内）返回图片，UTF-8 文本文件（1 MB 以内）返回内容，其他文件只给名称、类型和大小。";
+    Sync "sync"(NoArgs) => sync, "本机模式借网盘同步时立即同步：读完网盘里别的设备的改动、写完这台设备的再回答，最多等 15 秒。用户说刚在别的设备上改过的，先用它再读。连服务器时不需要。";
     Write "add"(AddArgs) => write::add, "添加一个事项；文件夹不存在时一起新建。一次加多个、带依赖的事项时用 apply。";
     Write "edit"(EditArgs) => write::edit, "修改事项的标题、描述、截止时间、提醒或负责人；只改给出的字段，due、remind 给 null 表示清除，assign、unassign 在现有的负责人上加、减。改描述中的一段用 replace、加内容用 append，不要读出整段再整段写回，以免盖掉用户同时做的修改。";
     Write "done"(DoneArgs) => write::done, "把事项标为完成，结果里会列出因此变成可做的事项。重复的事项不会完成，而是把截止时间顺延到下一次，这时要给 today；打卡的长期事项全部做完时用 end_repeat 结束重复并完成。";
@@ -233,6 +239,7 @@ pub async fn call(st: &AppState, auth: Auth, name: &str, mut args: Value, id: Op
                 })
                 .await
         }
+        Call::Sync => Ok(Reply { output: sync(st).await?, seq: None }),
         Call::Write(build) => {
             auth.require_write()?;
             let id = change_id(request_id, id)?.unwrap_or_else(|| MutationId(uuid::Uuid::now_v7()));
@@ -253,6 +260,25 @@ pub async fn call(st: &AppState, auth: Auth, name: &str, mut args: Value, id: Op
                 .await
         }
     }
+}
+
+/// Syncs now, when syncing through a drive, and says whether what is read after is the latest.
+async fn sync(st: &AppState) -> Result<Output, ApiError> {
+    let stopped = || ApiError::unavailable(st.drive.stopped().map_or_else(|| "同步已停止".into(), |why| format!("同步已停止：{why}")));
+    let Some(drive) = st.drive.current().await else {
+        if st.drive.stopped().is_some() {
+            return Err(stopped());
+        }
+        return Ok(Output { text: "没有借网盘同步，读到的就是最新的。".into(), data: json!({ "syncing": false }) });
+    };
+    let done = match drive.sync(drive::WAIT).await {
+        Synced::Done => true,
+        Synced::Pending => false,
+        Synced::HeldUp(problem) => return Err(ApiError::unavailable(format!("同步受阻：{problem}"))),
+        Synced::Stopped => return Err(stopped()),
+    };
+    let text = if done { "已同步。" } else { "仍在同步，读到的可能不是最新的。" };
+    Ok(Output { text: text.into(), data: json!({ "syncing": true, "done": done, "synced_at": drive.status().synced_at }) })
 }
 
 pub async fn list_tools() -> Json<Vec<Tool>> {

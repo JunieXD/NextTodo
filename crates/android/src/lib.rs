@@ -85,8 +85,9 @@ pub extern "system" fn Java_cn_juniexd_nexttodo_LocalServer_session<'a>(env: Env
     })
 }
 
-/// Has the server look at the drive now, when it syncs through one, waiting up to `wait_ms` for what
-/// is new there to be read in (docs/local/drive.md#运行). Nothing while it is not running.
+/// Has the server sync through the drive now, when it does, waiting up to `wait_ms` for what is new
+/// there to be read in and what waits here to be written, or for it to be held up
+/// (docs/local/drive.md#立即同步). Nothing while it is not running.
 #[allow(unsafe_code, reason = "JNI finds a native method by its unmangled name")]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_cn_juniexd_nexttodo_LocalServer_pull<'a>(env: EnvUnowned<'a>, _: JClass<'a>, wait_ms: i64) {

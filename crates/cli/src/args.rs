@@ -90,6 +90,8 @@ pub enum Command {
     },
     #[command(about = "AI 整理的请求：等待、正在整理和失败的")]
     Jobs,
+    #[command(about = "借网盘同步时立即同步")]
+    Sync,
     #[command(about = "添加一个事项")]
     Add {
         title: String,

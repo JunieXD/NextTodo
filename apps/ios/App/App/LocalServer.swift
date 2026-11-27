@@ -22,6 +22,7 @@ enum LocalServer {
     /// A new session's token, the earlier sessions revoked.
     static func session() throws -> String { try value(nexttodo_session()) as! String }
 
+    /// Also off `Local.queue`: stopping the server meanwhile ends the wait.
     static func pull(waitMs: UInt64) { nexttodo_pull(waitMs) }
 
     /// Whether it is still the one at its address, not another program given its port meanwhile.

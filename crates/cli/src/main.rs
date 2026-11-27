@@ -183,6 +183,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             read("log", args, j)
         }
         Command::Jobs => read("jobs", json!({}), j),
+        Command::Sync => read("sync", json!({}), j),
         Command::Add {
             title,
             folder,

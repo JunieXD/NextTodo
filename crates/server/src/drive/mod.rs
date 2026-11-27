@@ -43,8 +43,12 @@ use remote::{Created, Failed, Remote, remove};
 
 /// How long HTTP and tool requests wait for their change to go in (docs/local/drive.md#排定先后).
 pub(crate) const WAIT: Duration = Duration::from_secs(15);
-/// How often the drive is looked at for other devices' commits.
+/// How often the drive is looked at for other devices' commits; sooner for a while after some were read
+/// in or this device's written (docs/local/drive.md#运行).
 const POLL: Duration = Duration::from_secs(30);
+const SOON: [Duration; 2] = [Duration::from_secs(10), Duration::from_secs(20)];
+/// At most this many commits are read at once, as when far behind.
+const AHEAD: usize = 8;
 /// At most this many items go in one commit.
 const BATCH: usize = 50;
 /// The wait after a request to the drive failed, doubling up to the longest.
@@ -120,12 +124,27 @@ impl Syncing {
     }
 }
 
+/// How a request to sync now went (docs/local/drive.md#立即同步).
+pub enum Synced {
+    /// What was new in the drive is read in, and what waited here is written.
+    Done,
+    HeldUp(String),
+    Stopped,
+    /// Neither by the time given.
+    Pending,
+}
+
+/// Up to which request to sync now the task has answered, and why it is held up, if it is.
+type Looked = (u64, Option<String>);
+
 /// The handle to the sync task.
 pub struct Drive {
     requests: mpsc::UnboundedSender<Request>,
     wake: Arc<Notify>,
-    /// Told each time the task has read in all there was.
-    caught_up: Arc<Notify>,
+    /// How many times it was asked to sync now; the task says up to which of them it has, each time it
+    /// has read in all there was and written what waited, or is held up.
+    asked: Arc<AtomicU64>,
+    looked: watch::Receiver<Looked>,
     stop: watch::Sender<bool>,
     status: Arc<Mutex<Status>>,
     /// The local user.
@@ -140,7 +159,7 @@ pub struct Drive {
 pub struct Status {
     /// The drive's first generation is still being made.
     pub enabling: bool,
-    /// When the drive last answered, in milliseconds.
+    /// When it last read in all there was in the drive and wrote what waited, in milliseconds.
     pub synced_at: Option<i64>,
     /// Why syncing is held up, while it is.
     pub problem: Option<String>,
@@ -355,6 +374,7 @@ impl Drive {
         let user: String = st.db.hold(|c| c.query_row("SELECT id FROM users", [], |r| r.get(0)))?;
         let (requests, receiver) = mpsc::unbounded_channel();
         let (wake, (stop, stopping)) = (Arc::new(Notify::new()), watch::channel(false));
+        let (asked, (told, looked)) = (Arc::new(AtomicU64::new(0)), watch::channel((0, None)));
         let status = Arc::new(Mutex::new(Status { enabling, ..Status::default() }));
         st.files.set_origin(Some(Arc::new(InDrive { remote: remote.clone(), generation: generation.clone() })));
         let worker = Worker {
@@ -370,14 +390,17 @@ impl Drive {
             applied,
             checked: false,
             contested: false,
+            ahead: 1,
+            answered: None,
             status: status.clone(),
-            caught_up: Arc::new(Notify::new()),
+            asked: asked.clone(),
+            looked: told,
             stop: stopping,
             queue: VecDeque::new(),
             sent: None,
         };
-        let (woken, caught_up) = (wake.clone(), worker.caught_up.clone());
-        st.drive.turn_on(Arc::new(Drive { requests, wake, caught_up, stop, status, user, remote })).await;
+        let woken = wake.clone();
+        st.drive.turn_on(Arc::new(Drive { requests, wake, asked, looked, stop, status, user, remote })).await;
         tokio::spawn(worker.run(receiver, woken, enabling));
         Ok(())
     }
@@ -455,15 +478,18 @@ impl Drive {
         self.wake.notify_one();
     }
 
-    /// Looks at the drive now, and waits up to `wait` for what is new there to be read in, as before
-    /// the widget lists the tasks.
-    pub async fn caught_up(&self, wait: Duration) {
-        let caught_up = self.caught_up.notified();
-        tokio::pin!(caught_up);
-        caught_up.as_mut().enable();
+    /// Looks at the drive now, and waits up to `wait` until what is new there is read in and what waits
+    /// here is written, or syncing is held up (docs/local/drive.md#立即同步): how far it got.
+    pub async fn sync(&self, wait: Duration) -> Synced {
+        let asked = self.asked.fetch_add(1, Ordering::SeqCst) + 1;
         self.pull();
-        // Not by then: the widget lists what is here.
-        let _ = tokio::time::timeout(wait, caught_up).await;
+        let mut looked = self.looked.clone();
+        match tokio::time::timeout(wait, looked.wait_for(|(n, _)| *n >= asked)).await {
+            Ok(Ok(looked)) => looked.1.clone().map_or(Synced::Done, Synced::HeldUp),
+            // The task has ended.
+            Ok(Err(_)) => Synced::Stopped,
+            Err(_) => Synced::Pending,
+        }
     }
 }
 
@@ -530,8 +556,14 @@ struct Worker {
     checked: bool,
     /// Another device wrote the number this one tried: the next read is to find its commit.
     contested: bool,
+    /// How many commits the next read asks for at once.
+    ahead: usize,
+    /// When the drive last answered: a day before, or not since the task started, it may be far behind.
+    answered: Option<i64>,
     status: Arc<Mutex<Status>>,
-    caught_up: Arc<Notify>,
+    asked: Arc<AtomicU64>,
+    /// Told the last time it was asked to sync before it last read in all there was, or was held up.
+    looked: watch::Sender<Looked>,
     /// Set to stop: the task stops at the next request to the drive, or before the next thing it
     /// does, never as it writes here.
     stop: watch::Receiver<bool>,
@@ -566,10 +598,16 @@ impl Worker {
             }
         }
         let mut backoff = BACKOFF;
+        // The next wait's place in `SOON`; past it, `POLL`.
+        let mut soon = SOON.len();
+        // Something was read in or written since it last waited.
+        let mut busy = false;
         loop {
             if *self.stop.borrow() {
                 return self.end(requests);
             }
+            // Those asked by now are answered by what follows, which has the changes they wait for.
+            let asked = self.asked.load(Ordering::SeqCst);
             while let Ok(r) = requests.try_recv() {
                 self.queue.push_back(r);
             }
@@ -577,26 +615,31 @@ impl Worker {
             self.queue.retain(|r| !r.progress.given_up());
             let stepped = self.step().await;
             let now = self.clock.now();
-            let wait = match stepped {
+            let (wait, problem) = match stepped {
                 Ok(more) => {
-                    self.report(|s| (s.synced_at, s.problem) = (Some(now), None));
+                    self.answered = Some(now);
+                    self.report(|s| s.problem = None);
                     backoff = BACKOFF;
                     if more {
+                        busy = true;
                         continue;
                     }
-                    self.caught_up.notify_waiters();
-                    POLL
+                    self.report(|s| s.synced_at = Some(now));
+                    soon = if std::mem::take(&mut busy) { 0 } else { (soon + 1).min(SOON.len()) };
+                    (SOON.get(soon).copied().unwrap_or(POLL), None)
                 }
                 Err(Trouble::Stopped) => return self.end(requests),
                 Err(trouble @ (Trouble::Replaced | Trouble::Taken)) => return self.give_up(trouble, requests).await,
                 Err(trouble) => {
                     tracing::warn!(?trouble, "sync with the drive held up");
-                    self.report(|s| s.problem = Some(trouble.message()));
+                    let problem = trouble.message();
+                    self.report(|s| s.problem = Some(problem.clone()));
                     let wait = if matches!(trouble, Trouble::NewerVersion | Trouble::Unreadable(_)) { POLL } else { backoff };
                     backoff = (backoff * 2).min(BACKOFF_MAX);
-                    wait
+                    (wait, Some(problem))
                 }
             };
+            self.looked.send_replace((asked, problem));
             tokio::select! {
                 r = requests.recv() => match r {
                     Some(r) => self.queue.push_back(r),
@@ -667,8 +710,7 @@ impl Worker {
         if let Some(sent) = self.sent.take() {
             return self.settle(sent).await;
         }
-        let synced_at = self.status.lock().unwrap_or_else(PoisonError::into_inner).synced_at;
-        if synced_at.is_none_or(|at| self.clock.now() - at > DAY_MS) {
+        if self.answered.is_none_or(|at| self.clock.now() - at > DAY_MS) {
             // Far behind, as after long offline, the latest snapshot is quicker to read than the
             // commits since, and is there when they were deleted.
             let dir = format!("{}/snapshots", self.generation);
@@ -678,9 +720,26 @@ impl Worker {
                 return Ok(true);
             }
         }
-        if let Some(body) = self.get(commit::path(&self.generation, self.applied + 1)).await? {
+        let (generation, from, n) = (self.generation.clone(), self.applied + 1, self.ahead);
+        let read = self.call(move |r| Ok(read_ahead(r, &generation, from, n))).await?;
+        // Twice as many next while they are all there and read in.
+        let all = read.iter().all(|r| matches!(r, Ok(Some(_))));
+        self.ahead = 1;
+        let mut read = read.into_iter();
+        if let Some(body) = read.next().expect("one at least")? {
             self.contested = false;
             self.apply(&body, &[]).await?;
+            // Up to the first not there or not read, which is read again next.
+            for body in read.map_while(|r| r.ok().flatten()) {
+                self.apply(&body, &[]).await?;
+            }
+            if all {
+                self.ahead = (n * 2).min(AHEAD);
+            }
+            return Ok(true);
+        }
+        if read.any(|r| matches!(r, Ok(Some(_)))) {
+            // Asked for before another device wrote it, and one after it once that was: read alone next.
             return Ok(true);
         }
         if std::mem::take(&mut self.contested) {
@@ -1076,6 +1135,14 @@ impl Worker {
             () = self.stopping() => Err(Trouble::Stopped),
         }
     }
+}
+
+/// `n` commits of `generation` from number `from` on, read at once.
+fn read_ahead(r: &dyn Remote, generation: &str, from: i64, n: usize) -> Vec<Result<Option<Vec<u8>>, Failed>> {
+    std::thread::scope(|s| {
+        let reads: Vec<_> = (from..).take(n).map(|number| s.spawn(move || r.get(&commit::path(generation, number)))).collect();
+        reads.into_iter().map(|read| read.join().expect("drive request panicked")).collect()
+    })
 }
 
 /// The numbers of the snapshots among `names`, a generation's `snapshots/`, in order.

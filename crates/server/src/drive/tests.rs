@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use super::remote::Remote;
 use super::remote::memory::{Fault, Store, View};
-use super::{DAY_MS, Drive, Maker, NOT_MADE, StepFn, Trouble, setup};
+use super::{DAY_MS, Drive, Maker, NOT_MADE, StepFn, Synced, Trouble, setup};
 use crate::ai::llm::{Api, Config, Endpoint, Failure, Prompt};
 use crate::ai::{self, Ai};
 use crate::auth::{Auth, Scope, TokenKind};
@@ -408,6 +408,41 @@ async fn a_commit_lost_on_the_way_is_sent_again_and_what_follows_goes_on() {
     caught_up(&store, &devices).await;
     assert_eq!(log(&store), ["g/log/1.json", "g/log/2.json"]);
     assert_same(&devices);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_far_behind_reads_several_commits_at_once_and_one_not_read_or_not_there_yet_among_them_again() {
+    let (store, devices) = devices(2).await;
+    let (a, b) = (&devices[0], &devices[1]);
+    b.view.set_offline(true);
+    for i in 0..40 {
+        a.made(json!([{ "op": "task.create", "id": id(), "title": format!("第 {i} 项") }])).await.unwrap();
+    }
+    // 2 is read with 3 as if before it was written, then alone; 6 is lost with 5, 7 and 8, then read alone.
+    b.view.read_early("g/log/2.json");
+    b.view.lose_read("g/log/6.json");
+    b.view.set_offline(false);
+    assert!(matches!(b.drive().sync(Duration::from_secs(5)).await, Synced::Done));
+    assert_eq!(b.applied(), 40);
+    assert_same(&devices);
+    assert_eq!(log(&store).len(), 40);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn syncing_now_reads_in_what_another_device_just_wrote_and_says_at_once_when_held_up() {
+    let (_, devices) = devices(2).await;
+    let (a, b) = (&devices[0], &devices[1]);
+    // Looked at the drive as it started: it would look again in half a minute.
+    until(|| b.drive().status().synced_at.is_some()).await;
+    a.made(json!([{ "op": "task.create", "id": id(), "title": "一" }])).await.unwrap();
+    let synced = b.tool("sync", json!({}), MutationId(Uuid::now_v7())).await.unwrap();
+    assert_eq!((synced.output.text.as_str(), &synced.output.data["done"]), ("已同步。", &json!(true)));
+    assert_eq!(b.titles(), [[Value::Text("一".into())]]);
+    b.view.set_offline(true);
+    let asked = Instant::now();
+    let Err(e) = b.tool("sync", json!({}), MutationId(Uuid::now_v7())).await else { panic!("said it synced") };
+    assert_eq!((e.code(), e.to_string().as_str()), ("unavailable", "同步受阻：offline"));
+    assert!(asked.elapsed() < Duration::from_secs(5), "not waiting out the 15 seconds");
 }
 
 #[tokio::test(flavor = "multi_thread")]

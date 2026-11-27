@@ -160,6 +160,7 @@ pub fn app(state: AppState) -> Router {
         .route("/ai/jobs/{id}/run", post(ai::run))
         .route("/ai/notes", get(ai::get_notes).put(ai::put_note))
         .route("/local/sync", get(drive::setup::get).put(drive::setup::put).delete(drive::setup::delete))
+        .route("/local/sync/now", post(drive::setup::sync_now))
         .fallback(|| async { ApiError::not_found("接口不存在") });
     let mcp = Router::new()
         .route_service("/mcp", mcp::service(state.clone()))

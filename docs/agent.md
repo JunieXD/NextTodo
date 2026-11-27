@@ -41,6 +41,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `log` | `log [批次] [-n 条数] [--before 批次] [--deleted]` | `batch?`、`limit?`、`before?`、`deleted?` | 最近的改动批次，默认 10，最多 100；包括别的成员在共享的文件夹里做的，写明是谁。每类变化最多写 3 个事项。`before` 只列这个批次之前的，用来往前翻；`deleted` 只列删除了事项、文件夹或附件的；给了 `batch` 只看这一个批次，逐样列出改了什么，每样下面写改了的字段，改前和改后（添加、删除的写当时有值的字段；描述只写开头，全文在 `--json` 里），其他参数不起作用 |
 | `jobs` | `jobs` | | [AI 整理](ai.md)的请求：等待、整理中和失败的，失败的带原因，以及建议待用户确认的整理文件夹；整理完的请求已经变成事项，不在这里 |
 | `attachment` | `download <附件 ID> [-o 路径]` | `id` | 读一个[附件](design/attachments.md)：PNG、JPEG、WebP、GIF 图片（5 MB 以内）在 MCP 里作为图片返回，agent 能直接看；UTF-8 的文本文件（`text/` 开头的和 JSON，1 MB 以内）返回内容；其他文件只给名称、类型和大小。命令行的 `download` 不经过这个工具，直接下载文件，存到 `-o` 给的文件或目录，不给时存到当前目录；存到目录时用附件的名称（按[桌面 App](desktop.md#附件)的规则改成能用的文件名）。已有同名文件时报错，不覆盖 |
+| `sync` | `sync` | | [本机模式](local.md#agent-接入)借网盘同步时[立即同步](local/drive.md#立即同步)：读完网盘里别的设备的改动、写完这台设备排着的再回答，之后读到的就是最新的；最多等 15 秒，没同步完的说明还在同步。同步受阻时报错并写明原因。连服务器、没在同步时直接回答 |
 | `add` | `add <标题> [--folder] [-d 描述] [--start] [--due \| --due-after] [--remind] [--repeat [--repeat-from] [--repeat-until]] [--assign 用户名…] [--after 编号…] [--before 编号…]` | `title`、`folder?`、`description?`、`start?`、`due?`、`due_after?`、`remind?`、`repeat?`、`repeat_from?`、`repeat_until?`、`assign?`、`after?`、`before?` | 添加一个事项；文件夹不存在时一起新建 |
 | `edit` | `edit <事项> [--title] [-d 描述 \| --replace 原文 新文… \| --append 文本] [--start \| --no-start] [--due \| --due-after \| --no-due] [--remind \| --no-remind] [--repeat [--repeat-from] [--repeat-until] \| --no-repeat] [--assign 用户名…] [--unassign 用户名…]` | `task`、`title?`、`description?`、`replace?`、`append?`、`start?`、`due?`、`due_after?`、`remind?`、`repeat?`、`repeat_from?`、`repeat_until?`、`assign?`、`unassign?` | 修改事项；`due`、`due_after`、`remind`、`repeat` 给 `null` 表示清除；描述的改法见[同时修改](#同时修改)；负责人在现有的上面加、减 |
 | `done` | `done <事项…> [--end-repeat]` | `tasks`、`today?`、`end_repeat?` | 标为完成，输出因此变成可做的事项；重复的事项改为顺延，输出下一次的截止时间；做的是 `repeat_until` 前的最后一次的，直接完成。有重复的事项时必须给 `today`（用户当地的当天日期），命令行自动带上本机日期。`end_repeat` 让重复的事项结束重复、直接完成，用于打卡的长期事项全部做完时，见[总体设计](design/repeat.md#重复) |
@@ -70,7 +71,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 - 负责人只能是共享人和成员，只有共享的文件夹里的事项能设。`assign`、`unassign` 在服务端当时的负责人上加、减，两个人同时设也不会互相覆盖。
 - 依赖只能连在同一处：私人的事项之间，或同一个共享的文件夹里的事项之间，见[依赖](design.md#依赖)。
 - 每个写操作是一个批次，全部生效或全部不生效；重发不会重复生效，见[重试](#重试)。
-- 只读令牌只能用前 9 个查询工具。
+- 只读令牌只能用前 11 个工具（查询和 `sync`）。
 
 ## 计划
 
@@ -174,6 +175,7 @@ $ nexttodo graph 工作
 | `graph` | `{tasks: [事项], edges: [{before, after}]}`，边用编号，别人共享给我的文件夹里的事项写成 `"@alice#42"` |
 | `log` | `[{batch, user, actor, source, created_at, summary, changes, undoes, undone}]`，`user` 是做的人的用户名，自己为 `null`；`actor` 是令牌名，没用令牌为 `null`；`source` 是文字里写的来源，如“本人（iPhone）”；`changes` 是每类变化一行，列出的事项和 `summary` 一样多；`undoes` 是撤销的批次号，只有整批就是撤销一个批次时才有（应用里的撤销都是这样），否则、或那个批次已不在记录里的为 `null`；`undone` 是已经撤销了（同[改动记录](design/history.md)：撤销和撤销的撤销连成一串，和最新的一次方向相反的）。给了 `batch` 时另有 `items: [{text, change, fields: [{field, name, before, after}]}]`：改的每样东西一项，按改动的先后，`text` 是它的那一行（如“修改 #8 整理报销单”，事项的标题写全），`change` 是 `created`、`updated` 或 `deleted`：添加的事项、文件夹、依赖、附件、AI 整理请求和成员是 `created`，删除、移除的是 `deleted`；`name` 是字段的中文名（如“截止”），`field` 是 `title`、`description`、`folder`、`number`、`start`、`due`、`reminders`、`repeat`、`assignees`、`completions`、`order`、`name`、`parent`、`color`、`icon`、`holder` 之一，`before`、`after` 是文字里的写法（如“2026-11-20 18:00”“提前 1 小时、当天 09:00”“每周一”），颜色和图标是代码，没有值、或者是添加（删除）的另一边为 `null`，`order` 两边都是 `null` |
 | `jobs` | `[{id, kind, start, folder, state, updated_at}]`，`kind` 是 `organize` 或 `tidy`，`start` 是原文开头，`state` 是 `waiting`、`running`、`failed`、`ready`，失败的另有 `error` |
+| `sync` | `{syncing, done, synced_at}`：`syncing` 是在不在借网盘同步，为 false 时没有另外两项；`done` 是这次在 15 秒内同步完没有；`synced_at` 是上次同步完的时间，毫秒 |
 | 写操作 | `{batch, changes: [变化]}`，预览时 `batch` 为 `null`；完成事项后有事项因此可做时另有 `unlocked: [事项]` |
 | `attach`（命令行） | 每个文件一项写操作的数据，按给出的顺序组成一个数组；中途失败时只列已经加上的，再报错，退出码为 1 |
 | `download`（命令行） | `{id, name, path}`：附件 ID、附件的名称、实际存到的路径 |

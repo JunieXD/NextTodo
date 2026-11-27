@@ -25,6 +25,8 @@ import { readyIn, useNextFolders } from "../next-folders";
 import { folderUrl, type SettingsSection, settingsUrl, useFolderView, useRevealRequest, useSelection } from "./nav";
 import { SettingsHome, SettingsPage, settingsTitle, useSectionAt } from "./Settings";
 import { ConnectionNote } from "./status";
+import { SyncLine } from "./DriveSync";
+import * as local from "../local";
 
 export function Phone({ onSignOut }: { onSignOut(): void }) {
   const [location, navigate] = useLocation();
@@ -159,6 +161,7 @@ function NextScreen({ anim, now }: { anim: string; now: Date }) {
       <p className="subtitle">
         {formatToday(now)}，{readyIn(board, listed).length} 项可做
       </p>
+      {local.inLocalMode() && <SyncLine />}
       <ConnectionNote connection={connection} />
       {app === "android" && <BackgroundTip />}
       <NextBody now={now} />

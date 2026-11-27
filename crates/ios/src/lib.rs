@@ -107,13 +107,21 @@ pub extern "C" fn nexttodo_session() -> *mut c_char {
     })
 }
 
-/// Has the server look at the drive now, when it syncs through one, waiting up to `wait_ms` for what
-/// is new there to be read in (docs/local/drive.md#运行). Nothing while it is not running.
+/// Has the server sync through the drive now, when it does, waiting up to `wait_ms` for what is new
+/// there to be read in and what waits here to be written, or for it to be held up
+/// (docs/local/drive.md#立即同步). Nothing while it is not running. Called off the app's queue too:
+/// stopping the server meanwhile ends the wait.
 #[allow(unsafe_code, reason = "C calls it by its unmangled name")]
 #[unsafe(no_mangle)]
 pub extern "C" fn nexttodo_pull(wait_ms: u64) {
     if let Ok((runtime, local)) = running() {
-        runtime.block_on(local.pull(Duration::from_millis(wait_ms)));
+        let (done, waited) = std::sync::mpsc::channel();
+        runtime.spawn(async move {
+            local.pull(Duration::from_millis(wait_ms)).await;
+            let _ = done.send(());
+        });
+        // An error: the server stopped, and the wait with it.
+        let _ = waited.recv();
     }
 }
 

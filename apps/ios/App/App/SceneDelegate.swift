@@ -32,4 +32,25 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             Changes.queue.async { Changes.send() }
         }
     }
+
+    /// Changes the app's server has go on into the drive: the app asks for the time it takes, which the
+    /// system gives for a while (docs/local/drive.md#运行). Waited for off `Local.queue`, so that coming
+    /// back to the front does not wait for the drive.
+    func sceneDidEnterBackground(_ scene: UIScene) {
+        var task = UIBackgroundTaskIdentifier.invalid
+        let end = {
+            guard task != .invalid else { return }
+            UIApplication.shared.endBackgroundTask(task)
+            task = .invalid
+        }
+        task = UIApplication.shared.beginBackgroundTask(withName: "drive", expirationHandler: end)
+        guard task != .invalid else { return }
+        Local.queue.async {
+            guard Local.on, Local.running else { return DispatchQueue.main.async(execute: end) }
+            DispatchQueue.global().async {
+                LocalServer.pull(waitMs: 15_000)
+                DispatchQueue.main.async(execute: end)
+            }
+        }
+    }
 }

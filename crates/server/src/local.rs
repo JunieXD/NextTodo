@@ -162,12 +162,12 @@ impl Local {
         .await?
     }
 
-    /// Looks at the drive now, when syncing through one, waiting up to `wait` for what is new there to
-    /// be read in (docs/local/drive.md#运行): as the app comes to the front, and before the widget lists the
-    /// tasks.
+    /// Syncs now, when syncing through a drive, waiting up to `wait` for it (docs/local/drive.md#立即同步):
+    /// as the app comes to the front, before the widget lists the tasks, and as the app goes to the
+    /// background.
     pub async fn pull(&self, wait: Duration) {
         if let Some(drive) = self.state.drive.current().await {
-            drive.caught_up(wait).await;
+            drive.sync(wait).await;
         }
     }
 

@@ -17,7 +17,7 @@ use super::commit;
 use super::remote::{Created, Failed, Remote};
 use super::s3::S3;
 use super::webdav::WebDav;
-use super::{Drive, Status, Trouble, read_in, snapshot, snapshots};
+use super::{Drive, Status, Trouble, WAIT, read_in, snapshot, snapshots};
 use crate::auth::Auth;
 use crate::error::{ApiError, Json};
 use crate::{AppState, Db, backup, store};
@@ -177,9 +177,23 @@ pub struct Shown {
 pub async fn get(State(st): State<AppState>, auth: Auth) -> Result<Json<Shown>, ApiError> {
     auth.require_device()?;
     let dir = data_dir(&st)?;
+    Ok(Json(shown(&st, &dir).await?))
+}
+
+/// Syncs now, and says how it goes once it has, or is held up, or after `WAIT` (docs/local/drive.md#立即同步).
+pub async fn sync_now(State(st): State<AppState>, auth: Auth) -> Result<Json<Shown>, ApiError> {
+    auth.require_device()?;
+    let dir = data_dir(&st)?;
+    if let Some(drive) = st.drive.current().await {
+        drive.sync(WAIT).await;
+    }
+    Ok(Json(shown(&st, &dir).await?))
+}
+
+async fn shown(st: &AppState, dir: &Path) -> Result<Shown, ApiError> {
     let status = st.drive.current().await.map(|d| d.status());
-    let drive = if status.is_some() { load(&dir)?.map(|c| c.view()) } else { None };
-    Ok(Json(Shown { drive, status, stopped: st.drive.stopped() }))
+    let drive = if status.is_some() { load(dir)?.map(|c| c.view()) } else { None };
+    Ok(Shown { drive, status, stopped: st.drive.stopped() })
 }
 
 #[derive(Deserialize, TS)]

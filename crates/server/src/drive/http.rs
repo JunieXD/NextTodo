@@ -18,6 +18,8 @@ pub(crate) fn agent() -> ureq::Agent {
         .allow_non_standard_methods(true)
         // Every request goes to the drive the user gave, and nowhere it sends it on to.
         .max_redirects(0)
+        // The commits read at once, each on a connection of its own.
+        .max_idle_connections_per_host(super::AHEAD)
         .timeout_connect(Some(Duration::from_secs(15)))
         .timeout_recv_response(Some(Duration::from_secs(60)))
         .timeout_global(Some(Duration::from_secs(600)))

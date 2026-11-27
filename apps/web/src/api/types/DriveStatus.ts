@@ -9,7 +9,7 @@ export type DriveStatus = {
  */
 enabling: boolean, 
 /**
- * When the drive last answered, in milliseconds.
+ * When it last read in all there was in the drive and wrote what waited, in milliseconds.
  */
 synced_at: number | null, 
 /**

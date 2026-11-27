@@ -95,6 +95,8 @@ class NextWidget : GlanceAppWidget() {
     /** Laid out for the size it is, to fit more tasks in a low one. */
     override val sizeMode = SizeMode.Exact
 
+    override val previewSizeMode = previewAt(300.dp, 170.dp)
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val changes = Widget.changes(context)
         // Glance keeps a session going for a while after an update or a tap, and updates during it
@@ -103,6 +105,11 @@ class NextWidget : GlanceAppWidget() {
             val shown by changes.collectAsState(Widget.shown(context))
             CompositionLocalProvider(LocalColors provides Colors(shown.look)) { Content(context, shown) }
         }
+    }
+
+    override suspend fun providePreview(context: Context, widgetCategory: Int) = provideContent {
+        val shown = Sample.shown(context)
+        CompositionLocalProvider(LocalColors provides Colors(shown.look)) { Content(context, shown) }
     }
 }
 

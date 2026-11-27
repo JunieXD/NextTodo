@@ -4,6 +4,7 @@
     <string name="title_activity_main">NextTodo</string>
     <string name="package_name">cn.juniexd.nexttodo</string>
     <string name="widget_description">显示当前可做的事项，点圆圈即可完成</string>
+    <string name="next_widget_name">接下来</string>
     <string name="agenda_widget_name">日程</string>
     <string name="agenda_widget_description">按天列出今天起 7 天截止的事项</string>
     <string name="week_widget_name">一周</string>

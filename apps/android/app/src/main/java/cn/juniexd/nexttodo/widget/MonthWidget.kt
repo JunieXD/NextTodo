@@ -57,6 +57,8 @@ class MonthWidget : GlanceAppWidget() {
     // it. Laid out by the height the options give (`height`).
     override val sizeMode = SizeMode.Single
 
+    override val previewSizeMode = previewAt(300.dp, 330.dp)
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val changes = Agenda.weekChanges(context)
         provideContent {
@@ -66,6 +68,11 @@ class MonthWidget : GlanceAppWidget() {
             val next = week.look.title && currentState(NEXT_ON) == week.now.toLocalDate().toString()
             CompositionLocalProvider(LocalColors provides Colors(week.look)) { MonthContent(context, week, next) }
         }
+    }
+
+    override suspend fun providePreview(context: Context, widgetCategory: Int) = provideContent {
+        val week = Sample.week(context)
+        CompositionLocalProvider(LocalColors provides Colors(week.look)) { MonthContent(context, week, false) }
     }
 }
 

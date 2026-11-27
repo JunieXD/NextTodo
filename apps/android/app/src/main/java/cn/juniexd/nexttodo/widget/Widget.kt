@@ -3,11 +3,18 @@ package cn.juniexd.nexttodo.widget
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProviderInfo
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.os.Build
 import android.widget.Toast
+import androidx.collection.intSetOf
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
+import androidx.glance.appwidget.GlanceAppWidgetManager
+import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.updateAll
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -30,7 +37,9 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,6 +62,10 @@ data class Item(val id: String, val title: String, val folder: String, val due: 
  * which what it says of the time goes by: a part of it, so that the widget is drawn again as the time
  * alone moves on. */
 data class Shown(val signedIn: Boolean, val items: List<Item>, val more: Int, val ticked: Set<Pair<String, Occurrence?>>, val look: Look, val now: LocalDateTime)
+
+/** How the launcher's list of widgets shows one laid out for its size: as it starts, 4×2 to 4×4. Drawn
+ * at its least, it would leave out what it leaves out there, the month's titles say. */
+internal fun previewAt(width: Dp, height: Dp) = SizeMode.Responsive(setOf(DpSize(width, height)))
 
 /** The widget's list, kept in its own preferences: written by the app, or fetched from the server. */
 object Widget {
@@ -100,6 +113,27 @@ object Widget {
         WeekWidget().updateAll(context)
         TimelineWidget().updateAll(context)
         MonthWidget().updateAll(context)
+        setPreviews(context)
+    }
+
+    private val previews = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val previewing = Mutex()
+
+    /** Has the launcher's list of widgets show each with example tasks in the look chosen now
+     * (`Sample`), on Android 15 and later; before, it shows the app's icon. Apart from what asks for
+     * it, and one at a time, so that the latest look is the one shown. The system takes only a few a
+     * while, leaving the one set before: the next try sets them again. */
+    fun setPreviews(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) return
+        val app = context.applicationContext
+        previews.launch {
+            previewing.withLock {
+                val manager = GlanceAppWidgetManager(app)
+                for (receiver in listOf(NextWidgetReceiver::class, AgendaWidgetReceiver::class, WeekWidgetReceiver::class, TimelineWidgetReceiver::class, MonthWidgetReceiver::class)) {
+                    manager.setWidgetPreviews(receiver, intSetOf(AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN))
+                }
+            }
+        }
     }
 
     /** The paths of the folders the widgets list, as a JSON array; none for all of them. */

@@ -57,6 +57,8 @@ import java.time.LocalDateTime
 class WeekWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Exact
 
+    override val previewSizeMode = previewAt(300.dp, 250.dp)
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val changes = Agenda.weekChanges(context)
         provideContent {
@@ -64,6 +66,11 @@ class WeekWidget : GlanceAppWidget() {
             val picked = currentState(PICKED)?.let(LocalDate::parse)
             CompositionLocalProvider(LocalColors provides Colors(week.look)) { WeekContent(context, week, picked) }
         }
+    }
+
+    override suspend fun providePreview(context: Context, widgetCategory: Int) = provideContent {
+        val week = Sample.week(context)
+        CompositionLocalProvider(LocalColors provides Colors(week.look)) { WeekContent(context, week, null) }
     }
 }
 

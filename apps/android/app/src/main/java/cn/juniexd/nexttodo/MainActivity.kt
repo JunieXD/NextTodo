@@ -3,6 +3,7 @@ package cn.juniexd.nexttodo
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import cn.juniexd.nexttodo.widget.Widget
 import com.getcapacitor.Bridge
 import com.getcapacitor.BridgeActivity
 import kotlin.concurrent.thread
@@ -22,6 +23,7 @@ class MainActivity : BridgeActivity() {
         registerPlugin(NextTodoPlugin::class.java)
         WebUpdate.start(this)
         super.onCreate(savedInstanceState)
+        Widget.setPreviews(this)
         // Without a WebView, Capacitor shows its error page and makes no bridge: nothing to give up.
         if (bridge != null && WebUpdate.trying(this)) handler.postDelayed(giveUp, READY_MS)
     }

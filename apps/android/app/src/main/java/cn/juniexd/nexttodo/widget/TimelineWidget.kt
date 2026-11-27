@@ -50,12 +50,19 @@ class TimelineWidget : GlanceAppWidget() {
     // One size, which is laid out to fill: the widget is drawn for each size it is given otherwise.
     override val sizeMode = SizeMode.Single
 
+    override val previewSizeMode = previewAt(300.dp, 250.dp)
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val changes = Agenda.weekChanges(context)
         provideContent {
             val week by changes.collectAsState(Agenda.week(context))
             CompositionLocalProvider(LocalColors provides Colors(week.look)) { TimelineContent(context, week) }
         }
+    }
+
+    override suspend fun providePreview(context: Context, widgetCategory: Int) = provideContent {
+        val week = Sample.week(context)
+        CompositionLocalProvider(LocalColors provides Colors(week.look)) { TimelineContent(context, week) }
     }
 }
 

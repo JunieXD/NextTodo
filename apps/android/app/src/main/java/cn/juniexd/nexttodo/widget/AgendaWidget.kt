@@ -45,12 +45,19 @@ class AgendaWidget : GlanceAppWidget() {
     /** Laid out for the size it is, as the “接下来” widget is. */
     override val sizeMode = SizeMode.Exact
 
+    override val previewSizeMode = previewAt(300.dp, 170.dp)
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val changes = Agenda.changes(context)
         provideContent {
             val shown by changes.collectAsState(Agenda.shown(context))
             CompositionLocalProvider(LocalColors provides Colors(shown.look)) { AgendaContent(context, shown) }
         }
+    }
+
+    override suspend fun providePreview(context: Context, widgetCategory: Int) = provideContent {
+        val shown = Sample.agendas(context)
+        CompositionLocalProvider(LocalColors provides Colors(shown.look)) { AgendaContent(context, shown) }
     }
 }
 

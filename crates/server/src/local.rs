@@ -98,13 +98,22 @@ impl Local {
         std::fs::create_dir_all(dir.join(DB_DIR))?;
         let db = dir.join(DB_DIR).join(DB_FILE);
         let now = crate::Clock::system().now();
+        let syncing = crate::drive::setup::configured(dir);
         let (started, (user, epoch)) = start::start(
             &db,
             dir.join("snapshots"),
             (Ipv4Addr::LOCALHOST, port).into(),
             Ai::new(None, Arc::new(Http { public_only: false })),
             Some(dir.to_owned()),
-            move |c| Ok((local_user(c, now)?, db::epoch(c)?)),
+            move |c| {
+                let user = local_user(c, now)?;
+                // Not syncing, as after a restore of a whole database, no settings are synced through a drive
+                // (docs/ai.md#保存位置和安全): none to be changed here, nor left organizing.
+                if !syncing {
+                    c.execute("DELETE FROM ai_settings", [])?;
+                }
+                Ok((user, db::epoch(c)?))
+            },
         )
         .await?;
         let url = format!("http://{}", started.listener.local_addr()?);
@@ -234,7 +243,7 @@ pub(crate) fn local_user(c: &mut Connection, now: i64) -> Result<String, ApiErro
     )?;
     tx.execute("DELETE FROM invites", [])?;
     // Sealed with a server's key, which the app doesn't have.
-    tx.execute("DELETE FROM ai_settings", [])?;
+    tx.execute("DELETE FROM ai_settings WHERE sealed", [])?;
     tx.commit()?;
     Ok(id)
 }

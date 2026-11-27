@@ -307,7 +307,8 @@ pub(crate) async fn resume(st: &AppState, dir: &Path) -> anyhow::Result<()> {
 /// Forgets the drive: this device's place in its history, then its settings, which `resume` goes on
 /// with should it stop in between.
 pub(crate) async fn forget(db: &Db, dir: &Path) -> Result<(), ApiError> {
-    db.call(|c| Ok(c.execute_batch("DELETE FROM sync_state; DELETE FROM sync_runs;")?)).await?;
+    // The AI settings synced through it with them (docs/ai.md#保存位置和安全): the drive keeps them.
+    db.call(|c| Ok(c.execute_batch("DELETE FROM sync_state; DELETE FROM sync_runs; DELETE FROM ai_settings;")?)).await?;
     match std::fs::remove_file(dir.join(CONFIG)) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.into()),
         _ => Ok(()),

@@ -52,6 +52,9 @@ pub(crate) fn write(dir: &Path, files: &Files, to: &Path) -> anyhow::Result<()> 
 fn pack(data: &Path, files: &Files, copy: &Path, to: &Path) -> anyhow::Result<()> {
     let name = copy.to_str().context("数据目录的路径无效")?;
     Connection::open(data.join(DB_FILE))?.execute("VACUUM INTO ?1", [name])?;
+    // Not the AI settings synced through a drive, their key as given: a backup may be handed on, to a
+    // server as it is imported say (docs/local/backup.md#备份). Vacuumed, not even in the free space.
+    Connection::open(copy)?.execute_batch("DELETE FROM ai_settings; VACUUM;")?;
     tar(copy, files, to)
 }
 
@@ -288,4 +291,31 @@ fn sync_dir(dir: &Path) -> std::io::Result<()> {
 #[cfg(not(unix))]
 fn sync_dir(_: &Path) -> std::io::Result<()> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_backup_leaves_out_the_ai_settings_synced_through_a_drive() {
+        // It may be handed on, to a server as it is imported say.
+        let dir = std::env::temp_dir().join(format!("nexttodo-backup-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir_all(dir.join(DB_DIR)).unwrap();
+        let db = crate::db::Db::open(&dir.join(DB_DIR).join(DB_FILE)).unwrap();
+        db.hold(|c| {
+            let user = crate::local::local_user(c, 1).unwrap();
+            c.execute(
+                "INSERT INTO ai_settings (user_id, provider, base_url, model, thinking, api_key, sealed, updated_at)
+                 VALUES (?1, 'openai', 'https://api.openai.com/v1', 'gpt', 'off', CAST('sk-synced' AS BLOB), 0, 0)",
+                [user],
+            )
+            .unwrap();
+        });
+        drop(db);
+        let to = dir.join("backup.tar");
+        write(&dir, &Files::new(dir.join(DB_DIR).join(crate::files::DIR)), &to).unwrap();
+        assert!(!std::fs::read(&to).unwrap().windows(9).any(|w| w == b"sk-synced"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

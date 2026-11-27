@@ -654,14 +654,14 @@ async fn a_restart_fails_the_jobs_it_cut_short() {
 async fn settings_are_each_users_own_and_the_key_stays_sealed() {
     let plain = TestApp::new();
     let s = plain.admin().await;
-    assert_eq!(plain.call("GET", "/ai/providers", Some(&s), None).await.body["sync"], false);
+    assert_eq!(plain.call("GET", "/ai/providers", Some(&s), None).await.body["sync"], Value::Null);
     assert_eq!(plain.call("PUT", "/ai/settings", Some(&s), Some(config())).await.status, StatusCode::CONFLICT);
 
     let (t, _) = server();
     let alice = t.admin().await;
     let bob = t.user(&alice, "bob").await;
     let providers = t.call("GET", "/ai/providers", Some(&alice), None).await.body;
-    assert_eq!(providers["sync"], true);
+    assert_eq!(providers["sync"], "server");
     assert_eq!(providers["providers"][0]["id"], "deepseek");
     t.call("PUT", "/ai/settings", Some(&alice), Some(config())).await;
     assert_eq!(t.call("GET", "/ai/settings", Some(&bob), None).await.body, Value::Null);

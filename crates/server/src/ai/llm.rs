@@ -101,7 +101,7 @@ pub const PROVIDERS: &[Provider] = &[
 ];
 
 /// What to call a provider with.
-#[derive(Clone, Deserialize, TS)]
+#[derive(Clone, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 #[ts(export, rename = "AiConfig")]
 pub struct Config {

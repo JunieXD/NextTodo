@@ -109,27 +109,93 @@ impl FromSql for Thinking {
     }
 }
 
-/// Settings kept on the server, the key still sealed.
+/// Settings kept on the server.
 struct Kept {
     provider: String,
     base_url: String,
     model: String,
     thinking: Thinking,
     vision: bool,
-    api_key: Vec<u8>,
+    api_key: KeptKey,
+}
+
+enum KeptKey {
+    /// With the server's key.
+    Sealed(Vec<u8>),
+    /// As given: synced through a drive, by an app that has no key to seal it with
+    /// (docs/ai.md#保存位置和安全).
+    Plain(String),
 }
 
 fn kept(c: &Connection, owner: &str) -> rusqlite::Result<Option<Kept>> {
-    c.query_row("SELECT provider, base_url, model, thinking, vision, api_key FROM ai_settings WHERE user_id = ?1", [owner], |r| {
-        Ok(Kept { provider: r.get(0)?, base_url: r.get(1)?, model: r.get(2)?, thinking: r.get(3)?, vision: r.get(4)?, api_key: r.get(5)? })
+    c.query_row("SELECT provider, base_url, model, thinking, vision, api_key, sealed FROM ai_settings WHERE user_id = ?1", [owner], |r| {
+        let key: Vec<u8> = r.get(5)?;
+        let api_key = if r.get(6)? {
+            KeptKey::Sealed(key)
+        } else {
+            KeptKey::Plain(
+                String::from_utf8(key).map_err(|e| rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Blob, e.into()))?,
+            )
+        };
+        Ok(Kept { provider: r.get(0)?, base_url: r.get(1)?, model: r.get(2)?, thinking: r.get(3)?, vision: r.get(4)?, api_key })
     })
     .optional()
+}
+
+/// Settings synced through a drive, as they go in a commit.
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct Synced {
+    config: Config,
+    at: i64,
+}
+
+/// Without the key, which is not to go in a log.
+impl std::fmt::Debug for Synced {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Synced").field("model", &self.config.model).field("at", &self.at).finish_non_exhaustive()
+    }
+}
+
+/// Puts `user`'s settings synced through a drive in place, or clears them with none, as made here: with
+/// the key kept then when `keep_key`, which another device may have changed since they were asked for.
+/// What was put in place, for the drive.
+pub(crate) fn put_synced(c: &Connection, user: &str, settings: Option<&Synced>, keep_key: bool) -> Result<Option<Synced>, ApiError> {
+    let mut settings = settings.cloned();
+    if let Some(s) = &mut settings
+        && keep_key
+    {
+        s.config.api_key =
+            kept(c, user)?.and_then(|k| k.key(None, user)).ok_or_else(|| ApiError::invalid("请填写 API 密钥", Some("api_key".into())))?;
+    }
+    if let Some(s) = &settings {
+        s.config.check().map_err(|m| ApiError::invalid(m, None))?;
+    }
+    keep_synced(c, user, settings.as_ref())?;
+    Ok(settings)
+}
+
+/// Puts `user`'s settings synced through a drive in place, or clears them with none: as read in from
+/// the drive.
+pub(crate) fn keep_synced(c: &Connection, user: &str, synced: Option<&Synced>) -> rusqlite::Result<()> {
+    match synced {
+        Some(Synced { config: k, at }) => c.execute(
+            "INSERT INTO ai_settings (user_id, provider, base_url, model, thinking, vision, api_key, sealed, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8)
+             ON CONFLICT (user_id) DO UPDATE SET provider = ?2, base_url = ?3, model = ?4, thinking = ?5, vision = ?6, api_key = ?7, sealed = 0, updated_at = ?8",
+            params![user, k.provider, k.base_url, k.model, k.thinking, k.vision, k.api_key.as_bytes(), at],
+        )?,
+        None => c.execute("DELETE FROM ai_settings WHERE user_id = ?1", [user])?,
+    };
+    Ok(())
 }
 
 impl Kept {
     /// The key; none when this server's key does not open it, having changed say.
     fn key(&self, secret: Option<&SecretKey>, owner: &str) -> Option<String> {
-        secret?.open(owner, &self.api_key)
+        match &self.api_key {
+            KeptKey::Sealed(sealed) => secret?.open(owner, sealed),
+            KeptKey::Plain(key) => Some(key.clone()),
+        }
     }
 
     fn config(self, api_key: String) -> Config {
@@ -576,12 +642,32 @@ pub(super) fn asked(j: &AiJob) -> Now {
 #[ts(export, rename = "AiProviders")]
 pub struct Providers {
     providers: &'static [Provider],
-    /// Whether settings can be kept on the server.
-    sync: bool,
+    /// Where settings can be synced to; none when only kept on the device.
+    sync: Option<SyncTo>,
+}
+
+#[derive(Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, rename = "AiSync")]
+pub enum SyncTo {
+    /// Sealed with `NEXTTODO_SECRET_KEY`.
+    Server,
+    /// In local mode, while syncing through a drive.
+    Drive,
 }
 
 pub async fn providers(State(st): State<AppState>, _auth: Auth) -> Json<Providers> {
-    Json(Providers { providers: PROVIDERS, sync: st.ai.secret.is_some() })
+    Json(Providers { providers: PROVIDERS, sync: sync_to(&st).await })
+}
+
+async fn sync_to(st: &AppState) -> Option<SyncTo> {
+    if st.ai.secret.is_some() {
+        Some(SyncTo::Server)
+    } else if st.local.is_some() && matches!(st.drive.route().await, Route::Drive(_)) {
+        Some(SyncTo::Drive)
+    } else {
+        None
+    }
 }
 
 /// Settings to keep on the server or to try out; without a key, with the one kept.
@@ -620,8 +706,12 @@ fn view(k: &Kept, key: Option<&str>) -> SettingsView {
         model: k.model.clone(),
         thinking: k.thinking,
         vision: k.vision,
-        key_end: key.map(|k| k.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect()),
+        key_end: key.map(key_end),
     }
+}
+
+fn key_end(key: &str) -> String {
+    key.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect()
 }
 
 fn checked(c: Config) -> Result<Config, ApiError> {
@@ -674,35 +764,54 @@ pub async fn put_settings(
     Json(input): Json<SettingsInput>,
 ) -> Result<Json<SettingsView>, ApiError> {
     auth.require_device()?;
+    let now = st.clock.now();
     if st.ai.secret.is_none() {
-        return Err(ApiError::conflict("服务器没有设置 NEXTTODO_SECRET_KEY，AI 整理的配置只能保存在本机"));
+        let (Some(_), Route::Drive(drive)) = (&st.local, st.drive.route().await) else {
+            return Err(ApiError::conflict(if st.local.is_some() {
+                "没有借网盘同步，AI 整理的配置只能保存在本机"
+            } else {
+                "服务器没有设置 NEXTTODO_SECRET_KEY，AI 整理的配置只能保存在本机"
+            }));
+        };
+        // Checked, the key that is kept taken, as they are put in place: this device may not have read in
+        // the latest yet.
+        let SettingsInput { provider, base_url, model, thinking, vision, api_key } = input;
+        let keep_key = api_key.is_none();
+        let config = Config { provider, base_url, model, thinking, vision, api_key: api_key.unwrap_or_default() };
+        let owner = auth.user_id.clone();
+        drive.ai_settings(auth.into(), Some(Synced { config, at: now }), keep_key, Some(tokio::time::Instant::now() + drive::WAIT)).await?;
+        let put = st.db.call(move |c| Ok(kept(c, &owner)?.map(|k| view(&k, k.key(None, &owner).as_deref())))).await?;
+        return put.map(Json).ok_or_else(|| ApiError::conflict("配置刚在另一台设备上被清除"));
     }
     let config = resolve(&st, auth.user_id.clone(), input).await?;
-    let (ai, hub, now) = (st.ai.clone(), st.hub.clone(), st.clock.now());
+    let shown = shown(&config);
+    let (ai, hub, owner) = (st.ai.clone(), st.hub.clone(), auth.user_id);
     st.db
         .call(move |c| {
-            let owner = auth.user_id;
             let sealed = ai.secret.as_ref().expect("checked above").seal(&owner, &config.api_key);
             c.execute(
-                "INSERT INTO ai_settings (user_id, provider, base_url, model, thinking, vision, api_key, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-                 ON CONFLICT (user_id) DO UPDATE SET provider = ?2, base_url = ?3, model = ?4, thinking = ?5, vision = ?6, api_key = ?7, updated_at = ?8",
+                "INSERT INTO ai_settings (user_id, provider, base_url, model, thinking, vision, api_key, sealed, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8)
+                 ON CONFLICT (user_id) DO UPDATE SET provider = ?2, base_url = ?3, model = ?4, thinking = ?5, vision = ?6, api_key = ?7, sealed = 1, updated_at = ?8",
                 params![owner, config.provider, config.base_url, config.model, config.thinking, config.vision, sealed, now],
             )?;
             // The queue hears of it too, and starts the jobs that were waiting for settings.
             hub.changed(&owner);
-            let k = Kept {
-                provider: config.provider,
-                base_url: config.base_url,
-                model: config.model,
-                thinking: config.thinking,
-                vision: config.vision,
-                api_key: sealed,
-            };
-            Ok(view(&k, Some(&config.api_key)))
+            Ok(())
         })
-        .await
-        .map(Json)
+        .await?;
+    Ok(Json(shown))
+}
+
+fn shown(c: &Config) -> SettingsView {
+    SettingsView {
+        provider: c.provider.clone(),
+        base_url: c.base_url.clone(),
+        model: c.model.clone(),
+        thinking: c.thinking,
+        vision: c.vision,
+        key_end: Some(key_end(&c.api_key)),
+    }
 }
 
 /// Of the user's `notes`, those from the root to `folder`, outermost first, as the model is given them.
@@ -770,6 +879,13 @@ pub(crate) fn set_note(c: &Connection, user: &str, folder: Option<FolderId>, tex
 
 pub async fn delete_settings(State(st): State<AppState>, auth: Auth) -> Result<StatusCode, ApiError> {
     auth.require_device()?;
+    let _direct = match st.drive.route().await {
+        Route::Drive(d) => {
+            d.ai_settings(auth.into(), None, false, Some(tokio::time::Instant::now() + drive::WAIT)).await?;
+            return Ok(StatusCode::NO_CONTENT);
+        }
+        Route::Direct(held) => held,
+    };
     st.db
         .call(move |c| {
             c.execute("DELETE FROM ai_settings WHERE user_id = ?1", [auth.user_id])?;

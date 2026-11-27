@@ -77,7 +77,7 @@ const TABLES: &[(&str, Kept)] = &[
     // A new one is given by whoever reads the snapshot.
     ("epoch", Kept::Partly(&[("id", None), ("value", Some("''"))])),
     ("server_settings", Kept::Partly(&[("id", None), ("compress_images", Some("1"))])),
-    ("ai_settings", Kept::Own),
+    ("ai_settings", Kept::Shared),
     ("deliveries", Kept::Own),
     ("invites", Kept::Own),
     ("sync_runs", Kept::Own),
@@ -231,12 +231,12 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("nexttodo-snapshot-{}", uuid::Uuid::now_v7()));
         std::fs::create_dir(&dir).unwrap();
         let old_path = dir.join("old.db");
-        let mut old = Connection::open(&old_path).unwrap();
+        let old = Connection::open(&old_path).unwrap();
         for sql in &crate::db::MIGRATIONS[..29] {
             old.execute_batch(sql).unwrap();
         }
         old.pragma_update(None, "user_version", 29).unwrap();
-        let user = crate::local::local_user(&mut old, 1).unwrap();
+        let user = crate::auth::create_user(&old, "local", "本机", "", false, 1).unwrap();
         let id = nexttodo_core::model::AiJobId(uuid::Uuid::now_v7());
         let task = uuid::Uuid::now_v7();
         let suggestions = |done: serde_json::Value| {
@@ -271,7 +271,7 @@ mod tests {
         super::unpack(&super::take(&db, &dir).unwrap(), &snapshot).unwrap();
         let c = Connection::open(&snapshot).unwrap();
         let version: i64 = c.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
-        assert_eq!(version, 32);
+        assert_eq!(version, 33);
         c.pragma_update(None, "user_version", version + 1).unwrap();
         assert!(crate::backup::convert(&snapshot, None).unwrap_err().is::<crate::db::Newer>());
         c.pragma_update(None, "user_version", version).unwrap();
@@ -289,7 +289,6 @@ mod tests {
             c.execute_batch(&format!(
                 "UPDATE users SET password_hash = 'PASSWORD-SECRET';
                  INSERT INTO tokens (id, user_id, kind, name, scope, secret_hash, created_at) VALUES ('t', '{user}', 'api', 'agent', 'write', CAST('TOKEN-SECRET' AS BLOB), 1);
-                 INSERT INTO ai_settings (user_id, provider, base_url, model, thinking, api_key, updated_at) VALUES ('{user}', 'deepseek', 'https://api.deepseek.com', 'm', 'off', CAST('sk-SECRET' AS BLOB), 1);
                  INSERT INTO tasks (id, owner_id, number, title, sort_key, created_at, updated_at) VALUES ('019a4b2c-0000-7000-8000-000000000001', '{user}', 1, 'SHARED-TITLE', 'a', 1, 1);
                  INSERT INTO mutations (id, owner_id, token_id, actor, ops, effects, reply, created_at) VALUES ('m', '{user}', 't', 'agent', '[]', '[]', 'REPLY-SECRET', 1);"
             ))
@@ -299,7 +298,7 @@ mod tests {
         GzDecoder::new(super::take(&db, &dir).unwrap().as_slice()).read_to_end(&mut bytes).unwrap();
         let has = |s: &str| bytes.windows(s.len()).any(|w| w == s.as_bytes());
         assert!(has("SHARED-TITLE"));
-        for secret in ["PASSWORD-SECRET", "TOKEN-SECRET", "sk-SECRET", "REPLY-SECRET"] {
+        for secret in ["PASSWORD-SECRET", "TOKEN-SECRET", "REPLY-SECRET"] {
             assert!(!has(secret), "{secret}");
         }
         std::fs::remove_dir_all(dir).unwrap();

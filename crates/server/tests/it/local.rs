@@ -99,12 +99,44 @@ async fn a_database_from_a_server_becomes_the_local_users() {
 }
 
 #[tokio::test]
+async fn ai_settings_synced_through_a_drive_go_as_the_app_starts_without_one() {
+    // As after a restore of a daily snapshot taken while syncing.
+    let dir = data_dir();
+    let state = existing(&dir, &["alice"]).await;
+    let c = Connection::open(db_file(&dir)).unwrap();
+    c.execute(
+        "INSERT INTO ai_settings (user_id, provider, base_url, model, thinking, api_key, sealed, updated_at)
+         SELECT id, 'openai', 'https://api.openai.com/v1', 'gpt', 'off', CAST('sk-synced' AS BLOB), 0, 0 FROM users",
+        [],
+    )
+    .unwrap();
+    drop((c, state));
+
+    let local = Local::start(&dir).await.unwrap();
+    let session = local.session().await.unwrap();
+    assert_eq!(call(&local, "GET", "/ai/settings", &session, None).await.1, Value::Null);
+    assert_eq!(call(&local, "GET", "/ai/providers", &session, None).await.1["sync"], Value::Null);
+    let settings =
+        json!({ "provider": "openai", "base_url": "https://api.openai.com/v1", "model": "gpt", "thinking": "off", "api_key": "sk-new" });
+    assert_eq!(call(&local, "PUT", "/ai/settings", &session, Some(settings)).await.0, 409);
+    clean([dir]);
+}
+
+#[tokio::test]
 async fn a_database_with_more_users_is_not_opened() {
     let dir = data_dir();
     drop(existing(&dir, &["alice", "bob"]).await);
+    Connection::open(db_file(&dir))
+        .unwrap()
+        .execute(
+            "INSERT INTO ai_settings (user_id, provider, base_url, model, thinking, api_key, sealed, updated_at)
+             SELECT id, 'openai', 'https://api.openai.com/v1', 'gpt', 'off', CAST('sk' AS BLOB), 0, 0 FROM users",
+            [],
+        )
+        .unwrap();
     let e = Local::start(&dir).await.err().unwrap();
     assert_eq!(e.to_string(), "数据库里有多个用户，不能在本机使用");
-    assert_eq!(count(&dir, "users"), 2);
+    assert_eq!((count(&dir, "users"), count(&dir, "ai_settings")), (2, 2), "left as it was");
     clean([dir]);
 }
 

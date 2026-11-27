@@ -5,6 +5,8 @@ use nexttodo_core::ops::Op;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::ai::Synced;
+
 /// How this version of the app writes commits, and the newest it reads: one more each time what an
 /// older version would not read changes, the operations and what they did included
 /// (docs/local.md#格式版本). Every format before it is still read. 2: a repeat may end or go by the lunar
@@ -16,7 +18,7 @@ use uuid::Uuid;
 /// working day. 10: a task may be reminded by its start and at times of its own.
 /// 11: completion times and dates can be edited, and AI can suggest a completion date.
 /// 12: an organizing job may have a calendar date and time, and the settings that go with the account
-/// are synced.
+/// and AI settings are synced.
 pub(crate) const FORMAT: i64 = 12;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -33,6 +35,8 @@ pub(crate) struct Commit {
 pub(crate) enum Item {
     Mutation(Made),
     Note(Note),
+    /// None as they are cleared.
+    AiSettings(Option<Synced>),
     Purge(Vec<Cleared>),
 }
 
@@ -41,7 +45,7 @@ impl Item {
     pub(crate) fn attached(&self) -> impl Iterator<Item = AttachmentId> + '_ {
         let effects = match self {
             Item::Mutation(m) => m.effects.as_slice(),
-            Item::Note(_) | Item::Purge(_) => &[],
+            Item::Note(_) | Item::AiSettings(_) | Item::Purge(_) => &[],
         };
         effects.iter().filter_map(|e| match e {
             Effect::Attachment(Change::Created(a)) => Some(a.id),

@@ -1,5 +1,5 @@
 // The settings of AI organizing: which model, how much it thinks, and whether they stay on this device
-// or go to the server for every device. See docs/ai.md#模型配置.
+// or are synced, through the server or a drive, for every device. See docs/ai.md#模型配置.
 
 import { Popover, Switch as Toggle } from "radix-ui";
 import { useEffect, useId, useRef, useState } from "react";
@@ -21,7 +21,8 @@ import { useFeedback } from "../ui/feedback";
 import { Help } from "../ui/help";
 import { AiNotes } from "./AiNotes";
 
-type Place = "local" | "server";
+/** Kept on this device, or synced through the server or a drive. */
+type Place = "local" | "synced";
 
 /** What the page is doing, the buttons waiting meanwhile. */
 type Busy = "models" | "test" | "save" | "clear";
@@ -64,6 +65,8 @@ export function AiPage() {
   const [kept, setKept] = useState<AiSettings | null>(null);
   const [form, setForm] = useState<AiSettingsInput | null>(null);
   const [place, setPlace] = useState<Place>("local");
+  /** Where the settings it opened with were: going to a drive from elsewhere is asked first. */
+  const [opened, setOpened] = useState<Place>("local");
   const [models, setModels] = useState<string[]>([]);
   const [result, setResult] = useState<AiTestResult | null>(null);
   const [error, setError] = useState("");
@@ -85,7 +88,8 @@ export function AiPage() {
         if (local) setForm(local);
         else if (s) {
           setForm({ provider: s.provider, base_url: s.base_url, model: s.model, thinking: s.thinking, vision: s.vision });
-          setPlace("server");
+          setPlace("synced");
+          setOpened("synced");
         } else {
           const first = p.providers[0];
           setForm({ provider: first.id, base_url: first.base_url, model: first.model, thinking: "off", vision: false, api_key: "" });
@@ -141,8 +145,11 @@ export function AiPage() {
       setModels(models);
       if (!models.length) snack("接口没有列出模型，请手动填写");
     });
+  const toDrive = providers.sync === "drive";
   const save = () =>
     run("save", async () => {
+      const body = "密钥会不加密地写进网盘，能读这个网盘文件夹的人都看得到。";
+      if (place === "synced" && toDrive && opened !== "synced" && !(await confirm({ title: "同步到网盘？", body, ok: "同步" }))) return;
       if (place === "local") {
         // The server checks these when they are handed over, which may be much later.
         if (!/^https?:\/\/\S+$/.test(form.base_url)) return setError("接口地址要以 http:// 或 https:// 开头，不含空格");
@@ -166,11 +173,12 @@ export function AiPage() {
         keepServerAiModel(user.id, saved.model);
         keepAiConfig(user.id, null);
       }
-      snack(place === "local" ? "已保存在本机" : "已同步到服务器");
+      snack(place === "local" ? "已保存在本机" : toDrive ? "已同步到网盘" : "已同步到服务器");
       history.back();
     });
   const clear = async () => {
-    const body = `${inLocalMode() ? "" : "本机和服务器上保存的都会删除，"}等待中的请求要配置后才会整理。`;
+    const where = inLocalMode() ? (kept ? "本机和网盘里保存的都会删除，" : "") : "本机和服务器上保存的都会删除，";
+    const body = `${where}等待中的请求要配置后才会整理。`;
     if (!(await confirm({ title: "清除 AI 整理的配置？", body, ok: "清除", danger: true }))) return;
     await run("clear", async () => {
       keepAiConfig(user.id, null);
@@ -180,7 +188,7 @@ export function AiPage() {
     });
   };
   const keyHint =
-    place === "server" && kept ? (kept.key_end ? `已保存，末 4 位 ${kept.key_end}；不修改请留空` : "服务器无法解密已保存的密钥，请重新填写") : "只发给所选的服务商";
+    place === "synced" && kept ? (kept.key_end ? `已保存，末 4 位 ${kept.key_end}；不修改请留空` : "服务器无法解密已保存的密钥，请重新填写") : "只发给所选的服务商";
 
   return (
     <>
@@ -237,21 +245,24 @@ export function AiPage() {
           </Toggle.Root>
         </span>
       </label>
-      {/* In local mode the server is this device, without the key to keep a configuration with
-          (docs/local.md#界面). */}
-      {!inLocalMode() && (
+      {/* In local mode the server is this device, without the key to seal settings with: they go
+          through a drive as they are, when syncing through one (docs/local.md#界面). */}
+      {(!inLocalMode() || toDrive) && (
         <div className="field">
           <span>
-            保存位置 <span className="hint">{place === "local" ? "这台设备联网时才会整理" : providers.sync ? "提交后设备可离线，由服务器整理" : ""}</span>
+            保存位置{" "}
+            <span className="hint">
+              {place === "local" ? (toDrive ? "只在这台设备上整理" : "这台设备联网时才会整理") : toDrive ? "密钥不加密，开着的任一台设备都会整理" : providers.sync ? "提交后设备可离线，由服务器整理" : ""}
+            </span>
           </span>
           <Seg<Place>
             label="保存位置"
             items={[
               ["local", "仅本机"],
-              ["server", "同步到服务器"],
+              ["synced", toDrive ? "同步到网盘" : "同步到服务器"],
             ]}
             value={place}
-            onChange={(p) => (p === "server" && !providers.sync ? setError("服务器没有设置 NEXTTODO_SECRET_KEY，配置只能保存在本机") : setPlace(p))}
+            onChange={(p) => (p === "synced" && !providers.sync ? setError("服务器没有设置 NEXTTODO_SECRET_KEY，配置只能保存在本机") : setPlace(p))}
           />
         </div>
       )}

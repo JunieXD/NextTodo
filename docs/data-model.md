@@ -211,7 +211,7 @@
 
 ### ai_settings
 
-同步到服务器的 AI 整理配置，每个用户最多一份。
+同步到服务器或[网盘](ai.md#保存位置和安全)的 AI 整理配置，每个用户最多一份。
 
 | 列 | 类型 | 说明 |
 |---|---|---|
@@ -221,7 +221,8 @@
 | model | TEXT | |
 | thinking | TEXT | `off`、`low` 或 `high` |
 | vision | INTEGER | 模型能否识别图片，0 或 1，见 [AI 整理](ai.md#附件) |
-| api_key | BLOB | 加密的 API 密钥：24 字节随机 nonce 加 XChaCha20-Poly1305 密文，附加数据是用户 ID，所以换到别人名下解不开 |
+| api_key | BLOB | API 密钥。`sealed` 为 1 时加密：24 字节随机 nonce 加 XChaCha20-Poly1305 密文，附加数据是用户 ID，所以换到别人名下解不开；为 0 时是 UTF-8 原文 |
+| sealed | INTEGER | 1：服务器用 `NEXTTODO_SECRET_KEY` 加密；0：本机模式同步到网盘，不加密 |
 | updated_at | INTEGER | |
 
 ### ai_notes

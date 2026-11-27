@@ -72,6 +72,7 @@ pub(crate) const SHARED: &[&str] = &[
     "SELECT id, next_task_number, prefs FROM users",
     "SELECT id, owner_id, actor, ops, effects, created_at FROM mutations ORDER BY id",
     "SELECT * FROM ai_notes ORDER BY folder_id",
+    "SELECT * FROM ai_settings",
 ];
 
 struct Device {
@@ -616,6 +617,66 @@ async fn a_tool_preview_changes_nothing_anywhere() {
     assert!(preview.output.text.starts_with("预览"), "{}", preview.output.text);
     assert!(log(&store).is_empty());
     assert_eq!(d.count("SELECT count(*) FROM tasks"), 0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ai_settings_synced_on_one_device_organize_on_another() {
+    let (store, devices) = devices(2).await;
+    let (a, b) = (&devices[0], &devices[1]);
+    let settings =
+        json!({ "provider": "deepseek", "base_url": "https://api.deepseek.com", "model": "m", "thinking": "off", "api_key": "sk-synced" });
+    ai::put_settings(State(a.st.clone()), a.session(), Json(serde_json::from_value(settings).unwrap())).await.unwrap();
+    caught_up(&store, &devices).await;
+    assert_same(&devices);
+    // Only `b` organizes in the background; `a` is closed, say.
+    tokio::spawn(ai::run_queue(b.st.clone()));
+    let job = id();
+    a.made(job_create(&job)).await.unwrap();
+    caught_up(&store, &devices).await;
+    until(|| b.job(&job).is_none()).await;
+    caught_up(&store, &devices).await;
+    assert_same(&devices);
+    assert_eq!((a.model.asked(), b.model.asked(), a.titles()), (0, 1, vec![vec![Value::Text("设备 2".into())]]));
+
+    ai::delete_settings(State(a.st.clone()), a.session()).await.unwrap();
+    caught_up(&store, &devices).await;
+    assert_eq!(dump(b.db(), "SELECT count(*) FROM ai_settings"), [[Value::Integer(0)]]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ai_settings_saved_without_a_key_keep_the_one_changed_elsewhere_meanwhile() {
+    let (store, devices) = devices(2).await;
+    let (a, b) = (&devices[0], &devices[1]);
+    let put = |d: &Device, model: &str, key: Option<&str>| {
+        let mut settings = json!({ "provider": "deepseek", "base_url": "https://api.deepseek.com", "model": model, "thinking": "off" });
+        if let Some(key) = key {
+            settings["api_key"] = key.into();
+        }
+        ai::put_settings(State(d.st.clone()), d.session(), Json(serde_json::from_value(settings).unwrap()))
+    };
+    put(a, "m", Some("sk-old")).await.unwrap();
+    caught_up(&store, &devices).await;
+    // `b` has not read the new key in as it changes the model alone.
+    put(a, "m", Some("sk-new")).await.unwrap();
+    put(b, "m2", None).await.unwrap();
+    caught_up(&store, &devices).await;
+    assert_same(&devices);
+    let kept = dump(b.db(), "SELECT model, CAST(api_key AS TEXT) FROM ai_settings");
+    assert_eq!(kept, [[Value::Text("m2".into()), Value::Text("sk-new".into())]]);
+    // Read in as cleared, not yet as put in place again: the key put then is the one kept all the same.
+    ai::delete_settings(State(a.st.clone()), a.session()).await.unwrap();
+    caught_up(&store, &devices).await;
+    put(a, "m", Some("sk-newer")).await.unwrap();
+    put(b, "m3", None).await.unwrap();
+    caught_up(&store, &devices).await;
+    assert_same(&devices);
+    let kept = dump(b.db(), "SELECT model, CAST(api_key AS TEXT) FROM ai_settings");
+    assert_eq!(kept, [[Value::Text("m3".into()), Value::Text("sk-newer".into())]]);
+
+    // Stopping, a device keeps them no more; the drive and the others do.
+    assert_eq!(b.stop(true).await.unwrap(), StatusCode::NO_CONTENT);
+    assert_eq!(dump(b.db(), "SELECT count(*) FROM ai_settings"), [[Value::Integer(0)]]);
+    assert_eq!(dump(a.db(), "SELECT count(*) FROM ai_settings"), [[Value::Integer(1)]]);
 }
 
 fn job_create(job: &str) -> serde_json::Value {

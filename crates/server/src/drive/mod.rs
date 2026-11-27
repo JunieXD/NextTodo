@@ -296,6 +296,13 @@ enum Work {
         text: NoteText,
         answer: Answer<()>,
     },
+    /// AI settings synced through the drive, or none to clear them.
+    AiSettings {
+        settings: Option<ai::Synced>,
+        /// With the key kept as it is put in place, none being given.
+        keep_key: bool,
+        answer: Answer<()>,
+    },
     /// Clearing the files no attachment has used since before `before`.
     Purge {
         before: i64,
@@ -309,7 +316,7 @@ impl Request {
         match &self.work {
             Work::Mutation { mutation, .. } => Some(mutation.id),
             Work::Tool { id, .. } | Work::Step { id, .. } => Some(*id),
-            Work::Note { .. } | Work::Purge { .. } => None,
+            Work::Note { .. } | Work::AiSettings { .. } | Work::Purge { .. } => None,
         }
     }
 
@@ -318,7 +325,7 @@ impl Request {
             Work::Mutation { answer, .. } => send(answer, Err(e)),
             Work::Tool { answer, .. } => send(answer, Err(e)),
             Work::Step { answer, .. } => send(answer, Err(e)),
-            Work::Note { answer, .. } | Work::Purge { answer, .. } => send(answer, Err(e)),
+            Work::Note { answer, .. } | Work::AiSettings { answer, .. } | Work::Purge { answer, .. } => send(answer, Err(e)),
         }
     }
 
@@ -334,7 +341,9 @@ impl Request {
         match &mut self.work {
             Work::Step { answer, .. } => send(answer, Ok(false)),
             Work::Purge { answer, .. } => send(answer, Ok(())),
-            Work::Mutation { .. } | Work::Tool { .. } | Work::Note { .. } => unreachable!("they make something or fail"),
+            Work::Mutation { .. } | Work::Tool { .. } | Work::Note { .. } | Work::AiSettings { .. } => {
+                unreachable!("they make something or fail")
+            }
         }
     }
 }
@@ -456,6 +465,18 @@ impl Drive {
         deadline: Option<Instant>,
     ) -> impl Future<Output = Result<(), ApiError>> + use<> {
         self.queue(maker, |answer| Work::Note { folder_id, text, answer }).answered(deadline)
+    }
+
+    /// Queues putting AI settings synced through the drive in place of `maker`'s, with the key kept
+    /// then when `keep_key`, or clearing them with none, as `mutate` does.
+    pub(crate) fn ai_settings(
+        &self,
+        maker: Maker,
+        settings: Option<ai::Synced>,
+        keep_key: bool,
+        deadline: Option<Instant>,
+    ) -> impl Future<Output = Result<(), ApiError>> + use<> {
+        self.queue(maker, |answer| Work::AiSettings { settings, keep_key, answer }).answered(deadline)
     }
 
     /// Queues clearing the files no attachment has used since before `before`, on every device.
@@ -1080,7 +1101,7 @@ impl Worker {
             .iter()
             .filter_map(|r| match &r.work {
                 Work::Tool { id, local, .. } => Some((*id, local.clone())),
-                Work::Mutation { .. } | Work::Step { .. } | Work::Note { .. } | Work::Purge { .. } => None,
+                Work::Mutation { .. } | Work::Step { .. } | Work::Note { .. } | Work::AiSettings { .. } | Work::Purge { .. } => None,
             })
             .collect();
         let (user, number, hub, files, id) = (self.user.clone(), self.applied + 1, self.hub.clone(), self.files.clone(), commit.id);
@@ -1111,7 +1132,7 @@ impl Worker {
                         Work::Mutation { mutation, answer } => send(answer, Ok(mutate::earlier(c, &actor, mutation.id)?.expect(HERE))),
                         Work::Tool { id, answer, .. } => send(answer, Ok(write::earlier(c, &actor, *id)?.expect(HERE))),
                         Work::Step { answer, .. } => send(answer, Ok(true)),
-                        Work::Note { answer, .. } | Work::Purge { answer, .. } => send(answer, Ok(())),
+                        Work::Note { answer, .. } | Work::AiSettings { answer, .. } | Work::Purge { answer, .. } => send(answer, Ok(())),
                     }
                 }
                 Ok(())
@@ -1251,6 +1272,7 @@ fn read_in(
                 }
             }
             Item::Note(n) => store::set_ai_note(&tx, user, n.folder_id, &n.text, n.at)?,
+            Item::AiSettings(s) => ai::keep_synced(&tx, user, s.as_ref())?,
             Item::Purge(gone) => {
                 replay::purge(&tx, user, &gone)?;
                 cleared.extend(gone.iter().map(|f| f.id));
@@ -1283,6 +1305,11 @@ fn try_out(tx: &mut Transaction, r: &Request, files: &Files, now: i64) -> Result
             point.commit()?;
             return Ok(Tried::Made(Item::Note(Note { folder_id: *folder_id, text: text.clone(), at: now })));
         }
+        Work::AiSettings { settings, keep_key, .. } => {
+            let kept = ai::put_synced(&point, actor.user, settings.as_ref(), *keep_key)?;
+            point.commit()?;
+            return Ok(Tried::Made(Item::AiSettings(kept)));
+        }
         Work::Purge { before, .. } => {
             let cleared = purgeable(&point, *before)?;
             if cleared.is_empty() {
@@ -1310,7 +1337,7 @@ fn try_out(tx: &mut Transaction, r: &Request, files: &Files, now: i64) -> Result
             Some(made) => made,
             None => return Ok(Tried::Moot),
         },
-        Work::Note { .. } | Work::Purge { .. } => unreachable!("made above"),
+        Work::Note { .. } | Work::AiSettings { .. } | Work::Purge { .. } => unreachable!("made above"),
     };
     mutate::record(&point, &actor, id, &ops, &done, now)?;
     point.commit()?;

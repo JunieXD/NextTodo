@@ -1,4 +1,4 @@
--- Sharing folders (docs/design.md#共享): who a folder is shared with, which makes it and everything
+-- Sharing folders (docs/design/sharing.md): who a folder is shared with, which makes it and everything
 -- in it theirs to see and change too; who is to do a task in one.
 CREATE TABLE members (
     folder_id TEXT NOT NULL REFERENCES folders (id) ON DELETE CASCADE,

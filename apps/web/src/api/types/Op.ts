@@ -39,11 +39,11 @@ color?: FolderColor | null,
  */
 icon?: FolderIcon | null, } | { "op": "folder.delete", id: FolderId, } | { "op": "task.create", id: TaskId, title: Title, folder_id?: FolderId, description?: Description, start?: Date, start_time?: Time, 
 /**
- * Reminders by the start (docs/design.md#提醒).
+ * Reminders by the start (docs/design/dates.md#提醒).
  */
 start_reminders?: Array<Remind>, remind_at?: Array<RemindAt>, due?: Due, 
 /**
- * In place of `due` (docs/design.md#前置完成后的截止).
+ * In place of `due` (docs/design/dates.md#前置完成后的截止).
  */
 due_after?: DueAfter, sort_key?: SortKey, done?: boolean, 
 /**
@@ -64,7 +64,7 @@ start?: Date | null,
 start_time?: Time | null, 
 /**
  * All the reminders by the start, in place of those there are; without them, those left with
- * nothing to go by go (docs/design.md#提醒).
+ * nothing to go by go (docs/design/dates.md#提醒).
  */
 start_reminders?: Array<Remind>, 
 /**
@@ -76,7 +76,7 @@ remind_at?: Array<RemindAt>,
  */
 due?: Due | null, 
 /**
- * In place of `due` (docs/design.md#前置完成后的截止); `null` clears it and the due date it
+ * In place of `due` (docs/design/dates.md#前置完成后的截止); `null` clears it and the due date it
  * gave.
  */
 due_after?: DueAfter | null, sort_key?: SortKey, done?: boolean, 

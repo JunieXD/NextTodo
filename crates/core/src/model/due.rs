@@ -11,7 +11,7 @@ use ts_rs::TS;
 pub struct Due {
     pub date: Date,
     pub at: Option<DueAt>,
-    /// Reminders on the due date or days before it, at a time of day (docs/design.md#提醒). Sorted,
+    /// Reminders on the due date or days before it, at a time of day (docs/design/dates.md#提醒). Sorted,
     /// none twice.
     pub remind_on: Vec<RemindOn>,
     pub repeat: Option<Repeat>,
@@ -55,7 +55,7 @@ pub enum Remind {
     On(RemindOn),
 }
 
-/// A reminder at a time of its own, ringing once (docs/design.md#提醒), by the clock of the device.
+/// A reminder at a time of its own, ringing once (docs/design/dates.md#提醒), by the clock of the device.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 #[ts(export)]
@@ -67,7 +67,7 @@ pub struct RemindAt {
 /// Reminders by the start, `time` its time of day: checked, none twice, those on a day before those so
 /// long before, each the first to come first. Not all by when they come, as that moves with the
 /// start's time, a field of its own: moving it would change them too, and undoing it what was set
-/// since (docs/design.md#改动记录和撤销).
+/// since (docs/design/history.md).
 pub fn start_reminders(time: Option<&Time>, reminders: Vec<Remind>) -> Result<Vec<Remind>, String> {
     let (at, mut on) = timing(time.cloned(), reminders, "开始")?;
     on.sort_by(|a, b| b.days.cmp(&a.days).then_with(|| a.time.cmp(&b.time)));
@@ -75,7 +75,7 @@ pub fn start_reminders(time: Option<&Time>, reminders: Vec<Remind>) -> Result<Ve
     Ok(on.into_iter().map(Remind::On).chain(before).collect())
 }
 
-/// The reminders a device gives a task as it gets a due date (docs/design.md#提醒): one due at a time
+/// The reminders a device gives a task as it gets a due date (docs/design/dates.md#提醒): one due at a time
 /// those so many minutes before, one due on a date alone those by the day. Sorted, none twice.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(try_from = "DefaultRemindersFields")]
@@ -198,7 +198,7 @@ impl Due {
     }
 }
 
-/// A due date some days after the task's prerequisites are all done (docs/design.md#前置完成后的截止):
+/// A due date some days after the task's prerequisites are all done (docs/design/dates.md#前置完成后的截止):
 /// the time of day and the reminders a due date has, without the date, which comes once they are.
 /// Never repeating.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]

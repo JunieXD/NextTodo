@@ -91,7 +91,7 @@ pub async fn start_local(app: AppHandle, server: State<'_, Server>, renew: bool)
 }
 
 /// Has the server look at the drive now, when it syncs through one, as a window of the app comes to the
-/// front (docs/local.md#运行).
+/// front (docs/local/drive.md#运行).
 pub fn focused(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {

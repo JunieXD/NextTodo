@@ -1,5 +1,5 @@
 //! Reading and writing entities. Lookups by id find whatever has it; who can see it is for the caller
-//! to decide, by its owner and the folder it is in (docs/design.md#共享). Lists are those of a user.
+//! to decide, by its owner and the folder it is in (docs/design/sharing.md). Lists are those of a user.
 
 use std::collections::{HashMap, HashSet};
 
@@ -663,7 +663,7 @@ pub struct StoredFile {
     pub size: FileSize,
 }
 
-/// The file `id`, none once it was cleared through a drive (docs/local.md#附件).
+/// The file `id`, none once it was cleared through a drive (docs/local/drive.md#附件).
 pub fn load_file(c: &Connection, id: AttachmentId) -> rusqlite::Result<Option<StoredFile>> {
     c.query_row("SELECT owner_id, type, size FROM files WHERE id = ?1 AND NOT purged", [id], |r| {
         Ok(StoredFile { owner: r.get(0)?, media_type: r.get(1)?, size: r.get(2)? })

@@ -22,7 +22,7 @@
 | password_hash | TEXT | Argon2id，PHC 字符串 |
 | is_admin | INTEGER | 0 或 1 |
 | next_task_number | INTEGER | 下一个事项编号，从 1 开始 |
-| pruned_seq | INTEGER | 改动日志已删除到的序号，客户端的 `since` 比它小就要重新下载；加入、退出或被移出[共享](design.md#共享)时设为那个改动的序号，让这个人的设备重新下载 |
+| pruned_seq | INTEGER | 改动日志已删除到的序号，客户端的 `since` 比它小就要重新下载；加入、退出或被移出[共享](design/sharing.md)时设为那个改动的序号，让这个人的设备重新下载 |
 | created_at | INTEGER | |
 
 ### invites
@@ -75,24 +75,24 @@
 | description | TEXT | Markdown，最长 20000 字；除换行和制表符外不含控制字符 |
 | done_at | INTEGER，可空 | 空表示待办，有值是结束的时间 |
 | dropped | INTEGER | [放弃](design.md#放弃)了为 1，否则为 0；为 1 时 `done_at` 有值，是放弃的时间 |
-| start_date | TEXT，可空 | [开始时间](design.md#开始时间)的日期，没到时事项等着；有 `due_date` 时开始不能晚于截止 |
+| start_date | TEXT，可空 | [开始时间](design/dates.md#开始时间)的日期，没到时事项等着；有 `due_date` 时开始不能晚于截止 |
 | start_time | TEXT，可空 | 开始的几点几分，只能在有 `start_date` 时设置；没有时从那天 0 点开始 |
-| start_reminders | TEXT，可空 | 按开始时间算的[提醒](design.md#提醒)，JSON 列表，写法同 `reminders`；只能在有 `start_date` 时设置，提前多久的要有 `start_time`；没有时为空 |
+| start_reminders | TEXT，可空 | 按开始时间算的[提醒](design/dates.md#提醒)，JSON 列表，写法同 `reminders`；只能在有 `start_date` 时设置，提前多久的要有 `start_time`；没有时为空 |
 | remind_at | TEXT，可空 | 指定时间的提醒，JSON 列表 `[{date, time}]`，按时刻先后排、不重复；没有时为空 |
 | due_date | TEXT，可空 | |
 | due_time | TEXT，可空 | 只能在有 `due_date` 时设置 |
-| reminders | TEXT，可空 | 按截止时间算的[提醒](design.md#提醒)，JSON 列表，写法同 [API](api.md) 的 `reminders`；提前多久的只能在有 `due_time` 时设置；没有提醒时为空 |
-| repeat_every | INTEGER，可空 | [重复](design.md#重复)的间隔数，1–365；只能在有 `due_date` 时设置 |
+| reminders | TEXT，可空 | 按截止时间算的[提醒](design/dates.md#提醒)，JSON 列表，写法同 [API](api.md) 的 `reminders`；提前多久的只能在有 `due_time` 时设置；没有提醒时为空 |
+| repeat_every | INTEGER，可空 | [重复](design/repeat.md#重复)的间隔数，1–365；只能在有 `due_date` 时设置 |
 | repeat_unit | TEXT，可空 | `day`、`week` 或 `month` |
 | repeat_from | TEXT，可空 | 下一次从哪天算：`due`（截止日期）或 `done`（完成那天） |
 | repeat_days | INTEGER，可空 | 按周重复在周几，按位存：周一是 1，周二是 2，……，周日是 64；只能在 `repeat_unit` 为 `week` 时设置，空表示截止日期那天 |
 | repeat_monthdays | INTEGER，可空 | 按月重复在几号，按位存：1 号是 1，2 号是 2，3 号是 4，……，31 号是 2³⁰；只能在 `repeat_unit` 为 `month` 时设置，空表示截止日期那天 |
-| repeat_lunar | INTEGER | 按[农历](design.md#重复)重复为 1，否则为 0；为 1 时 `repeat_unit` 是 `month`，`repeat_monthdays` 不为空，只到 30 号（初一到三十） |
-| repeat_legal | INTEGER | [每个法定工作日](design.md#重复)为 1，否则为 0；为 1 时 `repeat_every` 是 1，`repeat_unit` 是 `week`，`repeat_days` 是周一到周五 |
-| repeat_until | TEXT，可空 | [重复到](design.md#重复)哪天（含这天），空表示一直重复；只能在有重复时设置，不早于 `due_date` |
-| due_after | TEXT，可空 | [前置完成后几天内](design.md#前置完成后的截止)截止，JSON，写法同 [API](api.md#前置完成后的截止) 的 `due_after`；有它时 `due_date` 等几列是它给的截止时间，前置没都完成时为空 |
+| repeat_lunar | INTEGER | 按[农历](design/repeat.md#重复)重复为 1，否则为 0；为 1 时 `repeat_unit` 是 `month`，`repeat_monthdays` 不为空，只到 30 号（初一到三十） |
+| repeat_legal | INTEGER | [每个法定工作日](design/repeat.md#重复)为 1，否则为 0；为 1 时 `repeat_every` 是 1，`repeat_unit` 是 `week`，`repeat_days` 是周一到周五 |
+| repeat_until | TEXT，可空 | [重复到](design/repeat.md#重复)哪天（含这天），空表示一直重复；只能在有重复时设置，不早于 `due_date` |
+| due_after | TEXT，可空 | [前置完成后几天内](design/dates.md#前置完成后的截止)截止，JSON，写法同 [API](api.md#前置完成后的截止) 的 `due_after`；有它时 `due_date` 等几列是它给的截止时间，前置没都完成时为空 |
 | unlocked_on | TEXT，可空 | 前置都完成的那天，截止日期从它（或更晚的 `start_date`）算起；只能在有 `due_after` 时设置 |
-| completion_count | INTEGER，可空 | 重复的事项[完成过几次](design.md#重复)，至少 1；从没完成过时为空。结束重复并完成不算 |
+| completion_count | INTEGER，可空 | 重复的事项[完成过几次](design/repeat.md#重复)，至少 1；从没完成过时为空。结束重复并完成不算 |
 | last_completed | TEXT，可空 | 最近一次完成的日期（完成那台设备上的当天） |
 | sort_key | TEXT | 文件夹内的手动顺序 |
 | created_at / updated_at | INTEGER | |
@@ -103,7 +103,7 @@
 
 ### completions
 
-重复事项的[完成记录](design.md#重复)，每次完成一条。
+重复事项的[完成记录](design/repeat.md#重复)，每次完成一条。
 
 | 列 | 类型 | 说明 |
 |---|---|---|
@@ -127,7 +127,7 @@
 
 ### members
 
-[共享](design.md#共享)的文件夹的成员，共享人不在里面。一个文件夹有成员就是共享的，最后一个成员离开时回到私人的。
+[共享](design/sharing.md)的文件夹的成员，共享人不在里面。一个文件夹有成员就是共享的，最后一个成员离开时回到私人的。
 
 | 列 | 类型 | 说明 |
 |---|---|---|
@@ -149,7 +149,7 @@
 
 ### attachments
 
-事项和 AI 整理请求的[附件](design.md#附件)。
+事项和 AI 整理请求的[附件](design/attachments.md)。
 
 | 列 | 类型 | 说明 |
 |---|---|---|
@@ -163,7 +163,7 @@
 
 ### files
 
-附件的文件，存在数据目录的 `files/<id>` 里，不经同步协议传给设备；借网盘同步时传进网盘，各设备按需下载，见[附件](local.md#附件)。
+附件的文件，存在数据目录的 `files/<id>` 里，不经同步协议传给设备；借网盘同步时传进网盘，各设备按需下载，见[附件](local/drive.md#附件)。
 
 | 列 | 类型 | 说明 |
 |---|---|---|
@@ -178,7 +178,7 @@
 
 已清理的行一定没人用（`unused_at` 不为空），也不再是哪台设备自己的（`staged` 为 0），由表的约束保证。
 
-每天清理一次：在一个事务里删掉 `unused_at` 在 90 天以前的行，再删它们的文件；行删了以后，加附件和撤销都用不上它了，所以不会删掉刚恢复的文件。`files/` 里没有对应行的文件（写到一半的，或写完、还没记下就中断的）一天以后也删掉：在数据库的锁里逐个再查一次没有行才删，上传的文件也在这把锁里换上、记下，所以不会删掉刚记下的。借网盘同步时改为写进网盘、各设备一起清理，见[附件](local.md#附件)。
+每天清理一次：在一个事务里删掉 `unused_at` 在 90 天以前的行，再删它们的文件；行删了以后，加附件和撤销都用不上它了，所以不会删掉刚恢复的文件。`files/` 里没有对应行的文件（写到一半的，或写完、还没记下就中断的）一天以后也删掉：在数据库的锁里逐个再查一次没有行才删，上传的文件也在这把锁里换上、记下，所以不会删掉刚记下的。借网盘同步时改为写进网盘、各设备一起清理，见[附件](local/drive.md#附件)。
 
 ### server_settings
 
@@ -187,7 +187,7 @@
 | 列 | 类型 | 说明 |
 |---|---|---|
 | id | INTEGER PK | 固定为 1 |
-| compress_images | INTEGER | 上传前是否[压缩图片](design.md#附件)，默认 1 |
+| compress_images | INTEGER | 上传前是否[压缩图片](design/attachments.md)，默认 1 |
 
 ### ai_jobs
 
@@ -205,7 +205,7 @@
 | state | TEXT | `waiting`（等待）、`running`（整理中）、`failed`（失败）或 `ready`（整理文件夹的建议待确认） |
 | error | TEXT，可空 | 失败的原因，只在 `failed` 时有 |
 | suggestions | TEXT，可空 | 建议，JSON 数组，每条按独有的字段区分：修改 `{task, title?, description?, due?, done?, folder?, after, unlink?, reason, was}`（`due` 为 `null` 是清除）、删除 `{delete, reason, was}`、新建 `{create, title, description?, due?, after, before, reason}`（`create` 是新事项的 ID）、调整顺序 `{order, reason}`、改文件夹的颜色和图标 `{style, color?, icon?, reason, was}`（`style` 是文件夹 ID，`null` 是改回默认）；修改和删除的 `was` 是整理时事项的 `{title, description, due}`，改颜色和图标的是文件夹的 `{color, icon}`。只在 `ready` 时有 |
-| run | TEXT，可空 | 借网盘同步时正在整理的这一轮：开始那次改动的 ID，只在 `running` 时有，见[运行](local.md#运行) |
+| run | TEXT，可空 | 借网盘同步时正在整理的这一轮：开始那次改动的 ID，只在 `running` 时有，见[运行](local/drive.md#运行) |
 | created_at / updated_at | INTEGER | |
 
 ### ai_settings
@@ -270,7 +270,7 @@ AI 整理的[说明](ai.md#说明)，每个用户每个文件夹（含根目录�
 
 ### epoch
 
-只有一行，记着这个数据库的代号：建库时随机生成，[恢复备份](local.md#恢复)或[快照](deploy.md#备份和恢复)时换一个新的。序号只在同一个代号下有意义，见[数据代号](local.md#数据代号)。
+只有一行，记着这个数据库的代号：建库时随机生成，[恢复备份](local/backup.md#恢复)或[快照](deploy.md#备份和恢复)时换一个新的。序号只在同一个代号下有意义，见[数据代号](local.md#数据代号)。
 
 | 列 | 类型 | 说明 |
 |---|---|---|
@@ -279,7 +279,7 @@ AI 整理的[说明](ai.md#说明)，每个用户每个文件夹（含根目录�
 
 ### sync_state
 
-本机模式[借网盘同步](local.md#借网盘同步)时，这台设备在网盘历史里的位置；没开着时没有行。最多一行，和读入的数据在同一个事务里写。
+本机模式[借网盘同步](local/drive.md)时，这台设备在网盘历史里的位置；没开着时没有行。最多一行，和读入的数据在同一个事务里写。
 
 | 列 | 类型 | 说明 |
 |---|---|---|
@@ -289,7 +289,7 @@ AI 整理的[说明](ai.md#说明)，每个用户每个文件夹（含根目录�
 
 ### sync_runs
 
-借网盘同步时，这台设备开始的 AI 整理，在写开始整理的提交之前记下，整理完或失败后删掉；启动时还在的记为失败，见[运行](local.md#运行)。
+借网盘同步时，这台设备开始的 AI 整理，在写开始整理的提交之前记下，整理完或失败后删掉；启动时还在的记为失败，见[运行](local/drive.md#运行)。
 
 | 列 | 类型 | 说明 |
 |---|---|---|

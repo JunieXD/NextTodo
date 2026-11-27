@@ -24,15 +24,15 @@ pub(crate) fn both_due() -> ApiError {
 }
 
 /// The due date `t`'s `due_after` gives it, when it has that: none while its prerequisites are not all
-/// done, then counting from the day they were, or its start if later (docs/design.md#前置完成后的截止).
+/// done, then counting from the day they were, or its start if later (docs/design/dates.md#前置完成后的截止).
 pub(super) fn due_after(t: &Task) -> Option<Option<Due>> {
     let after = t.due_after.as_ref()?;
     Some(t.unlocked_on.as_ref().map(|on| after.due(t.start.as_ref().filter(|s| *s > on).unwrap_or(on))))
 }
 
-/// A repeating task is never done: done, it moves on (docs/design.md#重复); nor due where it can't repeat
+/// A repeating task is never done: done, it moves on (docs/design/repeat.md#重复); nor due where it can't repeat
 /// from, which `Due` takes care of as given, and an undo may come to. It does not start after it is due,
-/// a due date without a time lasting all day (docs/design.md#开始时间).
+/// a due date without a time lasting all day (docs/design/dates.md#开始时间).
 pub(super) fn check_task(t: &Task) -> Result<(), ApiError> {
     if t.done_at.is_some() && t.due.as_ref().is_some_and(|d| d.repeat.is_some()) {
         let ended = if t.dropped { "放弃" } else { "完成" };
@@ -56,7 +56,7 @@ pub(super) fn check_task(t: &Task) -> Result<(), ApiError> {
             (None, true) => Ok(()),
         };
     };
-    // Due the day they are done, it may come to be due the day it starts (docs/design.md#前置完成后的截止).
+    // Due the day they are done, it may come to be due the day it starts (docs/design/dates.md#前置完成后的截止).
     if let Some(DueAfter { days: 0, at: Some(at), .. }) = &t.due_after
         && t.start_time.as_ref().is_some_and(|time| *time > at.time)
     {

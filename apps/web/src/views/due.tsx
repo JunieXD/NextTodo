@@ -30,9 +30,9 @@ const UNITS: [RepeatUnit, string][] = [
 /** Sets or clears the due date, its time and how it repeats; a task `endedAs` “已完成” or “已放弃”
  * doesn't repeat. Not before the task's `start`, at `startTime`. Or the due date some days after the
  * task's prerequisites are done, `dueAfter`, of which `due` is then the date given once they were
- * (docs/design.md#前置完成后的截止). Its reminders by the due date keep, those so long before going with
+ * (docs/design/dates.md#前置完成后的截止). Its reminders by the due date keep, those so long before going with
  * the time; a task given one now gets this device's defaults, unless with the `others` it has, by the
- * start and at times of their own, that would be too many (docs/design.md#提醒). */
+ * start and at times of their own, that would be too many (docs/design/dates.md#提醒). */
 export function DueEditor({
   due,
   dueAfter,
@@ -100,7 +100,7 @@ export function DueEditor({
   const workdays = repeat?.every === 1 && repeat.unit === "week" && repeat.days?.join() === WORKDAYS.join();
   const named = repeat?.days && !workdays ? repeatLabel(repeat, date) : null;
   const menu = legal ? "legal" : workdays ? "workdays" : named ? "days" : kind;
-  // Offered where the days off are marked, or kept as the task has it (docs/design.md#节日和放假).
+  // Offered where the days off are marked, or kept as the task has it (docs/design/repeat.md#节日和放假).
   const [marks] = useHolidayMarks();
   // Said once saving is tried, until it is put right.
   const [tried, setTried] = useState(false);
@@ -277,7 +277,7 @@ const MAX_AHEAD = 365;
 
 /** Sets when a task starts, a day and maybe a time, not after it is `due`; or clears it. The day is
  * picked, or counted back from the due date, as a repeating one opens: its start is kept as far before
- * it each time (docs/design.md#开始时间). Due some days after its prerequisites (`dueAfter`), it counts
+ * it each time (docs/design/dates.md#开始时间). Due some days after its prerequisites (`dueAfter`), it counts
  * from a later start, so that only a time on the day itself, 0 days after, may be too late. */
 export function StartEditor({
   start,

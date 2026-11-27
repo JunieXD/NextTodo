@@ -1,4 +1,4 @@
-// Syncing local mode's data with other devices through a cloud drive (docs/local.md#借网盘同步).
+// Syncing local mode's data with other devices through a cloud drive (docs/local/drive.md).
 
 import { useCallback, useEffect, useId, useState } from "react";
 import { ApiError, api } from "../api/http";

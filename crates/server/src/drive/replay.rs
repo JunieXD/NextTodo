@@ -1,4 +1,4 @@
-//! Writing a change read from the drive (docs/local.md#读入): what it did, as it was done on the
+//! Writing a change read from the drive (docs/local/drive.md#读入): what it did, as it was done on the
 //! device that made it, without doing its operations again. That device worked on the same data, so
 //! every device ends up with the same, whatever version of the app each runs.
 

@@ -27,7 +27,7 @@ docker compose exec nexttodo /nexttodo-server create-admin <用户名>
 
 ## 反向代理
 
-反向代理负责 HTTPS，要开启 WebSocket，并把原来的 `Host` 传给服务端（或设 `X-Forwarded-Host`），网页的同步连接靠它确认是同源页面。请求体要允许 30 MB：[附件](design.md#附件)最大 20 MB，agent 工具 `attach` 用 base64 带上它时约 27 MB；被反向代理拒绝的，界面上提示文件过大。整个域名（或 IP）都要转给 NextTodo：网页的资源和接口都从根路径开始，不能放在某个路径下。面板、NAS 和反向代理在容器里时的做法和排错，见官网的[部署服务器](https://juniexd.github.io/NextTodo/guide/server#proxy)。
+反向代理负责 HTTPS，要开启 WebSocket，并把原来的 `Host` 传给服务端（或设 `X-Forwarded-Host`），网页的同步连接靠它确认是同源页面。请求体要允许 30 MB：[附件](design/attachments.md)最大 20 MB，agent 工具 `attach` 用 base64 带上它时约 27 MB；被反向代理拒绝的，界面上提示文件过大。整个域名（或 IP）都要转给 NextTodo：网页的资源和接口都从根路径开始，不能放在某个路径下。面板、NAS 和反向代理在容器里时的做法和排错，见官网的[部署服务器](https://juniexd.github.io/NextTodo/guide/server#proxy)。
 
 Caddy 默认就满足这些要求，还会自动申请证书：
 
@@ -78,7 +78,7 @@ server {
   docker compose pull && docker compose up -d
   ```
 
-数据库在新版本启动时自动迁移。Android 和桌面 App 不用手动升级：它们从登录的服务器取更新，服务端升级后，Android 的网页部分下次打开时生效，需要换安装包时会提示；桌面 App 在后台下载，重启后生效。iOS App 从 GitHub 查新版本，在 SideStore 里更新，见 [iOS](ios.md#更新)。见[总体设计](design.md#app-更新)。
+数据库在新版本启动时自动迁移。Android 和桌面 App 不用手动升级：它们从登录的服务器取更新，服务端升级后，Android 的网页部分下次打开时生效，需要换安装包时会提示；桌面 App 在后台下载，重启后生效。iOS App 从 GitHub 查新版本，在 SideStore 里更新，见 [iOS](ios.md#更新)。见[总体设计](design/updates.md)。
 
 ### 在设置里升级
 
@@ -166,7 +166,7 @@ NEXTTODO_HOST=myserver NEXTTODO_DIR=/srv/nexttodo NEXTTODO_PORT=8080 deploy/depl
 | 命令 | 做什么 |
 |---|---|
 | `deploy/build.sh` | 先跑全部检查（`check.sh`），再构建全部，版本 `0.1.<提交数>`。`target/deploy` 是镜像的内容（两种架构的服务端、网页和 `/app/` 下的更新），`target/release-assets` 是安装包、iOS 的 SideStore 软件源 `sidestore.json`、各平台的命令行 `nexttodo-*`、本机模式用的更新（`android.json`、`desktop.json`、`NextTodo.app.tar.gz` 和 `NextTodo-x64.app.tar.gz`）和 `SHA256SUMS` |
-| `deploy/release.sh` | 发布已推送的提交：镜像推到 GHCR（版本号和 `latest` 两个标签），安装包传到 GitHub Releases（标签 `v<版本号>`，本地也打上，[提交钩子](android.md#更新)按它算），说明取 `CHANGELOG.md` 最上面一节，它的版本号要和这次发布的一样（见[更新日志](design.md#更新日志)）：写这一节的提交就是要发布的，版本号是提交以后的提交数。要先 `docker login ghcr.io` 并登录 `gh` |
+| `deploy/release.sh` | 发布已推送的提交：镜像推到 GHCR（版本号和 `latest` 两个标签），安装包传到 GitHub Releases（标签 `v<版本号>`，本地也打上，[提交钩子](android.md#更新)按它算），说明取 `CHANGELOG.md` 最上面一节，它的版本号要和这次发布的一样（见[更新日志](design/updates.md#更新日志)）：写这一节的提交就是要发布的，版本号是提交以后的提交数。要先 `docker login ghcr.io` 并登录 `gh` |
 | `deploy/deploy.sh` | 见[用部署脚本](#用部署脚本) |
 
 - 三个脚本都要求工作区干净。

@@ -146,7 +146,7 @@ const RETRY_MS = 5_000;
  * turns down a job it has not heard of yet, one already taken, and one while another is being
  * organized, which may be one deleted meanwhile and so seen nowhere: what changed meanwhile has it
  * look again, and otherwise it does after a while, waiting longer each time. Offline, the same; and
- * when the drive it syncs through has not taken the start in time (docs/local.md#排定先后). A job it
+ * when the drive it syncs through has not taken the start in time (docs/local/drive.md#排定先后). A job it
  * turns down for any other reason, such as the settings, `failed` hears of, and it waits until they
  * change. */
 export function useLocalRunner(store: Store, userId: string, failed: (job: AiJobId, e: ApiError) => void) {

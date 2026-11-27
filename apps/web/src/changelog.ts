@@ -1,5 +1,5 @@
 // What each release changed, from CHANGELOG.md, and which of those to tell of after an update
-// (docs/design.md#更新日志).
+// (docs/design/updates.md#更新日志).
 
 import source from "../../../CHANGELOG.md?raw";
 import { newer } from "./updates";

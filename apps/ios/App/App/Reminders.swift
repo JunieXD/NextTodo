@@ -77,7 +77,7 @@ enum Reminders {
     }
 
     /// `task`'s time `occurrence`, every time of it without one, done here by change `id`, which became
-    /// change `seq` on the server; none while not sent (docs/android.md#提醒).
+    /// change `seq` on the server; none while not sent (docs/android/reminders.md).
     private struct Done: Codable {
         let id: String
         let task: String

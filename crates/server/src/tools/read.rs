@@ -198,7 +198,7 @@ fn picked(b: &Board, folders: Option<&[String]>) -> Result<Option<HashSet<TaskId
 const AGENDA_DAYS: u32 = 7;
 
 /// A day's festival, solar term, and whether it is a day off or a made-up working day
-/// (docs/design.md#节日和放假), whatever the folders asked for.
+/// (docs/design/repeat.md#节日和放假), whatever the folders asked for.
 #[derive(Serialize)]
 struct Mark {
     date: Date,

@@ -3,6 +3,6 @@ import type { Date } from "./Date";
 import type { Time } from "./Time";
 
 /**
- * A reminder at a time of its own, ringing once (docs/design.md#提醒), by the clock of the device.
+ * A reminder at a time of its own, ringing once (docs/design/dates.md#提醒), by the clock of the device.
  */
 export type RemindAt = { date: Date, time: Time, };

@@ -3,7 +3,7 @@ import type { Remind } from "./Remind";
 import type { Time } from "./Time";
 
 /**
- * A due date some days after the task's prerequisites are all done (docs/design.md#前置完成后的截止):
+ * A due date some days after the task's prerequisites are all done (docs/design/dates.md#前置完成后的截止):
  * the time of day and the reminders a due date has, without the date, which comes once they are.
  * Never repeating.
  */

@@ -167,7 +167,7 @@ function Invites() {
   );
 }
 
-/** Whether photos are made smaller before they are uploaded (docs/design.md#附件), for everyone on the
+/** Whether photos are made smaller before they are uploaded (docs/design/attachments.md), for everyone on the
  * server. As last fetched, then as the server has it. */
 function AttachmentSettings() {
   const { snack } = useFeedback();

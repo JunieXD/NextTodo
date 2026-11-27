@@ -3,7 +3,7 @@ import type { FolderId } from "./FolderId";
 
 /**
  * A folder its owner shares with others, who see and change everything in it as the owner does
- * (docs/design.md#共享). One with no members is not shared.
+ * (docs/design/sharing.md). One with no members is not shared.
  */
 export type Share = { folder_id: FolderId, owner: string, 
 /**

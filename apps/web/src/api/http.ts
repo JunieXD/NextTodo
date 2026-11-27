@@ -178,7 +178,7 @@ export async function fileRequest(method: "GET" | "PUT", id: string, stop: Abort
   return (await bulk(method, path, stop, FILE_TIMEOUT_MS, body && "blob" in body ? body : undefined)).answer;
 }
 
-/** The user's own data as a backup (docs/local.md#导出), as of `today` here: the file, and the name
+/** The user's own data as a backup (docs/local/backup.md#导出), as of `today` here: the file, and the name
  * the server gives it. */
 export async function fetchExport(today: string): Promise<{ name: string; file: Blob }> {
   const { answer, headers } = await bulk("GET", `/api/v1/export?today=${today}`, new AbortController().signal, EXPORT_TIMEOUT_MS);

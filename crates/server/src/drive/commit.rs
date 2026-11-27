@@ -1,4 +1,4 @@
-//! A commit as it is kept in the drive: `<generation>/log/<number>.json` (docs/local.md#网盘里的文件).
+//! A commit as it is kept in the drive: `<generation>/log/<number>.json` (docs/local/drive.md#网盘里的文件).
 
 use nexttodo_core::model::{AttachmentId, Change, Effect, FileSize, FolderId, MediaType, MutationId, NoteText};
 use nexttodo_core::ops::Op;
@@ -48,7 +48,7 @@ impl Item {
 }
 
 /// A file cleared, as it was recorded: every device keeps the same record of it, and so knows not to
-/// use its id again (docs/local.md#附件).
+/// use its id again (docs/local/drive.md#附件).
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct Cleared {
     pub id: AttachmentId,

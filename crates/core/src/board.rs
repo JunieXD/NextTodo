@@ -13,7 +13,7 @@ use crate::model::{
 };
 
 /// All a user can see: their own data and the folders shared with them, where a folder someone else
-/// shares has no parent (docs/design.md#共享).
+/// shares has no parent (docs/design/sharing.md).
 #[derive(Clone, Debug, Default, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Snapshot {
@@ -48,7 +48,7 @@ pub enum Status {
 }
 
 /// When a board is as of: the user's today, and the time of day there when known. Without the time,
-/// all of today has come: start times that day count as come (docs/design.md#开始时间).
+/// all of today has come: start times that day count as come (docs/design/dates.md#开始时间).
 #[derive(Clone, Debug)]
 pub struct Now {
     pub today: Date,
@@ -80,7 +80,7 @@ fn deadline(t: &Task) -> Option<(&str, &str)> {
 }
 
 /// When a repeating task done before holds up the tasks after it again: as its current occurrence
-/// begins, at its start or else on its due date (docs/design.md#重复).
+/// begins, at its start or else on its due date (docs/design/repeat.md#重复).
 fn again(t: &Task) -> Option<(&Date, Option<&Time>)> {
     let due = t.due.as_ref().filter(|d| d.repeat.is_some() && t.done_at.is_none() && t.completions.is_some())?;
     Some(match &t.start {
@@ -90,13 +90,13 @@ fn again(t: &Task) -> Option<(&Date, Option<&Time>)> {
 }
 
 /// Whether `t` repeats and has been done before: when it holds up the tasks after it, it is that its
-/// time has come round again, which takes back no due date it gave them (docs/design.md#前置完成后的截止).
+/// time has come round again, which takes back no due date it gave them (docs/design/dates.md#前置完成后的截止).
 pub fn comes_round(t: &Task) -> bool {
     again(t).is_some()
 }
 
 /// Whether the tasks after `t` wait for it as of `now`: it is not done, and if it repeats, it has not
-/// been done yet or its current occurrence has begun (docs/design.md#重复).
+/// been done yet or its current occurrence has begun (docs/design/repeat.md#重复).
 pub fn holds_up(t: &Task, now: &Now) -> bool {
     t.done_at.is_none() && again(t).is_none_or(|(date, time)| !now.before(date, time))
 }
@@ -462,7 +462,7 @@ impl<'a> Board<'a> {
 
     /// For each task holding up open tasks after it, directly or through others holding them up, the
     /// one of them due first, where it is due before the task itself, or the task has no deadline; of
-    /// those due at once, the first by ID (docs/design.md#后续的截止).
+    /// those due at once, the first by ID (docs/design/dates.md#后续的截止).
     pub fn due_by(&self) -> HashMap<TaskId, (&'a Task, &'a Due)> {
         let mut first: HashMap<TaskId, (&'a Task, &'a Due)> = HashMap::new();
         // Those after a task before it.

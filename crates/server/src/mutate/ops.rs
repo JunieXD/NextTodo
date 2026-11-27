@@ -207,7 +207,7 @@ impl Cx<'_> {
                     t.dropped = false;
                     match t.due.as_mut().map(|d| (d.repeat.clone(), d)) {
                         // Done, a repeating task stays open, due next time; done the last time, it is
-                        // done (docs/design.md#重复).
+                        // done (docs/design/repeat.md#重复).
                         Some((Some(r), d)) if *done => {
                             let today = today
                                 .as_ref()
@@ -216,7 +216,7 @@ impl Cx<'_> {
                             record = Some(Completion { task_id: t.id, due: d.date.clone(), done: today.clone(), again });
                             match r.next(&d.date, today) {
                                 Some(next) => {
-                                    // The start date keeps as far before it, at the same time (docs/design.md#开始时间).
+                                    // The start date keeps as far before it, at the same time (docs/design/dates.md#开始时间).
                                     t.start = t.start.as_ref().map(|s| s.shifted(&d.date, &next));
                                     d.date = next;
                                 }

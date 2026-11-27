@@ -10,7 +10,7 @@ import type { Task } from "./Task";
 
 /**
  * All a user can see: their own data and the folders shared with them, where a folder someone else
- * shares has no parent (docs/design.md#共享).
+ * shares has no parent (docs/design/sharing.md).
  */
 export type Snapshot = { folders: Array<Folder>, tasks: Array<Task>, dependencies: Array<Dependency>, 
 /**

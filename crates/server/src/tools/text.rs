@@ -177,7 +177,7 @@ pub fn task_line(b: &Board, t: &Task, folder: bool, status: bool, step: Option<(
 }
 
 /// ` · 后续 #12 写报告 2026-11-30 18:00 截止`, or ` · 截止晚于后续 #12 写报告（2026-11-30 18:00）`: the
-/// deadline `d` of `by`, after `t`, that `t` is to make (docs/design.md#后续的截止).
+/// deadline `d` of `by`, after `t`, that `t` is to make (docs/design/dates.md#后续的截止).
 pub fn due_by(b: &Board, t: &Task, (by, d): (&Task, &Due)) -> String {
     let when = moment(&d.date, d.at.as_ref().map(|at| &at.time));
     let what = format!("{} {}", b.label(by), excerpt(by.title.as_str(), SHORT));

@@ -83,7 +83,7 @@ export function useTaskActions(): RowActions & {
     const unlocked = board()
       .next()
       .filter((x) => !readyBefore.has(x.id));
-    // Done the last time, a repeating task is done for good (docs/design.md#重复).
+    // Done the last time, a repeating task is done for good (docs/design/repeat.md#重复).
     const last = repeating && board().task(t.id)?.done_at !== null;
     if (repeating && !last) {
       marking.pop(t.id);

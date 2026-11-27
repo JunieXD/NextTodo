@@ -784,7 +784,7 @@ fn minutes(s: &str) -> Option<u32> {
     (number.is_none() && !s.trim().is_empty()).then_some(total)
 }
 
-/// How every statutory working day is typed (docs/design.md#重复).
+/// How every statutory working day is typed (docs/design/repeat.md#重复).
 pub const LEGAL_WORKDAYS: &str = "workdays";
 
 /// A repeat as typed: `1d`, `2w`, `3m`, `1y` (12 months); weekly on some days, Monday 1 to Sunday 7,

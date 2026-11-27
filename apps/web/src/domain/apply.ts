@@ -340,13 +340,13 @@ class Applier {
           t.dropped = false;
           const repeat = t.due?.repeat;
           // Done, a repeating task stays open, due next time; done the last time, it is done
-          // (docs/design.md#重复).
+          // (docs/design/repeat.md#重复).
           if (op.done && t.due && repeat) {
             if (!op.today) throw new Rejected("invalid", "完成重复的事项需要给出今天的日期");
             record = { task_id: t.id, due: t.due.date, done: op.today, again: this.nextAgain(t.id, t.due.date) };
             const date = nextDue(repeat, t.due.date, op.today);
             if (date) {
-              // The start date keeps as far before it, at the same time (docs/design.md#开始时间).
+              // The start date keeps as far before it, at the same time (docs/design/dates.md#开始时间).
               if (t.start) t.start = shifted(t.start, t.due.date, date);
               t.due = { ...t.due, date };
             } else {
@@ -558,7 +558,7 @@ class Applier {
   /** As `Cx::settle` in mutate/mod.rs: of the tasks due some days after their prerequisites are done that
    * the change concerns, gives those with all of them done the day it was made, and takes that back
    * from those a prerequisite came to hold up in it, but for a repeating one done before, its time come
-   * round again (docs/design.md#前置完成后的截止). */
+   * round again (docs/design/dates.md#前置完成后的截止). */
   settle() {
     const local = this.cx.local;
     const concerned = new Set<TaskId>();
@@ -976,7 +976,7 @@ export const lastKey = (keys: string[]): string => lastKeys(keys, 1)[0];
 
 /** Whether a change that took how often a task was done from `before` to `after` is still the last
  * that counts, as `later`, how changes since took it, have it: each since took back the one before it
- * that still counted, or counted itself (docs/design.md#改动记录和撤销). As `still_last` in
+ * that still counted, or counted itself (docs/design/history.md). As `still_last` in
  * crates/server/src/mutate/undo.rs; both are checked against fixtures/undo-done.json. */
 export function stillLast<T>(before: T, after: T, later: [T, T][]): boolean {
   const changes: [T, T][] = [[before, after], ...later];
@@ -1025,7 +1025,7 @@ function checkRepeat(title: string, due: Due | null) {
 const bothDue = () => new Rejected("invalid", "due 和 due_after 只能给一个：截止日期，或者前置完成后几天内");
 
 /** `t` with the due date its `due_after` gives it, when it has that: none while its prerequisites are
- * not all done, then counting from the day they were, or its start if later (docs/design.md#前置完成后的截止). */
+ * not all done, then counting from the day they were, or its start if later (docs/design/dates.md#前置完成后的截止). */
 function dueAfter(t: Task): Task {
   if (!t.due_after) return t;
   const on = t.unlocked_on;
@@ -1041,7 +1041,7 @@ function byStart(time: string | undefined, given: Remind[]): Remind[] | undefine
 }
 
 /** `t`'s reminders by the start that still have something to go by: none without a start, those so long
- * before only with its time (docs/design.md#提醒). */
+ * before only with its time (docs/design/dates.md#提醒). */
 const fitStart = (t: Task) => listed((t.start_reminders ?? []).filter((r) => t.start && (t.start_time || "days" in r)));
 
 /** A list as the server has it: none when empty. */
@@ -1058,7 +1058,7 @@ function checkTask(t: Task) {
     if (t.start_reminders) throw new Rejected("invalid", "按开始时间算的提醒需要开始时间");
     return;
   }
-  // Due the day they are done, it may come to be due the day it starts (docs/design.md#前置完成后的截止).
+  // Due the day they are done, it may come to be due the day it starts (docs/design/dates.md#前置完成后的截止).
   if (t.due_after?.days === 0 && t.due_after.time && t.start_time && t.start_time > t.due_after.time) {
     throw new Rejected("invalid", `“${t.title}”的开始时间不能晚于截止时间`);
   }

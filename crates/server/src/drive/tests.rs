@@ -60,7 +60,7 @@ pub(crate) fn dump(db: &Db, sql: &str) -> Vec<Vec<Value>> {
     })
 }
 
-/// Everything devices share (docs/local.md#共享的和本机的).
+/// Everything devices share (docs/local/drive.md#共享的和本机的).
 pub(crate) const SHARED: &[&str] = &[
     "SELECT * FROM folders ORDER BY id",
     "SELECT * FROM tasks ORDER BY id",

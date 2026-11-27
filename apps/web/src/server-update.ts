@@ -47,7 +47,7 @@ async function serverVersion(): Promise<string> {
 
 /** Asks for the server's version, and with `latest` the latest release's, unless it did lately and it is
  * not `now`. Only its admin asks GitHub; others want the server's alone, to know whether it is older
- * than the app (docs/design.md#app-更新). A failure, offline say, is tried again next time; it bothers
+ * than the app (docs/design/updates.md). A failure, offline say, is tried again next time; it bothers
  * no one: the row in the settings says the latest is not known. */
 export async function checkServer({ now = false, latest: withLatest = true } = {}) {
   const of = serverUrl();

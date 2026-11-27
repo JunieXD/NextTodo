@@ -51,7 +51,7 @@ export interface ReminderSettings {
 interface NextTodoPlugin {
   /** Hands the device the reminders and the daily digests, as JSON in the shapes `deviceReminders`
    * and `deviceDigests` give, of the local copy as of change `seq`: the device leaves out the times
-   * done on it that the copy may not have yet (docs/android.md#提醒). The first time there are
+   * done on it that the copy may not have yet (docs/android/reminders.md). The first time there are
    * some, asks for notifications. */
   setReminders(o: { reminders: string; digest: string; seq: number }): Promise<void>;
   /** Takes every reminder away, those put off and those shown too. */
@@ -62,9 +62,9 @@ interface NextTodoPlugin {
   openExactAlarmSettings(): Promise<void>;
   /** Shows the system bars as over a page of `color`, `#rrggbb` (docs/android.md#结构). */
   setSystemBars(o: { color: string; dark: boolean }): Promise<void>;
-  /** The system settings choosing the sound and vibration of reminders (docs/android.md#通知). */
+  /** The system settings choosing the sound and vibration of reminders (docs/android/reminders.md#通知). */
   openReminderSound(): Promise<void>;
-  /** Turns the reminder card on or off (docs/android.md#弹窗提醒). */
+  /** Turns the reminder card on or off (docs/android/reminders.md#弹窗提醒). */
   setCard(o: { on: boolean }): Promise<void>;
   /** The system page that allows drawing over other apps, which the card needs. */
   openOverlaySettings(): Promise<void>;
@@ -238,14 +238,14 @@ export const widgetTasks = (board: Board, folders: (FolderId | null)[]) =>
   }));
 
 /** The deadline of a task after `t` that it is to make, as the `next` tool gives it
- * (docs/design.md#后续的截止). */
+ * (docs/design/dates.md#后续的截止). */
 function dueBy(board: Board, t: Task) {
   const by = board.dueBy().get(t.id);
   return by && { due_by: { date: by.due.date, ...(by.due.time && { time: by.due.time }), number: by.number, title: by.title } };
 }
 
 /** How many days from `today` the widgets' data has: to the last of next month's six weeks, which the
- * “月历” widget shows (docs/android.md#月历). The widgets ask the server for as many (`Agenda.span`). */
+ * “月历” widget shows (docs/android/widgets.md#月历). The widgets ask the server for as many (`Agenda.span`). */
 function agendaSpan(today: string): number {
   const d = parseDay(today);
   const last = monthGrid(d.getFullYear(), d.getMonth() + 1)[41];
@@ -285,7 +285,7 @@ function labelledFrom(today: string): string {
   return isoDate(monthGrid(d.getFullYear(), d.getMonth())[0]);
 }
 
-/** What the widgets write with each day (docs/design.md#节日和放假), `from` on: its festival, solar term
+/** What the widgets write with each day (docs/design/repeat.md#节日和放假), `from` on: its festival, solar term
  * or lunar day, and with `marks`, whether it is a day off or a made-up working day. */
 function widgetDays(from: string, marks: boolean) {
   const start = parseDay(from);
@@ -298,7 +298,7 @@ function widgetDays(from: string, marks: boolean) {
   return { from, days };
 }
 
-/** What the device reminds of (docs/android.md#提醒): every reminder, past ones too, with its
+/** What the device reminds of (docs/android/reminders.md): every reminder, past ones too, with its
  * time should the task repeat, whether the task waits for prerequisites as the reminder comes (a repeating one may
  * hold it up again by then), and for its start, which the device reads by its own clock. */
 export const deviceReminders = (board: Board, hide: boolean, now = Date.now()) =>
@@ -315,7 +315,7 @@ export const deviceReminders = (board: Board, hide: boolean, now = Date.now()) =
     start_time: r.task.start_time,
   }));
 
-/** The daily digests the device shows (docs/android.md#提醒), none while off, and whether they
+/** The daily digests the device shows (docs/android/reminders.md), none while off, and whether they
  * hide what they are of: the device says them, as `digestText` does, of what is left by then. */
 export const deviceDigests = (board: Board, { on, time }: Digest, hide: boolean) => ({
   hide,
@@ -385,7 +385,7 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
     const nextStart = start ? [start.date, start.time].filter(Boolean).join(" ") : undefined;
     if (app === "android") {
       const listed = nextFolders(board);
-      // Their paths, for the widget to fetch its list by itself (docs/android.md#小组件).
+      // Their paths, for the widget to fetch its list by itself (docs/android/widgets.md).
       const folders = listed.includes(null) ? undefined : JSON.stringify(listed.map((f) => board.folderPath(f)));
       await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board, listed)), seq, nextStart, folders });
       await NextTodo.updateAgenda({ agenda: JSON.stringify(widgetAgenda(board, listed)), seq });

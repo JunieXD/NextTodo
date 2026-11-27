@@ -1,4 +1,4 @@
-// How the Android widgets look (docs/android.md#小组件的设置), and the colours they are drawn in, worked
+// How the Android widgets look (docs/android/widgets.md#小组件的设置), and the colours they are drawn in, worked
 // out as the widgets' `Colors` (apps/android/.../widget/Look.kt) does, for the settings' preview; the
 // desktop widget takes its colours from the same (docs/desktop.md#桌面小组件).
 

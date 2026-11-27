@@ -1,5 +1,5 @@
 //! Moving data between local mode and a server account: an account's export, and a backup imported
-//! into one (docs/local.md#搬到服务器和搬回本机).
+//! into one (docs/local/backup.md#搬到服务器和搬回本机).
 
 use std::io::Read;
 use std::path::PathBuf;

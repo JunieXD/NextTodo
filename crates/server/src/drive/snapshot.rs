@@ -1,4 +1,4 @@
-//! Snapshots of the shared data (docs/local.md#网盘里的文件): the database without what is this
+//! Snapshots of the shared data (docs/local/drive.md#网盘里的文件): the database without what is this
 //! device's alone, gzipped. A drive's first generation starts from one, and a device joining reads
 //! the latest.
 
@@ -30,7 +30,7 @@ pub(crate) fn take(db: &Db, dir: &Path) -> anyhow::Result<Vec<u8>> {
     taken
 }
 
-/// What a snapshot keeps of each table (docs/local.md#共享的和本机的). Every table is named, and every
+/// What a snapshot keeps of each table (docs/local/drive.md#共享的和本机的). Every table is named, and every
 /// column of those partly this device's own: a test fails on one that is not, so that whoever adds it
 /// says which it is. The columns of an entity's table are all shared: they go in the drive's commits.
 /// The shared tables are swapped in this order, each after those it refers to, which a test checks.
@@ -115,7 +115,7 @@ fn clear(c: &Connection) -> rusqlite::Result<()> {
 }
 
 /// Replaces the shared data in `c` with that of the snapshot database at `path`, read up to commit
-/// `number`, in one transaction; what is this device's own stays (docs/local.md#运行).
+/// `number`, in one transaction; what is this device's own stays (docs/local/drive.md#运行).
 pub(crate) fn swap(c: &mut Connection, path: &Path, number: i64) -> rusqlite::Result<()> {
     c.execute("ATTACH DATABASE ?1 AS s", [path.to_str().expect("data directory path is UTF-8")])?;
     let swapped = replace(c, number);

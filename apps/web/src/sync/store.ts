@@ -117,7 +117,7 @@ export class Store {
   }
 
   /** Moves the view on as a task's start comes, what starts then can be done, or back as the clock is
-   * turned back past one; and on a new day (docs/design.md#开始时间). */
+   * turned back past one; and on a new day (docs/design/dates.md#开始时间). */
   tick = () => {
     const now = nowOf(new Date());
     const { board } = this.view;
@@ -321,7 +321,7 @@ export class Store {
   }
 
   /** Whether a change is to say the day and time it is made: where a due date may count from them
-   * (docs/design.md#前置完成后的截止). Not otherwise, as a server older than that turns down every change
+   * (docs/design/dates.md#前置完成后的截止). Not otherwise, as a server older than that turns down every change
    * that does. */
   private countsDays(ops: Op[]): boolean {
     return (

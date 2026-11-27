@@ -1,4 +1,4 @@
-//! Syncing devices in local mode through a cloud drive (docs/local.md#借网盘同步). The drive keeps a
+//! Syncing devices in local mode through a cloud drive (docs/local/drive.md). The drive keeps a
 //! numbered history of commits, and every device writes them into its database in that order. Every
 //! change to the shared data goes through the one task here: it runs the change on the latest data,
 //! writes what it did as the next commit unless another device wrote that number first, and only then
@@ -41,7 +41,7 @@ use crate::{AppState, Clock, Db, Hub, MUTATION_RETENTION_MS, ai, backup, db, sto
 use commit::{Cleared, Commit, Head, Item, Made, Note};
 use remote::{Created, Failed, Remote, remove};
 
-/// How long HTTP and tool requests wait for their change to go in (docs/local.md#排定先后).
+/// How long HTTP and tool requests wait for their change to go in (docs/local/drive.md#排定先后).
 pub(crate) const WAIT: Duration = Duration::from_secs(15);
 /// How often the drive is looked at for other devices' commits.
 const POLL: Duration = Duration::from_secs(30);
@@ -51,7 +51,7 @@ const BATCH: usize = 50;
 const BACKOFF: Duration = Duration::from_secs(1);
 const BACKOFF_MAX: Duration = Duration::from_secs(60);
 /// A snapshot is kept at every commit numbered a multiple of this; a device this many commits behind
-/// reads the latest instead of them (docs/local.md#网盘里的文件).
+/// reads the latest instead of them (docs/local/drive.md#网盘里的文件).
 const SNAPSHOT_EVERY: i64 = 200;
 const DAY_MS: i64 = 24 * 3600 * 1000;
 
@@ -68,7 +68,7 @@ pub struct Syncing {
     /// Held as it is turned on or off in the settings: one request at a time.
     setting: tokio::sync::Mutex<()>,
     /// How many times it was turned on since the server started: a round of AI organizing begun
-    /// without a drive is over once it is (docs/local.md#开启).
+    /// without a drive is over once it is (docs/local/drive.md#开启).
     turned_on: AtomicU64,
 }
 
@@ -175,7 +175,7 @@ struct Request {
 type Answer<T> = Option<oneshot::Sender<Result<T, ApiError>>>;
 
 /// How far a request has got, for the one waiting for it with a deadline: it is not made when they
-/// give up before it is sent, and may be once it is (docs/local.md#排定先后). Whichever of the two
+/// give up before it is sent, and may be once it is (docs/local/drive.md#排定先后). Whichever of the two
 /// comes first decides.
 #[derive(Default)]
 struct Progress(Mutex<Phase>);
@@ -337,7 +337,7 @@ impl Drive {
     }
 
     /// Makes `st`'s data the first generation in `remote`'s folder, and syncs through it then
-    /// (docs/local.md#开启). Meanwhile changes wait; should it fail, syncing stops.
+    /// (docs/local/drive.md#开启). Meanwhile changes wait; should it fail, syncing stops.
     pub(crate) async fn enable(st: &AppState, dir: PathBuf, remote: Arc<dyn Remote>) -> anyhow::Result<()> {
         Self::spawn(st, dir, remote, Uuid::now_v7().to_string(), 0, true).await
     }
@@ -836,7 +836,7 @@ impl Worker {
     }
 
     /// Takes a snapshot of the data at this number, and has it put into the drive meanwhile, and what
-    /// is no longer needed there cleared after (docs/local.md#网盘里的文件). When that fails, joining
+    /// is no longer needed there cleared after (docs/local/drive.md#网盘里的文件). When that fails, joining
     /// devices and those far behind read an earlier one.
     async fn keep_snapshot(&self) {
         let (db, dir) = (self.db.clone(), self.dir.join("sync"));
@@ -895,7 +895,7 @@ impl Worker {
         .await
     }
 
-    /// Reads snapshot `number` in place of the commits up to it (docs/local.md#运行).
+    /// Reads snapshot `number` in place of the commits up to it (docs/local/drive.md#运行).
     async fn swap(&mut self, number: i64) -> Result<(), Trouble> {
         let path = format!("{}/snapshots/{number}.db.gz", self.generation);
         // Deleted since it was listed: two newer ones were kept meanwhile.
@@ -945,13 +945,13 @@ impl Worker {
 
     /// Makes the first generation from the data here, as the changes coming meanwhile wait: its
     /// folders, the files of the attachments, snapshot 0, and last `nexttodo.json`, which makes it the
-    /// one (docs/local.md#开启). Then it is this device's place in the drive's history.
+    /// one (docs/local/drive.md#开启). Then it is this device's place in the drive's history.
     async fn enable(&mut self) -> Result<(), Trouble> {
         let g = self.generation.clone();
         for dir in [String::new(), "tmp".into(), g.clone(), format!("{g}/log"), format!("{g}/files"), format!("{g}/snapshots")] {
             self.call(move |r| r.mkdir(&dir)).await?;
         }
-        // Organized from here on, they would be in no round the drive keeps track of (docs/local.md#运行).
+        // Organized from here on, they would be in no round the drive keeps track of (docs/local/drive.md#运行).
         let (hub, now) = (self.hub.clone(), self.clock.now());
         self.db.call(move |c| ai::fail_running(c, &hub, "开启同步，整理中断", now)).await?;
         let (db, dir) = (self.db.clone(), self.dir.join("sync"));
@@ -1105,7 +1105,7 @@ fn made_at(id: Uuid) -> Option<i64> {
     Some(i64::try_from(secs).ok()? * 1000 + i64::from(nanos / 1_000_000))
 }
 
-/// Clears what generation `generation` of the drive no longer needs, at `now` (docs/local.md#网盘里的文件).
+/// Clears what generation `generation` of the drive no longer needs, at `now` (docs/local/drive.md#网盘里的文件).
 fn clear(r: &dyn Remote, generation: &str, now: i64) -> Result<(), Failed> {
     let numbers = snapshots(&r.list(&format!("{generation}/snapshots"))?);
     // The latest two stay; one before them goes with the commits before it, once old enough.
@@ -1160,7 +1160,7 @@ fn parse(body: &[u8]) -> Result<Commit, Trouble> {
     serde_json::from_slice(body).map_err(|e| Trouble::Unreadable(e.to_string()))
 }
 
-/// Writes `commit`, number `number`, here in one transaction, as docs/local.md#读入 has it, for `user`:
+/// Writes `commit`, number `number`, here in one transaction, as docs/local/drive.md#读入 has it, for `user`:
 /// `tokens` and `tools` are what this device knows of the changes in it it made, their tokens and,
 /// for a tool, the day it was made on, to answer with. Returns the files it cleared.
 fn read_in(

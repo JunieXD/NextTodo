@@ -1,4 +1,4 @@
-// When to remind of tasks (docs/design.md#提醒): each reminder of a task, at the time it says, by its
+// When to remind of tasks (docs/design/dates.md#提醒): each reminder of a task, at the time it says, by its
 // due date, its start, or at a time of its own. The phone apps hand these to the device; the desktop app
 // shows them while it runs.
 
@@ -17,17 +17,17 @@ export interface Reminder {
   occurrence?: Occurrence;
   /** Whether it can be done from the notification: not when a repeating task is also reminded then at
    * a time of its own, which is of none of its times. Such a reminder has no `occurrence` either, so
-   * that doing or skipping a time doesn't take it away (docs/design.md#提醒). */
+   * that doing or skipping a time doesn't take it away (docs/design/dates.md#提醒). */
   completable: boolean;
   title: string;
   body: string;
   task: Task;
 }
 
-/** What a reminder says when its content is hidden (docs/design.md#提醒). */
+/** What a reminder says when its content is hidden (docs/design/dates.md#提醒). */
 export const HIDDEN = "有事项提醒";
 
-/** The reminders of an unfinished task of the user's (docs/design.md#共享), one at each moment;
+/** The reminders of an unfinished task of the user's (docs/design/sharing.md), one at each moment;
  * `hide`, saying only that there is something. */
 export function remindersOf(board: Board, t: Task, hide: boolean): Reminder[] {
   if (t.done_at !== null || !board.mine(t)) return [];
@@ -77,7 +77,7 @@ export function reminders(board: Board, hide: boolean): Reminder[] {
   return board.snapshot.tasks.flatMap((t) => remindersOf(board, t, hide)).sort((a, b) => a.at.getTime() - b.at.getTime());
 }
 
-/** A daily digest (docs/design.md#提醒): of a day, the tasks left to do by its end, each with its
+/** A daily digest (docs/design/dates.md#提醒): of a day, the tasks left to do by its end, each with its
  * time, as reminders have it, for the device to take out one done there. */
 export interface DailyDigest {
   at: Date;

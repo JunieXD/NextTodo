@@ -3,7 +3,7 @@ import type { Date } from "./Date";
 import type { TaskId } from "./TaskId";
 
 /**
- * A time a repeating task was done (docs/design.md#重复): the time `due` on a day, `done` on a day, on
+ * A time a repeating task was done (docs/design/repeat.md#重复): the time `due` on a day, `done` on a day, on
  * the device that did it. Each time it was done is kept: `again` is how often that time was done
  * before, 0 the first time.
  */

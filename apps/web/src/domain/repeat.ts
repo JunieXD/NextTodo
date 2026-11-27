@@ -106,7 +106,7 @@ export function nextDue(r: Repeat, due: string, today: string): string | null {
 }
 
 /** Whether a repeating task was done `today` and is next due after it: catching up on a time missed
- * leaves it due today still, today's time to do (docs/design.md#重复). */
+ * leaves it due today still, today's time to do (docs/design/repeat.md#重复). */
 export const doneToday = (t: Task, today: string) => t.completions?.last === today && (t.due?.date ?? "") > today;
 
 /** Whether a task due `due`, done `today`, is done for good: it repeats, and this was the last time. */

@@ -1,4 +1,4 @@
-//! A WebDAV drive, such as Jianguoyun's (docs/local.md#只在不存在时写入). Some servers, Jianguoyun's
+//! A WebDAV drive, such as Jianguoyun's (docs/local/drive.md#只在不存在时写入). Some servers, Jianguoyun's
 //! among them, overwrite whatever a PUT's conditions say, so a file is written where none is by
 //! uploading it to `tmp/` and moving it in place with `Overwrite: F`.
 

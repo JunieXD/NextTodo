@@ -1,5 +1,5 @@
 // The widgets' settings: a preview on top, then how they look. On Android those of the home-screen
-// widgets (docs/android.md#小组件的设置); in the desktop app the desktop widget's, shown or not, with the
+// widgets (docs/android/widgets.md#小组件的设置); in the desktop app the desktop widget's, shown or not, with the
 // same colours (docs/desktop.md#桌面小组件).
 
 import { Plus, RefreshCw } from "lucide-react";
@@ -235,7 +235,7 @@ function Preview({
           )}
           {tasks.length ? (
             tasks.map((t) => {
-              // As the widget shows it (docs/design.md#后续的截止).
+              // As the widget shows it (docs/design/dates.md#后续的截止).
               const by = board.dueBy().get(t.id);
               const due = t.due ?? by?.due;
               const kind = due && dueKind(due, now);

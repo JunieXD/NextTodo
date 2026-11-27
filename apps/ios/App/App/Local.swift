@@ -77,7 +77,7 @@ enum Local {
     }
 
     /// Back in the front, or woken in the background for a reminder's action: makes sure the server is
-    /// still at its address, then looks at the drive now (docs/local.md#运行). False when it is not.
+    /// still at its address, then looks at the drive now (docs/local/drive.md#运行). False when it is not.
     static func resume() -> Bool {
         dispatchPrecondition(condition: .onQueue(queue))
         guard keepAddress() else {

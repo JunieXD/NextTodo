@@ -3,7 +3,7 @@ import type { RemindBefore } from "./RemindBefore";
 import type { RemindOn } from "./RemindOn";
 
 /**
- * The reminders a device gives a task as it gets a due date (docs/design.md#提醒): one due at a time
+ * The reminders a device gives a task as it gets a due date (docs/design/dates.md#提醒): one due at a time
  * those so many minutes before, one due on a date alone those by the day. Sorted, none twice.
  */
 export type DefaultReminders = { timed: Array<RemindBefore>, dated: Array<RemindOn>, };

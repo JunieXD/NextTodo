@@ -57,7 +57,7 @@ fn uploaded_before(c: &Connection, user: &str, id: AttachmentId) -> Result<Optio
         Some(f) if f.owner == user => Ok(Some(Uploaded { id, size: f.size.get() })),
         Some(_) => Err(ApiError::conflict("附件 ID 已被占用")),
         // Used again, its file could still go from the drive, deleted late by the device that cleared it
-        // (docs/local.md#附件).
+        // (docs/local/drive.md#附件).
         None if store::file_purged(c, id)? => Err(ApiError::conflict("附件 ID 已被用过")),
         None => Ok(None),
     }
@@ -200,7 +200,7 @@ pub(crate) fn encode(s: &str) -> String {
 #[serde(deny_unknown_fields)]
 #[ts(export)]
 pub struct ServerSettings {
-    /// Whether photos are made smaller before they are uploaded (docs/design.md#附件).
+    /// Whether photos are made smaller before they are uploaded (docs/design/attachments.md).
     pub compress_images: bool,
 }
 

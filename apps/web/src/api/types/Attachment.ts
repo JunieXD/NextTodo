@@ -7,7 +7,7 @@ import type { MediaType } from "./MediaType";
 import type { TaskId } from "./TaskId";
 
 /**
- * A file attached to a task or an AI job (docs/design.md#附件). The file itself is uploaded
+ * A file attached to a task or an AI job (docs/design/attachments.md). The file itself is uploaded
  * separately, under the same id.
  */
 export type Attachment = { id: AttachmentId, task_id: TaskId | null, job_id: AiJobId | null, name: FileName, type: MediaType, size: FileSize, created_at: number, };

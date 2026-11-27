@@ -1,4 +1,4 @@
-//! Backing up and restoring local mode's data (docs/local.md#备份和恢复). A backup is a tar of the
+//! Backing up and restoring local mode's data (docs/local/backup.md#备份和恢复). A backup is a tar of the
 //! database and its attachments' files. Restoring needs no server running, so that it works when
 //! starting failed too: a backup is prepared on a copy beside the data, the user's go-ahead commits
 //! it, and the next start puts it in place.
@@ -56,9 +56,9 @@ fn pack(data: &Path, files: &Files, copy: &Path, to: &Path) -> anyhow::Result<()
 }
 
 /// Writes to `to` a backup of the database at `copy`, which no one else has open: a tar of it and of
-/// the files it lists, which `files` has. An export from a server is one too (docs/local.md#导出).
+/// the files it lists, which `files` has. An export from a server is one too (docs/local/backup.md#导出).
 pub(crate) fn tar(copy: &Path, files: &Files, to: &Path) -> anyhow::Result<()> {
-    // All not cleared: those in use, and those undoing a deletion brings back (docs/local.md#备份). In
+    // All not cleared: those in use, and those undoing a deletion brings back (docs/local/backup.md#备份). In
     // the order they were added, which an import's new ids keep.
     let listed: Vec<(AttachmentId, FileSize, bool)> = Connection::open(copy)?
         .prepare("SELECT id, size, unused_at IS NOT NULL FROM files WHERE NOT purged ORDER BY id")?
@@ -95,7 +95,7 @@ fn append(tar: &mut tar::Builder<File>, name: &str, bytes: &[u8]) -> std::io::Re
 /// user's, with a new epoch. When it won't do, the copy goes again and nothing else has changed.
 pub fn prepare(dir: &Path, from: &Path) -> anyhow::Result<()> {
     if drive::setup::configured(dir) {
-        // Its data is not the history the drive's goes on with (docs/local.md#停止).
+        // Its data is not the history the drive's goes on with (docs/local/drive.md#停止).
         bail!("借网盘同步开着时不能恢复备份，请先停止同步");
     }
     prepared(dir, |part| unpack(from, part).and_then(|files| convert(&part.join(DB_FILE), files)))

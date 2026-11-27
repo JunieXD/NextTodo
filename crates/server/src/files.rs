@@ -1,7 +1,7 @@
-//! Attachments' files (docs/design.md#附件), on disk in the data directory's `files/`, each named by
+//! Attachments' files (docs/design/attachments.md), on disk in the data directory's `files/`, each named by
 //! its attachment's id. Nothing else reads, writes or deletes them: keeping them elsewhere, such as in
 //! S3, changes only this module. Syncing through a drive, a file not here yet is fetched from it as it
-//! is read (docs/local.md#附件).
+//! is read (docs/local/drive.md#附件).
 
 use std::collections::HashSet;
 use std::io::{self, ErrorKind, Write};

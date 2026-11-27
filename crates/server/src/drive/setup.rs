@@ -1,4 +1,4 @@
-//! Turning syncing through a drive on and off in the settings (docs/local.md#开启, #停止), and
+//! Turning syncing through a drive on and off in the settings (docs/local/drive.md#开启, #停止), and
 //! resuming it as the app starts.
 
 use std::collections::HashMap;
@@ -229,7 +229,7 @@ pub struct Stop {
 }
 
 /// Stops syncing: the data here stays, with the files of the attachments in use downloaded first,
-/// and the drive's as it is (docs/local.md#停止). Until the sync task has ended and the drive is
+/// and the drive's as it is (docs/local/drive.md#停止). Until the sync task has ended and the drive is
 /// forgotten, changes wait, so that none is made here as the task still writes, or kept here only
 /// while the next start syncs again.
 pub async fn delete(State(st): State<AppState>, auth: Auth, query: Result<Query<Stop>, QueryRejection>) -> Result<StatusCode, ApiError> {
@@ -322,7 +322,7 @@ fn failed(f: Failed) -> ApiError {
     ApiError::unavailable(f.message())
 }
 
-/// Checks that `remote` can be synced through, writing where nothing is only (docs/local.md#开启),
+/// Checks that `remote` can be synced through, writing where nothing is only (docs/local/drive.md#开启),
 /// and reads what `nexttodo.json` says, if it is there. Without it, the folder is to be NextTodo's
 /// alone: what is cleared there later goes by name.
 pub(super) fn probe(r: &dyn Remote) -> Result<Option<Pointer>, ApiError> {

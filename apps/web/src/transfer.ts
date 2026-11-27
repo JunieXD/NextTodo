@@ -1,4 +1,4 @@
-// Moving data between local mode and a server account (docs/local.md#搬到服务器和搬回本机): reading a
+// Moving data between local mode and a server account (docs/local/backup.md#搬到服务器和搬回本机): reading a
 // backup to import, and importing it. The export is `fetchExport`.
 
 import { v7 as uuidv7, validate, version } from "uuid";

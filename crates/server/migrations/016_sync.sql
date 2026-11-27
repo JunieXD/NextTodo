@@ -1,4 +1,4 @@
--- Syncing devices in local mode through a cloud drive (docs/local.md#借网盘同步).
+-- Syncing devices in local mode through a cloud drive (docs/local/drive.md).
 
 -- The round of organizing a job is in while it runs: the id of the change that started it. Results
 -- of an earlier round, coming late, are told apart by it.

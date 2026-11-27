@@ -22,7 +22,7 @@ done_at: number | null,
  */
 dropped: boolean, 
 /**
- * The day it can start: it waits until then (docs/design.md#开始时间). Not after the due date.
+ * The day it can start: it waits until then (docs/design/dates.md#开始时间). Not after the due date.
  */
 start: Date | null, 
 /**
@@ -32,7 +32,7 @@ start: Date | null,
 start_time?: Time, 
 /**
  * Due some days after its prerequisites are all done, as `due` then says; it has no other due
- * date (docs/design.md#前置完成后的截止).
+ * date (docs/design/dates.md#前置完成后的截止).
  */
 due_after?: DueAfter, 
 /**

@@ -126,7 +126,7 @@ async fn connection(st: AppState, mut ws: WebSocket, presented: Option<String>) 
     if !push(&st, &mut ws, &auth, &mut sent, true).await? {
         return Ok(());
     }
-    // Answers to mutations the sync task makes later, while this goes on (docs/local.md#排定先后).
+    // Answers to mutations the sync task makes later, while this goes on (docs/local/drive.md#排定先后).
     let (answers, mut answered) = mpsc::unbounded_channel();
     let mut ping = tokio::time::interval(PING_EVERY);
     ping.tick().await;

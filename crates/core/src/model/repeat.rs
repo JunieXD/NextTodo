@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 use ts_rs::TS;
 
-/// A repeating task stays open: done, its due date moves on, until the last time (docs/design.md#重复).
+/// A repeating task stays open: done, its due date moves on, until the last time (docs/design/repeat.md#重复).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(try_from = "RepeatFields", into = "RepeatFields")]
 #[ts(export, as = "RepeatFields")]
@@ -136,7 +136,7 @@ impl From<Repeat> for RepeatFields {
 }
 
 /// How many times a repeating task has been done, and the last day it was, on the device that did
-/// it: done, it moves on instead (docs/design.md#重复).
+/// it: done, it moves on instead (docs/design/repeat.md#重复).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 #[ts(export)]
@@ -155,7 +155,7 @@ pub struct Occurrence {
     pub completions: u32,
 }
 
-/// A time a repeating task was done (docs/design.md#重复): the time `due` on a day, `done` on a day, on
+/// A time a repeating task was done (docs/design/repeat.md#重复): the time `due` on a day, `done` on a day, on
 /// the device that did it. Each time it was done is kept: `again` is how often that time was done
 /// before, 0 the first time.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]

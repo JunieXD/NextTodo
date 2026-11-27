@@ -73,7 +73,7 @@ pub struct AppState {
     pub files: Arc<Files>,
     /// In the app, for its one user, with its data directory (docs/local.md).
     pub local: Option<PathBuf>,
-    /// Syncing through a drive, every change to the shared data goes through it (docs/local.md#借网盘同步).
+    /// Syncing through a drive, every change to the shared data goes through it (docs/local/drive.md).
     pub drive: Arc<drive::Syncing>,
 }
 

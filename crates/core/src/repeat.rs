@@ -1,4 +1,4 @@
-//! Moving a repeating task's due date on when it is done (docs/design.md#重复), and the counting of
+//! Moving a repeating task's due date on when it is done (docs/design/repeat.md#重复), and the counting of
 //! days it takes. The web app has a TypeScript twin, `apps/web/src/domain/repeat.ts`; both are checked
 //! against `fixtures/repeat.json`.
 

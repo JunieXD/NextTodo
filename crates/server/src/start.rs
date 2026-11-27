@@ -74,7 +74,7 @@ async fn daily(state: AppState, db: PathBuf, snapshots: PathBuf) {
         let (files, now) = (state.files.clone(), state.clock.now());
         match state.drive.route().await {
             Route::Drive(drive) => {
-                // Cleared on every device at once, through the drive (docs/local.md#附件).
+                // Cleared on every device at once, through the drive (docs/local/drive.md#附件).
                 tokio::spawn(drive.purge(attachments::unused_before(now)));
                 if let Ok(swept) = state.db.call(move |c| attachments::sweep(c, &files)).await {
                     tracing::info!(swept, "swept files");

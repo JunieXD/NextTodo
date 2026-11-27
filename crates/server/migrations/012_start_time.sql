@@ -1,4 +1,4 @@
--- The time on its start day a task starts (docs/design.md#开始时间): only with a start date, and on
+-- The time on its start day a task starts (docs/design/dates.md#开始时间): only with a start date, and on
 -- its due day not after the due time.
 ALTER TABLE tasks ADD COLUMN start_time TEXT CHECK (
     start_time IS NULL

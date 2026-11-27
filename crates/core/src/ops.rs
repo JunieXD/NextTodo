@@ -112,7 +112,7 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         start_time: Option<Time>,
-        /// Reminders by the start (docs/design.md#提醒).
+        /// Reminders by the start (docs/design/dates.md#提醒).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         #[ts(as = "Option<Vec<Remind>>", optional)]
         start_reminders: Vec<Remind>,
@@ -122,7 +122,7 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         due: Option<Due>,
-        /// In place of `due` (docs/design.md#前置完成后的截止).
+        /// In place of `due` (docs/design/dates.md#前置完成后的截止).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         due_after: Option<DueAfter>,
@@ -159,7 +159,7 @@ pub enum Op {
         #[ts(optional)]
         start_time: Option<Option<Time>>,
         /// All the reminders by the start, in place of those there are; without them, those left with
-        /// nothing to go by go (docs/design.md#提醒).
+        /// nothing to go by go (docs/design/dates.md#提醒).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         start_reminders: Option<Vec<Remind>>,
@@ -171,7 +171,7 @@ pub enum Op {
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         due: Option<Option<Due>>,
-        /// In place of `due` (docs/design.md#前置完成后的截止); `null` clears it and the due date it
+        /// In place of `due` (docs/design/dates.md#前置完成后的截止); `null` clears it and the due date it
         /// gave.
         #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
         #[ts(optional)]

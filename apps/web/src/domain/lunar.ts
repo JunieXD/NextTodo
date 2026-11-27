@@ -1,4 +1,4 @@
-// The Chinese lunar calendar (docs/design.md#农历): a twin of `crates/core/src/lunar.rs`, reading the
+// The Chinese lunar calendar (docs/design/repeat.md#农历): a twin of `crates/core/src/lunar.rs`, reading the
 // same table; both are checked against `fixtures/lunar.json`. Not `Intl`'s, which is a day out at times.
 
 import years from "../../../../crates/core/src/lunar.json";

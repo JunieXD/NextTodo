@@ -5,6 +5,6 @@
  */
 export type ServerSettings = { 
 /**
- * Whether photos are made smaller before they are uploaded (docs/design.md#附件).
+ * Whether photos are made smaller before they are uploaded (docs/design/attachments.md).
  */
 compress_images: boolean, };

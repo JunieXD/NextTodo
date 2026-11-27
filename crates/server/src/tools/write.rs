@@ -794,7 +794,7 @@ pub fn drop_tasks(w: &WriteCx, a: DropArgs) -> Result<Write, ApiError> {
     Ok(ops.into())
 }
 
-/// Moves repeating tasks on to their next time without counting them done (docs/design.md#重复).
+/// Moves repeating tasks on to their next time without counting them done (docs/design/repeat.md#重复).
 pub fn skip(w: &WriteCx, a: TasksArgs) -> Result<Write, ApiError> {
     if a.tasks.is_empty() {
         return Err(ApiError::invalid("至少需要指定一个事项", Some("tasks".into())));
@@ -1016,7 +1016,7 @@ pub fn copy(w: &WriteCx, a: CopyArgs) -> Result<Write, ApiError> {
             start_time: t.start_time.clone(),
             start_reminders: t.start_reminders.clone(),
             remind_at: t.remind_at.clone(),
-            // One due after its prerequisites counts anew (docs/design.md#前置完成后的截止).
+            // One due after its prerequisites counts anew (docs/design/dates.md#前置完成后的截止).
             due: t.due.clone().filter(|_| t.due_after.is_none()),
             due_after: t.due_after.clone(),
             sort_key: Some(t.sort_key.clone()),

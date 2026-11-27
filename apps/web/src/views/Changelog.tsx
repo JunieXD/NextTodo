@@ -1,5 +1,5 @@
 // The releases' notes: told of once after an update, and all of them from the settings
-// (docs/design.md#更新日志).
+// (docs/design/updates.md#更新日志).
 
 import { useContext, useEffect, useState } from "react";
 import { type Release, RELEASES, byKind, seeVersion, unseen } from "../changelog";

@@ -1,4 +1,4 @@
--- Each time a repeating task is done is kept, the same time done again too (docs/design.md#重复):
+-- Each time a repeating task is done is kept, the same time done again too (docs/design/repeat.md#重复):
 -- `again` tells them apart. A time had one record so far, the first.
 CREATE TABLE completions_again (
     task_id TEXT NOT NULL REFERENCES tasks (id) ON DELETE CASCADE,

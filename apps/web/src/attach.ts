@@ -1,4 +1,4 @@
-// Adding files as attachments (docs/design.md#附件, docs/web.md#附件): what they are called, photos
+// Adding files as attachments (docs/design/attachments.md, docs/web.md#附件): what they are called, photos
 // made smaller as the server has it, and their bytes kept on the device for the outbox to upload.
 
 import { v7 as uuidv7 } from "uuid";
@@ -51,7 +51,7 @@ const EXTENSIONS: Record<string, string> = { "image/jpeg": ".jpg", "image/svg+xm
 
 /** What a file added is called: its own name, unless that is one a system made up for a picture, or
  * there is none; then `图片 3.png`, the number after the highest such among `taken`, the names already
- * there. Cleaned to be one (docs/design.md#附件). */
+ * there. Cleaned to be one (docs/design/attachments.md). */
 export function nameFor(name: string, type: string, taken: string[]): string {
   const cleaned = name.replace(/[\p{Cc}]/gu, "").replace(/[/\\]/g, "_").trim();
   const [base, ext] = split(cleaned === "." || cleaned === ".." ? "" : cleaned);

@@ -36,7 +36,7 @@ pub struct Task {
     /// Given up rather than done (docs/design.md#放弃); only once it has ended.
     #[serde(default)]
     pub dropped: bool,
-    /// The day it can start: it waits until then (docs/design.md#开始时间). Not after the due date.
+    /// The day it can start: it waits until then (docs/design/dates.md#开始时间). Not after the due date.
     #[serde(default)]
     pub start: Option<Date>,
     /// The time on the start day it starts; without one, the start of the day. Only with a start date,
@@ -45,7 +45,7 @@ pub struct Task {
     #[ts(optional)]
     pub start_time: Option<Time>,
     /// Due some days after its prerequisites are all done, as `due` then says; it has no other due
-    /// date (docs/design.md#前置完成后的截止).
+    /// date (docs/design/dates.md#前置完成后的截止).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub due_after: Option<DueAfter>,
@@ -91,7 +91,7 @@ impl Task {
     }
 
     /// Keeps the reminders by the start that have something left to go by: none without a start, those
-    /// so long before only with its time (docs/design.md#提醒).
+    /// so long before only with its time (docs/design/dates.md#提醒).
     pub fn fit_start_reminders(&mut self) {
         let (start, timed) = (self.start.is_some(), self.start_time.is_some());
         self.start_reminders.retain(|r| start && (timed || matches!(r, Remind::On(_))));
@@ -122,7 +122,7 @@ pub struct Person {
 }
 
 /// A folder its owner shares with others, who see and change everything in it as the owner does
-/// (docs/design.md#共享). One with no members is not shared.
+/// (docs/design/sharing.md). One with no members is not shared.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Share {

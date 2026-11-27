@@ -2,7 +2,7 @@
 # Publishes the pushed commit as a release (docs/deploy.md#构建发布): the server image for amd64 and
 # arm64 on GHCR, tagged with the version and `latest`, and the installers on GitHub Releases under
 # the tag v<version>, with the release notes from CHANGELOG.md's first section, which is to be this
-# version's (docs/design.md#更新日志). Needs `docker login ghcr.io` and `gh` signed in, besides what
+# version's (docs/design/updates.md#更新日志). Needs `docker login ghcr.io` and `gh` signed in, besides what
 # build.sh needs.
 set -euo pipefail
 

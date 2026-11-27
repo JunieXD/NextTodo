@@ -1,4 +1,4 @@
-//! Moving data between local mode and a server account (docs/local.md#搬到服务器和搬回本机): an
+//! Moving data between local mode and a server account (docs/local/backup.md#搬到服务器和搬回本机): an
 //! account's own data as a backup, and a backup added to an account. Local mode has its own backup
 //! and restore instead.
 
@@ -37,7 +37,7 @@ pub struct ExportQuery {
     today: Option<Date>,
 }
 
-/// The user's own data as a backup (docs/local.md#导出).
+/// The user's own data as a backup (docs/local/backup.md#导出).
 pub async fn export(State(st): State<AppState>, auth: Auth, Query(q): Query<ExportQuery>) -> Result<Response, ApiError> {
     if st.local.is_some() {
         return Err(ApiError::not_found("接口不存在"));
@@ -126,7 +126,7 @@ pub struct Imported {
     batch: i64,
 }
 
-/// Adds a backup to the user's data (docs/local.md#导入).
+/// Adds a backup to the user's data (docs/local/backup.md#导入).
 pub async fn import(State(st): State<AppState>, auth: Auth, Json(req): Json<ImportBackup>) -> Result<Json<Imported>, ApiError> {
     auth.require_write()?;
     if st.local.is_some() {

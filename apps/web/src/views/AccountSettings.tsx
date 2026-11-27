@@ -79,7 +79,7 @@ export function Account({ onSignOut }: { onSignOut(): void }) {
   );
 }
 
-/** The account's own data as a backup, and a backup added to it (docs/local.md#搬到服务器和搬回本机),
+/** The account's own data as a backup, and a backup added to it (docs/local/backup.md#搬到服务器和搬回本机),
  * each showing how it goes meanwhile. */
 function Backups() {
   const { goingAsNow } = useSession();

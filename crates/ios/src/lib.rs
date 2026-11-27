@@ -108,7 +108,7 @@ pub extern "C" fn nexttodo_session() -> *mut c_char {
 }
 
 /// Has the server look at the drive now, when it syncs through one, waiting up to `wait_ms` for what
-/// is new there to be read in (docs/local.md#运行). Nothing while it is not running.
+/// is new there to be read in (docs/local/drive.md#运行). Nothing while it is not running.
 #[allow(unsafe_code, reason = "C calls it by its unmangled name")]
 #[unsafe(no_mangle)]
 pub extern "C" fn nexttodo_pull(wait_ms: u64) {

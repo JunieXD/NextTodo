@@ -1,4 +1,4 @@
-// The apps' updates, from the server they are signed in to (docs/design.md#app-更新), or in local mode
+// The apps' updates, from the server they are signed in to (docs/design/updates.md), or in local mode
 // from GitHub (docs/local.md#更新): on Android, newer builds of the web app downloaded for the next
 // start and newer APKs offered to install; on the desktop, newer versions downloaded for the next
 // start. On iOS, newer versions told of, to update in SideStore, always from GitHub (docs/ios.md#更新).

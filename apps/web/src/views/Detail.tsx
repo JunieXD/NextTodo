@@ -83,7 +83,7 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
   const status = board.status(t);
   const shared = board.sharedRoot(t.folder_id);
   const countdown = t.due && t.done_at === null ? dueIn(t.due, now) : null;
-  // The deadline of a task after it that it is to make (docs/design.md#后续的截止).
+  // The deadline of a task after it that it is to make (docs/design/dates.md#后续的截止).
   const by = board.dueBy().get(t.id);
   const found = t.completions && store.completedAt(t.id, t.completions.count);
   // While it repeats, or done for good by that last time itself; not once the repeat ended otherwise,

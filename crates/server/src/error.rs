@@ -63,7 +63,7 @@ impl ApiError {
         Self::new(StatusCode::NOT_FOUND, "file_missing", "附件的文件不在服务器上，请重新上传")
     }
 
-    /// Some of a backup's attachments' files were not uploaded for its import (docs/local.md#导入),
+    /// Some of a backup's attachments' files were not uploaded for its import (docs/local/backup.md#导入),
     /// or not as the backup has them: `names`.
     pub fn not_uploaded(names: &[&str]) -> Self {
         let shown = names.iter().take(5).copied().collect::<Vec<_>>().join("、");
@@ -101,19 +101,19 @@ impl ApiError {
     }
 
     /// The drive's folder has data: syncing with it replaces this device's, which is asked first
-    /// (docs/local.md#开启).
+    /// (docs/local/drive.md#开启).
     pub fn drive_has_data() -> Self {
         Self::new(StatusCode::CONFLICT, "has_data", "网盘的这个文件夹里已有数据：开启会用它替换这台设备上的全部数据")
     }
 
     /// Files of attachments in use are in the drive only, and can't be downloaded now: stopping
-    /// syncing anyway leaves them unreadable here, which is asked first (docs/local.md#停止).
+    /// syncing anyway leaves them unreadable here, which is asked first (docs/local/drive.md#停止).
     pub fn files_not_here() -> Self {
         Self::new(StatusCode::CONFLICT, "files_not_here", "部分附件的文件尚未从网盘下载，现在停止同步将无法打开这些附件")
     }
 
     /// What was asked could not be done for now, and nothing came of it: the drive local mode syncs
-    /// through was out of reach (docs/local.md#排定先后).
+    /// through was out of reach (docs/local/drive.md#排定先后).
     pub fn unavailable(message: impl Into<String>) -> Self {
         Self::new(StatusCode::SERVICE_UNAVAILABLE, "unavailable", message)
     }

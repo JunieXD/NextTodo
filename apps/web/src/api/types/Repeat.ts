@@ -5,7 +5,7 @@ import type { RepeatFrom } from "./RepeatFrom";
 import type { RepeatUnit } from "./RepeatUnit";
 
 /**
- * A repeating task stays open: done, its due date moves on, until the last time (docs/design.md#重复).
+ * A repeating task stays open: done, its due date moves on, until the last time (docs/design/repeat.md#重复).
  */
 export type Repeat = { every: Every, unit: RepeatUnit, from: RepeatFrom, 
 /**

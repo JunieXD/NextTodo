@@ -2,7 +2,7 @@
 //! entity changes in the mutation log. Resubmitting a mutation id returns the first result.
 //!
 //! What a user can see and change is their own and what is in the folders shared with them
-//! (docs/design.md#共享). Everything in a shared folder is its owner's, so the owner of what is made
+//! (docs/design/sharing.md). Everything in a shared folder is its owner's, so the owner of what is made
 //! somewhere is the owner of where it is: the folder's, or at the root the user's. Each part of a
 //! change goes to whoever sees it, before or after; someone who sees only one side of it sees
 //! something made or deleted.
@@ -199,7 +199,7 @@ pub fn renamed(c: &Connection, actor: &Actor, before: Person, after: Person, now
     record(c, actor, MutationId(Uuid::now_v7()), &[], &done, now)
 }
 
-/// What an import adds to a user's data (docs/local.md#导入): all of it new here, with ids of its own,
+/// What an import adds to a user's data (docs/local/backup.md#导入): all of it new here, with ids of its own,
 /// each folder after the one it is in, the tasks in the order to number them, the dependencies in no
 /// circle.
 pub struct Import {
@@ -321,7 +321,7 @@ impl Side {
 
 impl Done {
     /// A change read from the drive, as its effects were written here: local mode has one user,
-    /// who sees all of it (docs/local.md#读入).
+    /// who sees all of it (docs/local/drive.md#读入).
     pub(crate) fn replayed(effects: Vec<Effect>, user: &str) -> Done {
         let side = Side::of(vec![user.to_owned()]);
         let seen = effects.into_iter().map(|effect| Seen { effect, before: side.clone(), after: side.clone(), kept: false }).collect();
@@ -458,7 +458,7 @@ impl<'a> Cx<'a> {
 
     /// Of the tasks due some days after their prerequisites are done that this change concerns, gives
     /// those with all of them done the day it was made, `local`'s, and takes that back from those a
-    /// prerequisite came to hold up in it (docs/design.md#前置完成后的截止). Only on such changes, and
+    /// prerequisite came to hold up in it (docs/design/dates.md#前置完成后的截止). Only on such changes, and
     /// not for a repeating prerequisite done before: its time come round again, by the clock or by an
     /// undo, it leaves its tasks be.
     fn settle(&mut self, local: &Now) -> Result<(), ApiError> {

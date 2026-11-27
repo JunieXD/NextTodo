@@ -1,4 +1,4 @@
--- Attachments (docs/design.md#附件). A file is uploaded first, kept under the data directory's
+-- Attachments (docs/design/attachments.md). A file is uploaded first, kept under the data directory's
 -- `files/` by its id, and then attached to a task, or to an AI job until the job is organized. A file
 -- no attachment uses, not attached yet or its attachment deleted, goes 90 days after. What a file is,
 -- its type and size, is here alone: an attachment is only where it is and what it is called.

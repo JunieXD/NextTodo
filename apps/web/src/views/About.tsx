@@ -1,4 +1,4 @@
-// The versions running, and updates: see docs/design.md#app-更新.
+// The versions running, and updates: see docs/design/updates.md.
 
 import { ChevronRight, Copy, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";

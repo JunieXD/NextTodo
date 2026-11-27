@@ -1,4 +1,4 @@
-//! The Chinese lunar calendar (docs/design.md#农历), for repeats that go by it and the lunar dates
+//! The Chinese lunar calendar (docs/design/repeat.md#农历), for repeats that go by it and the lunar dates
 //! shown beside days. The web app has a TypeScript twin, `apps/web/src/domain/lunar.ts`; both read
 //! `lunar.json` and are checked against `fixtures/lunar.json`.
 

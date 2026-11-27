@@ -1,5 +1,5 @@
 //! Festivals, solar terms, and the days off and made-up working days the State Council sets around
-//! public holidays (docs/design.md#节日和放假). The web app has a TypeScript twin,
+//! public holidays (docs/design/repeat.md#节日和放假). The web app has a TypeScript twin,
 //! `apps/web/src/domain/holidays.ts`; both read `terms.json` and `holidays.json` and are checked
 //! against `fixtures/holidays.json`.
 

@@ -1,4 +1,4 @@
-// What calendars write with a day (docs/design.md#节日和放假): under its number its festival or solar
+// What calendars write with a day (docs/design/repeat.md#节日和放假): under its number its festival or solar
 // term, or else its lunar day; in a corner 休 or 班 where the State Council has set a day off or a
 // made-up working day, unless that is turned off on this device.
 

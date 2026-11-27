@@ -1,5 +1,5 @@
 // Festivals, solar terms, and the days off and made-up working days the State Council sets around
-// public holidays (docs/design.md#节日和放假): a twin of `crates/core/src/holidays.rs`, reading the same
+// public holidays (docs/design/repeat.md#节日和放假): a twin of `crates/core/src/holidays.rs`, reading the same
 // tables; both are checked against `fixtures/holidays.json`.
 
 import arrangements from "../../../../crates/core/src/holidays.json";

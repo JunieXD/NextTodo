@@ -3,6 +3,6 @@ import type { Date } from "./Date";
 
 /**
  * How many times a repeating task has been done, and the last day it was, on the device that did
- * it: done, it moves on instead (docs/design.md#重复).
+ * it: done, it moves on instead (docs/design/repeat.md#重复).
  */
 export type Completions = { count: number, last: Date, };

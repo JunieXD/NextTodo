@@ -200,7 +200,7 @@ export async function backup(store: Store): Promise<string | null> {
  * files of the attachments in use. */
 const SETTING_MS = 10 * 60_000;
 
-/** Turns syncing through the drive `config` says on (docs/local.md#开启). On a folder another device
+/** Turns syncing through the drive `config` says on (docs/local/drive.md#开启). On a folder another device
  * syncs through, `confirm` is asked first; once it agreed, the data here is replaced with that, and
  * the app restarts. False when it declined. */
 export async function syncThrough(config: DriveConfig, confirm: (body: string) => Promise<boolean>, session: Session): Promise<boolean> {
@@ -228,7 +228,7 @@ export async function syncThrough(config: DriveConfig, confirm: (body: string) =
   return true;
 }
 
-/** Stops syncing through the drive (docs/local.md#停止), once the files of the attachments in use are
+/** Stops syncing through the drive (docs/local/drive.md#停止), once the files of the attachments in use are
  * downloaded; when they can't be now, `confirm` is asked whether to stop without them. False when it
  * declined. */
 export async function stopSyncing(confirm: (body: string) => Promise<boolean>): Promise<boolean> {

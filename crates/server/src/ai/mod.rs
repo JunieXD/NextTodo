@@ -160,7 +160,7 @@ pub async fn run_queue(st: AppState) {
 }
 
 /// Fails the jobs that were being organized when the server stopped. Syncing through a drive, those of
-/// the rounds this device started (docs/local.md#运行): queued before any request, and not waited for,
+/// the rounds this device started (docs/local/drive.md#运行): queued before any request, and not waited for,
 /// as the drive may be out of reach.
 pub async fn interrupted(st: &AppState) -> Result<(), ApiError> {
     let _direct = match st.drive.route().await {
@@ -175,7 +175,7 @@ pub async fn interrupted(st: &AppState) -> Result<(), ApiError> {
 }
 
 /// Fails the jobs being organized, with `error`, directly: as the server starts without a drive, and
-/// as syncing through one is turned on, before its first snapshot (docs/local.md#运行).
+/// as syncing through one is turned on, before its first snapshot (docs/local/drive.md#运行).
 pub(crate) fn fail_running(c: &mut Connection, hub: &Hub, error: &str, now: i64) -> Result<(), ApiError> {
     let running: Vec<(String, AiJobId)> = c
         .prepare("SELECT owner_id, id FROM ai_jobs WHERE state = 'running'")?
@@ -259,7 +259,7 @@ pub(crate) fn cut_rounds(st: &AppState, drive: &Drive, rounds: Vec<OwnRound>, er
     }
 }
 
-/// Fails the jobs this device is organizing, as syncing through `drive` stops (docs/local.md#运行),
+/// Fails the jobs this device is organizing, as syncing through `drive` stops (docs/local/drive.md#运行),
 /// waiting a while only: those whose failure isn't written by then stay as they are on the other
 /// devices, to be deleted there.
 pub(crate) async fn end_rounds(st: &AppState, drive: &Drive) {
@@ -346,7 +346,7 @@ async fn start_synced(st: &AppState, drive: Arc<Drive>, turn: Turn, job: AiJobId
 
 /// Where the changes of one round of organizing a job go: made here at once; or, syncing through a
 /// drive, through it, and only while the job is still in the round, which change `run` started
-/// (docs/local.md#运行).
+/// (docs/local/drive.md#运行).
 enum Round {
     /// Begun without a drive, as syncing had been turned on `since` times: over once it is again,
     /// as the job is failed then.

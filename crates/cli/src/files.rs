@@ -99,7 +99,7 @@ fn named(res: &ureq::http::Response<ureq::Body>) -> Option<Result<FileName, Stri
 const LOCAL_BACKUP: &str = "本机模式用 App 设置里的“备份”和“恢复”";
 
 /// Saves the account's own data as a backup to `file`, or here under the name the server gives it
-/// (docs/local.md#导出); written in full beside it first, and never over a file already there, nor
+/// (docs/local/backup.md#导出); written in full beside it first, and never over a file already there, nor
 /// over one another export is writing.
 pub fn export(file: Option<PathBuf>, json_out: bool) -> anyhow::Result<()> {
     let (mut server, token) = connect()?;
@@ -150,7 +150,7 @@ const NOT_A_BACKUP: &str = "这不是 NextTodo 的备份，或者文件已损坏
 const DATABASE_TOO_LARGE: &str = "备份里的数据库超过 20 MB，暂时导入不了";
 
 /// Checks the backup in `file` whole, as a restore checks it, before anything of it is sent
-/// (docs/local.md#导入): a tar of its manifest, then its attachments' files and database; or, `true`,
+/// (docs/local/backup.md#导入): a tar of its manifest, then its attachments' files and database; or, `true`,
 /// a database alone, as backups were before there were attachments.
 fn check_backup(file: &mut File) -> anyhow::Result<bool> {
     let mut head = [0; 16];
@@ -209,7 +209,7 @@ fn read_up_to_limit(from: impl Read) -> anyhow::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// Adds the backup at `file` to the account (docs/local.md#导入): checked whole, each of its files
+/// Adds the backup at `file` to the account (docs/local/backup.md#导入): checked whole, each of its files
 /// uploaded under a new id, made in their order, then the import asked for. What is checked is what
 /// is sent: read twice through the one opening of it.
 pub fn import(file: &Path, out: &Out) -> anyhow::Result<()> {

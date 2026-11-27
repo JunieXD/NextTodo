@@ -1,5 +1,5 @@
 //! The drive as a store of files by path, each written only where none is yet
-//! (docs/local.md#只在不存在时写入). Calls block; the sync task makes them on blocking threads.
+//! (docs/local/drive.md#只在不存在时写入). Calls block; the sync task makes them on blocking threads.
 
 /// How writing a file where none may be went.
 #[derive(Debug, PartialEq, Eq)]

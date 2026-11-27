@@ -77,7 +77,7 @@ cp target/x86_64-unknown-linux-musl/release/nexttodo-server "$stage/nexttodo-ser
 cp target/aarch64-unknown-linux-musl/release/nexttodo-server "$stage/nexttodo-server-arm64"
 cp -R apps/web/dist "$stage/web"
 
-# The apps' updates, under `/app/` next to the web app's `web.json` (docs/design.md#app-更新).
+# The apps' updates, under `/app/` next to the web app's `web.json` (docs/design/updates.md).
 app=$stage/web/app
 apk=apps/android/app/build/outputs/apk/release/app-release.apk
 cp "$apk" "$app/NextTodo.apk"

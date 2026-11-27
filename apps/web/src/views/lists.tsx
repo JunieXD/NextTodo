@@ -47,7 +47,7 @@ export function NextBody({ now }: { now: Date }) {
   const all = folders.includes(null);
   const ready = readyIn(board, folders);
   const lingering = [...linger.keys()].map((id) => board.task(id)).filter((t): t is Task => !!t && t.done_at !== null);
-  // The deadline of a task after it that it is to make (docs/design.md#后续的截止); one lingering, as
+  // The deadline of a task after it that it is to make (docs/design/dates.md#后续的截止); one lingering, as
   // it was listed by.
   const by = (t: Task) => (t.done_at === null ? board.dueBy().get(t.id) : linger.get(t.id));
   const groups = new Map<DueGroup, Task[]>();

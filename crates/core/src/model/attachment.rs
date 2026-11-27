@@ -121,7 +121,7 @@ pub enum Holder {
     Job(AiJobId),
 }
 
-/// A file attached to a task or an AI job (docs/design.md#附件). The file itself is uploaded
+/// A file attached to a task or an AI job (docs/design/attachments.md). The file itself is uploaded
 /// separately, under the same id.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(try_from = "AttachmentFields", into = "AttachmentFields")]

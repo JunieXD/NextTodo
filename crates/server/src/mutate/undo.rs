@@ -44,7 +44,7 @@ type Counted = (Option<Completions>, Option<Completions>);
 
 /// Whether a change that took how often a task was done from `before` to `after` is still the last
 /// that counts, as `later`, how changes since took it, have it: each since took back the one before
-/// it that still counted, or counted itself (docs/design.md#改动记录和撤销).
+/// it that still counted, or counted itself (docs/design/history.md).
 fn still_last<T: PartialEq>(before: &T, after: &T, later: Vec<(T, T)>) -> bool {
     let changes: Vec<(&T, &T)> = std::iter::once((before, after)).chain(later.iter().map(|(b, a)| (b, a))).collect();
     let mut counting: Vec<usize> = Vec::new();

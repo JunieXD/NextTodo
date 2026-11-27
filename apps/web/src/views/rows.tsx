@@ -71,7 +71,7 @@ export function TaskRow({
   path?: boolean;
   /** Show which step it is, in “接下来”, which has no rail to show it (docs/design.md#关联进度). */
   step?: boolean;
-  /** In “接下来”, the deadline of a task after it that it is to make (docs/design.md#后续的截止). */
+  /** In “接下来”, the deadline of a task after it that it is to make (docs/design/dates.md#后续的截止). */
   dueBy?: Dated;
   /** Where the check sits on the rail. */
   railX?: number;

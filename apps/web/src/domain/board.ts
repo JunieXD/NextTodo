@@ -44,18 +44,18 @@ export const before = (now: Now, date: string, time?: string) =>
 type Moment = { date: string; time?: string };
 
 /** When a repeating task done before holds up the tasks after it again: as its current occurrence
- * begins, at its start or else on its due date (docs/design.md#重复). */
+ * begins, at its start or else on its due date (docs/design/repeat.md#重复). */
 function again(t: Task): Moment | null {
   if (!t.due?.repeat || t.done_at !== null || !t.completions) return null;
   return t.start !== null ? { date: t.start, time: t.start_time } : { date: t.due.date };
 }
 
 /** Whether `t` repeats and has been done before: when it holds up the tasks after it, it is that its
- * time has come round again, which takes back no due date it gave them (docs/design.md#前置完成后的截止). */
+ * time has come round again, which takes back no due date it gave them (docs/design/dates.md#前置完成后的截止). */
 export const comesRound = (t: Task) => again(t) !== null;
 
 /** Whether the tasks after `t` wait for it `now`: it is not done, and if it repeats, it has not been
- * done yet or its current occurrence has begun (docs/design.md#重复). */
+ * done yet or its current occurrence has begun (docs/design/repeat.md#重复). */
 export function holdsUp(t: Task, now: Now): boolean {
   const a = again(t);
   return t.done_at === null && (!a || !before(now, a.date, a.time));
@@ -200,7 +200,7 @@ export class Board {
   }
 
   /** Whether `a` and `b` are in the same place, where tasks can be linked: both private, or in the
-   * same shared folder (docs/design.md#共享). */
+   * same shared folder (docs/design/sharing.md). */
   together(a: Task, b: Task): boolean {
     return this.sharedRoot(a.folder_id) === this.sharedRoot(b.folder_id);
   }
@@ -299,7 +299,7 @@ export class Board {
 
   /** Each task holding up open tasks after it, directly or through others holding them up, and the one
    * of them due first, where it is due before the task itself, or the task has no deadline; of those
-   * due at once, the first by ID (docs/design.md#后续的截止). */
+   * due at once, the first by ID (docs/design/dates.md#后续的截止). */
   dueBy(): ReadonlyMap<TaskId, Dated> {
     if (!this.firstAfter) {
       const first = new Map<TaskId, Dated>();
@@ -415,7 +415,7 @@ export class Board {
   }
 
   /** Whether folder `f` may move into `parent`: not into itself or a folder inside it, nor into a
-   * shared folder when it is one or has one inside (docs/design.md#共享). */
+   * shared folder when it is one or has one inside (docs/design/sharing.md). */
   canMove(f: FolderId, parent: FolderId | null): boolean {
     return !this.inSubtree(parent, f) && !(this.sharedRoot(parent) && this.sharesWithin(f));
   }

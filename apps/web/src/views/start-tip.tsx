@@ -1,5 +1,5 @@
 // The tip that a start time keeps a repeating task out of “接下来” until near its due date
-// (docs/design.md#开始时间): over “接下来” while a repeating task there without one, done for today,
+// (docs/design/dates.md#开始时间): over “接下来” while a repeating task there without one, done for today,
 // waits for its next time. Gone for good on this device, for each user, once a button on it is pressed
 // or a start is set here.
 

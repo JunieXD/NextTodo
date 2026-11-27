@@ -1,4 +1,4 @@
-// What this device does about reminders (docs/design.md#提醒): those a task gets as it is given a due
+// What this device does about reminders (docs/design/dates.md#提醒): those a task gets as it is given a due
 // date, whether reminders hide what they are of, and the daily digest. Each device keeps its own, as it
 // does the theme.
 

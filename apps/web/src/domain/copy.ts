@@ -70,7 +70,7 @@ export function copyFolder(
       ...(t.start_time && { start_time: t.start_time }),
       ...(t.start_reminders && { start_reminders: t.start_reminders }),
       ...(t.remind_at && { remind_at: t.remind_at }),
-      // One due after its prerequisites counts anew (docs/design.md#前置完成后的截止).
+      // One due after its prerequisites counts anew (docs/design/dates.md#前置完成后的截止).
       ...(t.due_after ? { due_after: t.due_after } : t.due && { due: t.due }),
       sort_key: t.sort_key,
       // Still in the shared folder it was in, a task keeps who it is assigned to.

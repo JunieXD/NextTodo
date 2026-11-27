@@ -236,7 +236,7 @@ pub fn prompt(job: &AiJob, snap: Snapshot, user: &str, notes: Vec<Value>) -> (Pr
 }
 
 /// The references to attachments in a description, `[名称](attachment:<ID>)` with `[`, `]` and `\`
-/// escaped in the name (docs/design.md#附件): each whole, with its id.
+/// escaped in the name (docs/design/attachments.md): each whole, with its id.
 fn references(text: &str) -> impl Iterator<Item = (&str, &str)> {
     const MARK: &str = "](attachment:";
     text.match_indices(MARK).filter_map(move |(at, _)| {
@@ -590,7 +590,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             let kept = |r: RemindText| if t.due_after.is_some() { RemindText { due: t.reminders(), ..r } } else { r };
             // Given or cleared, they take the place of all three kinds; otherwise, as a new task's when it
             // first gets a due date, the defaults by that, unless with the others it has they would be
-            // too many (docs/design.md#提醒).
+            // too many (docs/design/dates.md#提醒).
             let given = s.remind.is_some() || clear(Setting::Remind);
             let remind = match s.remind {
                 _ if clear(Setting::Remind) => Some(Some(kept(RemindText::default()))),

@@ -1,4 +1,4 @@
--- A record of each time a repeating task was done (docs/design.md#重复): the time due on which day, done
+-- A record of each time a repeating task was done (docs/design/repeat.md#重复): the time due on which day, done
 -- on which. Done twice, the time due on a day keeps the later.
 CREATE TABLE completions (
     task_id TEXT NOT NULL REFERENCES tasks (id) ON DELETE CASCADE,

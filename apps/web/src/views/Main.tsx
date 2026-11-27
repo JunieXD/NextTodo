@@ -153,7 +153,7 @@ const OLDER_TOLD = "nexttodo.olderServerTold:";
 /** Looks at the server's version when the app opens, comes back to the front, and while it runs. For
  * its admin, beside the latest release, telling once about each newer (docs/design.md#部署); for
  * others, in an app, telling once of each server version older than the app, which may turn down what
- * the app sends (docs/design.md#app-更新). */
+ * the app sends (docs/design/updates.md). */
 function ServerVersions({ admin }: { admin: boolean }) {
   const { snack } = useFeedback();
   const [, navigate] = useLocation();
@@ -183,7 +183,7 @@ function ServerVersions({ admin }: { admin: boolean }) {
   return null;
 }
 
-/** What someone else did that concerns the user, which their other changes don't (docs/design.md#共享):
+/** What someone else did that concerns the user, which their other changes don't (docs/design/sharing.md):
  * assigning them a task, or completing tasks that leave some of the user's ready; and the task to
  * open, when it is one. */
 function concerning(entry: LogEntry, board: Board): { text: string; open: TaskId | null } | null {

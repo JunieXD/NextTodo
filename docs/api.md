@@ -37,14 +37,14 @@
 | GET | `/sync` | WebSocket，见[同步协议](#同步协议) |
 | PUT | `/files/{id}` | 上传附件的文件，见[附件](#附件) |
 | GET | `/files/{id}` | 下载附件的文件 |
-| GET | `/export` | 这个用户自己的数据，打成[备份](local.md#备份)的 tar，`?today=YYYY-MM-DD` 是文件名里的日期；见[导出](local.md#导出)。本机模式没有 |
-| POST | `/import` | 把上传了的备份加进这个账号：`{id, database, files}` → `{tasks, folders, batch}`，加了几个事项、几个文件夹，和批次序号。`id` 是客户端生成的改动 ID，重发不会导入两次，撤销也用它。见[导入](local.md#导入)；只读令牌返回 403，本机模式没有 |
-| GET | `/settings` | 服务器的设置：`{compress_images}`，是否在上传前[压缩图片](design.md#附件) |
+| GET | `/export` | 这个用户自己的数据，打成[备份](local/backup.md#备份)的 tar，`?today=YYYY-MM-DD` 是文件名里的日期；见[导出](local/backup.md#导出)。本机模式没有 |
+| POST | `/import` | 把上传了的备份加进这个账号：`{id, database, files}` → `{tasks, folders, batch}`，加了几个事项、几个文件夹，和批次序号。`id` 是客户端生成的改动 ID，重发不会导入两次，撤销也用它。见[导入](local/backup.md#导入)；只读令牌返回 403，本机模式没有 |
+| GET | `/settings` | 服务器的设置：`{compress_images}`，是否在上传前[压缩图片](design/attachments.md) |
 | PUT | `/settings` | 管理员改服务器的设置，本机模式下是本机用户：`{compress_images}` → 设置；只能用会话 |
 | GET | `/tools` | 工具列表，见 [agent 接入](agent.md#工具接口) |
 | POST | `/tools/{name}` | 调用一个工具 |
 | | `/ai/…` | AI 整理的服务商、配置和测试，见 [AI 整理](ai.md#接口) |
-| GET | `/local/sync` | 本机模式：[借网盘同步](local.md#借网盘同步)的情况 `{drive, status, stopped}`。开着时 `drive` 是网盘（不含密码和密钥），`status` 是 `{enabling, synced_at, problem}`：还在开启、上次网盘回应的时间、受阻的原因；`stopped` 是同步自己停下的原因。这三个接口只能用会话 |
+| GET | `/local/sync` | 本机模式：[借网盘同步](local/drive.md)的情况 `{drive, status, stopped}`。开着时 `drive` 是网盘（不含密码和密钥），`status` 是 `{enabling, synced_at, problem}`：还在开启、上次网盘回应的时间、受阻的原因；`stopped` 是同步自己停下的原因。这三个接口只能用会话 |
 | PUT | `/local/sync` | 本机模式：开启，`{config, replace}`。`config` 是 `{kind: "webdav", url, user, password, folder}` 或 `{kind: "s3", endpoint, region, bucket, access_key, secret_key, path_style, folder}`。文件夹里已有数据时，`replace` 为 false 返回 409 `has_data`，为 true 时准备好网盘里的数据，下次启动换上，App 随即重启。成功返回 204 |
 | DELETE | `/local/sync` | 本机模式：停止同步，先下载在用的附件里本机还没有的文件。下载不了时返回 409 `files_not_here`，带 `?force=true` 不下载、直接停止。成功返回 204 |
 
@@ -54,7 +54,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 
 ## 共享
 
-一个用户看得到的是自己的数据，加上别人[共享](design.md#共享)给自己的文件夹和其中的一切。共享的文件夹里的东西属于共享人，事项编号也是共享人的。
+一个用户看得到的是自己的数据，加上别人[共享](design/sharing.md)给自己的文件夹和其中的一切。共享的文件夹里的东西属于共享人，事项编号也是共享人的。
 
 - `/snapshot` 的 `shares` 是这个用户共享出去的和共享给这个用户的文件夹，`people` 是这个用户自己、这些文件夹里的人，和这个用户看得到的事项的添加人、最后修改人（可能已经离开）。
 - 别人共享的文件夹在这个用户的数据里没有上级：`parent_id` 为空，共享人把它放在哪里都一样，也不会暴露共享人别的文件夹。
@@ -62,12 +62,12 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 
 ## 附件
 
-[附件](design.md#附件)分两步加：先上传文件，再用改动 `attachment.add` 把它加为附件。网页端在文件上传完以前不发这个改动，见[网页端](web.md#附件)。
+[附件](design/attachments.md)分两步加：先上传文件，再用改动 `attachment.add` 把它加为附件。网页端在文件上传完以前不发这个改动，见[网页端](web.md#附件)。
 
 - `PUT /files/{id}`：请求体是文件，`Content-Type` 是它的类型（`类型/子类型`，最长 100 字；不知道的用 `application/octet-stream`）。`id` 是客户端生成的 UUIDv7，之后也是附件的 ID。最多 20 MB，超过时返回 413。服务端边收边写进 `files/` 下的临时文件，收完以后在数据库的锁里再查一次这个 ID：没人用过就改名换上、记下这个文件，返回 `{id, size}`；同一个人已经传过（断线重传）就丢掉这份，直接返回原来的；别人用过返回 409。已经记下的文件不会被覆盖。只读令牌返回 403。
 - `PUT /files/{id}?from=<附件 ID>`：不带请求体，把看得到的附件 `from` 的文件复制一份，作为 `id` 的文件记下，之后和上传的一样；`from` 看不到时返回 404。[复制文件夹](design.md#文件夹)时用，文件不经过客户端。
 - `GET /files/{id}`：文件。看得到它现在所属的事项或请求的人能下载；它不属于任何事项或请求时（还没加为附件，或者附件删除后文件还留着），上传的人也能。其余返回 404。响应头 `Content-Type` 是附件的类型，并且总有 `Content-Disposition: attachment; filename*=UTF-8''<名称>`、`X-Content-Type-Options: nosniff` 和 `Content-Security-Policy: sandbox`：上传的 HTML、SVG 即使在浏览器里被直接打开，也不会在这个网址下执行脚本、借用登录状态。谁能读、叫什么名字会变，所以 `Cache-Control: no-store`，每次都问服务端；App 自己存着下载过的文件，见[网页端](web.md#附件)。
-- 跨域：这两个接口和 `GET /export`（[导出](local.md#导出)）允许来源 `https://localhost`（Android App 的页面）和 `capacitor://localhost`（iOS App 的页面），方法 GET、PUT，请求头只允许 `Authorization` 和 `Content-Type`，不带 Cookie，页面读得到响应头 `Content-Disposition`（导出的文件名）；预检请求不要求登录。手机 App 的其他请求走原生 HTTP，附件的文件和导出的备份大，经原生和网页之间的桥传会出问题，见 [Android](android.md#附件)。
+- 跨域：这两个接口和 `GET /export`（[导出](local/backup.md#导出)）允许来源 `https://localhost`（Android App 的页面）和 `capacitor://localhost`（iOS App 的页面），方法 GET、PUT，请求头只允许 `Authorization` 和 `Content-Type`，不带 Cookie，页面读得到响应头 `Content-Disposition`（导出的文件名）；预检请求不要求登录。手机 App 的其他请求走原生 HTTP，附件的文件和导出的备份大，经原生和网页之间的桥传会出问题，见 [Android](android.md#附件)。
 - 日志只记附件 ID、大小和结果，不记文件名。
 
 ## 实体
@@ -79,12 +79,12 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 // 事项
 { "id": "…", "number": 5, "folder_id": "…", "title": "设计问卷", "description": "…", "done_at": null, "dropped": false, "start": "2026-10-30", "start_time": "09:00",
   // done_at 是结束的时间，待办为 null；dropped 是[放弃](design.md#放弃)了，这时 done_at 是放弃的时间
-  // 开始时间的日期和几点几分：没设时 start 为 null，只有日期时没有 start_time，见 design.md#开始时间
+  // 开始时间的日期和几点几分：没设时 start 为 null，只有日期时没有 start_time，见 design/dates.md#开始时间
   "start_reminders": [{ "before": 30 }], "remind_at": [{ "date": "2026-11-28", "time": "15:00" }],
   // 按开始时间算的提醒，写法同 due 的 reminders（提前多久的要有 start_time），只能在有 start 时设；排法不同：按日子的在前、提前多久的在后，各自按到点的先后排，不随 start_time 变；remind_at 是指定时间的提醒，
-  // 按时刻先后排、不重复，只响一次，按设备上的钟点算（同 due），服务端不检查是否已过。都可省略，没有时不写出。它们和 due（或 due_after）的 reminders 加起来最多 100 个，见 design.md#提醒
+  // 按时刻先后排、不重复，只响一次，按设备上的钟点算（同 due），服务端不检查是否已过。都可省略，没有时不写出。它们和 due（或 due_after）的 reminders 加起来最多 100 个，见 design/dates.md#提醒
   "due": { "date": "2026-11-02", "time": "18:00", "reminders": [{ "days": 1, "time": "20:00" }, { "before": 60 }], "repeat": { "every": 1, "unit": "week", "from": "due" } },
-  // 没有截止时间时为 null；time、reminders、repeat 可省略；reminders 是按截止时间算的提醒：{"before": 分钟} 提前多久（0 是截止时，要有 time，最多 43200），{"days": 天数, "time": "20:00"} 截止那天（0）或提前几天（最多 30）的几点，按到点的先后排、不重复，最多 100 个；旧版本写的 remind_before（提前多少分钟）读入时换成一个提前多久的提醒，不再写出；按周的 repeat 可以带 "days": [1, 3, 5]，在周几（1 是周一，7 是周日）；每个法定工作日是 every 1、unit week、days [1, 2, 3, 4, 5]、不按农历，再带 "legal": true，别的组合带它报错；不是的不写 legal；按月的 days 是几号（1–31）。每年是 every 12、unit month。repeat 可以带 "until": "2026-12-19"，重复到哪天（含这天）。按农历的按月 repeat 带 "lunar": true，这时一定有 days，是农历的几号（1–30，初一到三十），见[重复](design.md#重复)
+  // 没有截止时间时为 null；time、reminders、repeat 可省略；reminders 是按截止时间算的提醒：{"before": 分钟} 提前多久（0 是截止时，要有 time，最多 43200），{"days": 天数, "time": "20:00"} 截止那天（0）或提前几天（最多 30）的几点，按到点的先后排、不重复，最多 100 个；旧版本写的 remind_before（提前多少分钟）读入时换成一个提前多久的提醒，不再写出；按周的 repeat 可以带 "days": [1, 3, 5]，在周几（1 是周一，7 是周日）；每个法定工作日是 every 1、unit week、days [1, 2, 3, 4, 5]、不按农历，再带 "legal": true，别的组合带它报错；不是的不写 legal；按月的 days 是几号（1–31）。每年是 every 12、unit month。repeat 可以带 "until": "2026-12-19"，重复到哪天（含这天）。按农历的按月 repeat 带 "lunar": true，这时一定有 days，是农历的几号（1–30，初一到三十），见[重复](design/repeat.md#重复)
   "due_after": { "days": 30, "time": "18:00", "reminders": [{ "before": 60 }] }, "unlocked_on": "2026-11-24",
   // 前置完成后几天内截止的才有，见下面的[前置完成后的截止](#前置完成后的截止)：due_after 同 due 去掉 date 和 repeat，days 是 0–365；
   // unlocked_on 是前置都完成的那天，没完成时没有这一项，这时 due 为 null
@@ -142,11 +142,11 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | `share.remove` | `folder_id`、`user_id` | 共享人移除成员，或成员自己退出。最后一个成员离开时文件夹回到私人的 |
 | `undo` | `mutation` | 撤销一个改动：按相反顺序把它的变化恢复回去，恢复时同样要通过所有规则。要改回去的东西已经不存在的跳过；要恢复的事项或文件夹原来所在的文件夹、要恢复的依赖连着的事项已经被删除时，整个撤销不生效 |
 
-`task.update` 把有[重复](design.md#重复)的事项标为完成（`done: true`）时不记完成时间，而是按 `today`（发出改动的设备上的当天，`YYYY-MM-DD`）把截止日期顺延到下一次，`completions` 的次数加一、日期记为 `today`；这时缺了 `today` 返回 400。顺延出的下一次晚于重复的 `until` 时，这次就是最后一次：次数同样加一、日期记为 `today`，然后去掉重复、记完成时间。同一个改动里的 `due` 先生效，所以去掉重复的同时 `done: true` 就是结束重复并完成：记完成时间，不动 `completions`，也不看 `today`。别的事项只用 `today` 定下[前置完成后的截止](#前置完成后的截止)。带上 `occurrence`（要完成的那一次：`{due, completions}`，它的截止日期和那时完成过的次数）时，重复的事项现在已经不是这一次的，这次完成不生效，改动照样成功：那一次已经在别处完成、跳过或改了日期，再完成就会把下一次也完成掉。只看日期不够：从完成那天算的提前完成了，下一次可能还是同一天截止。App 和网页上勾选完成（包括批量完成）、手机的通知、提醒卡片和小组件上的“完成”都给重复的事项带着它：列表可能过时，几台设备也可能离线时各自完成了同一次；结束重复并完成不带；不重复的事项不看 `occurrence`。[放弃](design.md#放弃)了的事项不再有下一次，带 `occurrence` 的完成对它不生效，不带的把它改成完成。已结束（完成或放弃）的事项不能有重复，截止日期不能晚于重复的 `until`，新建或修改出这样的事项返回 400。
+`task.update` 把有[重复](design/repeat.md#重复)的事项标为完成（`done: true`）时不记完成时间，而是按 `today`（发出改动的设备上的当天，`YYYY-MM-DD`）把截止日期顺延到下一次，`completions` 的次数加一、日期记为 `today`；这时缺了 `today` 返回 400。顺延出的下一次晚于重复的 `until` 时，这次就是最后一次：次数同样加一、日期记为 `today`，然后去掉重复、记完成时间。同一个改动里的 `due` 先生效，所以去掉重复的同时 `done: true` 就是结束重复并完成：记完成时间，不动 `completions`，也不看 `today`。别的事项只用 `today` 定下[前置完成后的截止](#前置完成后的截止)。带上 `occurrence`（要完成的那一次：`{due, completions}`，它的截止日期和那时完成过的次数）时，重复的事项现在已经不是这一次的，这次完成不生效，改动照样成功：那一次已经在别处完成、跳过或改了日期，再完成就会把下一次也完成掉。只看日期不够：从完成那天算的提前完成了，下一次可能还是同一天截止。App 和网页上勾选完成（包括批量完成）、手机的通知、提醒卡片和小组件上的“完成”都给重复的事项带着它：列表可能过时，几台设备也可能离线时各自完成了同一次；结束重复并完成不带；不重复的事项不看 `occurrence`。[放弃](design.md#放弃)了的事项不再有下一次，带 `occurrence` 的完成对它不生效，不带的把它改成完成。已结束（完成或放弃）的事项不能有重复，截止日期不能晚于重复的 `until`，新建或修改出这样的事项返回 400。
 
 ### 前置完成后的截止
 
-事项可以用 `due_after` 代替 `due`：前置都完成后几天内截止（[设计](design.md#前置完成后的截止)）。`due` 由服务端算出，改动里不能同时给两个，同时给返回 400（`field` 是 `due_after`）：
+事项可以用 `due_after` 代替 `due`：前置都完成后几天内截止（[设计](design/dates.md#前置完成后的截止)）。`due` 由服务端算出，改动里不能同时给两个，同时给返回 400（`field` 是 `due_after`）：
 
 - 每个改动的操作都生效以后，服务端看这个改动涉及的有 `due_after` 的事项：新建或改了 `due_after`、`start` 的，前置完成、重新打开或删除的，连上或去掉前置的。前置都不挡着它（同[状态](design.md#派生状态)，重复的前置这一次没开始也算）、又还没定下的，`unlocked_on` 记为这个改动的“今天”；定下了、而这个改动让某个前置变成挡着它的（重新打开、连上没完成的，包括撤销时恢复的连线），去掉 `unlocked_on`；做过的重复前置（有 `completions`）不算，它挡着只是又到了它的一次。别的时候不动，重复的前置到了下一次不去掉。
 - 定下以后 `due` 是 `unlocked_on` 和 `start` 里晚的那天加 `days`，几点和提醒照 `due_after`；没定下时 `due` 为 `null`。这些变化是同一个改动的效果，一起撤销。
@@ -164,7 +164,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
   { "kind": "dependency", "before": null, "after": { "before": "…", "after": "…", "created_at": … } } ]
 ```
 
-`kind` 是 `folder`、`task`、`dependency`、`completion`、`attachment`、`ai_job`、`share` 或 `person`。`before` 为空表示新建，`after` 为空表示删除，都不为空表示修改。`completion` 是重复事项的一条[完成记录](design.md#重复) `{task_id, due, done, again}`，`again` 是同一次（同一个 `due`）在这一回以前完成过几回，通常是 0；和 `dependency` 一样只有新建和删除，由完成重复的事项、删除事项和撤销带来，改动里不能直接写。客户端按顺序应用 `after` 就能得到最新状态。`share` 是一个文件夹的共享人和成员，有了成员是新建，最后一个成员离开是删除；`person` 是这个用户的数据里新出现的人（新建：加入了共享的文件夹，或者添加、修改过一个刚看得到的事项）或改了显示名的人（修改）。
+`kind` 是 `folder`、`task`、`dependency`、`completion`、`attachment`、`ai_job`、`share` 或 `person`。`before` 为空表示新建，`after` 为空表示删除，都不为空表示修改。`completion` 是重复事项的一条[完成记录](design/repeat.md#重复) `{task_id, due, done, again}`，`again` 是同一次（同一个 `due`）在这一回以前完成过几回，通常是 0；和 `dependency` 一样只有新建和删除，由完成重复的事项、删除事项和撤销带来，改动里不能直接写。客户端按顺序应用 `after` 就能得到最新状态。`share` 是一个文件夹的共享人和成员，有了成员是新建，最后一个成员离开是删除；`person` 是这个用户的数据里新出现的人（新建：加入了共享的文件夹，或者添加、修改过一个刚看得到的事项）或改了显示名的人（修改）。
 
 每个人收到的是自己看得到的那部分：事项移出共享的文件夹，留下的成员收到的是它被删除，移进来时是新建，它的附件、依赖也一样。`/changes` 和同步推送里的每条记录是 `{seq, id, user, actor, effects, created_at}`，`id` 是改动 ID，`user` 是提交改动的用户 ID，`actor` 是 API 令牌名（会话为空，AI 整理是“AI 整理”）。
 
@@ -186,7 +186,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | 409 | `files_not_here` | 停止借网盘同步时，在用的附件有文件还没能从网盘下载下来 |
 | 413 | `too_large` | 上传的文件超过 20 MB |
 | 410 | `resync` | `since` 早于保留期，或者服务端恢复过快照，需要重新下载 `/snapshot` |
-| 503 | `unavailable` | 本机模式借网盘同步时连不上网盘：改动还没发出，没有生效，见[排定先后](local.md#排定先后)；开启时连不上网盘 |
+| 503 | `unavailable` | 本机模式借网盘同步时连不上网盘：改动还没发出，没有生效，见[排定先后](local/drive.md#排定先后)；开启时连不上网盘 |
 | 503 | `outcome_unknown` | 本机模式借网盘同步时，改动已经发出，网盘没有及时回应，可能已经生效；`details.mutation_id` 是改动 ID，用它原样重发不会重复生效，见[重试](agent.md#重试)；保存 AI 整理的说明没有改动 ID，再保存一次即可 |
 
 ## 同步协议

@@ -1,4 +1,4 @@
-//! An S3-compatible object store (docs/local.md#只在不存在时写入): a file is written where none is
+//! An S3-compatible object store (docs/local/drive.md#只在不存在时写入): a file is written where none is
 //! with `If-None-Match: *`. Requests are signed as AWS Signature Version 4 has it, with HMAC-SHA256.
 
 use std::time::{SystemTime, UNIX_EPOCH};

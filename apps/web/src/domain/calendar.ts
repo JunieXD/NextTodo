@@ -79,8 +79,15 @@ export const endingRecord = (board: Board, task: Task): Completion | undefined =
     ? undefined
     : board.completions(task.id).reduce<Completion | undefined>((l, r) => (r.due === task.due?.date && (!l || r.again > l.again) ? r : l), undefined);
 
-export function completionTimeOps(board: Board, task: Task, done_at: number): Op[] {
+/** The ending record, while the task's end is still that time's: reopened and done again later, it
+ * ended another day, apart from the record. */
+function endedBy(board: Board, task: Task): Completion | undefined {
   const record = endingRecord(board, task);
+  return record && task.done_at !== null && record.done === isoDate(new Date(task.done_at)) ? record : undefined;
+}
+
+export function completionTimeOps(board: Board, task: Task, done_at: number): Op[] {
+  const record = endedBy(board, task);
   return [
     { op: "task.update", id: task.id, done_at },
     ...(record ? [editCompletion(record, isoDate(new Date(done_at)))] : []),
@@ -89,7 +96,7 @@ export function completionTimeOps(board: Board, task: Task, done_at: number): Op
 
 export function completionDateOps(board: Board, task: Task, record: Completion, done: string): Op[] {
   const ops = [editCompletion(record, done)];
-  const ended = endingRecord(board, task);
+  const ended = endedBy(board, task);
   if (ended?.due !== record.due || ended.again !== record.again || task.done_at === null) return ops;
   const at = new Date(task.done_at);
   at.setDate(at.getDate() + daysBefore(isoDate(at), done));

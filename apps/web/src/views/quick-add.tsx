@@ -93,10 +93,13 @@ export function QuickAdd({
   on,
   at = null,
   hide = false,
+  filtered = false,
   onSent,
 }: {
   folder?: FolderId | null;
   on?: string;
+  /** Shown under 接下来's folder filter, as the panel's agenda is: adds where 接下来 would. */
+  filtered?: boolean;
   at?: string | null;
   hide?: boolean;
   onSent?: (sent: Sent) => void;
@@ -161,8 +164,8 @@ export function QuickAdd({
   const hidden = ai && vision !== undefined ? unseen(staged, vision) : undefined;
   // Pictures the model sees say it all: AI organizing needs no text with them (docs/ai.md#附件).
   const empty = blank(title) && !(ai && vision !== undefined && seesAny(staged, vision));
-  // Until one is picked or fixed, in “接下来” the first folder it lists, so that a new task shows
-  // there; in the calendar, the root.
+  // Until one is picked or fixed, in “接下来” and what shares its filter the first folder it lists, so
+  // that a new task shows there; in the calendar, the root.
   const target = useAddTo(board);
   const listed = useNextFolders(board);
   const [picking, setPicking] = useState(false);
@@ -173,7 +176,7 @@ export function QuickAdd({
       ? folder
       : target !== undefined
         ? target
-        : on === undefined
+        : on === undefined || filtered
           ? (board.folderTree().find((f) => listed.includes(f)) ?? null)
           : null;
   const when = on && `${formatDay(day(on).getTime(), new Date())}${at ? ` ${at}` : ""}`;

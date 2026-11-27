@@ -137,7 +137,7 @@ export function Panel() {
       {!batch.on && (view ? (
         <QuickAdd key="calendar" on={pick.picked} at={pick.at} />
       ) : (
-        <QuickAdd key={path} on={agenda ? board.now.today : undefined} folder={next || agenda ? undefined : folder} />
+        <QuickAdd key={path} on={agenda ? board.now.today : undefined} filtered={agenda} folder={next || agenda ? undefined : folder} />
       ))}
       {/* Keyed apart from the quick add beside it, which is keyed by the page too. */}
       <div key={`page:${path}`} className="panel-scroll">

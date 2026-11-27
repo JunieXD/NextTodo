@@ -215,8 +215,9 @@ export function TaskRow({
               </span>
               {meta.length > 0 && <span className="task-meta">{meta}</span>}
             </button>
-            {dueTimeOnly && t.due?.time && <span className={`agenda-time ${dueClass(t, now)}`}>{t.due.time}</span>}
             {choosing ? <Box checked={chosen} /> : t.assignees.length > 0 && <Avatars board={board} ids={t.assignees} size={22} max={3} />}
+            {/* After the avatars, for the times of a day to line up. */}
+            {dueTimeOnly && t.due?.time && <span className={`agenda-time ${dueClass(t, now)}`}>{t.due.time}</span>}
             {chain && (
               <Tip label={chain.open ? "收起后续" : "展开后续"}>
                 <button

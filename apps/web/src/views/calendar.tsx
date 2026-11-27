@@ -71,17 +71,20 @@ export function CalendarViewSeg() {
 }
 
 /** The day picked in the calendar and, in the time grid, the half hour on it picked to add to: gone once
- * the calendar shows another `view`. */
+ * the calendar shows another `view`. Today until another day is picked, also past midnight: a widget
+ * stays open for days. */
 export function useCalendarPick(now: Date, view: CalendarView) {
-  const [picked, setPicked] = useState(() => isoDate(now));
+  const today = isoDate(now);
+  const [chosen, setChosen] = useState<string | null>(null);
   const [slot, setSlot] = useState<{ date: string; time: string } | null>(null);
   if (view !== "time" && slot) setSlot(null);
+  const picked = chosen ?? today;
   return {
     picked,
     // Another day picked, the half hour goes.
     at: slot?.date === picked ? slot.time : null,
     pick(date: string, time?: string) {
-      setPicked(date);
+      setChosen(date === today ? null : date);
       setSlot(time === undefined ? null : { date, time });
     },
   };

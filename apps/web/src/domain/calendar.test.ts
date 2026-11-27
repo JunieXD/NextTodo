@@ -110,3 +110,12 @@ test("the last repeat's timestamp and completion record stay together from eithe
   const date = edit(completionDateOps(time.changed, time.ended, last, "2026-11-17"), at(17, 12, 30), ["2026-11-14", "2026-11-17"]);
   edit(completionDateOps(date.changed, date.ended, previous, "2026-11-13"), at(17, 12, 30), ["2026-11-13", "2026-11-17"]);
 });
+
+test("a task reopened after its last repeat and done again another day keeps its time apart from the record", () => {
+  const at = (day: number, hour: number) => new Date(2026, 10, day, hour).getTime();
+  const t = task(1, "练卷子", { due: { date: "2026-11-24" }, done_at: at(27, 9), completions: { count: 1, last: "2026-11-24" } });
+  const record = { task_id: t.id, due: "2026-11-24", done: "2026-11-24", again: 0 };
+  const b = board([t], [record]);
+  expect(completionTimeOps(b, t, at(27, 15))).toEqual([{ op: "task.update", id: t.id, done_at: at(27, 15) }]);
+  expect(completionDateOps(b, t, record, "2026-11-23")).toEqual([{ op: "completion.update", task_id: t.id, due: "2026-11-24", again: 0, done: "2026-11-23" }]);
+});

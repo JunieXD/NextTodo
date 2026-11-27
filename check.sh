@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs every check, as before each commit (AGENTS.md#开发效率): the Rust workspace, the TypeScript
-# types made from it, the web app, and the desktop app's shell, a Cargo workspace of its own. The
-# three don't depend on one another and run at once; the output of those that fail is shown.
+# types made from it, the web app, the desktop app's shell, a Cargo workspace of its own, and the links
+# into the docs. They don't depend on one another and run at once; the output of those that fail is shown.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -35,9 +35,15 @@ desktop() {
   cargo test --locked
 }
 
-# Each check in a process group of its own: interrupted, all three stop with what they started.
+links() {
+  # Not the Android app's native part: a change there raises its native version (docs/android.md#更新),
+  # so its links are put right with the next change it has anyway, which .githooks/pre-commit checks.
+  node docs/links.mjs -- . ':!apps/android' ':!apps/web/capacitor.config.ts'
+}
+
+# Each check in a process group of its own: interrupted, all stop with what they started.
 set -m
-checks=(rust web desktop)
+checks=(rust web desktop links)
 pids=()
 stop() {
   kill -TERM -- "${pids[@]/#/-}" 2>/dev/null || true

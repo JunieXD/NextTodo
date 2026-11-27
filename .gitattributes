@@ -1,0 +1,3 @@
+# SQLite keeps a migration's statements as written, line ends too, and schema.txt holds them to that.
+crates/server/migrations/*.sql text eol=lf
+crates/server/migrations/schema.txt text eol=lf

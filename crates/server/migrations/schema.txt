@@ -1,0 +1,616 @@
+-- What each migration changes in sqlite_schema, which the test `migrations_keep_making_the_schema_they_made` in src/db.rs
+-- holds them to. A new migration's part is added by `NEXTTODO_SCHEMA_ADD=1 cargo test -p nexttodo-server --lib migrations_keep`.
+
+-- migration 1
+index dependencies_after:
+    CREATE INDEX dependencies_after ON dependencies (after_id)
+index dependencies_owner:
+    CREATE INDEX dependencies_owner ON dependencies (owner_id)
+index folders_name:
+    CREATE UNIQUE INDEX folders_name ON folders (owner_id, coalesce(parent_id, ''), name)
+index folders_parent:
+    CREATE INDEX folders_parent ON folders (owner_id, parent_id, sort_key)
+index mutations_owner:
+    CREATE INDEX mutations_owner ON mutations (owner_id, seq)
+index sqlite_autoindex_dependencies_1: no sql
+index sqlite_autoindex_folders_1: no sql
+index sqlite_autoindex_invites_1: no sql
+index sqlite_autoindex_mutations_1: no sql
+index sqlite_autoindex_tasks_1: no sql
+index sqlite_autoindex_tasks_2: no sql
+index sqlite_autoindex_tokens_1: no sql
+index sqlite_autoindex_tokens_2: no sql
+index sqlite_autoindex_users_1: no sql
+index sqlite_autoindex_users_2: no sql
+index tasks_folder:
+    CREATE INDEX tasks_folder ON tasks (owner_id, folder_id, sort_key)
+index tokens_user:
+    CREATE INDEX tokens_user ON tokens (user_id)
+table dependencies:
+    CREATE TABLE dependencies (
+        before_id TEXT NOT NULL REFERENCES tasks (id) ON DELETE CASCADE,
+        after_id TEXT NOT NULL REFERENCES tasks (id) ON DELETE CASCADE,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (before_id, after_id),
+        CHECK (before_id <> after_id)
+    ) STRICT
+table folders:
+    CREATE TABLE folders (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        parent_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        sort_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    ) STRICT
+table invites:
+    CREATE TABLE invites (
+        code TEXT PRIMARY KEY,
+        created_by TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        used_by TEXT REFERENCES users (id) ON DELETE SET NULL,
+        created_at INTEGER NOT NULL,
+        used_at INTEGER
+    ) STRICT
+table mutations:
+    CREATE TABLE mutations (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        id TEXT NOT NULL UNIQUE,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        token_id TEXT NOT NULL,
+        actor TEXT,
+        -- all three cleared once past the retention period; the row stays so the id is still recognised
+        ops TEXT,
+        effects TEXT,
+        -- what the tool that made the change answered, given again when the same call is retried
+        reply TEXT,
+        created_at INTEGER NOT NULL
+    ) STRICT
+table sqlite_sequence:
+    CREATE TABLE sqlite_sequence(name,seq)
+table tasks:
+    CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        done_at INTEGER,
+        due_date TEXT,
+        due_time TEXT CHECK (due_time IS NULL OR due_date IS NOT NULL),
+        remind_before INTEGER CHECK (remind_before IS NULL OR due_time IS NOT NULL),
+        sort_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        created_via TEXT,
+        updated_via TEXT,
+        UNIQUE (owner_id, number)
+    ) STRICT
+table tokens:
+    CREATE TABLE tokens (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('session', 'api')),
+        name TEXT NOT NULL,
+        scope TEXT NOT NULL CHECK (scope IN ('read', 'write')),
+        secret_hash BLOB NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL,
+        last_used_at INTEGER
+    ) STRICT
+table users:
+    CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        display_name TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        is_admin INTEGER NOT NULL DEFAULT 0 CHECK (is_admin IN (0, 1)),
+        next_task_number INTEGER NOT NULL DEFAULT 1,
+        pruned_seq INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+    ) STRICT
+-- migration 2
+index ai_jobs_folder:
+    CREATE INDEX ai_jobs_folder ON ai_jobs (folder_id)
+index ai_jobs_owner:
+    CREATE INDEX ai_jobs_owner ON ai_jobs (owner_id, state)
+index sqlite_autoindex_ai_jobs_1: no sql
+index sqlite_autoindex_ai_settings_1: no sql
+table ai_jobs:
+    CREATE TABLE ai_jobs (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        text TEXT NOT NULL,
+        local_time TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('waiting', 'running', 'failed')),
+        error TEXT CHECK ((error IS NOT NULL) = (state = 'failed')),
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    ) STRICT
+table ai_settings:
+    CREATE TABLE ai_settings (
+        user_id TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+        provider TEXT NOT NULL,
+        base_url TEXT NOT NULL,
+        model TEXT NOT NULL,
+        thinking TEXT NOT NULL CHECK (thinking IN ('off', 'low', 'high')),
+        api_key BLOB NOT NULL,
+        updated_at INTEGER NOT NULL
+    ) STRICT
+-- migration 3
+-- migration 4
+table epoch:
+    CREATE TABLE epoch (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        value TEXT NOT NULL
+    ) STRICT
+-- migration 5
+table ai_jobs:
+    CREATE TABLE "ai_jobs" (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('organize', 'tidy')),
+        text TEXT NOT NULL,
+        local_time TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('waiting', 'running', 'failed', 'ready')),
+        error TEXT CHECK ((error IS NOT NULL) = (state = 'failed')),
+        suggestions TEXT CHECK ((suggestions IS NOT NULL) = (state = 'ready')),
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    ) STRICT
+-- migration 6
+table tasks:
+    CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        done_at INTEGER,
+        due_date TEXT,
+        due_time TEXT CHECK (due_time IS NULL OR due_date IS NOT NULL),
+        remind_before INTEGER CHECK (remind_before IS NULL OR due_time IS NOT NULL),
+        sort_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        created_via TEXT,
+        updated_via TEXT, repeat_every INTEGER CHECK (repeat_every IS NULL OR (repeat_every BETWEEN 1 AND 365 AND due_date IS NOT NULL AND done_at IS NULL)), repeat_unit TEXT CHECK ((repeat_unit IS NULL) = (repeat_every IS NULL) AND (repeat_unit IS NULL OR repeat_unit IN ('day', 'week', 'month'))), repeat_from TEXT CHECK ((repeat_from IS NULL) = (repeat_every IS NULL) AND (repeat_from IS NULL OR repeat_from IN ('due', 'done'))),
+        UNIQUE (owner_id, number)
+    ) STRICT
+-- migration 7
+table tasks:
+    CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        done_at INTEGER,
+        due_date TEXT,
+        due_time TEXT CHECK (due_time IS NULL OR due_date IS NOT NULL),
+        remind_before INTEGER CHECK (remind_before IS NULL OR due_time IS NOT NULL),
+        sort_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        created_via TEXT,
+        updated_via TEXT, repeat_every INTEGER CHECK (repeat_every IS NULL OR (repeat_every BETWEEN 1 AND 365 AND due_date IS NOT NULL AND done_at IS NULL)), repeat_unit TEXT CHECK ((repeat_unit IS NULL) = (repeat_every IS NULL) AND (repeat_unit IS NULL OR repeat_unit IN ('day', 'week', 'month'))), repeat_from TEXT CHECK ((repeat_from IS NULL) = (repeat_every IS NULL) AND (repeat_from IS NULL OR repeat_from IN ('due', 'done'))), repeat_days INTEGER CHECK (repeat_days IS NULL OR (repeat_unit IS 'week' AND repeat_days BETWEEN 1 AND 127)),
+        UNIQUE (owner_id, number)
+    ) STRICT
+-- migration 8
+table tasks:
+    CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        done_at INTEGER,
+        due_date TEXT,
+        due_time TEXT CHECK (due_time IS NULL OR due_date IS NOT NULL),
+        remind_before INTEGER CHECK (remind_before IS NULL OR due_time IS NOT NULL),
+        sort_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        created_via TEXT,
+        updated_via TEXT, repeat_every INTEGER CHECK (repeat_every IS NULL OR (repeat_every BETWEEN 1 AND 365 AND due_date IS NOT NULL AND done_at IS NULL)), repeat_unit TEXT CHECK ((repeat_unit IS NULL) = (repeat_every IS NULL) AND (repeat_unit IS NULL OR repeat_unit IN ('day', 'week', 'month'))), repeat_from TEXT CHECK ((repeat_from IS NULL) = (repeat_every IS NULL) AND (repeat_from IS NULL OR repeat_from IN ('due', 'done'))), repeat_days INTEGER CHECK (repeat_days IS NULL OR (repeat_unit IS 'week' AND repeat_days BETWEEN 1 AND 127)), completion_count INTEGER CHECK (completion_count IS NULL OR completion_count >= 1), last_completed TEXT CHECK ((last_completed IS NULL) = (completion_count IS NULL)),
+        UNIQUE (owner_id, number)
+    ) STRICT
+-- migration 9
+table tasks:
+    CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        done_at INTEGER,
+        due_date TEXT,
+        due_time TEXT CHECK (due_time IS NULL OR due_date IS NOT NULL),
+        remind_before INTEGER CHECK (remind_before IS NULL OR due_time IS NOT NULL),
+        sort_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        created_via TEXT,
+        updated_via TEXT, repeat_every INTEGER CHECK (repeat_every IS NULL OR (repeat_every BETWEEN 1 AND 365 AND due_date IS NOT NULL AND done_at IS NULL)), repeat_unit TEXT CHECK ((repeat_unit IS NULL) = (repeat_every IS NULL) AND (repeat_unit IS NULL OR repeat_unit IN ('day', 'week', 'month'))), repeat_from TEXT CHECK ((repeat_from IS NULL) = (repeat_every IS NULL) AND (repeat_from IS NULL OR repeat_from IN ('due', 'done'))), repeat_days INTEGER CHECK (repeat_days IS NULL OR (repeat_unit IS 'week' AND repeat_days BETWEEN 1 AND 127)), completion_count INTEGER CHECK (completion_count IS NULL OR completion_count >= 1), last_completed TEXT CHECK ((last_completed IS NULL) = (completion_count IS NULL)), repeat_monthdays INTEGER CHECK (repeat_monthdays IS NULL OR (repeat_unit IS 'month' AND repeat_monthdays BETWEEN 1 AND 2147483647)),
+        UNIQUE (owner_id, number)
+    ) STRICT
+-- migration 10
+table tasks:
+    CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        done_at INTEGER,
+        due_date TEXT,
+        due_time TEXT CHECK (due_time IS NULL OR due_date IS NOT NULL),
+        remind_before INTEGER CHECK (remind_before IS NULL OR due_time IS NOT NULL),
+        sort_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        created_via TEXT,
+        updated_via TEXT, repeat_every INTEGER CHECK (repeat_every IS NULL OR (repeat_every BETWEEN 1 AND 365 AND due_date IS NOT NULL AND done_at IS NULL)), repeat_unit TEXT CHECK ((repeat_unit IS NULL) = (repeat_every IS NULL) AND (repeat_unit IS NULL OR repeat_unit IN ('day', 'week', 'month'))), repeat_from TEXT CHECK ((repeat_from IS NULL) = (repeat_every IS NULL) AND (repeat_from IS NULL OR repeat_from IN ('due', 'done'))), repeat_days INTEGER CHECK (repeat_days IS NULL OR (repeat_unit IS 'week' AND repeat_days BETWEEN 1 AND 127)), completion_count INTEGER CHECK (completion_count IS NULL OR completion_count >= 1), last_completed TEXT CHECK ((last_completed IS NULL) = (completion_count IS NULL)), repeat_monthdays INTEGER CHECK (repeat_monthdays IS NULL OR (repeat_unit IS 'month' AND repeat_monthdays BETWEEN 1 AND 2147483647)), start_date TEXT CHECK (start_date IS NULL OR due_date IS NULL OR start_date <= due_date),
+        UNIQUE (owner_id, number)
+    ) STRICT
+-- migration 11
+index members_user:
+    CREATE INDEX members_user ON members (user_id)
+table assignees:
+    CREATE TABLE assignees (
+        task_id TEXT NOT NULL REFERENCES tasks (id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        PRIMARY KEY (task_id, user_id)
+    ) STRICT, WITHOUT ROWID
+table deliveries:
+    CREATE TABLE deliveries (
+        user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        seq INTEGER NOT NULL REFERENCES mutations (seq) ON DELETE CASCADE,
+        effects TEXT,
+        PRIMARY KEY (user_id, seq)
+    ) STRICT, WITHOUT ROWID
+table members:
+    CREATE TABLE members (
+        folder_id TEXT NOT NULL REFERENCES folders (id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        PRIMARY KEY (folder_id, user_id)
+    ) STRICT, WITHOUT ROWID
+table tasks:
+    CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        done_at INTEGER,
+        due_date TEXT,
+        due_time TEXT CHECK (due_time IS NULL OR due_date IS NOT NULL),
+        remind_before INTEGER CHECK (remind_before IS NULL OR due_time IS NOT NULL),
+        sort_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        created_via TEXT,
+        updated_via TEXT, repeat_every INTEGER CHECK (repeat_every IS NULL OR (repeat_every BETWEEN 1 AND 365 AND due_date IS NOT NULL AND done_at IS NULL)), repeat_unit TEXT CHECK ((repeat_unit IS NULL) = (repeat_every IS NULL) AND (repeat_unit IS NULL OR repeat_unit IN ('day', 'week', 'month'))), repeat_from TEXT CHECK ((repeat_from IS NULL) = (repeat_every IS NULL) AND (repeat_from IS NULL OR repeat_from IN ('due', 'done'))), repeat_days INTEGER CHECK (repeat_days IS NULL OR (repeat_unit IS 'week' AND repeat_days BETWEEN 1 AND 127)), completion_count INTEGER CHECK (completion_count IS NULL OR completion_count >= 1), last_completed TEXT CHECK ((last_completed IS NULL) = (completion_count IS NULL)), repeat_monthdays INTEGER CHECK (repeat_monthdays IS NULL OR (repeat_unit IS 'month' AND repeat_monthdays BETWEEN 1 AND 2147483647)), start_date TEXT CHECK (start_date IS NULL OR due_date IS NULL OR start_date <= due_date), created_by TEXT NOT NULL DEFAULT '', updated_by TEXT NOT NULL DEFAULT '',
+        UNIQUE (owner_id, number)
+    ) STRICT
+index mutations_owner: dropped
+-- migration 12
+table tasks:
+    CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        done_at INTEGER,
+        due_date TEXT,
+        due_time TEXT CHECK (due_time IS NULL OR due_date IS NOT NULL),
+        remind_before INTEGER CHECK (remind_before IS NULL OR due_time IS NOT NULL),
+        sort_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        created_via TEXT,
+        updated_via TEXT, repeat_every INTEGER CHECK (repeat_every IS NULL OR (repeat_every BETWEEN 1 AND 365 AND due_date IS NOT NULL AND done_at IS NULL)), repeat_unit TEXT CHECK ((repeat_unit IS NULL) = (repeat_every IS NULL) AND (repeat_unit IS NULL OR repeat_unit IN ('day', 'week', 'month'))), repeat_from TEXT CHECK ((repeat_from IS NULL) = (repeat_every IS NULL) AND (repeat_from IS NULL OR repeat_from IN ('due', 'done'))), repeat_days INTEGER CHECK (repeat_days IS NULL OR (repeat_unit IS 'week' AND repeat_days BETWEEN 1 AND 127)), completion_count INTEGER CHECK (completion_count IS NULL OR completion_count >= 1), last_completed TEXT CHECK ((last_completed IS NULL) = (completion_count IS NULL)), repeat_monthdays INTEGER CHECK (repeat_monthdays IS NULL OR (repeat_unit IS 'month' AND repeat_monthdays BETWEEN 1 AND 2147483647)), start_date TEXT CHECK (start_date IS NULL OR due_date IS NULL OR start_date <= due_date), created_by TEXT NOT NULL DEFAULT '', updated_by TEXT NOT NULL DEFAULT '', start_time TEXT CHECK (
+        start_time IS NULL
+        OR (start_date IS NOT NULL AND (due_date IS NULL OR due_time IS NULL OR start_date < due_date OR start_time <= due_time))
+    ),
+        UNIQUE (owner_id, number)
+    ) STRICT
+-- migration 13
+index ai_notes_folder:
+    CREATE UNIQUE INDEX ai_notes_folder ON ai_notes (user_id, ifnull(folder_id, ''))
+table ai_notes:
+    CREATE TABLE ai_notes (
+        user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        folder_id TEXT,
+        text TEXT NOT NULL CHECK (length(text) BETWEEN 1 AND 2000),
+        updated_at INTEGER NOT NULL
+    ) STRICT
+-- migration 14
+index attachments_job:
+    CREATE INDEX attachments_job ON attachments (job_id)
+index attachments_task:
+    CREATE INDEX attachments_task ON attachments (task_id)
+index files_unused:
+    CREATE INDEX files_unused ON files (unused_at) WHERE unused_at IS NOT NULL
+index sqlite_autoindex_attachments_1: no sql
+index sqlite_autoindex_files_1: no sql
+table attachments:
+    CREATE TABLE attachments (
+        id TEXT PRIMARY KEY REFERENCES files (id),
+        task_id TEXT REFERENCES tasks (id) ON DELETE CASCADE,
+        job_id TEXT REFERENCES ai_jobs (id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        CHECK ((task_id IS NULL) <> (job_id IS NULL))
+    ) STRICT
+table files:
+    CREATE TABLE files (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        type TEXT NOT NULL,
+        size INTEGER NOT NULL CHECK (size BETWEEN 1 AND 20971520),
+        created_at INTEGER NOT NULL,
+        unused_at INTEGER,
+        -- Syncing through a drive (docs/local.md#附件): cleared, kept as a record so that its id is never
+        -- used again; and uploaded on this device, not attached in a commit yet, this device's alone.
+        purged INTEGER NOT NULL DEFAULT 0 CHECK (purged IN (0, 1)),
+        staged INTEGER NOT NULL DEFAULT 0 CHECK (staged IN (0, 1)),
+        -- Only a file no one uses is cleared, and then it is everyone's.
+        CHECK (NOT purged OR (unused_at IS NOT NULL AND NOT staged))
+    ) STRICT
+table server_settings:
+    CREATE TABLE server_settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        compress_images INTEGER NOT NULL CHECK (compress_images IN (0, 1))
+    ) STRICT
+-- migration 15
+table ai_settings:
+    CREATE TABLE ai_settings (
+        user_id TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+        provider TEXT NOT NULL,
+        base_url TEXT NOT NULL,
+        model TEXT NOT NULL,
+        thinking TEXT NOT NULL CHECK (thinking IN ('off', 'low', 'high')),
+        api_key BLOB NOT NULL,
+        updated_at INTEGER NOT NULL
+    , vision INTEGER NOT NULL DEFAULT 0 CHECK (vision IN (0, 1))) STRICT
+-- migration 16
+index sqlite_autoindex_sync_runs_1: no sql
+table ai_jobs:
+    CREATE TABLE "ai_jobs" (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('organize', 'tidy')),
+        text TEXT NOT NULL,
+        local_time TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('waiting', 'running', 'failed', 'ready')),
+        error TEXT CHECK ((error IS NOT NULL) = (state = 'failed')),
+        suggestions TEXT CHECK ((suggestions IS NOT NULL) = (state = 'ready')),
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    , run TEXT) STRICT
+table sync_runs:
+    CREATE TABLE sync_runs (
+        run TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL
+    ) STRICT
+table sync_state:
+    CREATE TABLE sync_state (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        generation TEXT NOT NULL,
+        applied INTEGER NOT NULL
+    ) STRICT
+-- migration 17
+table tasks:
+    CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        done_at INTEGER,
+        due_date TEXT,
+        due_time TEXT CHECK (due_time IS NULL OR due_date IS NOT NULL),
+        remind_before INTEGER CHECK (remind_before IS NULL OR due_time IS NOT NULL),
+        sort_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        created_via TEXT,
+        updated_via TEXT, repeat_every INTEGER CHECK (repeat_every IS NULL OR (repeat_every BETWEEN 1 AND 365 AND due_date IS NOT NULL AND done_at IS NULL)), repeat_unit TEXT CHECK ((repeat_unit IS NULL) = (repeat_every IS NULL) AND (repeat_unit IS NULL OR repeat_unit IN ('day', 'week', 'month'))), repeat_from TEXT CHECK ((repeat_from IS NULL) = (repeat_every IS NULL) AND (repeat_from IS NULL OR repeat_from IN ('due', 'done'))), repeat_days INTEGER CHECK (repeat_days IS NULL OR (repeat_unit IS 'week' AND repeat_days BETWEEN 1 AND 127)), completion_count INTEGER CHECK (completion_count IS NULL OR completion_count >= 1), last_completed TEXT CHECK ((last_completed IS NULL) = (completion_count IS NULL)), repeat_monthdays INTEGER CHECK (repeat_monthdays IS NULL OR (repeat_unit IS 'month' AND repeat_monthdays BETWEEN 1 AND 2147483647)), start_date TEXT CHECK (start_date IS NULL OR due_date IS NULL OR start_date <= due_date), created_by TEXT NOT NULL DEFAULT '', updated_by TEXT NOT NULL DEFAULT '', start_time TEXT CHECK (
+        start_time IS NULL
+        OR (start_date IS NOT NULL AND (due_date IS NULL OR due_time IS NULL OR start_date < due_date OR start_time <= due_time))
+    ), repeat_until TEXT CHECK (repeat_until IS NULL OR (repeat_every IS NOT NULL AND repeat_until >= due_date)),
+        UNIQUE (owner_id, number)
+    ) STRICT
+-- migration 18
+table folders:
+    CREATE TABLE folders (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        parent_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        sort_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    , color TEXT, icon TEXT) STRICT
+-- migration 19
+table tasks:
+    CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        done_at INTEGER,
+        due_date TEXT,
+        due_time TEXT CHECK (due_time IS NULL OR due_date IS NOT NULL),
+        remind_before INTEGER CHECK (remind_before IS NULL OR due_time IS NOT NULL),
+        sort_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        created_via TEXT,
+        updated_via TEXT, repeat_every INTEGER CHECK (repeat_every IS NULL OR (repeat_every BETWEEN 1 AND 365 AND due_date IS NOT NULL AND done_at IS NULL)), repeat_unit TEXT CHECK ((repeat_unit IS NULL) = (repeat_every IS NULL) AND (repeat_unit IS NULL OR repeat_unit IN ('day', 'week', 'month'))), repeat_from TEXT CHECK ((repeat_from IS NULL) = (repeat_every IS NULL) AND (repeat_from IS NULL OR repeat_from IN ('due', 'done'))), repeat_days INTEGER CHECK (repeat_days IS NULL OR (repeat_unit IS 'week' AND repeat_days BETWEEN 1 AND 127)), completion_count INTEGER CHECK (completion_count IS NULL OR completion_count >= 1), last_completed TEXT CHECK ((last_completed IS NULL) = (completion_count IS NULL)), repeat_monthdays INTEGER CHECK (repeat_monthdays IS NULL OR (repeat_unit IS 'month' AND repeat_monthdays BETWEEN 1 AND 2147483647)), start_date TEXT CHECK (start_date IS NULL OR due_date IS NULL OR start_date <= due_date), created_by TEXT NOT NULL DEFAULT '', updated_by TEXT NOT NULL DEFAULT '', start_time TEXT CHECK (
+        start_time IS NULL
+        OR (start_date IS NOT NULL AND (due_date IS NULL OR due_time IS NULL OR start_date < due_date OR start_time <= due_time))
+    ), repeat_until TEXT CHECK (repeat_until IS NULL OR (repeat_every IS NOT NULL AND repeat_until >= due_date)), repeat_lunar INTEGER NOT NULL DEFAULT 0 CHECK (repeat_lunar IN (0, 1) AND (repeat_lunar = 0 OR (repeat_unit IS 'month' AND repeat_monthdays IS NOT NULL AND repeat_monthdays BETWEEN 1 AND 1073741823))),
+        UNIQUE (owner_id, number)
+    ) STRICT
+-- migration 20
+index sqlite_autoindex_completions_1: no sql
+table completions:
+    CREATE TABLE completions (
+        task_id TEXT NOT NULL REFERENCES tasks (id) ON DELETE CASCADE,
+        due_date TEXT NOT NULL,
+        done_on TEXT NOT NULL,
+        PRIMARY KEY (task_id, due_date)
+    ) STRICT
+-- migration 21
+table tasks:
+    CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        done_at INTEGER,
+        due_date TEXT,
+        due_time TEXT CHECK (due_time IS NULL OR due_date IS NOT NULL),
+        sort_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        created_via TEXT,
+        updated_via TEXT, repeat_every INTEGER CHECK (repeat_every IS NULL OR (repeat_every BETWEEN 1 AND 365 AND due_date IS NOT NULL AND done_at IS NULL)), repeat_unit TEXT CHECK ((repeat_unit IS NULL) = (repeat_every IS NULL) AND (repeat_unit IS NULL OR repeat_unit IN ('day', 'week', 'month'))), repeat_from TEXT CHECK ((repeat_from IS NULL) = (repeat_every IS NULL) AND (repeat_from IS NULL OR repeat_from IN ('due', 'done'))), repeat_days INTEGER CHECK (repeat_days IS NULL OR (repeat_unit IS 'week' AND repeat_days BETWEEN 1 AND 127)), completion_count INTEGER CHECK (completion_count IS NULL OR completion_count >= 1), last_completed TEXT CHECK ((last_completed IS NULL) = (completion_count IS NULL)), repeat_monthdays INTEGER CHECK (repeat_monthdays IS NULL OR (repeat_unit IS 'month' AND repeat_monthdays BETWEEN 1 AND 2147483647)), start_date TEXT CHECK (start_date IS NULL OR due_date IS NULL OR start_date <= due_date), created_by TEXT NOT NULL DEFAULT '', updated_by TEXT NOT NULL DEFAULT '', start_time TEXT CHECK (
+        start_time IS NULL
+        OR (start_date IS NOT NULL AND (due_date IS NULL OR due_time IS NULL OR start_date < due_date OR start_time <= due_time))
+    ), repeat_until TEXT CHECK (repeat_until IS NULL OR (repeat_every IS NOT NULL AND repeat_until >= due_date)), repeat_lunar INTEGER NOT NULL DEFAULT 0 CHECK (repeat_lunar IN (0, 1) AND (repeat_lunar = 0 OR (repeat_unit IS 'month' AND repeat_monthdays IS NOT NULL AND repeat_monthdays BETWEEN 1 AND 1073741823))), reminders TEXT CHECK (reminders IS NULL OR json_valid(reminders)),
+        UNIQUE (owner_id, number)
+    ) STRICT
+-- migration 22
+table completions:
+    CREATE TABLE "completions" (
+        task_id TEXT NOT NULL REFERENCES tasks (id) ON DELETE CASCADE,
+        due_date TEXT NOT NULL,
+        again INTEGER NOT NULL CHECK (again >= 0),
+        done_on TEXT NOT NULL,
+        PRIMARY KEY (task_id, due_date, again)
+    ) STRICT
+-- migration 23
+-- migration 24
+table ai_jobs:
+    CREATE TABLE "ai_jobs" (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('organize', 'tidy')),
+        text TEXT NOT NULL,
+        local_time TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('waiting', 'running', 'failed', 'ready')),
+        error TEXT CHECK ((error IS NOT NULL) = (state = 'failed')),
+        suggestions TEXT CHECK ((suggestions IS NOT NULL) = (state = 'ready')),
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    , run TEXT, reminders TEXT CHECK (reminders IS NULL OR json_valid(reminders))) STRICT
+-- migration 25
+table tasks:
+    CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        done_at INTEGER,
+        due_date TEXT,
+        due_time TEXT CHECK (due_time IS NULL OR due_date IS NOT NULL),
+        sort_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        created_via TEXT,
+        updated_via TEXT, repeat_every INTEGER CHECK (repeat_every IS NULL OR (repeat_every BETWEEN 1 AND 365 AND due_date IS NOT NULL AND done_at IS NULL)), repeat_unit TEXT CHECK ((repeat_unit IS NULL) = (repeat_every IS NULL) AND (repeat_unit IS NULL OR repeat_unit IN ('day', 'week', 'month'))), repeat_from TEXT CHECK ((repeat_from IS NULL) = (repeat_every IS NULL) AND (repeat_from IS NULL OR repeat_from IN ('due', 'done'))), repeat_days INTEGER CHECK (repeat_days IS NULL OR (repeat_unit IS 'week' AND repeat_days BETWEEN 1 AND 127)), completion_count INTEGER CHECK (completion_count IS NULL OR completion_count >= 1), last_completed TEXT CHECK ((last_completed IS NULL) = (completion_count IS NULL)), repeat_monthdays INTEGER CHECK (repeat_monthdays IS NULL OR (repeat_unit IS 'month' AND repeat_monthdays BETWEEN 1 AND 2147483647)), start_date TEXT CHECK (start_date IS NULL OR due_date IS NULL OR start_date <= due_date), created_by TEXT NOT NULL DEFAULT '', updated_by TEXT NOT NULL DEFAULT '', start_time TEXT CHECK (
+        start_time IS NULL
+        OR (start_date IS NOT NULL AND (due_date IS NULL OR due_time IS NULL OR start_date < due_date OR start_time <= due_time))
+    ), repeat_until TEXT CHECK (repeat_until IS NULL OR (repeat_every IS NOT NULL AND repeat_until >= due_date)), repeat_lunar INTEGER NOT NULL DEFAULT 0 CHECK (repeat_lunar IN (0, 1) AND (repeat_lunar = 0 OR (repeat_unit IS 'month' AND repeat_monthdays IS NOT NULL AND repeat_monthdays BETWEEN 1 AND 1073741823))), reminders TEXT CHECK (reminders IS NULL OR json_valid(reminders)), due_after TEXT CHECK (due_after IS NULL OR json_valid(due_after)), unlocked_on TEXT CHECK (unlocked_on IS NULL OR due_after IS NOT NULL),
+        UNIQUE (owner_id, number)
+    ) STRICT
+-- migration 26
+table tasks:
+    CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        done_at INTEGER,
+        due_date TEXT,
+        due_time TEXT CHECK (due_time IS NULL OR due_date IS NOT NULL),
+        sort_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        created_via TEXT,
+        updated_via TEXT, repeat_every INTEGER CHECK (repeat_every IS NULL OR (repeat_every BETWEEN 1 AND 365 AND due_date IS NOT NULL AND done_at IS NULL)), repeat_unit TEXT CHECK ((repeat_unit IS NULL) = (repeat_every IS NULL) AND (repeat_unit IS NULL OR repeat_unit IN ('day', 'week', 'month'))), repeat_from TEXT CHECK ((repeat_from IS NULL) = (repeat_every IS NULL) AND (repeat_from IS NULL OR repeat_from IN ('due', 'done'))), repeat_days INTEGER CHECK (repeat_days IS NULL OR (repeat_unit IS 'week' AND repeat_days BETWEEN 1 AND 127)), completion_count INTEGER CHECK (completion_count IS NULL OR completion_count >= 1), last_completed TEXT CHECK ((last_completed IS NULL) = (completion_count IS NULL)), repeat_monthdays INTEGER CHECK (repeat_monthdays IS NULL OR (repeat_unit IS 'month' AND repeat_monthdays BETWEEN 1 AND 2147483647)), start_date TEXT CHECK (start_date IS NULL OR due_date IS NULL OR start_date <= due_date), created_by TEXT NOT NULL DEFAULT '', updated_by TEXT NOT NULL DEFAULT '', start_time TEXT CHECK (
+        start_time IS NULL
+        OR (start_date IS NOT NULL AND (due_date IS NULL OR due_time IS NULL OR start_date < due_date OR start_time <= due_time))
+    ), repeat_until TEXT CHECK (repeat_until IS NULL OR (repeat_every IS NOT NULL AND repeat_until >= due_date)), repeat_lunar INTEGER NOT NULL DEFAULT 0 CHECK (repeat_lunar IN (0, 1) AND (repeat_lunar = 0 OR (repeat_unit IS 'month' AND repeat_monthdays IS NOT NULL AND repeat_monthdays BETWEEN 1 AND 1073741823))), reminders TEXT CHECK (reminders IS NULL OR json_valid(reminders)), due_after TEXT CHECK (due_after IS NULL OR json_valid(due_after)), unlocked_on TEXT CHECK (unlocked_on IS NULL OR due_after IS NOT NULL), dropped INTEGER NOT NULL DEFAULT 0 CHECK (dropped IN (0, 1) AND (dropped = 0 OR done_at IS NOT NULL)),
+        UNIQUE (owner_id, number)
+    ) STRICT
+-- migration 27
+-- migration 28
+table tasks:
+    CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        done_at INTEGER,
+        due_date TEXT,
+        due_time TEXT CHECK (due_time IS NULL OR due_date IS NOT NULL),
+        sort_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        created_via TEXT,
+        updated_via TEXT, repeat_every INTEGER CHECK (repeat_every IS NULL OR (repeat_every BETWEEN 1 AND 365 AND due_date IS NOT NULL AND done_at IS NULL)), repeat_unit TEXT CHECK ((repeat_unit IS NULL) = (repeat_every IS NULL) AND (repeat_unit IS NULL OR repeat_unit IN ('day', 'week', 'month'))), repeat_from TEXT CHECK ((repeat_from IS NULL) = (repeat_every IS NULL) AND (repeat_from IS NULL OR repeat_from IN ('due', 'done'))), repeat_days INTEGER CHECK (repeat_days IS NULL OR (repeat_unit IS 'week' AND repeat_days BETWEEN 1 AND 127)), completion_count INTEGER CHECK (completion_count IS NULL OR completion_count >= 1), last_completed TEXT CHECK ((last_completed IS NULL) = (completion_count IS NULL)), repeat_monthdays INTEGER CHECK (repeat_monthdays IS NULL OR (repeat_unit IS 'month' AND repeat_monthdays BETWEEN 1 AND 2147483647)), start_date TEXT CHECK (start_date IS NULL OR due_date IS NULL OR start_date <= due_date), created_by TEXT NOT NULL DEFAULT '', updated_by TEXT NOT NULL DEFAULT '', start_time TEXT CHECK (
+        start_time IS NULL
+        OR (start_date IS NOT NULL AND (due_date IS NULL OR due_time IS NULL OR start_date < due_date OR start_time <= due_time))
+    ), repeat_until TEXT CHECK (repeat_until IS NULL OR (repeat_every IS NOT NULL AND repeat_until >= due_date)), repeat_lunar INTEGER NOT NULL DEFAULT 0 CHECK (repeat_lunar IN (0, 1) AND (repeat_lunar = 0 OR (repeat_unit IS 'month' AND repeat_monthdays IS NOT NULL AND repeat_monthdays BETWEEN 1 AND 1073741823))), reminders TEXT CHECK (reminders IS NULL OR json_valid(reminders)), due_after TEXT CHECK (due_after IS NULL OR json_valid(due_after)), unlocked_on TEXT CHECK (unlocked_on IS NULL OR due_after IS NOT NULL), dropped INTEGER NOT NULL DEFAULT 0 CHECK (dropped IN (0, 1) AND (dropped = 0 OR done_at IS NOT NULL)), repeat_legal INTEGER NOT NULL DEFAULT 0 CHECK (repeat_legal IN (0, 1) AND (repeat_legal = 0 OR (repeat_every IS 1 AND repeat_unit IS 'week' AND repeat_days IS 31))),
+        UNIQUE (owner_id, number)
+    ) STRICT
+-- migration 29
+table tasks:
+    CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        number INTEGER NOT NULL,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        done_at INTEGER,
+        due_date TEXT,
+        due_time TEXT CHECK (due_time IS NULL OR due_date IS NOT NULL),
+        sort_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        created_via TEXT,
+        updated_via TEXT, repeat_every INTEGER CHECK (repeat_every IS NULL OR (repeat_every BETWEEN 1 AND 365 AND due_date IS NOT NULL AND done_at IS NULL)), repeat_unit TEXT CHECK ((repeat_unit IS NULL) = (repeat_every IS NULL) AND (repeat_unit IS NULL OR repeat_unit IN ('day', 'week', 'month'))), repeat_from TEXT CHECK ((repeat_from IS NULL) = (repeat_every IS NULL) AND (repeat_from IS NULL OR repeat_from IN ('due', 'done'))), repeat_days INTEGER CHECK (repeat_days IS NULL OR (repeat_unit IS 'week' AND repeat_days BETWEEN 1 AND 127)), completion_count INTEGER CHECK (completion_count IS NULL OR completion_count >= 1), last_completed TEXT CHECK ((last_completed IS NULL) = (completion_count IS NULL)), repeat_monthdays INTEGER CHECK (repeat_monthdays IS NULL OR (repeat_unit IS 'month' AND repeat_monthdays BETWEEN 1 AND 2147483647)), start_date TEXT CHECK (start_date IS NULL OR due_date IS NULL OR start_date <= due_date), created_by TEXT NOT NULL DEFAULT '', updated_by TEXT NOT NULL DEFAULT '', start_time TEXT CHECK (
+        start_time IS NULL
+        OR (start_date IS NOT NULL AND (due_date IS NULL OR due_time IS NULL OR start_date < due_date OR start_time <= due_time))
+    ), repeat_until TEXT CHECK (repeat_until IS NULL OR (repeat_every IS NOT NULL AND repeat_until >= due_date)), repeat_lunar INTEGER NOT NULL DEFAULT 0 CHECK (repeat_lunar IN (0, 1) AND (repeat_lunar = 0 OR (repeat_unit IS 'month' AND repeat_monthdays IS NOT NULL AND repeat_monthdays BETWEEN 1 AND 1073741823))), reminders TEXT CHECK (reminders IS NULL OR json_valid(reminders)), due_after TEXT CHECK (due_after IS NULL OR json_valid(due_after)), unlocked_on TEXT CHECK (unlocked_on IS NULL OR due_after IS NOT NULL), dropped INTEGER NOT NULL DEFAULT 0 CHECK (dropped IN (0, 1) AND (dropped = 0 OR done_at IS NOT NULL)), repeat_legal INTEGER NOT NULL DEFAULT 0 CHECK (repeat_legal IN (0, 1) AND (repeat_legal = 0 OR (repeat_every IS 1 AND repeat_unit IS 'week' AND repeat_days IS 31))), start_reminders TEXT CHECK (start_reminders IS NULL OR (start_date IS NOT NULL AND json_valid(start_reminders))), remind_at TEXT CHECK (remind_at IS NULL OR json_valid(remind_at)),
+        UNIQUE (owner_id, number)
+    ) STRICT

@@ -103,7 +103,7 @@ curl -fsSL https://juniexd.github.io/NextTodo/install.sh | sh
 
 | 做什么 | 命令 |
 |---|---|
-| 跑全部检查（Rust、生成的类型、网页端、桌面 App 的外壳） | `pnpm install --frozen-lockfile && ./check.sh` |
+| 跑全部检查（Rust、生成的类型、网页端、桌面 App 的外壳、文档链接） | `pnpm install --frozen-lockfile && ./check.sh` |
 | 启用提交检查（提交信息、Android 原生部分的改动） | `git config core.hooksPath .githooks` |
 | 启动开发版服务端（`127.0.0.1:8080`） | `cargo run -p nexttodo-server -- --data .dev-data serve` |
 | 创建管理员 | `cargo run -p nexttodo-server -- --data .dev-data create-admin <用户名>` |

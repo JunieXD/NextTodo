@@ -314,7 +314,81 @@ fn replaced_seq(db: &Path) -> anyhow::Result<i64> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+    use std::fmt::Write;
+
     use super::*;
+
+    const SCHEMA_HEADER: &str = "-- What each migration changes in sqlite_schema, which the test \
+                                 `migrations_keep_making_the_schema_they_made` in src/db.rs\n-- holds them to. A new \
+                                 migration's part is added by `NEXTTODO_SCHEMA_ADD=1 cargo test -p nexttodo-server \
+                                 --lib migrations_keep`.\n\n";
+
+    /// What each migration adds to, changes in and drops from `sqlite_schema`, as migrations/schema.txt
+    /// keeps it: a part for each, its SQL indented, so that only a part begins at the start of a line
+    /// with `-- migration`.
+    fn schema_changes() -> Vec<String> {
+        let c = Connection::open_in_memory().unwrap();
+        let mut before = BTreeMap::new();
+        let mut changes = Vec::new();
+        for (i, sql) in MIGRATIONS.iter().enumerate() {
+            c.execute_batch(sql).unwrap();
+            let now: BTreeMap<_, _> = schema(&c).unwrap().into_iter().map(|(kind, name, sql)| ((kind, name), sql)).collect();
+            let mut change = format!("-- migration {}\n", i + 1);
+            for ((kind, name), sql) in now.iter().filter(|(key, sql)| before.get(*key) != Some(*sql)) {
+                match sql {
+                    Some(sql) => writeln!(change, "{kind} {name}:\n    {}", sql.replace('\n', "\n    ")).unwrap(),
+                    None => writeln!(change, "{kind} {name}: no sql").unwrap(),
+                }
+            }
+            for (kind, name) in before.keys().filter(|key| !now.contains_key(*key)) {
+                writeln!(change, "{kind} {name}: dropped").unwrap();
+            }
+            changes.push(change);
+            before = now;
+        }
+        changes
+    }
+
+    /// `ours` takes a database for NextTodo's when its schema is what the migrations up to its version
+    /// make, so a released migration has to go on making just that: comments inside its statements are
+    /// part of it, and so is how the bundled SQLite writes an altered table.
+    #[test]
+    fn migrations_keep_making_the_schema_they_made() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/schema.txt");
+        let text = std::fs::read_to_string(&path).unwrap();
+        let body = text.strip_prefix(SCHEMA_HEADER).expect("schema.txt starts with its header");
+        assert!(body.is_empty() || body.starts_with("-- migration "), "schema.txt has more than its header before migration 1");
+        let mut starts: Vec<usize> =
+            body.match_indices("-- migration ").map(|(i, _)| i).filter(|&i| i == 0 || body[..i].ends_with('\n')).collect();
+        starts.push(body.len());
+        let kept: Vec<&str> = starts.windows(2).map(|w| &body[w[0]..w[1]]).collect();
+        let made = schema_changes();
+        for (i, (kept, made)) in kept.iter().zip(&made).enumerate() {
+            assert_eq!(
+                kept,
+                made,
+                "migration {} no longer makes what schema.txt has, so databases it migrated would no longer pass for \
+                 NextTodo's: change only comments before its statements; one not released yet, delete its part of \
+                 schema.txt and those after, and add them again",
+                i + 1
+            );
+        }
+        assert!(kept.len() <= made.len(), "schema.txt has migrations {} to {}, which there are not", made.len() + 1, kept.len());
+        if kept.len() < made.len() {
+            assert!(
+                std::env::var_os("NEXTTODO_SCHEMA_ADD").is_some(),
+                "schema.txt lacks migrations {} to {}: add them with `NEXTTODO_SCHEMA_ADD=1 cargo test -p nexttodo-server \
+                 --lib migrations_keep`, look at them and commit them",
+                kept.len() + 1,
+                made.len()
+            );
+            // Whole or not at all, should it be cut short.
+            let part = path.with_extension("txt.part");
+            std::fs::write(&part, text.clone() + &made[kept.len()..].concat()).unwrap();
+            std::fs::rename(&part, &path).unwrap();
+        }
+    }
 
     #[test]
     fn a_reminder_of_before_becomes_a_list_of_one() {

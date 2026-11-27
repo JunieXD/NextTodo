@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
-# Stops the commit that first raises the Android app's native version since the last release: once
+# Checks commits that change the Android app's native part, which raise its native version: once
 # deployed, Android apps on a server must install a new APK to keep getting web updates
-# (docs/android.md#更新). Later ones before the next release add nothing to that.
+# (docs/android.md#更新). The links to the docs there are put right then, as check.sh leaves them; and the
+# first such commit since the last release is stopped, as later ones before the next add nothing to that.
 set -euo pipefail
 
 native=(apps/android apps/web/capacitor.config.ts)
 staged=$(git diff --cached --name-only -- "${native[@]}")
-[[ -n $staged && ${NEXTTODO_NATIVE:-} != 1 ]] || exit 0
+[[ -n $staged ]] || exit 0
+if ! node docs/links.mjs -- "${native[@]}"; then
+  echo "改原生部分时，顺便把那里失效的文档链接改掉，再提交" >&2
+  exit 1
+fi
+[[ ${NEXTTODO_NATIVE:-} != 1 ]] || exit 0
 # As the builds count it (apps/web/vite.config.ts).
 count() { git rev-list --count "$1" -- "${native[@]}"; }
 release=$(git describe --tags --abbrev=0 --match 'v*')

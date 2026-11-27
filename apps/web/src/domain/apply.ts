@@ -19,6 +19,7 @@ import type { Mutation } from "../api/types/Mutation";
 import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
 import type { Person } from "../api/types/Person";
+import type { Prefs } from "../api/types/Prefs";
 import type { Remind } from "../api/types/Remind";
 import type { Share } from "../api/types/Share";
 import type { Snapshot } from "../api/types/Snapshot";
@@ -32,6 +33,10 @@ import { nextDue, occurrence, plus, shifted } from "./repeat";
 /** What a `task.update` changes. */
 export type TaskFields = Omit<Extract<Op, { op: "task.update" }>, "op" | "id">;
 
+/** A user's data as a copy has it: without the settings that go with the account until they are known,
+ * from a server too old to keep them say (`prefs.ts`). */
+export type Base = Omit<Snapshot, "prefs"> & Partial<Pick<Snapshot, "prefs">>;
+
 /** A user's data, keyed for changes. */
 export interface Data {
   folders: Map<FolderId, Folder>;
@@ -42,6 +47,7 @@ export interface Data {
   jobs: Map<AiJobId, AiJob>;
   shares: Map<FolderId, Share>;
   people: Map<string, Person>;
+  prefs?: Prefs;
 }
 
 /** What one change may hold, as `MAX_OPS` in crates/core/src/ops.rs has it. */
@@ -55,7 +61,7 @@ function completionReplacement(previous: Effect | undefined, next: Effect): Comp
   if (completionKey(previous.before) === completionKey(next.after) && previous.before.done !== next.after.done) return previous.before;
 }
 
-export function fromSnapshot(s: Snapshot): Data {
+export function fromSnapshot(s: Base): Data {
   return {
     folders: new Map(s.folders.map((f) => [f.id, f])),
     tasks: new Map(s.tasks.map((t) => [t.id, t])),
@@ -65,10 +71,11 @@ export function fromSnapshot(s: Snapshot): Data {
     jobs: new Map(s.ai_jobs.map((j) => [j.id, j])),
     shares: new Map(s.shares.map((sh) => [sh.folder_id, sh])),
     people: new Map(s.people.map((p) => [p.id, p])),
+    prefs: s.prefs,
   };
 }
 
-export function toSnapshot(d: Data): Snapshot {
+export function toSnapshot(d: Data): Base {
   return {
     folders: [...d.folders.values()],
     tasks: [...d.tasks.values()],
@@ -78,6 +85,7 @@ export function toSnapshot(d: Data): Snapshot {
     ai_jobs: [...d.jobs.values()],
     shares: [...d.shares.values()],
     people: [...d.people.values()],
+    prefs: d.prefs,
   };
 }
 
@@ -91,6 +99,7 @@ export function copy(d: Data): Data {
     jobs: new Map(d.jobs),
     shares: new Map(d.shares),
     people: new Map(d.people),
+    prefs: d.prefs,
   };
 }
 
@@ -153,7 +162,10 @@ function set(d: Data, e: Effect, side: "before" | "after") {
       const [id, v] = [(e.before ?? e.after)!.id, e[side]];
       if (v) d.people.set(id, v);
       else d.people.delete(id);
+      return;
     }
+    case "prefs":
+      d.prefs = e[side];
   }
 }
 
@@ -508,6 +520,22 @@ class Applier {
       case "share.add":
       case "share.remove":
         throw new Rejected("offline", "添加、移除成员需要联网");
+      case "prefs.set": {
+        const was = this.d.prefs;
+        if (!was) throw new Rejected("invalid", "服务器还不能保存这项设置");
+        // In the order the server writes them, for `same`.
+        const to = <T,>(was: T | undefined, now: T | null | undefined) => (now === undefined || (op.if_unset && was !== undefined) ? was : (now ?? undefined));
+        const prefs: Prefs = {
+          reminders: to(was.reminders, op.reminders),
+          accent: to(was.accent, op.accent),
+          time_grid: to(was.time_grid, op.time_grid),
+          holidays: to(was.holidays, op.holidays),
+          keep_done: to(was.keep_done, op.keep_done),
+          add_to: to(was.add_to, op.add_to),
+        };
+        if (!same(was, prefs)) this.push({ kind: "prefs", before: was, after: prefs });
+        return;
+      }
       case "undo":
         this.undo(op.mutation);
         return;
@@ -993,8 +1021,8 @@ class Applier {
         const now = this.d.shares.get(folder_id)?.members ?? [];
         for (const u of a.filter((u) => !b.includes(u) && now.includes(u))) this.removeMember(folder_id, u);
         for (const u of b.filter((u) => !a.includes(u) && !now.includes(u))) this.addMember(folder_id, u);
-        // Names are not undone.
-      } else if (e.kind === "person") {
+        // Names are not undone, nor are settings (docs/ui/settings.md#跟着账号的设置).
+      } else if (e.kind === "person" || e.kind === "prefs") {
         continue;
       } else if (e.kind === "completion") {
         const cur = this.d.completions.get(completionKey((e.before ?? e.after)!));

@@ -23,8 +23,7 @@ import type { WidgetLook } from "./domain/widget-look";
 import { back } from "./ui/back";
 import { forUser } from "./ui/feedback";
 import { nextFolders, onNextFolders, readyIn } from "./next-folders";
-import { onKept } from "./kept";
-import { holidayMarksOn } from "./views/daynote";
+import { prefsOf } from "./prefs";
 
 /** A calendar on the device the app may write to; `synced` unless it is on this device alone. */
 export interface DeviceCalendar {
@@ -373,9 +372,6 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
   let timer: ReturnType<typeof setTimeout> | undefined;
   // What the widgets were last given to write with the days: from which day, and whether marking days off.
   let labelled: { from: string; marks: boolean } | undefined;
-  // The setting as last seen: turned back while the widgets are being given the days, it is to be given
-  // again, though it is what they were given last.
-  let marks = holidayMarksOn();
   const update = async () => {
     // With the change the copy is as of, read together before any wait: the widgets keep lists they
     // fetched since, should the copy be behind the server.
@@ -390,8 +386,9 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
       await NextTodo.updateWidget({ tasks: JSON.stringify(widgetTasks(board, listed)), seq, nextStart, folders });
       await NextTodo.updateAgenda({ agenda: JSON.stringify(widgetAgenda(board, listed)), seq });
       const from = labelledFrom(board.now.today);
-      const marks = holidayMarksOn();
-      if (labelled?.from !== from || labelled.marks !== marks) {
+      const marks = prefsOf(board).holidays !== false;
+      // Not the quick add card, whose copy may be behind the app's: the days last the widgets 400 days.
+      if (!inCard && (labelled?.from !== from || labelled.marks !== marks)) {
         await NextTodo.updateDays({ days: JSON.stringify(widgetDays(from, marks)) });
         labelled = { from, marks };
       }
@@ -426,11 +423,6 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
   const unsubscribe = store.subscribe(changed);
   const unpicked = onNextFolders(changed);
   const unset = onRemindSettings(changed);
-  const unkept = onKept(() => {
-    if (holidayMarksOn() === marks) return;
-    marks = !marks;
-    changed();
-  });
   document.addEventListener("visibilitychange", shown);
   if (app === "android") writeCalendar = calendar;
   updateNow = waiting;
@@ -443,7 +435,6 @@ export function watch(store: Store, user: string, failed: (e: unknown) => void):
     unsubscribe();
     unpicked();
     unset();
-    unkept();
     document.removeEventListener("visibilitychange", shown);
     clearTimeout(timer);
     await clear(failed);

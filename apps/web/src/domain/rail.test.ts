@@ -35,7 +35,7 @@ function board(n: number, deps: [number, number][]) {
     completions: [],
     attachments: [], ai_jobs: [],
     shares: [],
-    people: [],
+    people: [], prefs: {},
   };
   const b = new Board(snapshot, { today: "2026-11-12" }, ME);
   return { board: b, list: b.tasksIn(null) };

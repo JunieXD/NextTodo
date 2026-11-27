@@ -14,6 +14,7 @@ import type { Op } from "./api/types/Op";
 import type { SeqSnapshot } from "./api/types/SeqSnapshot";
 import type { User } from "./api/types/User";
 import { Rejected } from "./domain/apply";
+import { prefsOf } from "./prefs";
 import * as mobile from "./mobile";
 import * as desktop from "./desktop";
 import { type FileMessage, Files } from "./sync/files";
@@ -389,10 +390,10 @@ async function claim(user: User, copy: string): Promise<Session | Login> {
 /** A session in `login` with a fresh copy from the server, unless the device has signed out, or in
  * as someone else, while it downloaded. */
 async function fresh({ id, user }: Login, copy: string): Promise<Session> {
-  const { seq, folders, tasks, dependencies, completions, attachments, ai_jobs, shares, people } = await download(user.id);
+  const { seq, folders, tasks, dependencies, completions, attachments, ai_jobs, shares, people, prefs } = await download(user.id);
   return turn(async () => {
     if (pendingSignOut() || cachedLogin()?.user.id !== user.id) throw new ApiError(401, "unauthenticated", "本机的登录状态已变更，请重新登录");
-    return new Session(user, id, copy, { ...Store.empty(), seq, base: { folders, tasks, dependencies, completions, attachments, ai_jobs, shares, people } });
+    return new Session(user, id, copy, { ...Store.empty(), seq, base: { folders, tasks, dependencies, completions, attachments, ai_jobs, shares, people, prefs } });
   });
 }
 
@@ -425,9 +426,10 @@ async function finishSignOut(out: Login) {
 }
 
 /** The user's data from the server, unless this browser has signed in as someone else by now. A server
- * from before attachments has none to send, and one from before completion records none of those. */
-async function download(user: string): Promise<SeqSnapshot> {
-  type Sent = Omit<SeqSnapshot, "attachments" | "completions"> & Partial<Pick<SeqSnapshot, "attachments" | "completions">>;
+ * from before attachments has none to send, and one from before completion records none of those; one
+ * from before settings went with the account sends none, which is not having set any. */
+async function download(user: string) {
+  type Sent = Omit<SeqSnapshot, "attachments" | "completions" | "prefs"> & Partial<Pick<SeqSnapshot, "attachments" | "completions" | "prefs">>;
   const snapshot = await api<Sent>("GET", "/snapshot");
   if (snapshot.user !== user) throw new ApiError(401, "unauthenticated", "本机已切换账号，请重新登录");
   return { ...snapshot, attachments: snapshot.attachments ?? [], completions: snapshot.completions ?? [] };
@@ -463,6 +465,20 @@ export function useCommit() {
       snack(e.message);
       return null;
     }
+  };
+}
+
+/** The settings that go with the account, in effect (`prefs.ts`). */
+export const usePrefs = () => prefsOf(useView().board);
+
+/** Changes settings that go with the account; `null` takes one back to the default. Not in the history,
+ * and not undone. Until the account's are known they cannot be changed. */
+export function useSetPrefs() {
+  const session = useSession();
+  const { snack } = useFeedback();
+  return (fields: Omit<Extract<Op, { op: "prefs.set" }>, "op">) => {
+    if (session.store.getView().board.snapshot.prefs) return void session.store.commit([{ op: "prefs.set", ...fields }]);
+    snack(session.connection === "online" ? "服务器版本较旧，无法保存这项设置，请联系管理员升级服务器" : "联网后才能修改这项设置");
   };
 }
 

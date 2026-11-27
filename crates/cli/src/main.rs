@@ -183,6 +183,40 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             read("log", args, j)
         }
         Command::Jobs => read("jobs", json!({}), j),
+        Command::Prefs {
+            remind_timed,
+            no_remind_timed,
+            remind_dated,
+            no_remind_dated,
+            accent,
+            no_accent,
+            time_grid,
+            holidays,
+            keep_done,
+            add_to,
+            no_add_to,
+        } => {
+            let mut args = json!({});
+            let cleared = [
+                ("remind_timed", remind_timed.map(Value::from), no_remind_timed),
+                ("remind_dated", remind_dated.map(Value::from), no_remind_dated),
+                ("accent", accent.map(Value::from), no_accent),
+                ("add_to", add_to.map(Value::from), no_add_to),
+            ];
+            let set = [
+                ("time_grid", time_grid.map(Value::from)),
+                ("holidays", holidays.map(Value::from)),
+                ("keep_done", keep_done.map(Value::from)),
+            ];
+            for (key, value, clear) in cleared.into_iter().chain(set.into_iter().map(|(k, v)| (k, v, false))) {
+                if clear {
+                    args[key] = Value::Null;
+                } else if let Some(v) = value {
+                    args[key] = v;
+                }
+            }
+            if args == json!({}) { read("prefs", args, j) } else { write("set_prefs", args, j) }
+        }
         Command::Sync => read("sync", json!({}), j),
         Command::Add {
             title,

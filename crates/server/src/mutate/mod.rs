@@ -368,6 +368,7 @@ impl Done {
                     Effect::AiJob(change) => sided(change, b, a, s.kept).map(Effect::AiJob),
                     Effect::Share(change) => sided(change, b, a, s.kept).map(Effect::Share),
                     Effect::Person(change) => sided(change, b, a, s.kept).map(Effect::Person),
+                    Effect::Prefs(u) => (b && a && !s.kept).then(|| Effect::Prefs(u.clone())),
                     Effect::Dependency(link) => linked(link, b, a, s.kept).map(Effect::Dependency),
                     Effect::Completion(link) => linked(link, b, a, s.kept).map(Effect::Completion),
                 }

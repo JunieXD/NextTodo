@@ -2,17 +2,18 @@
 
 import { useState } from "react";
 import { phoneApp } from "../api/http";
-import { useView } from "../session";
+import type { FolderId } from "../api/types/FolderId";
+import { usePrefs, useSetPrefs, useView } from "../session";
 import { Action, Seg, Stepper } from "../ui/controls";
 import { useEnterSends } from "../ui/keys";
-import { fixAddTo, unfixAddTo, useAddTo, useFixedAddTo } from "./add-to";
-import { MAX_KEEP_DONE, setKeepDone, useKeepDone } from "./keep-done";
+import { fixedAddTo, pickAddTo, unpickAddTo, useAddTo } from "./add-to";
 import { FolderPicker } from "./pickers";
 
 /** How the lists keep what is done, where quick add puts a task, and which keys send AI organizing's
  * text. */
 export function Lists() {
-  const keepDone = useKeepDone();
+  const keepDone = usePrefs().keep_done ?? 0;
+  const setPrefs = useSetPrefs();
   return (
     <>
       <h2 className="group-title">已完成的事项</h2>
@@ -23,7 +24,7 @@ export function Lists() {
               <span>保留最近完成的</span>
               <span className="folder-sub full">在文件夹里划掉后留在原处，更早的收进“已完成”</span>
             </span>
-            <Stepper label="保留最近完成的事项数" value={keepDone} min={0} max={MAX_KEEP_DONE} onChange={setKeepDone} />
+            <Stepper label="保留最近完成的事项数" value={keepDone} min={0} max={20} onChange={(n) => setPrefs({ keep_done: n })} />
           </div>
         </div>
       </div>
@@ -72,10 +73,21 @@ const GONE = "已不在";
  * first: without a pick, it stays as it was. */
 function AddTo() {
   const { board } = useView();
-  const fixed = useFixedAddTo(board.me);
+  const fixed = fixedAddTo(board);
   const shown = useAddTo(board);
   const [picking, setPicking] = useState(false);
   const gone = fixed !== undefined && !board.hasFolder(fixed);
+  const setPrefs = useSetPrefs();
+  const fix = (f: FolderId | null) => {
+    unpickAddTo(board.me);
+    setPrefs({ add_to: { folder: f } });
+  };
+  // The bars go on from the folder last picked as if it were the one they show now, so that they stay
+  // as they are; unless that is their own default.
+  const unfix = () => {
+    if (shown !== undefined) pickAddTo(board.me, shown);
+    setPrefs({ add_to: null });
+  };
   return (
     <>
       <div className="group">
@@ -91,7 +103,7 @@ function AddTo() {
                   ["fixed", "固定的"],
                 ]}
                 value={fixed === undefined ? "last" : "fixed"}
-                onChange={(to) => (to === "last" ? unfixAddTo(board.me, shown) : setPicking(true))}
+                onChange={(to) => (to === "last" ? unfix() : setPicking(true))}
               />
             </span>
           </div>
@@ -105,7 +117,7 @@ function AddTo() {
             ? "该文件夹已删除或不再共享，恢复前改用默认位置，也可另选一个。"
             : "“接下来”和日历的快速添加栏总是使用该文件夹，在栏中临时选择的只用一次。"}
       </p>
-      {picking && <FolderPicker mode="add" current={fixed} onPick={(f) => fixAddTo(board.me, f)} onClose={() => setPicking(false)} />}
+      {picking && <FolderPicker mode="add" current={fixed} onPick={fix} onClose={() => setPicking(false)} />}
     </>
   );
 }

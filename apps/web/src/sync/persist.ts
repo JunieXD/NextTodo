@@ -33,8 +33,9 @@ import type { Copy, Pending, Saved } from "./store";
 
 /** How copies are kept: one more each time a copy an earlier version kept may lack what that version
  * could not read; such a copy is downloaded afresh (docs/web.md#同步). 2: a time of a repeating task
- * done again on the same due date keeps a record each time, of which an earlier version kept one. */
-export const COPY_FORMAT = 2;
+ * done again on the same due date keeps a record each time, of which an earlier version kept one. 3: the
+ * settings that go with the account (docs/ui/settings.md#跟着账号的设置), which an earlier version let by. */
+export const COPY_FORMAT = 3;
 
 let opened: Promise<IDBPDatabase> | undefined;
 export const db = () =>

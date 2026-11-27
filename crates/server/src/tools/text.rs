@@ -5,10 +5,12 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use nexttodo_core::board::{Board, Now, Snapshot, Status};
 use nexttodo_core::lunar;
 use nexttodo_core::model::{
-    AiJob, Change, Completion, Date, Due, DueAfter, Effect, Folder, FolderId, Holder, JobState, Link, Period, Person, Remind, RemindBefore,
-    RemindOn, Repeat, RepeatFrom, Task, TaskId, Time, Weekdays,
+    AiJob, Change, Completion, Date, DefaultReminders, Due, DueAfter, Effect, Folder, FolderId, Holder, JobState, Link, Period, Person,
+    Prefs, Remind, RemindBefore, RemindOn, Repeat, RepeatFrom, Task, TaskId, Time, Weekdays,
 };
 use serde::Serialize;
+
+use super::args::remind_text;
 use serde_json::{Value, json};
 use ts_rs::TS;
 
@@ -59,6 +61,44 @@ fn anchored(r: &Remind, at: &str, before: &str, day: &str) -> String {
         Remind::On(RemindOn { days: 1, time }) => format!("{day}前一天 {}", time.as_str()),
         Remind::On(RemindOn { days, time }) => format!("{before} {days} 天 {}", time.as_str()),
     }
+}
+
+/// The settings that go with the account (docs/ui/settings.md#跟着账号的设置), a line each, and as the
+/// `set_prefs` tool takes them, with the defaults of those not set.
+pub fn prefs(p: &Prefs, b: &Board) -> (Vec<String>, Value) {
+    let defaults = p.reminders.clone().unwrap_or_else(|| DefaultReminders::new(Vec::new(), Vec::new()).expect("none"));
+    let timed: Vec<Remind> = defaults.timed().iter().cloned().map(Remind::Before).collect();
+    let dated: Vec<Remind> = defaults.dated().iter().cloned().map(Remind::On).collect();
+    let listed = |rs: &[Remind]| if rs.is_empty() { "不提醒".to_owned() } else { rs.iter().map(remind).collect::<Vec<_>>().join("、") };
+    let accent = p.accent.map_or_else(|| "emerald".to_owned(), String::from);
+    let on = |v: Option<bool>| v.unwrap_or(true);
+    let words = |v: bool| if v { "开" } else { "关" };
+    let keep_done = p.keep_done.map_or(0, u8::from);
+    // A folder fixed and since deleted or no longer shared: there is no path to it.
+    let gone = p.add_to.as_ref().is_some_and(|a| a.folder.is_some_and(|id| b.folder(id).is_none()));
+    let add_to = p.add_to.as_ref().filter(|_| !gone).map(|a| b.path(a.folder));
+    let lines = vec![
+        format!("有具体时间的事项默认提醒：{}", listed(&timed)),
+        format!("只有日期的事项默认提醒：{}", listed(&dated)),
+        format!("主题色：{accent}"),
+        format!("时间轴视图：{}", words(on(p.time_grid))),
+        format!("放假和补班：{}", words(on(p.holidays))),
+        format!("保留最近完成的事项：{keep_done} 项"),
+        format!("快速添加到：{}", if gone { "固定的文件夹已不在，改用默认位置" } else { add_to.as_deref().unwrap_or("上次选的文件夹") }),
+    ];
+    let mut data = json!({
+        "remind_timed": timed.iter().map(remind_text).collect::<Vec<_>>(),
+        "remind_dated": dated.iter().map(remind_text).collect::<Vec<_>>(),
+        "accent": accent,
+        "time_grid": on(p.time_grid),
+        "holidays": on(p.holidays),
+        "keep_done": keep_done,
+        "add_to": add_to,
+    });
+    if gone {
+        data["add_to_gone"] = true.into();
+    }
+    (lines, data)
 }
 
 /// All its reminders, as the app writes them: by the due, by the start, then at times of their own
@@ -387,7 +427,8 @@ impl Names {
             | Effect::Attachment(_)
             | Effect::AiJob(_)
             | Effect::Share(_)
-            | Effect::Person(_) => {}
+            | Effect::Person(_)
+            | Effect::Prefs(_) => {}
         }
     }
 
@@ -787,7 +828,7 @@ fn describe(e: &Effect, n: &Names) -> Vec<(Kind, String, Value)> {
         )],
         // Someone met in a folder shared since: what is new is the sharing.
         // The task's change says it was done.
-        Effect::Person(_) | Effect::Completion(_) => Vec::new(),
+        Effect::Person(_) | Effect::Completion(_) | Effect::Prefs(_) => Vec::new(),
         Effect::AiJob(Change::Created(j)) => vec![(Kind::JobCreated, job_item(j), json!({ "job": j.id }))],
         Effect::AiJob(Change::Updated { after: j, .. }) => vec![match j.state {
             JobState::Running => (Kind::JobStarted, job_item(j), json!({ "job": j.id })),
@@ -805,7 +846,7 @@ fn describe(e: &Effect, n: &Names) -> Vec<(Kind, String, Value)> {
 /// The task to list a change by.
 fn number(e: &Effect, n: &Names) -> Option<i64> {
     match e {
-        Effect::Folder(_) | Effect::AiJob(_) | Effect::Share(_) | Effect::Person(_) => None,
+        Effect::Folder(_) | Effect::AiJob(_) | Effect::Share(_) | Effect::Person(_) | Effect::Prefs(_) => None,
         Effect::Completion(Link::Added(r) | Link::Removed(r)) => n.tasks.get(&r.task_id).map(|(number, _)| *number),
         Effect::Task(Change::Created(t) | Change::Updated { after: t, .. } | Change::Deleted(t)) => Some(t.number),
         Effect::Dependency(Link::Added(d) | Link::Removed(d)) => n.tasks.get(&d.before).map(|(number, _)| *number),
@@ -1040,7 +1081,7 @@ fn detail(e: &Effect, n: &Names) -> Vec<LogItem> {
         }
         Effect::Dependency(Link::Added(d) | Link::Removed(d)) => format!("{} → {}", n.mention(d.before), n.mention(d.after)),
         // What their lines say is all there is to them.
-        Effect::AiJob(_) | Effect::Share(_) | Effect::Person(_) | Effect::Completion(_) => {
+        Effect::AiJob(_) | Effect::Share(_) | Effect::Person(_) | Effect::Completion(_) | Effect::Prefs(_) => {
             return found
                 .into_iter()
                 .map(|(kind, text, _)| LogItem { text: format!("{} {text}", kind.words().0), change: kind.change(), fields: Vec::new() })

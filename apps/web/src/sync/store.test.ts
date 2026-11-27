@@ -4,6 +4,7 @@ import type { ErrorBody } from "../api/types/ErrorBody";
 import type { LogEntry } from "../api/types/LogEntry";
 import type { Mutation } from "../api/types/Mutation";
 import type { Task } from "../api/types/Task";
+import { Rejected } from "../domain/apply";
 import { isoDate } from "../domain/dates";
 import { type Pending, type Saved, Store } from "./store";
 
@@ -102,7 +103,7 @@ test("a change shows at once, is sent once saved, and leaves the queue when the 
 });
 
 test("changes the Android widget could not send join the queue in the order made, and are sent once saved", async () => {
-  const { store, sent, hold, saved } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "交房租")], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  const { store, sent, hold, saved } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "交房租")], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} } });
   const mine = store.commit([{ op: "task.create", id: id(2), title: "买菜", sort_key: "a2" }]);
   await settle();
   const earlier = { id: uuidv7({ msecs: 1 }), ops: [{ op: "task.update" as const, id: id(1), done: true }] };
@@ -127,7 +128,7 @@ test("a completion record moved to today says the day here, which the server che
 });
 
 test("changes from elsewhere merge under the ones still queued", () => {
-  const { store, titles, arrived } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "写初稿")], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  const { store, titles, arrived } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "写初稿")], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} } });
   store.commit([{ op: "task.update", id: id(1), title: "写终稿" }]);
   const other = { kind: "task" as const, before: null, after: task(2, "投稿") };
   store.receive([{ seq: 5, id: id(50), user: ME, actor: "Claude Code", effects: [other], created_at: 0 }], 5);
@@ -165,7 +166,7 @@ test("a change heard turned down before another tab hands it over is not taken",
 });
 
 test("a change that no longer applies waits for the server instead of breaking the view", () => {
-  const { store, titles } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "旧")], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  const { store, titles } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "旧")], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} } });
   const { id: change } = store.commit([{ op: "task.update", id: id(1), title: "新" }]);
   store.receive([{ seq: 1, id: id(60), user: ME, actor: null, effects: [{ kind: "task", before: task(1, "旧"), after: null }], created_at: 0 }], 1);
   expect(titles()).toEqual([]);
@@ -197,7 +198,7 @@ test("an attachment the server has not yet is made by the last change adding it 
 
 test("the last time a repeating task was done is found among the changes, also after undoing it, one time after another", () => {
   const due = { date: "2026-11-10", repeat: { every: 1, unit: "day" as const, from: "due" as const } };
-  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} } });
   // Done once on another device, then here.
   const first = task(1, "背单词", { due: { ...due, date: "2026-11-11" }, completions: { count: 1, last: "2026-11-10" } });
   store.receive([{ seq: 1, id: id(70), user: ME, actor: null, effects: [{ kind: "task", before: task(1, "背单词", { due }), after: first }], created_at: 0 }], 1);
@@ -219,7 +220,7 @@ test("the last time a repeating task was done is found among the changes, also a
 
 test("a time done is not taken back once the task was done again since", () => {
   const due = { date: "2026-11-10", repeat: { every: 1, unit: "day" as const, from: "due" as const } };
-  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} } });
   const { id: first } = store.commit([{ op: "task.update", id: id(1), done: true, today: "2026-11-10" }]);
   store.commit([{ op: "task.update", id: id(1), done: true, today: "2026-11-11" }]);
   // As offered on a copy that had not heard of the second time yet.
@@ -229,7 +230,7 @@ test("a time done is not taken back once the task was done again since", () => {
 
 test("a time done, taken back and done again that day, is not taken back by undoing the first", () => {
   const due = { date: "2026-11-10", repeat: { every: 1, unit: "day" as const, from: "due" as const } };
-  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} } });
   const done = { op: "task.update" as const, id: id(1), done: true, today: "2026-11-10" };
   const { id: first } = store.commit([done]);
   const { id: undone } = store.commit([{ op: "undo", mutation: first }]);
@@ -244,7 +245,7 @@ test("a time done, taken back and done again that day, is not taken back by undo
 
 test("times done are taken back one after another, the last first", () => {
   const due = { date: "2026-11-10", repeat: { every: 1, unit: "day" as const, from: "due" as const } };
-  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} } });
   const { id: first } = store.commit([{ op: "task.update", id: id(1), done: true, today: "2026-11-10" }]);
   const { id: second } = store.commit([{ op: "task.update", id: id(1), done: true, today: "2026-11-11" }]);
   store.commit([{ op: "undo", mutation: second }]);
@@ -254,7 +255,7 @@ test("times done are taken back one after another, the last first", () => {
 
 test("a change that did a task twice is undone whole", () => {
   const due = { date: "2026-11-10", repeat: { every: 1, unit: "day" as const, from: "due" as const } };
-  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} } });
   const { id: both } = store.commit(
     ["2026-11-10", "2026-11-11"].map((today) => ({ op: "task.update" as const, id: id(1), done: true, today })),
   );
@@ -276,7 +277,7 @@ test("the last time is not offered to undo when made and done in one change", ()
 test("the last time is not offered to undo when done together with other tasks", () => {
   const due = { date: "2026-11-10", repeat: { every: 1, unit: "day" as const, from: "due" as const } };
   const tasks = [task(1, "背单词", { due }), task(2, "跑步", { due })];
-  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks, dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks, dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} } });
   store.commit([1, 2].map((n) => ({ op: "task.update" as const, id: id(n), done: true, today: "2026-11-10" })));
   // Undoing both would take back the run done since as well.
   store.commit([{ op: "task.update", id: id(2), done: true, today: "2026-11-11" }]);
@@ -290,11 +291,20 @@ test("a refused change is not queued", () => {
 });
 
 test("a fresh copy keeps the queued changes on top", () => {
-  const { store, titles } = setup({ ...Store.empty(), seq: 3, base: { folders: [], tasks: [task(1, "旧")], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  const { store, titles } = setup({ ...Store.empty(), seq: 3, base: { folders: [], tasks: [task(1, "旧")], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} } });
   store.commit([{ op: "task.create", id: id(2), title: "新", sort_key: "a2" }]);
-  store.resync({ user: "u", seq: 90, folders: [], tasks: [task(3, "服务器上的")], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] });
+  store.resync({ user: "u", seq: 90, folders: [], tasks: [task(3, "服务器上的")], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} });
   expect(titles()).toEqual(["新", "服务器上的"]);
   expect(store.since).toBe(90);
+});
+
+test("a copy without the settings that go with the account gets them on connecting", () => {
+  // Downloaded while the server was too old to keep them.
+  const { store } = setup({ ...Store.empty(), seq: 3, base: { folders: [], tasks: [], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  expect(() => store.commit([{ op: "prefs.set", keep_done: 2 }])).toThrow(Rejected);
+  store.receive([], 3, { keep_done: 4 });
+  store.commit([{ op: "prefs.set", keep_done: 2, if_unset: true }]);
+  expect(store.getView().board.snapshot.prefs).toEqual({ keep_done: 4 });
 });
 
 test("a change the fresh copy already has leaves the queue when the server acknowledges it again", async () => {
@@ -302,7 +312,7 @@ test("a change the fresh copy already has leaves the queue when the server ackno
   store.commit([{ op: "task.create", id: id(1), title: "交电费", sort_key: "a1" }]);
   await settle();
   // The server applied it at 5, but the reply was lost; later the copy was too old and downloaded afresh.
-  store.resync({ user: "u", seq: 9, folders: [], tasks: [task(1, "交电费")], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] });
+  store.resync({ user: "u", seq: 9, folders: [], tasks: [task(1, "交电费")], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} });
   expect(store.getView().stuck.has(sent[0].id)).toBe(true);
   store.acked(sent[0].id, 12);
   expect(store.unconfirmed).toHaveLength(1);
@@ -376,7 +386,7 @@ test("a change adding attachments goes once its files are uploaded, and those af
 
 test("the last time of a repeat is what made the task done until it is reopened and done again", () => {
   const due = { date: "2026-11-10", repeat: { every: 1, unit: "day" as const, from: "due" as const, until: "2026-11-10" } };
-  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] } });
+  const { store } = setup({ ...Store.empty(), base: { folders: [], tasks: [task(1, "背单词", { due })], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} } });
   const { id: last } = store.commit([{ op: "task.update", id: id(1), done: true, today: "2026-11-10" }]);
   expect([store.completedAt(id(1), 1), store.doneBy(id(1))]).toEqual([last, last]);
   store.commit([{ op: "task.update", id: id(1), done: false }]);

@@ -267,7 +267,7 @@ export function QuickAdd({
     }
     if (!canSend()) return false;
     const id = uuidv7();
-    const reminders = jobReminders();
+    const reminders = jobReminders(board);
     const op: Op = {
       op: "ai_job.create",
       id,
@@ -281,7 +281,7 @@ export function QuickAdd({
     if (!made) return false;
     edit("");
     stage([]);
-    if (folder === undefined) addedTo(user.id, into);
+    if (folder === undefined) addedTo(board, into);
     snack("已交给 AI 整理");
     onSent?.({ changes: [made.id], job: id });
     return true;
@@ -301,7 +301,7 @@ export function QuickAdd({
       title: c.value,
       sort_key: lastKey(board.contents(into).map((t) => t.sort_key)),
       ...(into && { folder_id: into }),
-      ...(on && { due: dueWithDefaults(on, at ?? undefined) }),
+      ...(on && { due: dueWithDefaults(board, on, at ?? undefined) }),
     };
     const made = commit([op]);
     if (!made) return;
@@ -313,7 +313,7 @@ export function QuickAdd({
     }
     edit("");
     stage([]);
-    if (folder === undefined) addedTo(user.id, into);
+    if (folder === undefined) addedTo(board, into);
     snack(`已添加“${c.value}”`);
     onSent?.({ changes, task: id });
   };

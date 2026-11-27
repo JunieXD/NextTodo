@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::model::{
-    AiJobId, AttachmentId, Date, DefaultReminders, Description, Due, DueAfter, FileName, FileSize, FolderColor, FolderIcon, FolderId,
-    JobKind, JobText, LocalTime, MediaType, MutationId, Name, Occurrence, Remind, RemindAt, SortKey, TaskId, Time, Title, nullable,
+    Accent, AddTo, AiJobId, AttachmentId, Date, DefaultReminders, Description, Due, DueAfter, FileName, FileSize, FolderColor, FolderIcon,
+    FolderId, JobKind, JobText, KeepDone, LocalTime, MediaType, MutationId, Name, Occurrence, Remind, RemindAt, SortKey, TaskId, Time,
+    Title, nullable,
 };
 
 pub const MAX_OPS: usize = 1000;
@@ -295,6 +296,34 @@ pub enum Op {
     /// Takes someone off a shared folder: its owner anyone, a member themselves.
     #[serde(rename = "share.remove")]
     ShareRemove { folder_id: FolderId, user_id: String },
+    /// Changes the settings that go with the account: those given, `null` back to the default
+    /// (docs/ui/settings.md#跟着账号的设置).
+    #[serde(rename = "prefs.set")]
+    PrefsSet {
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        reminders: Option<Option<DefaultReminders>>,
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        accent: Option<Option<Accent>>,
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        time_grid: Option<Option<bool>>,
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        holidays: Option<Option<bool>>,
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        keep_done: Option<Option<KeepDone>>,
+        #[serde(default, deserialize_with = "nullable", skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        add_to: Option<Option<AddTo>>,
+        /// Only those not set yet: a device's own settings going into the account
+        /// (docs/ui/settings.md#跟着账号的设置).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        #[ts(as = "Option<bool>", optional)]
+        if_unset: bool,
+    },
     #[serde(rename = "undo")]
     Undo { mutation: MutationId },
 }

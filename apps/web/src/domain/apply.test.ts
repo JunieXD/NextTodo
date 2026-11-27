@@ -23,7 +23,7 @@ const cx = {
 };
 
 function empty(): Data {
-  return fromSnapshot({ folders: [], tasks: [], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] });
+  return fromSnapshot({ folders: [], tasks: [], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} });
 }
 
 /** Applies a mutation and remembers its effects under `mutation`, for undo. */
@@ -635,4 +635,16 @@ test("sharing: a shared folder is its owner's to change, goes into no other, and
   run(d, 220, [{ op: "folder.update", id: id(1), parent_id: id(2) }]);
   expect(() => apply(d, [{ op: "folder.update", id: id(2), parent_id: id(6) }], cx)).toThrow("共享的文件夹不能放进另一个共享的文件夹");
   expect(() => apply(d, [{ op: "share.add", folder_id: id(1), username: "carol" }], cx)).toThrow("添加、移除成员需要联网");
+});
+
+test("settings change field by field, null back to the default, and are not undone", () => {
+  const d = empty();
+  const set = run(d, 100, [{ op: "prefs.set", accent: "blue", keep_done: 5 }]);
+  expect(d.prefs).toEqual({ accent: "blue", keep_done: 5 });
+  run(d, 101, [{ op: "prefs.set", accent: null, time_grid: false }]);
+  expect(JSON.parse(JSON.stringify(d.prefs))).toEqual({ time_grid: false, keep_done: 5 });
+  expect(run(d, 102, [{ op: "prefs.set", keep_done: 5 }])).toEqual([]);
+  expect(set).toHaveLength(1);
+  expect(run(d, 103, [{ op: "undo", mutation: id(100) }])).toEqual([]);
+  expect(d.prefs?.keep_done).toBe(5);
 });

@@ -57,7 +57,7 @@ export function restorePage() {
 /** The icon of the page at `path`, as the menu of pages has it. */
 export function PanelPageIcon({ path }: { path: string }) {
   const { board } = useView();
-  const [grid] = useTimeGridOn();
+  const grid = useTimeGridOn();
   const p = PAGES.find((p) => p.path === availablePath(path, grid));
   if (p) return <Icon of={p.icon} size={18} />;
   const folder = folderPage(path);
@@ -66,7 +66,7 @@ export function PanelPageIcon({ path }: { path: string }) {
 
 export function PanelPageName({ path }: { path: string }) {
   const { board } = useView();
-  const [grid] = useTimeGridOn();
+  const grid = useTimeGridOn();
   const p = PAGES.find((p) => p.path === availablePath(path, grid));
   if (p) return p.name;
   const folder = folderPage(path);
@@ -79,7 +79,7 @@ export function Panel() {
   const connection = useConnection();
   const batch = useBatch();
   const now = useNow();
-  const [grid] = useTimeGridOn();
+  const grid = useTimeGridOn();
   const path = availablePath(location, grid);
   const page = PAGES.find((p) => p.path === path);
   const folder = folderPage(path);
@@ -162,7 +162,7 @@ function Pages({ path }: { path: string }) {
   const [, navigate] = useLocation();
   const root = useContext(RootContext);
   const { snack } = useFeedback();
-  const [grid] = useTimeGridOn();
+  const grid = useTimeGridOn();
   const item = (to: string, icon: ReactNode, name: ReactNode, depth = 0) => (
     <DropdownMenu.Item key={to} className="menu-item" style={{ paddingLeft: 12 + depth * 16 }} onSelect={() => navigate(to)}>
       {icon}

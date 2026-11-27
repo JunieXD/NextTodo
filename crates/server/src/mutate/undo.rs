@@ -128,7 +128,7 @@ impl Cx<'_> {
         let shared = |list: &[Effect]| -> Vec<Effect> {
             list.iter()
                 .filter(|e| match e {
-                    Effect::AiJob(_) | Effect::Person(_) => false,
+                    Effect::AiJob(_) | Effect::Person(_) | Effect::Prefs(_) => false,
                     Effect::Attachment(Change::Created(a) | Change::Deleted(a) | Change::Updated { before: a, .. }) => {
                         !jobs.contains(&a.id)
                     }
@@ -354,8 +354,9 @@ impl Cx<'_> {
                         self.create_job(AiJob { updated_at: self.now, ..j })?;
                     }
                 }
-                // Starting, failing and retrying are the job's own course, not undone; nor are names.
-                Effect::AiJob(Change::Updated { .. }) | Effect::Person(_) => {}
+                // Starting, failing and retrying are the job's own course, not undone; nor are names and
+                // settings (docs/ui/settings.md#跟着账号的设置).
+                Effect::AiJob(Change::Updated { .. }) | Effect::Person(_) | Effect::Prefs(_) => {}
                 Effect::Share(change) => {
                     let (folder, b, a) = match change {
                         Change::Created(a) => (a.folder_id, Vec::new(), a.members),

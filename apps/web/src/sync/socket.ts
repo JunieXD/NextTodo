@@ -106,7 +106,7 @@ export class Socket {
   private handle(msg: ServerMessage) {
     switch (msg.type) {
       case "changes":
-        this.store.receive(msg.changes, msg.seq);
+        this.store.receive(msg.changes, msg.seq, msg.prefs);
         if (!this.synced) {
           // Caught up: everything still unconfirmed goes again, in order. The server knows the
           // ids, so a change that did arrive before is not applied twice.

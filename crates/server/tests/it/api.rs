@@ -746,3 +746,39 @@ async fn a_due_date_after_the_prerequisites_is_checked_as_given() {
     let time = json!({ "id": id(), "time": "18:00", "ops": [{ "op": "task.create", "id": id(), "title": "付款" }] });
     assert_eq!(t.call("POST", "/mutations", Some(&s), Some(time)).await.status, StatusCode::BAD_REQUEST);
 }
+
+#[tokio::test]
+async fn settings_go_with_the_account_and_only_to_it() {
+    let t = TestApp::new();
+    let admin = t.admin().await;
+    let bob = t.user(&admin, "bob").await;
+    let since = t.snapshot(&bob).await["seq"].as_i64().unwrap();
+    let set = |ops: Value| t.mutate(&admin, json!([ops]));
+
+    let r = set(json!({ "op": "prefs.set", "accent": "blue", "time_grid": false, "keep_done": 5, "add_to": { "folder": null } })).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    assert_eq!(
+        t.snapshot(&admin).await["prefs"],
+        json!({ "accent": "blue", "time_grid": false, "keep_done": 5, "add_to": { "folder": null } })
+    );
+    // Null takes a setting back to the default; what is left out stays.
+    set(json!({ "op": "prefs.set", "accent": "#336699", "keep_done": null })).await;
+    assert_eq!(t.snapshot(&admin).await["prefs"], json!({ "accent": "#336699", "time_grid": false, "add_to": { "folder": null } }));
+
+    for bad in [json!({ "accent": "red" }), json!({ "accent": "#33669" }), json!({ "keep_done": 21 }), json!({ "font": "big" })] {
+        let mut op = json!({ "op": "prefs.set" });
+        op.as_object_mut().unwrap().extend(bad.as_object().unwrap().clone());
+        assert_eq!(set(op).await.status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+
+    assert_eq!(t.snapshot(&bob).await["prefs"], json!({}));
+    let changes = t.call("GET", &format!("/changes?since={since}"), Some(&bob), None).await.body;
+    assert_eq!(changes["changes"], json!([]), "Bob does not see Alice's settings");
+    // A device's own going in only fills in what is not set.
+    set(json!({ "op": "prefs.set", "accent": "pink", "holidays": false, "if_unset": true })).await;
+    assert_eq!(t.snapshot(&admin).await["prefs"]["accent"], "#336699");
+    assert_eq!(t.snapshot(&admin).await["prefs"]["holidays"], false);
+    // Settings are not changes to the todos: the history leaves them out, those that changed nothing too.
+    set(json!({ "op": "prefs.set", "holidays": false })).await;
+    assert_eq!(t.ok(&admin, "log", json!({})).await["data"], json!([]));
+}

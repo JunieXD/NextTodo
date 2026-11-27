@@ -1,8 +1,10 @@
 // The look (docs/ui/settings.md): the theme, the accent colour, the calendar and, in the desktop app, the zoom.
 
+import { useSetPrefs, useView } from "../session";
 import { useState } from "react";
 import { app, desktopOs } from "../api/http";
-import { type Preset, type Theme, hueOf, isPreset, primaryOf, setAccent, setTheme, startOwn, tuneAccent, useAccent, useDark, useTheme } from "../theme";
+import { type Hex } from "../domain/color";
+import { type Preset, type Theme, hueOf, isPreset, primaryOf, setTheme, startOwn, tuneAccent, useAccent, useDark, useTheme } from "../theme";
 import { type Zoom, type Zoomed, setZoom, useZoom } from "../zoom";
 import { ColorPicker } from "../ui/color-picker";
 import { Seg, Swatch, Switch } from "../ui/controls";
@@ -26,10 +28,27 @@ const ACCENTS: ["emerald" | Preset, string][] = [
   ["pink", "粉"],
 ];
 
+/** The last colour of the user's own dragged to, kept in the account a moment later: dragging makes one
+ * change. Apart from the page, which may be left before then. */
+let resting: number | undefined;
+
 export function Appearance() {
   const theme = useTheme();
-  const [grid, setGrid] = useTimeGridOn();
-  const [marks, setMarks] = useHolidayMarks();
+  const grid = useTimeGridOn();
+  const marks = useHolidayMarks();
+  const setPrefs = useSetPrefs();
+  const setAccent = (accent: string) => {
+    clearTimeout(resting);
+    setPrefs({ accent });
+  };
+  // Until the account's settings are known, saying why it cannot be set, rather than showing it.
+  const known = useView().board.snapshot.prefs !== undefined;
+  const tune = (color: Hex) => {
+    if (!known) return setPrefs({ accent: color });
+    tuneAccent(color);
+    clearTimeout(resting);
+    resting = window.setTimeout(() => setPrefs({ accent: color }), 300);
+  };
   const accent = useAccent();
   const dark = useDark();
   const own = accent === "emerald" || isPreset(accent) ? null : accent;
@@ -63,15 +82,15 @@ export function Appearance() {
       </div>
       {own && (
         <div hidden={!picking}>
-          <ColorPicker value={own} onChange={tuneAccent} hueOnly />
+          <ColorPicker value={own} onChange={tune} hueOnly />
           {hue !== null && hue >= 10 && hue <= 100 && <p className="group-note">与逾期的红色、今天到期的琥珀色相近，可能难以区分</p>}
         </div>
       )}
       {app === "desktop" && <Zooms />}
       <h2 className="group-title">日历</h2>
       <div className="group settings">
-        <Switch label="时间轴视图" sub="在日历中按小时查看一周的事项" on={grid} onChange={setGrid} />
-        <Switch label="放假和补班" sub="在日历中标出国家规定的放假和补班" on={marks} onChange={setMarks} />
+        <Switch label="时间轴视图" sub="在日历中按小时查看一周的事项" on={grid} onChange={(on) => setPrefs({ time_grid: on })} />
+        <Switch label="放假和补班" sub="在日历中标出国家规定的放假和补班" on={marks} onChange={(on) => setPrefs({ holidays: on })} />
       </div>
     </>
   );

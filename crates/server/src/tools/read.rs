@@ -537,6 +537,13 @@ pub fn jobs(c: &Connection, cx: &Cx, _: NoArgs) -> Result<Output, ApiError> {
     Ok(Output { text: lines.join("\n"), data: data.into() })
 }
 
+/// The settings that go with the account (docs/ui/settings.md#跟着账号的设置).
+pub fn prefs(c: &Connection, cx: &Cx, _: NoArgs) -> Result<Output, ApiError> {
+    let snap = store::snapshot(c, cx.user)?;
+    let (lines, data) = text::prefs(&snap.prefs, &Board::new(&snap, cx.local.clone(), cx.user));
+    Ok(Output { text: lines.join("\n"), data })
+}
+
 pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
     // One batch in full, or a page of them, each kind of change listing a few items.
     let (limit, before, deleted, items) = match a.batch {
@@ -550,6 +557,7 @@ pub fn log(c: &Connection, cx: &Cx, a: LogArgs) -> Result<Output, ApiError> {
         "SELECT m.seq, m.owner_id, m.actor, t.kind, t.name, m.ops, coalesce(d.effects, m.effects), m.created_at, m.id
          FROM deliveries d JOIN mutations m ON m.seq = d.seq LEFT JOIN tokens t ON t.id = m.token_id
          WHERE d.user_id = ?1 AND m.effects IS NOT NULL AND d.seq < ?3 AND (?5 IS NULL OR d.seq = ?5)
+           AND (json_array_length(m.ops) = 0 OR EXISTS (SELECT 1 FROM json_each(m.ops) o WHERE json_extract(o.value, '$.op') <> 'prefs.set'))
            AND (NOT ?4 OR EXISTS (SELECT 1 FROM json_each(coalesce(d.effects, m.effects)) e
              WHERE json_extract(e.value, '$.kind') IN ('task', 'folder', 'attachment')
                AND json_type(e.value, '$.before') = 'object' AND json_type(e.value, '$.after') = 'null'))

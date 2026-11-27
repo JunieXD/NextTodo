@@ -2,11 +2,12 @@
 // a due date, and in the apps, which remind, whether reminders hide what they are of, and the daily
 // digest.
 
+import { useSetPrefs, useView } from "../session";
 import { type ReactNode, useState } from "react";
 import type { Remind } from "../api/types/Remind";
 import { app } from "../api/http";
 import { DAY_REMINDERS, MAX_REMINDERS, REMINDERS, inOrder, remindLabel, remindersLabel } from "../domain/dates";
-import { setDailyDigest, setDefaultReminders, setHideReminders, useDailyDigest, useDefaultReminders, useHideReminders } from "../remind-settings";
+import { setDailyDigest, setHideReminders, defaultReminders, useDailyDigest, useHideReminders } from "../remind-settings";
 import { MultiSelect, Switch } from "../ui/controls";
 import { Modal, useFeedback } from "../ui/feedback";
 import { TimeRow } from "./due";
@@ -64,7 +65,8 @@ function Pick<R extends Remind>(p: {
 }
 
 export function RemindSettings() {
-  const defaults = useDefaultReminders();
+  const defaults = defaultReminders(useView().board);
+  const setPrefs = useSetPrefs();
   const before = useRemindBefore();
   const on = useRemindOn();
   const hidden = useHideReminders();
@@ -79,7 +81,7 @@ export function RemindSettings() {
           presets={REMINDERS.map((before) => ({ before }))}
           value={defaults.timed}
           time="00:00"
-          onChange={(timed) => setDefaultReminders({ ...defaults, timed })}
+          onChange={(timed) => setPrefs({ reminders: { ...defaults, timed } })}
           custom={before}
         />
         <Pick
@@ -87,7 +89,7 @@ export function RemindSettings() {
           presets={DAY_REMINDERS}
           value={defaults.dated}
           time={undefined}
-          onChange={(dated) => setDefaultReminders({ ...defaults, dated })}
+          onChange={(dated) => setPrefs({ reminders: { ...defaults, dated } })}
           custom={on}
         />
       </div>

@@ -1,11 +1,14 @@
-// Light, dark, or following the system; and the accent colour (docs/ui.md#颜色). Switching
-// cross-fades the whole page instead of letting every element run its own transition.
+// Light, dark, or following the system; and the accent colour (docs/ui.md#颜色), which goes with the
+// account (`prefs.ts`). Switching cross-fades the whole page instead of letting every element run its
+// own transition.
 
 import { SystemBars, SystemBarsStyle } from "@capacitor/core";
 import { Hct, TonalPalette, argbFromHex, blueFromArgb, greenFromArgb, redFromArgb } from "@material/material-color-utilities";
 import { useSyncExternalStore } from "react";
 import { app } from "./api/http";
 import { type Hex, parseHex } from "./domain/color";
+import { onKept } from "./kept";
+import { ACCENT } from "./prefs";
 import { NextTodo, inCard } from "./mobile";
 
 export type Theme = "system" | "light" | "dark";
@@ -18,7 +21,6 @@ export type Preset = keyof typeof PRESETS;
 export type Accent = "emerald" | Preset | Hex;
 
 const KEY = "nexttodo.theme";
-const ACCENT = "nexttodo.accent";
 const dark = matchMedia("(prefers-color-scheme: dark)");
 const listeners = new Set<() => void>();
 
@@ -141,21 +143,16 @@ export function setTheme(t: Theme) {
   localStorage.setItem(KEY, t);
   crossFade(changed);
 }
-export function setAccent(a: Accent) {
-  localStorage.setItem(ACCENT, a);
-  crossFade(changed);
-}
-/** A colour of the user's own as it is being picked: shown at once, not cross-faded. */
+/** A colour of the user's own as it is being picked: shown at once, not cross-faded, and kept in the
+ * account once the user lets go of it. */
 export function tuneAccent(color: Hex) {
   localStorage.setItem(ACCENT, color);
   changed();
 }
 
 dark.addEventListener("change", () => crossFade(changed));
-// Switched in another tab, or the desktop app's other window.
-addEventListener("storage", (e) => {
-  if (e.key === KEY || e.key === ACCENT) changed();
-});
+// Switched in another tab, the desktop app's other window, or, the accent, on another device.
+onKept((key) => (key === null || key === KEY || key === ACCENT) && crossFade(changed));
 
 /** Calls `l` each time the theme or the accent changes; returns how to stop. */
 export const onThemeChange = (l: () => void) => {

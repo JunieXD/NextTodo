@@ -1,21 +1,13 @@
 // What calendars write with a day (docs/design/repeat.md#节日和放假): under its number its festival or solar
 // term, or else its lunar day; in a corner 休 or 班 where the State Council has set a day off or a
-// made-up working day, unless that is turned off on this device.
+// made-up working day, unless that is turned off in the settings, going with the account (`prefs.ts`).
 
 import { festival, holiday, dayLabel, solarTerm } from "../domain/holidays";
 import { lunarDate, lunarText } from "../domain/lunar";
-import { useKept } from "../kept";
+import { usePrefs } from "../session";
 
-const MARKS_KEY = "nexttodo.holidayMarks";
-
-/** Whether calendars mark days off and made-up working days, set on this device; on unless turned off. */
-export function useHolidayMarks(): [boolean, (on: boolean) => void] {
-  const [on, keep] = useKept(MARKS_KEY);
-  return [on !== "off", (v) => keep(v ? "on" : "off")];
-}
-
-/** The same, read now, as the widgets' labels are worked out outside the page's components. */
-export const holidayMarksOn = () => localStorage.getItem(MARKS_KEY) !== "off";
+/** Whether calendars mark days off and made-up working days; on unless turned off. */
+export const useHolidayMarks = () => usePrefs().holidays !== false;
 
 /** Under a day's number: its festival, solar term or lunar day; with `marks`, 休 or 班 in the corner of
  * the tile, which is positioned. */

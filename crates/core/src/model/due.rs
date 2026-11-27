@@ -86,6 +86,18 @@ pub struct DefaultReminders {
 }
 
 impl DefaultReminders {
+    pub fn new(timed: Vec<RemindBefore>, dated: Vec<RemindOn>) -> Result<Self, String> {
+        DefaultRemindersFields { timed, dated }.try_into()
+    }
+
+    pub fn timed(&self) -> &[RemindBefore] {
+        &self.timed
+    }
+
+    pub fn dated(&self) -> &[RemindOn] {
+        &self.dated
+    }
+
     /// Those for a due date at a time, or else for one on a date alone.
     pub fn for_due(&self, timed: bool) -> Vec<Remind> {
         if timed { self.timed.iter().cloned().map(Remind::Before).collect() } else { self.dated.iter().cloned().map(Remind::On).collect() }

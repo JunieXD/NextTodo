@@ -75,7 +75,7 @@ function DesktopWidget() {
     };
   }, [snack]);
   const root = useContext(RootContext);
-  const [grid] = useTimeGridOn();
+  const grid = useTimeGridOn();
   const add = (page: string) => void desktopWidget.add(page).catch((e: unknown) => snack(forUser("添加桌面小组件", e)));
   return (
     <>

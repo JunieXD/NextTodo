@@ -5,15 +5,16 @@ use std::num::NonZeroU32;
 
 use nexttodo_core::board::Now;
 use nexttodo_core::model::{
-    AiJob, Attachment, Completion, Completions, Dependency, Folder, Holder, JobKind, JobState, JobText, RepeatFrom, SortKey, Task,
+    AiJob, Attachment, Completion, Completions, Dependency, Effect, Folder, Holder, JobKind, JobState, JobText, RepeatFrom, SortKey, Task,
+    Updated,
 };
 use nexttodo_core::ops::Op;
 
 use crate::error::ApiError;
 use crate::store;
 
-use super::Cx;
 use super::check::{at_times, both_due, by_start, check_assignees};
+use super::{Cx, Side};
 
 impl Cx<'_> {
     fn check_done_at(&self, at: i64) -> Result<(), ApiError> {
@@ -458,8 +459,34 @@ impl Cx<'_> {
                 }
                 self.remove_member(&f, &owner, user_id)
             }
+            Op::PrefsSet { reminders, accent, time_grid, holidays, keep_done, add_to, if_unset } => {
+                let before = store::prefs(self.c, self.user)?;
+                let mut p = before.clone();
+                set(&mut p.reminders, reminders, *if_unset);
+                set(&mut p.accent, accent, *if_unset);
+                set(&mut p.time_grid, time_grid, *if_unset);
+                set(&mut p.holidays, holidays, *if_unset);
+                set(&mut p.keep_done, keep_done, *if_unset);
+                set(&mut p.add_to, add_to, *if_unset);
+                if p == before {
+                    return Ok(());
+                }
+                store::set_prefs(self.c, self.user, &p)?;
+                let me = Side::of(vec![self.user.to_owned()]);
+                self.push(Effect::Prefs(Updated { before, after: p }), me.clone(), me, false);
+                Ok(())
+            }
             Op::Undo { mutation } => self.undo(*mutation),
         }
+    }
+}
+
+/// Sets `field` to what `to` gives, if anything; with `if_unset`, only if it is not set yet.
+fn set<T: Clone>(field: &mut Option<T>, to: &Option<Option<T>>, if_unset: bool) {
+    if let Some(to) = to
+        && !(if_unset && field.is_some())
+    {
+        field.clone_from(to);
     }
 }
 

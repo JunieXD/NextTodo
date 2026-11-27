@@ -20,7 +20,7 @@ const board = (tasks: Task[], deps: [number, number][] = [], completions: Comple
       attachments: [],
       ai_jobs: [],
       shares: [],
-      people: [],
+      people: [], prefs: {},
     },
     { today: "2026-11-25", time: "10:20" },
     ME,

@@ -17,6 +17,7 @@ import { forUser, useFeedback } from "../ui/feedback";
 import { useWide } from "../ui/hooks";
 import { Root } from "../ui/Root";
 import { inLocalMode } from "../local";
+import { followPrefs } from "../prefs";
 import { SERVER_EVERY_MS, checkServer, useServerVersions } from "../server-update";
 import { EVERY_MS, check, install, newer, restart, usePending } from "../updates";
 import { BatchProvider } from "./batch";
@@ -37,6 +38,7 @@ export function Main({ session, onSignedOut }: { session: Session; onSignedOut(n
   const [location, navigate] = useLocation();
   const open = params.get("open");
   const outside = !!open || params.has("add") || (location === "/calendar" && params.has("view"));
+  useEffect(() => followPrefs(session), [session]);
   // On top of the page without details, which closing them goes back to: there may be no page before.
   useEffect(() => {
     if (!open) return;
@@ -92,8 +94,8 @@ function Events({ onSignedOut }: { onSignedOut(notice?: string): void }) {
       appFailed: (e) => snack(forUser(app === "android" ? "更新提醒和小组件" : "更新提醒", e)),
       arrived(entries) {
         const board = session.store.getView().board;
-        // Not a job starting or failing: its row shows that.
-        const told = (e: LogEntry) => e.effects.some((x) => !(x.kind === "ai_job" && x.before && x.after));
+        // Not a job starting or failing: its row shows that; nor settings, which show as they are.
+        const told = (e: LogEntry) => e.effects.some((x) => !((x.kind === "ai_job" && x.before && x.after) || x.kind === "prefs"));
         // The latest worth telling.
         for (const e of entries.filter((e) => e.created_at > Date.now() - RECENT_MS).reverse()) {
           if (e.user === board.me) {

@@ -76,6 +76,7 @@ function given(c: Case): Data {
     })),
     shares: (c.shares ?? []).map(([folder_id, owner, members]) => ({ folder_id, owner, members: members.toSorted() })),
     people: ["alice", "bob", "carol"].map((id) => ({ id, username: id, display_name: id })),
+    prefs: {},
   });
 }
 

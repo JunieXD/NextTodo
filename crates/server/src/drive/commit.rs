@@ -15,7 +15,8 @@ use uuid::Uuid;
 /// given up. 8: a tidying may suggest a folder's colour and icon. 9: a repeat may be every statutory
 /// working day. 10: a task may be reminded by its start and at times of its own.
 /// 11: completion times and dates can be edited, and AI can suggest a completion date.
-/// 12: an organizing job may have a calendar date and time.
+/// 12: an organizing job may have a calendar date and time, and the settings that go with the account
+/// are synced.
 pub(crate) const FORMAT: i64 = 12;
 
 #[derive(Debug, Serialize, Deserialize)]

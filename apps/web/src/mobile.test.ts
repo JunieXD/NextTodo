@@ -19,7 +19,7 @@ test("a reminder can't be done straight away once a repeating prerequisite holds
       task(2, "做阅读", { due: { date: "2026-11-13", time: "00:00", reminders: [{ before: 0 }] } }),
     ],
     dependencies: [{ before: id(1), after: id(2), created_at: 0 }],
-    completions: [], attachments: [], ai_jobs: [], shares: [], people: [],
+    completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {},
   };
   // The board as of 23:59, handed over before midnight and again just after it.
   const board = new Board(snapshot, { today: "2026-11-12", time: "23:59" }, ME);
@@ -36,7 +36,7 @@ test("the agenda widget lists what is due in the folders picked, with the later 
       task(2, "交报告", { folder_id: id(10), due: { date: "2026-11-19" } }),
       task(3, "买菜", { folder_id: id(11), due: { date: "2026-11-21" } }),
     ],
-    dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [],
+    dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {},
   };
   const { overdue, days } = widgetAgenda(new Board(snapshot, { today: "2026-11-20" }, ME), [id(10)]);
   expect(overdue.map((t) => [t.title, "later" in t])).toEqual([["开例会", false], ["交报告", false]]);
@@ -54,7 +54,7 @@ test("the agenda widget says which tasks can be done now, and which time of a re
       task(3, "收集数据", {}),
     ],
     dependencies: [{ before: id(3), after: id(2), created_at: 0 }],
-    completions: [], attachments: [], ai_jobs: [], shares: [], people: [],
+    completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {},
   };
   const { overdue } = widgetAgenda(new Board(snapshot, { today: "2026-11-20" }, ME), [null]);
   expect(overdue.map((t) => [t.title, t.status, t.completions?.count])).toEqual([["背单词", "ready", 2], ["写总结", "waiting", undefined]]);

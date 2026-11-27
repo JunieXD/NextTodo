@@ -6,7 +6,7 @@ use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::http::{HeaderMap, header};
 use axum::response::Response;
-use nexttodo_core::model::MutationId;
+use nexttodo_core::model::{MutationId, Prefs};
 use nexttodo_core::ops::Mutation;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
@@ -20,8 +20,8 @@ use crate::AppState;
 use crate::auth::{self, Auth};
 use crate::drive::{Maker, Route};
 use crate::error::{ApiError, ErrorBody, from_value};
-use crate::mutate;
 use crate::sync::{LogEntry, changes_since};
+use crate::{mutate, store};
 
 const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 /// Often enough that reverse proxies do not close an idle connection.
@@ -56,6 +56,11 @@ pub enum ServerMessage {
     Changes {
         seq: i64,
         changes: Vec<LogEntry>,
+        /// The settings that go with the account, in the first answer to `hello`: a copy may lack them,
+        /// made while the server was too old to keep them.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        prefs: Option<Prefs>,
     },
     Resync,
     Ack {
@@ -167,9 +172,10 @@ async fn connection(st: AppState, mut ws: WebSocket, presented: Option<String>) 
     }
 }
 
-/// Sends the changes after `sent`. Returns false once the connection is closed: after telling the
-/// client to download everything again (it reconnects from its new snapshot), or on an error.
-async fn push(st: &AppState, ws: &mut WebSocket, auth: &Auth, sent: &mut i64, always: bool) -> Result<bool, axum::Error> {
+/// Sends the changes after `sent`; the first answer to `hello` goes even if there are none. Returns
+/// false once the connection is closed: after telling the client to download everything again (it
+/// reconnects from its new snapshot), or on an error.
+async fn push(st: &AppState, ws: &mut WebSocket, auth: &Auth, sent: &mut i64, first: bool) -> Result<bool, axum::Error> {
     let (owner, token, since) = (auth.user_id.clone(), auth.token_id.clone(), *sent);
     let read = st.db.call(move |c| {
         // A token revoked or a session signed out since `hello` gets nothing more.
@@ -178,12 +184,13 @@ async fn push(st: &AppState, ws: &mut WebSocket, auth: &Auth, sent: &mut i64, al
         if !valid {
             return Err(ApiError::unauthenticated("登录已失效，请重新登录"));
         }
-        changes_since(c, &owner, since)
+        let batch = changes_since(c, &owner, since)?;
+        Ok((batch, if first { Some(store::prefs(c, &owner)?) } else { None }))
     });
     match read.await {
-        Ok(batch) => {
-            if always || !batch.changes.is_empty() {
-                send(ws, ServerMessage::Changes { seq: batch.seq, changes: batch.changes }).await?;
+        Ok((batch, prefs)) => {
+            if first || !batch.changes.is_empty() {
+                send(ws, ServerMessage::Changes { seq: batch.seq, changes: batch.changes, prefs }).await?;
             }
             *sent = batch.seq;
             Ok(true)

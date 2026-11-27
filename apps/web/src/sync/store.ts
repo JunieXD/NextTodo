@@ -10,10 +10,10 @@ import type { LogEntry } from "../api/types/LogEntry";
 import type { Mutation } from "../api/types/Mutation";
 import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
+import type { Prefs } from "../api/types/Prefs";
 import type { SeqSnapshot } from "../api/types/SeqSnapshot";
-import type { Snapshot } from "../api/types/Snapshot";
 import type { TaskId } from "../api/types/TaskId";
-import { type Data, Rejected, apply, copy, fromSnapshot, localOf, replay, toSnapshot } from "../domain/apply";
+import { type Base, type Data, Rejected, apply, copy, fromSnapshot, localOf, replay, toSnapshot } from "../domain/apply";
 import { Board, before, cmp, nowOf } from "../domain/board";
 
 /** A change made here, with when it was made, so that applying it again gives the same times. */
@@ -25,7 +25,7 @@ export interface Pending {
 /** What is kept between visits. */
 export interface Saved {
   seq: number;
-  base: Snapshot;
+  base: Base;
   outbox: Pending[];
   /** Recent changes by mutation, oldest first, for undoing them here before the server has. */
   log: [MutationId, Effect[]][];
@@ -97,7 +97,7 @@ export class Store {
   }
 
   static empty(): Saved {
-    return { seq: 0, base: { folders: [], tasks: [], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] }, outbox: [], log: [] };
+    return { seq: 0, base: { folders: [], tasks: [], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} }, outbox: [], log: [] };
   }
 
   subscribe = (listener: () => void) => {
@@ -244,14 +244,15 @@ export class Store {
   /** What a change did, as far as this copy knows. */
   effectsOf = (id: MutationId): Effect[] | undefined => this.log.get(id) ?? this.local.get(id);
 
-  /** Changes from the server, in order, up to `seq`. */
-  receive(entries: LogEntry[], seq: number) {
+  /** Changes from the server, in order, up to `seq`, and on connecting the account's settings as of it. */
+  receive(entries: LogEntry[], seq: number, prefs?: Prefs) {
     const mine = new Set(this.outbox.map((p) => p.mutation.id));
     const arrived = new Set(entries.map((e) => e.id));
     for (const e of entries) {
       replay(this.base, e.effects);
       this.remember(e.id, e.effects);
     }
+    if (prefs) this.base.prefs = prefs;
     this.seq = seq;
     const confirmed = this.outbox.filter((p) => arrived.has(p.mutation.id)).map((p) => p.mutation);
     this.outbox = this.outbox.filter((p) => !arrived.has(p.mutation.id));
@@ -309,7 +310,7 @@ export class Store {
   }
 
   /** A fresh copy of everything from the server; changes not yet confirmed stay queued. */
-  resync(snapshot: SeqSnapshot) {
+  resync(snapshot: Omit<SeqSnapshot, "prefs"> & Partial<Pick<SeqSnapshot, "prefs">>) {
     Object.assign(this.base, fromSnapshot(snapshot));
     this.seq = snapshot.seq;
     this.log.clear();

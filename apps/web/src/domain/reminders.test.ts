@@ -62,6 +62,7 @@ test("reminders come at the times set, for the user's pending tasks, earliest fi
         { id: bob, username: "bob", display_name: "Bob" },
         { id: ME, username: "me", display_name: "我" },
       ],
+      prefs: {},
     },
     { today: "2026-11-03" },
     ME,
@@ -98,7 +99,7 @@ test("reminders by the start and at times of their own: one at each moment, sayi
       completions: [],
       attachments: [], ai_jobs: [],
       shares: [],
-      people: [],
+      people: [], prefs: {},
     },
     { today: "2026-11-03" },
     ME,
@@ -118,7 +119,7 @@ test("reminders by the start and at times of their own: one at each moment, sayi
 
 test("a daily digest each day from yesterday to a week on lists the open tasks due by then, earliest first, unless there are none", () => {
   const board = (tasks: Task[]) =>
-    new Board({ folders: [], tasks, dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] }, { today: "2026-11-03" }, ME);
+    new Board({ folders: [], tasks, dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} }, { today: "2026-11-03" }, ME);
   const tasks = [
     task(1, { title: "交房租", due: { date: "2026-11-03", time: "18:00" } }),
     task(2, { title: "还花呗", due: { date: "2026-11-01" } }), // overdue

@@ -39,6 +39,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `search` | `search <关键词> [--limit 条数]` | `query`、`limit?` | 标题和描述里包含关键词的事项（不区分大小写） |
 | `graph` | `graph [文件夹] [--all] [--mermaid]` | `folder?`、`all?`、`mermaid?` | 文件夹（含子文件夹）里的事项和依赖，按先后顺序；连到外面的事项也列出并注明文件夹 |
 | `log` | `log [批次] [-n 条数] [--before 批次] [--deleted]` | `batch?`、`limit?`、`before?`、`deleted?` | 最近的改动批次，默认 10，最多 100；包括别的成员在共享的文件夹里做的，写明是谁。每类变化最多写 3 个事项。`before` 只列这个批次之前的，用来往前翻；`deleted` 只列删除了事项、文件夹或附件的；给了 `batch` 只看这一个批次，逐样列出改了什么，每样下面写改了的字段，改前和改后（添加、删除的写当时有值的字段；描述只写开头，全文在 `--json` 里），其他参数不起作用 |
+| `prefs` | `prefs` | | [跟着账号的设置](ui/settings.md#跟着账号的设置)：新事项默认带的提醒、主题色、日历的时间轴视图和放假补班、保留最近完成的事项数、快速添加放进的文件夹 |
 | `jobs` | `jobs` | | [AI 整理](ai.md)的请求：等待、整理中和失败的，失败的带原因，以及建议待用户确认的整理文件夹；整理完的请求已经变成事项，不在这里 |
 | `attachment` | `download <附件 ID> [-o 路径]` | `id` | 读一个[附件](design/attachments.md)：PNG、JPEG、WebP、GIF 图片（5 MB 以内）在 MCP 里作为图片返回，agent 能直接看；UTF-8 的文本文件（`text/` 开头的和 JSON，1 MB 以内）返回内容；其他文件只给名称、类型和大小。命令行的 `download` 不经过这个工具，直接下载文件，存到 `-o` 给的文件或目录，不给时存到当前目录；存到目录时用附件的名称（按[桌面 App](desktop.md#附件)的规则改成能用的文件名）。已有同名文件时报错，不覆盖 |
 | `sync` | `sync` | | [本机模式](local.md#agent-接入)借网盘同步时[立即同步](local/drive.md#立即同步)：读完网盘里别的设备的改动、写完这台设备排着的再回答，之后读到的就是最新的；最多等 15 秒，没同步完的说明还在同步。同步受阻时报错并写明原因。连服务器、没在同步时直接回答 |
@@ -52,6 +53,7 @@ agent 和脚本使用 NextTodo 的方式。产品层的定位见[总体设计](d
 | `rename` | `rename <文件夹> <新名字>`、`rename --attachment <附件 ID> <新名字>` | `folder?`、`attachment?`、`name` | 文件夹或附件改名，`folder` 和 `attachment` 正好给一个 |
 | `move` | `mv <事项或文件夹…> <目标文件夹>` | `tasks?`、`folders?`、`to` | 移动到已有的文件夹，`/` 是根目录；移进、移出共享的文件夹时去掉连到外面的依赖和看不到的负责人，并换成新主人的编号，输出里写明 |
 | `style` | `style <文件夹> [--color 颜色 \| --no-color] [--icon 图标 \| --no-icon]` | `folder`、`color?`、`icon?` | 设文件夹的[颜色和图标](ui.md#文件夹的颜色和图标)，`null`（`--no-color`、`--no-icon`）改回默认；颜色和图标的取值见[数据模型](data-model.md#folders) |
+| `set_prefs` | `prefs [--remind-timed 提醒… \| --no-remind-timed] [--remind-dated 提醒… \| --no-remind-dated] [--accent 颜色 \| --no-accent] [--time-grid true\|false] [--holidays true\|false] [--keep-done 0–20] [--add-to 路径 \| --no-add-to]` | `remind_timed?`、`remind_dated?`、`accent?`、`time_grid?`、`holidays?`、`keep_done?`、`add_to?` | 改[跟着账号的设置](ui/settings.md#跟着账号的设置)，只改给出的，`null`（`--no-…`）改回默认；提醒的写法同 `add` 的 `remind`，有具体时间的只能提前多久，只有日期的要写几点（整天的 `1d` 是提前一天 09:00）；`add_to` 是文件夹路径，`null` 改回用上次选的。命令行不给选项时同 `prefs`。不进改动记录，不能撤销 |
 | `copy` | `cp <文件夹> [目标文件夹] [--name 名字]` | `folder`、`to?`、`name?` | [复制文件夹](design.md#文件夹)，连同子文件夹、事项、附件和它们之间的依赖，事项都是待办；放在目标文件夹的最后，不给 `to` 就在原文件夹的同一层（别人共享给我的文件夹在根目录）；不给 `name` 时用原名，那里已有同名的就叫“原名 副本”“原名 副本 2”…… |
 | `delete` | `rm <事项或文件夹…>` | `tasks?`、`folders?` | 删除；文件夹连同里面的一切 |
 | `dep_add` | `dep add <前置> <后续>` | `before`、`after` | 加依赖，成环时拒绝并列出环上的事项 |
@@ -174,6 +176,7 @@ $ nexttodo graph 工作
 | `search` | `{tasks: [事项], total}` |
 | `graph` | `{tasks: [事项], edges: [{before, after}]}`，边用编号，别人共享给我的文件夹里的事项写成 `"@alice#42"` |
 | `log` | `[{batch, user, actor, source, created_at, summary, changes, undoes, undone}]`，`user` 是做的人的用户名，自己为 `null`；`actor` 是令牌名，没用令牌为 `null`；`source` 是文字里写的来源，如“本人（iPhone）”；`changes` 是每类变化一行，列出的事项和 `summary` 一样多；`undoes` 是撤销的批次号，只有整批就是撤销一个批次时才有（应用里的撤销都是这样），否则、或那个批次已不在记录里的为 `null`；`undone` 是已经撤销了（同[改动记录](design/history.md)：撤销和撤销的撤销连成一串，和最新的一次方向相反的）。给了 `batch` 时另有 `items: [{text, change, fields: [{field, name, before, after}]}]`：改的每样东西一项，按改动的先后，`text` 是它的那一行（如“修改 #8 整理报销单”，事项的标题写全），`change` 是 `created`、`updated` 或 `deleted`：添加的事项、文件夹、依赖、附件、AI 整理请求和成员是 `created`，删除、移除的是 `deleted`；`name` 是字段的中文名（如“截止”），`field` 是 `title`、`description`、`folder`、`number`、`start`、`due`、`reminders`、`repeat`、`assignees`、`completions`、`order`、`name`、`parent`、`color`、`icon`、`holder` 之一，`before`、`after` 是文字里的写法（如“2026-11-20 18:00”“提前 1 小时、当天 09:00”“每周一”），颜色和图标是代码，没有值、或者是添加（删除）的另一边为 `null`，`order` 两边都是 `null` |
+| `prefs` | `{remind_timed, remind_dated, accent, time_grid, holidays, keep_done, add_to}`，写法同 `set_prefs`，没设的是默认值；`add_to` 是文件夹路径，不固定时为 `null`；固定的文件夹删了或退出了共享时也是 `null`，另有 `add_to_gone: true` |
 | `jobs` | `[{id, kind, start, folder, state, updated_at}]`，`kind` 是 `organize` 或 `tidy`，`start` 是原文开头，`state` 是 `waiting`、`running`、`failed`、`ready`，失败的另有 `error` |
 | `sync` | `{syncing, done, synced_at}`：`syncing` 是在不在借网盘同步，为 false 时没有另外两项；`done` 是这次在 15 秒内同步完没有；`synced_at` 是上次同步完的时间，毫秒 |
 | 写操作 | `{batch, changes: [变化]}`，预览时 `batch` 为 `null`；完成事项后有事项因此可做时另有 `unlocked: [事项]` |

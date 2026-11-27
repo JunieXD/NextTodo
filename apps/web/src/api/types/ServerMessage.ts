@@ -2,6 +2,12 @@
 import type { ErrorBody } from "./ErrorBody";
 import type { LogEntry } from "./LogEntry";
 import type { MutationId } from "./MutationId";
+import type { Prefs } from "./Prefs";
 import type { JsonValue } from "./serde_json/JsonValue";
 
-export type ServerMessage = { "type": "changes", seq: number, changes: Array<LogEntry>, } | { "type": "resync" } | { "type": "ack", id: MutationId, seq: number, } | { "type": "reject", id: MutationId, code: string, message: string, details?: JsonValue, } | { "type": "error" } & ErrorBody;
+export type ServerMessage = { "type": "changes", seq: number, changes: Array<LogEntry>, 
+/**
+ * The settings that go with the account, in the first answer to `hello`: a copy may lack them,
+ * made while the server was too old to keep them.
+ */
+prefs?: Prefs, } | { "type": "resync" } | { "type": "ack", id: MutationId, seq: number, } | { "type": "reject", id: MutationId, code: string, message: string, details?: JsonValue, } | { "type": "error" } & ErrorBody;

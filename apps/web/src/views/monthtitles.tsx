@@ -32,7 +32,7 @@ export function MonthTitles({
   const { board } = useView();
   const wide = useWide();
   const actions = useTaskActions();
-  const [marks] = useHolidayMarks();
+  const marks = useHolidayMarks();
   const blocks = weekBlocks(board, days, now);
   return (
     <div className="cal-titles">

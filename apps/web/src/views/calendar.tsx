@@ -12,7 +12,7 @@ import type { Task } from "../api/types/Task";
 import { lunarDate, lunarText } from "../domain/lunar";
 import { useKept } from "../kept";
 import { useNextFolders } from "../next-folders";
-import { useView } from "../session";
+import { usePrefs, useView } from "../session";
 import { Seg } from "../ui/controls";
 import { Tip } from "../ui/feedback";
 import { Icon } from "../ui/icons";
@@ -29,14 +29,10 @@ const VIEWS = ["month", "week", "year", "time"] as const;
 export type CalendarView = (typeof VIEWS)[number];
 
 const VIEW_KEY = "nexttodo.calendarView";
-const GRID_KEY = "nexttodo.timeGrid";
 const TITLES_KEY = "nexttodo.monthTitles";
 
-/** Whether the calendar offers the time grid, set on this device in the settings; on unless turned off. */
-export function useTimeGridOn(): [boolean, (on: boolean) => void] {
-  const [on, keep] = useKept(GRID_KEY);
-  return [on !== "off", (v) => keep(v ? "on" : "off")];
-}
+/** Whether the calendar offers the time grid; on unless turned off. */
+export const useTimeGridOn = () => usePrefs().time_grid !== false;
 
 /** Whether the month shows the titles of what is on each day, rather than dots, as picked on this device. */
 function useMonthTitles(): [boolean, (on: boolean) => void] {
@@ -48,13 +44,13 @@ function useMonthTitles(): [boolean, (on: boolean) => void] {
  * under `key`, the panel's apart; the week once the time grid is turned off. */
 export function useCalendarView(key = VIEW_KEY): [CalendarView, (v: CalendarView) => void] {
   const [view, keep] = useKept(key);
-  const [grid] = useTimeGridOn();
+  const grid = useTimeGridOn();
   return [view === "time" && !grid ? "week" : ((view as CalendarView | null) ?? "month"), keep];
 }
 
 export function CalendarViewSeg() {
   const [view, setView] = useCalendarView();
-  const [grid] = useTimeGridOn();
+  const grid = useTimeGridOn();
   return (
     <Seg<CalendarView>
       label="日历的视图"
@@ -112,8 +108,8 @@ export function CalendarBody({ now, view, onView, pick: { picked, at, pick }, co
   const asked = params.get("view");
   const linked = VIEWS.find((v) => v === asked);
   const on = params.get("on");
-  const [timeGrid] = useTimeGridOn();
-  const [marks] = useHolidayMarks();
+  const timeGrid = useTimeGridOn();
+  const marks = useHolidayMarks();
   const [titled, setTitled] = useMonthTitles();
   const compactMonth = view === "month" && compact;
   const titles = view === "month" && titled && !compactMonth;
@@ -395,7 +391,7 @@ function DayList({ date, now, overdue, due, dropped, done }: { date: string; now
   const { selected } = useSelection();
   const actions = useTaskActions();
   const lunar = lunarDate(date);
-  const [marks] = useHolidayMarks();
+  const marks = useHolidayMarks();
   return (
     <section className="cal-day">
       <h2 className="cal-date">

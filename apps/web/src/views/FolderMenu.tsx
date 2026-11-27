@@ -138,7 +138,7 @@ function useTidy(folder: FolderId | null): { start(): void; panel: ReactNode } {
     setAsking(tasks ? TIDY : "");
   };
   const submit = (text: string) => {
-    const reminders = jobReminders();
+    const reminders = jobReminders(store.getView().board);
     const op = {
       op: "ai_job.create",
       id: uuidv7(),

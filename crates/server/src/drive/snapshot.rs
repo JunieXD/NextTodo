@@ -46,6 +46,7 @@ const TABLES: &[(&str, Kept)] = &[
             ("next_task_number", None),
             ("pruned_seq", Some("0")),
             ("created_at", None),
+            ("prefs", None),
         ]),
     ),
     ("folders", Kept::Shared),
@@ -134,7 +135,7 @@ fn replace(c: &mut Connection, number: i64) -> rusqlite::Result<()> {
         tx.execute(&format!("INSERT INTO main.{table} SELECT * FROM s.{table}"), [])?;
     }
     tx.execute_batch(
-        "UPDATE main.users SET next_task_number = (SELECT next_task_number FROM s.users);
+        "UPDATE main.users SET next_task_number = (SELECT next_task_number FROM s.users), prefs = (SELECT prefs FROM s.users);
          DELETE FROM main.mutations WHERE id NOT IN (SELECT id FROM s.mutations);
          -- Those here keep their numbers, which the replies of tools name; the others are numbered on.
          INSERT INTO main.mutations (id, owner_id, token_id, actor, ops, effects, reply, created_at)
@@ -270,7 +271,7 @@ mod tests {
         super::unpack(&super::take(&db, &dir).unwrap(), &snapshot).unwrap();
         let c = Connection::open(&snapshot).unwrap();
         let version: i64 = c.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
-        assert_eq!(version, 31);
+        assert_eq!(version, 32);
         c.pragma_update(None, "user_version", version + 1).unwrap();
         assert!(crate::backup::convert(&snapshot, None).unwrap_err().is::<crate::db::Newer>());
         c.pragma_update(None, "user_version", version).unwrap();

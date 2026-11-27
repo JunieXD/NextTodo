@@ -8,8 +8,9 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use nexttodo_core::board::{Board, Now, Status};
 use nexttodo_core::model::{
-    Attachment, AttachmentId, Change, Date, Description, Due, DueAfter, Effect, Every, FileName, FileSize, FolderId, MAX_NAME, MediaType,
-    Misfit, Monthdays, MutationId, Name, Period, Remind, RemindAt, RemindBefore, RemindOn, Repeat, RepeatFrom, Task, TaskId, Time, Title,
+    AddTo, Attachment, AttachmentId, Change, Date, DefaultReminders, Description, Due, DueAfter, Effect, Every, FileName, FileSize,
+    FolderId, MAX_NAME, MediaType, Misfit, Monthdays, MutationId, Name, Period, Remind, RemindAt, RemindBefore, RemindOn, Repeat,
+    RepeatFrom, Task, TaskId, Time, Title, Updated,
 };
 use nexttodo_core::ops::{MAX_OPS, Op};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -18,8 +19,8 @@ use uuid::Uuid;
 
 use super::args::{
     AddArgs, ApplyArgs, AttachArgs, CopyArgs, DeleteArgs, DepArgs, DetachArgs, DoneArgs, DoneWhen, DropArgs, DueAfterText, EditArgs,
-    MkdirArgs, Monthly, MoveArgs, PeriodText, Plan, PlanRef, PlanTask, RenameArgs, RepeatText, Replace, ShareArgs, StyleArgs, TaskRef,
-    TasksArgs, UndoArgs, UnshareArgs, WhenText, task_ref,
+    MkdirArgs, Monthly, MoveArgs, PeriodText, Plan, PlanRef, PlanTask, RemindText, RenameArgs, RepeatText, Replace, SetPrefsArgs,
+    ShareArgs, StyleArgs, TaskRef, TasksArgs, UndoArgs, UnshareArgs, WhenText, task_ref,
 };
 use super::text::{self, Names, task_view};
 use super::{Output, WriteFn, find_folder, find_task, person};
@@ -156,6 +157,12 @@ fn report(b: &Board, mut names: Names, batch: Option<i64>, effects: &[Effect]) -
     }
     let (said, changes) = text::changes(effects, &mut names, 20);
     lines.extend(said);
+    // Settings, which are not undone: as they are now.
+    if let [Effect::Prefs(Updated { after, .. })] = effects {
+        lines.push("设置改好了，现在是：".into());
+        lines.extend(text::prefs(after, b).0);
+        return Output { text: lines.join("\n"), data: json!({ "batch": batch, "changes": changes }) };
+    }
     if effects.is_empty() {
         lines.push("没有变化".into());
     }
@@ -991,6 +998,63 @@ pub fn style(w: &WriteCx, a: StyleArgs) -> Result<Write, ApiError> {
     }
     let id = folder_id(w.board, &a.folder, "设颜色和图标")?;
     Ok(vec![Op::FolderUpdate { id, name: None, parent_id: None, sort_key: None, color: a.color, icon: a.icon }].into())
+}
+
+/// Changes the settings that go with the account (docs/ui/settings.md#跟着账号的设置): those given.
+pub fn set_prefs(w: &WriteCx, a: SetPrefsArgs) -> Result<Write, ApiError> {
+    let invalid = |e: String| ApiError::invalid(e, None);
+    let some = [a.remind_timed.is_some(), a.remind_dated.is_some(), a.accent.is_some(), a.time_grid.is_some()];
+    if !some.contains(&true) && a.holidays.is_none() && a.keep_done.is_none() && a.add_to.is_none() {
+        return Err(invalid("至少给一项设置".into()));
+    }
+    let reminders = if a.remind_timed.is_none() && a.remind_dated.is_none() {
+        None
+    } else {
+        let now = store::prefs(w.c, w.user)?.reminders;
+        let given =
+            |r: Option<Option<RemindText>>| r.map(|r| r.unwrap_or_default()).map(|r| (r.due, r.start.is_empty() && r.at.is_empty()));
+        let timed = match given(a.remind_timed.clone()) {
+            None => now.as_ref().map_or_else(Vec::new, |d| d.timed().to_vec()),
+            Some((due, true)) => due
+                .into_iter()
+                .map(|r| match r {
+                    Remind::Before(b) => Ok(b),
+                    Remind::On(_) => Err(()),
+                })
+                .collect::<Result<_, _>>()
+                .map_err(|_| invalid("有具体时间的事项默认只能提前多久提醒，如 \"30m\"、0".into()))?,
+            Some((_, false)) => return Err(invalid("默认提醒不能按开始时间或在某个时刻".into())),
+        };
+        let dated = match given(a.remind_dated.clone()) {
+            None => now.as_ref().map_or_else(Vec::new, |d| d.dated().to_vec()),
+            Some((due, true)) => on_days(due, false)
+                .into_iter()
+                .map(|r| match r {
+                    Remind::On(o) => Ok(o),
+                    Remind::Before(_) => Err(()),
+                })
+                .collect::<Result<_, _>>()
+                .map_err(|_| invalid("只有日期的事项默认提醒要写几点，如 \"09:00\"、\"1d 20:00\"，或整天的如 \"1d\"".into()))?,
+            Some((_, false)) => return Err(invalid("默认提醒不能按开始时间或在某个时刻".into())),
+        };
+        let none = timed.is_empty() && dated.is_empty();
+        Some((!none).then(|| DefaultReminders::new(timed, dated)).transpose().map_err(invalid)?)
+    };
+    let add_to = match a.add_to {
+        Some(Some(path)) => Some(Some(AddTo { folder: find_folder(w.board, &path)? })),
+        Some(None) => Some(None),
+        None => None,
+    };
+    Ok(vec![Op::PrefsSet {
+        reminders,
+        accent: a.accent,
+        time_grid: a.time_grid.map(Some),
+        holidays: a.holidays.map(Some),
+        keep_done: a.keep_done.map(Some),
+        add_to,
+        if_unset: false,
+    }]
+    .into())
 }
 
 /// What a copy of a folder named `name` is called where `taken` says which names are in use: its

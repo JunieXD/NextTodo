@@ -90,6 +90,31 @@ pub enum Command {
     },
     #[command(about = "AI 整理的请求：等待、正在整理和失败的")]
     Jobs,
+    #[command(about = "跟着账号的设置：不给选项时列出，给了就改给的，每台设备都跟着变")]
+    Prefs {
+        #[arg(long, num_args = 1.., value_name = "提醒", conflicts_with = "no_remind_timed", help = "有具体时间的事项默认带的提醒，如 30m 0")]
+        remind_timed: Option<Vec<String>>,
+        #[arg(long, help = "有具体时间的事项默认不带提醒")]
+        no_remind_timed: bool,
+        #[arg(long, num_args = 1.., value_name = "提醒", conflicts_with = "no_remind_dated", help = "只有日期的事项默认带的提醒，如 09:00 \"1d 20:00\"")]
+        remind_dated: Option<Vec<String>>,
+        #[arg(long, help = "只有日期的事项默认不带提醒")]
+        no_remind_dated: bool,
+        #[arg(long, conflicts_with = "no_accent", help = "主题色：emerald、lime、cyan、blue、indigo、purple、pink，或自己调的 #rrggbb")]
+        accent: Option<String>,
+        #[arg(long, help = "主题色改回默认")]
+        no_accent: bool,
+        #[arg(long, value_name = "true|false", help = "日历里有没有时间轴视图")]
+        time_grid: Option<bool>,
+        #[arg(long, value_name = "true|false", help = "日历里标不标放假和补班")]
+        holidays: Option<bool>,
+        #[arg(long, value_name = "0–20", help = "文件夹里最近完成的几项留在原处")]
+        keep_done: Option<u8>,
+        #[arg(long, value_name = "路径", conflicts_with = "no_add_to", help = "快速添加固定放进的文件夹，/ 是根目录")]
+        add_to: Option<String>,
+        #[arg(long, help = "快速添加改回用上次选的文件夹")]
+        no_add_to: bool,
+    },
     #[command(about = "借网盘同步时立即同步")]
     Sync,
     #[command(about = "添加一个事项")]

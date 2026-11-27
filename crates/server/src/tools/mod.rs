@@ -120,6 +120,7 @@ tools! {
     Read "search"(SearchArgs) => read::search, "按关键词搜索事项的标题和描述，不区分大小写，最多列出 50 项。";
     Read "graph"(GraphArgs) => read::graph, "文件夹（含子文件夹）里的事项和依赖，按先后顺序列出，每项后面是它的前置；连到文件夹外的事项也列出。";
     Read "log"(LogArgs) => read::log, "最近的改动批次，新的在前，包括其他成员在共享的文件夹里做的。撤销时要用批次号。";
+    Read "prefs"(NoArgs) => read::prefs, "用户跟着账号的设置：新事项默认带的提醒、主题色、日历的时间轴和放假补班、保留最近完成的事项数、快速添加放进的文件夹。";
     Read "jobs"(NoArgs) => read::jobs, "用户提交的 AI 整理请求：等待、正在整理和失败的，失败的带原因。整理好的已经变成事项，不在这里。";
     Read "attachment"(AttachmentArgs) => read::attachment, "读一个附件（ID 见 show）：PNG、JPEG、WebP、GIF 图片（5 MB 以内）返回图片，UTF-8 文本文件（1 MB 以内）返回内容，其他文件只给名称、类型和大小。";
     Sync "sync"(NoArgs) => sync, "本机模式借网盘同步时立即同步：读完网盘里别的设备的改动、写完这台设备的再回答，最多等 15 秒。用户说刚在别的设备上改过的，先用它再读。连服务器时不需要。";
@@ -133,6 +134,7 @@ tools! {
     Write "rename"(RenameArgs) => write::rename, "给文件夹或附件改名。";
     Write "move"(MoveArgs) => write::move_to, "把事项或文件夹移到一个已有的文件夹，/ 是根目录。移进、移出共享的文件夹时去掉连到外面的依赖和无法查看新位置的负责人，并换成新主人的编号。";
     Write "style"(StyleArgs) => write::style, "设文件夹的颜色和图标，只用在文件夹的图标上；给 null 改回默认，不给的不改。";
+    Write "set_prefs"(SetPrefsArgs) => write::set_prefs, "修改用户跟着账号的设置，只改给出的，每台设备都跟着变；用户明确要改设置时才用。不进改动记录，不能撤销。";
     Write "copy"(CopyArgs) => write::copy, "复制文件夹，连同其中的子文件夹、事项、附件和它们之间的依赖，副本里的事项都是待办，开始、截止、提醒和重复不变。用来把一套流程当模板反复用。";
     Destructive "delete"(DeleteArgs) => write::delete, "删除事项或文件夹；文件夹连同其中的子文件夹和事项一并删除。可用 undo 撤销。";
     Write "dep_add"(DepArgs) => write::dep_add, "加一条依赖：before 完成后才能做 after。只能连私人的事项之间，或同一个共享的文件夹里的事项之间；会成环时拒绝，并列出环上的事项。";

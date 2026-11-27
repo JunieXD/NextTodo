@@ -113,6 +113,7 @@ fn column(c: &Connection, sql: &str) -> Vec<String> {
 #[tokio::test]
 async fn an_export_is_the_accounts_own_data_and_restores_in_local_mode() {
     let s = source().await;
+    s.t.mutate(&s.alice, json!([{ "op": "prefs.set", "keep_done": 4 }])).await;
     let tar = export(&s.t, &s.alice).await;
     let names: Vec<String> = entries(&tar).into_iter().map(|(name, _)| name).collect();
     assert_eq!(names, ["backup.json".to_owned(), format!("files/{}", s.attachment), "nexttodo.db".to_owned()]);
@@ -121,6 +122,7 @@ async fn an_export_is_the_accounts_own_data_and_restores_in_local_mode() {
     let c = Connection::open(&path).unwrap();
     let alice = s.t.me(&s.alice).await;
     assert_eq!(column(&c, "SELECT id || ' ' || username || ' ' || password_hash FROM users"), [format!("{alice} alice ")]);
+    assert_eq!(column(&c, "SELECT prefs FROM users"), [r#"{"keep_done":4}"#]);
     assert_eq!(column(&c, "SELECT name FROM folders ORDER BY name"), ["共享", "周报", "工作"]);
     let titles = column(&c, "SELECT title FROM tasks ORDER BY number");
     assert_eq!(titles, ["根目录的事", "写提纲", "写正文", "背单词", "带附件的", "Bob 加的"]);
@@ -154,6 +156,7 @@ async fn an_export_is_the_accounts_own_data_and_restores_in_local_mode() {
     let local = nexttodo_server::local::Local::start(&dir).await.unwrap();
     let restored = Connection::open(dir.join("db").join("nexttodo.db")).unwrap();
     assert_eq!(column(&restored, "SELECT title FROM tasks ORDER BY number"), titles);
+    assert_eq!(column(&restored, "SELECT prefs FROM users"), [r#"{"keep_done":4}"#]);
     assert_eq!(std::fs::read(dir.join("db").join("files").join(&s.attachment)).unwrap(), b"milk");
     drop((restored, local));
     let _ = std::fs::remove_dir_all(dir);
@@ -229,6 +232,8 @@ async fn an_import_adds_the_backup_anew_and_is_undone_whole() {
     let r = import(&t, &me, &first, &uploaded).await;
     assert_eq!((r.status, &r.body["tasks"], &r.body["folders"]), (StatusCode::OK, &json!(6), &json!(3)), "{}", r.body);
     let made = r.body;
+    // In the history, though made of no operations.
+    assert_eq!(t.ok(&me, "log", json!({ "limit": 1 })).await["data"][0]["batch"], made["batch"]);
     let snap = t.snapshot(&me).await;
     assert_eq!(roots(&snap), ["共享", "工作", "工作 副本"], "beside what was there, under a name of its own");
     assert_eq!(

@@ -40,7 +40,7 @@ function board(tasks: { key: string; done?: boolean; other?: boolean }[], deps: 
     completions: [],
     attachments: [], ai_jobs: [],
     shares: [],
-    people: [],
+    people: [], prefs: {},
   };
   return new Board(snapshot, { today: "2026-11-12" }, ME);
 }

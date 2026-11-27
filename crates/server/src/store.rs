@@ -6,7 +6,8 @@ use std::collections::{HashMap, HashSet};
 use nexttodo_core::board::Snapshot;
 use nexttodo_core::model::{
     AiJob, AiJobId, Attachment, AttachmentId, Completion, Completions, Date, Dependency, Due, Every, FileSize, Folder, FolderId, Holder,
-    MediaType, Monthdays, NoteText, Period, Person, Remind, Repeat, RepeatFrom, RepeatUnit, Share, SortKey, Task, TaskId, Time, Weekdays,
+    MediaType, Monthdays, NoteText, Period, Person, Prefs, Remind, Repeat, RepeatFrom, RepeatUnit, Share, SortKey, Task, TaskId, Time,
+    Weekdays,
 };
 use rusqlite::{Connection, OptionalExtension, Params, Row, params};
 
@@ -786,6 +787,19 @@ pub fn person(c: &Connection, id: &str) -> rusqlite::Result<Person> {
     c.query_row("SELECT id, username, display_name FROM users WHERE id = ?1", [id], person_row)
 }
 
+/// The user's settings that go with the account.
+pub fn prefs(c: &Connection, user: &str) -> rusqlite::Result<Prefs> {
+    c.query_row("SELECT prefs FROM users WHERE id = ?1", [user], |r| {
+        let json: String = r.get(0)?;
+        serde_json::from_str(&json).map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into()))
+    })
+}
+
+pub fn set_prefs(c: &Connection, user: &str, prefs: &Prefs) -> rusqlite::Result<()> {
+    c.execute("UPDATE users SET prefs = ?2 WHERE id = ?1", params![user, serde_json::to_string(prefs).expect("plain data")])?;
+    Ok(())
+}
+
 /// Someone by the username they sign in with, whatever its case.
 pub fn person_named(c: &Connection, username: &str) -> rusqlite::Result<Option<Person>> {
     c.query_row("SELECT id, username, display_name FROM users WHERE username = ?1", [username.trim()], person_row).optional()
@@ -877,6 +891,7 @@ pub fn snapshot(c: &Connection, user: &str) -> rusqlite::Result<Snapshot> {
         ai_jobs: all(c, &format!("SELECT {JOB_COLUMNS} FROM ai_jobs WHERE owner_id = ?1 ORDER BY id"), [user], job_row)?,
         shares,
         people,
+        prefs: prefs(c, user)?,
     })
 }
 

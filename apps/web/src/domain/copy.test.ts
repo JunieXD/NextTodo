@@ -21,7 +21,7 @@ test("a copy is named after the folder, or as a copy of it when that is taken", 
 });
 
 test("a folder copies with all in it, open again, and its attachments referred to anew", () => {
-  const d = fromSnapshot({ folders: [], tasks: [], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [] });
+  const d = fromSnapshot({ folders: [], tasks: [], dependencies: [], completions: [], attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} });
   apply(
     d,
     [
@@ -66,6 +66,7 @@ test("tasks keep who they are assigned to only in the shared folder they were in
     ai_jobs: [],
     shares: [{ folder_id: id(2), owner: ME, members: [BOB] }],
     people: [{ id: BOB, username: "bob", display_name: "Bob" }],
+    prefs: {},
   });
   apply(d, [{ op: "task.create", id: id(3), title: "比价", folder_id: id(2), assignees: [BOB] }], cx);
   // The private folder holding it copies to a private one.

@@ -31,7 +31,7 @@
 | POST | `/invites` | 管理员：生成一个邀请码 |
 | GET | `/admin/upgrade` | 管理员：[在设置里升级](deploy.md#在设置里升级)的状态 `{state, …}`。`state` 是 `idle`；`downloading`，带 `version`、`received`、`total`（字节数）；`switching`，带 `version`；`failed`，带 `version` 和给用户看的 `message`；不能这样升级的（开发版）是 `unsupported` |
 | POST | `/admin/upgrade` | 管理员：开始升级到 `{version}`，返回状态；正在下载或切换时只返回当前的状态。版本号要比服务端的新，否则 400 |
-| GET | `/snapshot` | 完整数据：`{user, seq, folders, tasks, dependencies, completions, attachments, ai_jobs, shares, people}`，`user` 是数据所属用户的 ID。包括共享给这个用户的文件夹和其中的一切，见[共享](#共享) |
+| GET | `/snapshot` | 完整数据：`{user, seq, folders, tasks, dependencies, completions, attachments, ai_jobs, shares, people, prefs}`，`user` 是数据所属用户的 ID，`prefs` 见下面的[跟着账号的设置](#跟着账号的设置)。包括共享给这个用户的文件夹和其中的一切，见[共享](#共享) |
 | GET | `/changes?since=<seq>` | 增量：`{seq, changes}`；`since` 早于保留期时返回 410 |
 | POST | `/mutations` | 提交一个改动，见下文 |
 | GET | `/sync` | WebSocket，见[同步协议](#同步协议) |
@@ -52,6 +52,18 @@
 MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp)。
 
 `seq` 是这个用户能看到的最新改动序号；`/snapshot` 和 `/changes` 返回的数据都截止到这个序号。
+
+### 跟着账号的设置
+
+`prefs` 只有设过的项，没有的是默认值（[界面](ui/settings.md#跟着账号的设置)）：
+
+| 字段 | 值 | 默认 |
+|---|---|---|
+| `reminders` | `{timed, dated}`：有具体时间的事项默认带的提醒 `[{before}]`，只有日期的 `[{days, time}]`，写法同事项的[提醒](data-model.md#tasks) | 都不带 |
+| `accent` | 预设的 `emerald`、`lime`、`cyan`、`blue`、`indigo`、`purple`、`pink`，或 `#rrggbb` | `emerald` |
+| `time_grid`、`holidays` | 日历有没有时间轴视图、标不标放假和补班 | `true` |
+| `keep_done` | 0–20 | 0 |
+| `add_to` | `{folder}`：快速添加固定放进的文件夹，`folder` 为 `null` 是根目录 | 不固定，用上次选的 |
 
 ## 共享
 
@@ -142,6 +154,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | `ai_job.create`、`ai_job.retry`、`ai_job.delete` | | 提交、重试、删除 AI 整理请求，见 [AI 整理](ai.md#接口) |
 | `share.add` | `folder_id`、`username` | 共享人按用户名添加成员 |
 | `share.remove` | `folder_id`、`user_id` | 共享人移除成员，或成员自己退出。最后一个成员离开时文件夹回到私人的 |
+| `prefs.set` | 要改的几项[设置](#跟着账号的设置)；`if_unset?` | 只带要改的项，`null` 回到默认；`if_unset` 为 true 时只填还没设的项（设备升级后把自己的设置写进账号）。不进改动记录，不能撤销；冲突时以服务端（或网盘）实际执行的顺序为准，后执行的为准 |
 | `undo` | `mutation` | 撤销一个改动：按相反顺序把它的变化恢复回去，恢复时同样要通过所有规则。要改回去的东西已经不存在的跳过；要恢复的事项或文件夹原来所在的文件夹、要恢复的依赖连着的事项已经被删除时，整个撤销不生效 |
 
 `task.update` 把有[重复](design/repeat.md#重复)的事项标为完成（`done: true`）时不记完成时间，而是按 `today`（发出改动的设备上的当天，`YYYY-MM-DD`）把截止日期顺延到下一次，`completions` 的次数加一、日期记为 `today`；这时缺了 `today` 返回 400。顺延出的下一次晚于重复的 `until` 时，这次就是最后一次：次数同样加一、日期记为 `today`，然后去掉重复、记完成时间。同一个改动里的 `due` 先生效，所以去掉重复的同时 `done: true` 就是结束重复并完成：记完成时间，不动 `completions`，也不看 `today`。别的事项只用 `today` 定下[前置完成后的截止](#前置完成后的截止)。带上 `occurrence`（要完成的那一次：`{due, completions}`，它的截止日期和那时完成过的次数）时，用操作前的事项判断是哪一次，匹配后按操作给的截止和重复完成。操作前的重复事项已经不是这一次的，这次完成不生效，改动照样成功：那一次已经在别处完成、跳过或改了日期，再完成就会把下一次也完成掉。只看日期不够：从完成那天算的提前完成了，下一次可能还是同一天截止。App 和网页上勾选完成（包括批量完成）、手机的通知、提醒卡片和小组件上的“完成”都给重复的事项带着它：列表可能过时，几台设备也可能离线时各自完成了同一次；结束重复并完成不带；不重复的事项不看 `occurrence`。[放弃](design.md#放弃)了的事项不再有下一次，带 `occurrence` 的完成对它不生效，不带的把它改成完成。已结束（完成或放弃）的事项不能有重复，截止日期不能晚于重复的 `until`，新建或修改出这样的事项返回 400。
@@ -168,7 +181,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
   { "kind": "dependency", "before": null, "after": { "before": "…", "after": "…", "created_at": … } } ]
 ```
 
-`kind` 是 `folder`、`task`、`dependency`、`completion`、`attachment`、`ai_job`、`share` 或 `person`。`before` 为空表示新建，`after` 为空表示删除，都不为空表示修改。`completion` 是重复事项的一条[完成记录](design/repeat.md#重复) `{task_id, due, done, again}`，`again` 是同一次（同一个 `due`）在这一回以前完成过几回，通常是 0；和 `dependency` 一样只有新建和删除，由完成重复的事项、删除事项和撤销带来；`completion.update` 先删除原记录，再添加同一 `(task_id, due, again)` 的新记录。客户端按顺序应用 `after` 就能得到最新状态。`share` 是一个文件夹的共享人和成员，有了成员是新建，最后一个成员离开是删除；`person` 是这个用户的数据里新出现的人（新建：加入了共享的文件夹，或者添加、修改过一个刚看得到的事项）或改了显示名的人（修改）。
+`kind` 是 `folder`、`task`、`dependency`、`completion`、`attachment`、`ai_job`、`share`、`person` 或 `prefs`（这个用户[跟着账号的设置](ui/settings.md#跟着账号的设置)，只有修改）。`before` 为空表示新建，`after` 为空表示删除，都不为空表示修改。`completion` 是重复事项的一条[完成记录](design/repeat.md#重复) `{task_id, due, done, again}`，`again` 是同一次（同一个 `due`）在这一回以前完成过几回，通常是 0；和 `dependency` 一样只有新建和删除，由完成重复的事项、删除事项和撤销带来；`completion.update` 先删除原记录，再添加同一 `(task_id, due, again)` 的新记录。客户端按顺序应用 `after` 就能得到最新状态。`share` 是一个文件夹的共享人和成员，有了成员是新建，最后一个成员离开是删除；`person` 是这个用户的数据里新出现的人（新建：加入了共享的文件夹，或者添加、修改过一个刚看得到的事项）或改了显示名的人（修改）。
 
 每个人收到的是自己看得到的那部分：事项移出共享的文件夹，留下的成员收到的是它被删除，移进来时是新建，它的附件、依赖也一样。`/changes` 和同步推送里的每条记录是 `{seq, id, user, actor, effects, created_at}`，`id` 是改动 ID，`user` 是提交改动的用户 ID，`actor` 是 API 令牌名（会话为空，AI 整理是“AI 整理”）。
 
@@ -200,7 +213,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | 方向 | 消息 | 说明 |
 |---|---|---|
 | 客户端 → 服务端 | `{type: "hello", token?, since, user}` | 连接后 10 秒内必须发的第一条。网页靠 Cookie 认证可以不带 `token`；App 的 WebView 不能给 WebSocket 加请求头，所以带在这里。`user` 是本地副本所属的用户 ID：登录的已经是别人（比如在另一个标签页换了账号）时，连接以 `unauthenticated` 失败，这份副本不会收到别人的数据，也不会把改动提交到别人名下 |
-| 服务端 → 客户端 | `{type: "changes", seq, changes}` | 收到 `hello` 后先补发 `since` 之后的变化（没有也发一条空的，表示已经同步到最新），之后每有新改动就推送，包括本连接自己提交的。`seq` 是这批之后的最新序号，每条变化的格式同 `/changes` |
+| 服务端 → 客户端 | `{type: "changes", seq, changes, prefs?}` | 收到 `hello` 后先补发 `since` 之后的变化（没有也发一条空的，表示已经同步到最新），之后每有新改动就推送，包括本连接自己提交的。`seq` 是这批之后的最新序号，每条变化的格式同 `/changes`。补发的这一条还带 `prefs`，是到 `seq` 为止的[跟着账号的设置](#跟着账号的设置)：服务端还不能存设置时下载的副本里没有它们，升级后连上就有了 |
 | 服务端 → 客户端 | `{type: "resync"}` | `since` 超出保留期或服务端恢复过快照，客户端重新下载 `/snapshot` |
 | 客户端 → 服务端 | `{type: "mutate", mutation}` | 提交改动，格式同 `POST /mutations` |
 | 服务端 → 客户端 | `{type: "ack", id, seq}` | 改动已生效，`seq` 是它的序号（重复提交时是第一次生效时的序号） |

@@ -14,7 +14,7 @@ import { lastKey } from "../domain/apply";
 import { type Board, cmp } from "../domain/board";
 import { blank, checkJobText } from "../domain/text";
 import { dueWithDefaults, jobReminders } from "../remind-settings";
-import { useCommit, useConnection, useSession, useUndo } from "../session";
+import { useCommit, useConnection, useSession, useUndo, useView } from "../session";
 import { Modal, useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
 import { ContextMenu, type MenuItem } from "../ui/menu";
@@ -56,7 +56,7 @@ export function originalTaskOps(j: AiJob, board: Board, id: TaskId) {
       ...(text && text !== title && { description: text }),
       sort_key: lastKey(board.contents(j.folder_id).map((t) => t.sort_key)),
       ...(j.folder_id && { folder_id: j.folder_id }),
-      ...(j.day && { due: dueWithDefaults(j.day, j.time) }),
+      ...(j.day && { due: dueWithDefaults(board, j.day, j.time) }),
     },
     ...filesOf(j, board).map((a): Op => ({ op: "attachment.update", id: a.id, task_id: id })),
     { op: "ai_job.delete", id: j.id },
@@ -75,12 +75,13 @@ const STATE_ICONS = { waiting: Sparkles, running: LoaderCircle, failed: CircleAl
 
 /** What can be done with a job, here and in its details. */
 function useJobActions() {
+  const { board } = useView();
   const commit = useCommit();
   const undo = useUndo();
   const { snack } = useFeedback();
   return {
     retry(j: AiJob, text?: string) {
-      const reminders = jobReminders();
+      const reminders = jobReminders(board);
       commit([{ op: "ai_job.retry", id: j.id, ...(text !== undefined && text !== j.text && { text }), ...(reminders && { reminders }) }]);
     },
     remove(j: AiJob) {

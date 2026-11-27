@@ -13,7 +13,7 @@ const task = (n: number, title: string, extra: Partial<Task>): Task => ({
   created_at: 0, updated_at: 0, assignees: [], created_by: ME, updated_by: ME, created_via: null, updated_via: null, ...extra,
 });
 const board = (tasks: Task[], completions: Completion[] = []) =>
-  new Board({ folders: [], tasks, dependencies: [], completions, attachments: [], ai_jobs: [], shares: [], people: [] }, { today: "2026-11-20" }, ME);
+  new Board({ folders: [], tasks, dependencies: [], completions, attachments: [], ai_jobs: [], shares: [], people: [], prefs: {} }, { today: "2026-11-20" }, ME);
 
 test("a repeating task is due each time on, as if done on the day, up to the day it repeats until", () => {
   const b = board([

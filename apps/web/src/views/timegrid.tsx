@@ -61,7 +61,7 @@ export function TimeGrid({
 }) {
   const { board } = useView();
   const wide = useWide();
-  const [marks] = useHolidayMarks();
+  const marks = useHolidayMarks();
   const actions = useTaskActions();
   const { selected } = useSelection();
   const week = weekBlocks(board, days, now);

@@ -80,8 +80,8 @@ fn copy_own(c: &mut Connection, user: &str) -> Result<String, ApiError> {
     let tx = c.transaction()?;
     for sql in [
         // No password goes with the data, not even in what the file has left over: never written there.
-        "INSERT INTO out.users (id, username, display_name, password_hash, is_admin, next_task_number, pruned_seq, created_at)
-         SELECT id, username, display_name, '', is_admin, next_task_number, 0, created_at FROM main.users WHERE id = ?1",
+        "INSERT INTO out.users (id, username, display_name, password_hash, is_admin, next_task_number, pruned_seq, created_at, prefs)
+         SELECT id, username, display_name, '', is_admin, next_task_number, 0, created_at, prefs FROM main.users WHERE id = ?1",
         // Theirs is what is in their folders and at their root, shared or not; what others share with
         // them is the others'.
         "INSERT INTO out.folders SELECT * FROM main.folders WHERE owner_id = ?1",

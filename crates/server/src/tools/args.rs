@@ -3,8 +3,8 @@
 use nexttodo_core::board::Now;
 use nexttodo_core::lunar;
 use nexttodo_core::model::{
-    AttachmentId, Date, Description, DueAfter, Every, FileName, FolderColor, FolderIcon, MediaType, Monthdays, Period, Remind,
-    RemindBefore, RemindOn, RepeatFrom, Time, Title, Weekdays,
+    Accent, AttachmentId, Date, Description, DueAfter, Every, FileName, FolderColor, FolderIcon, KeepDone, MediaType, Monthdays, Period,
+    Remind, RemindBefore, RemindOn, RepeatFrom, Time, Title, Weekdays,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer};
@@ -416,6 +416,38 @@ pub struct StyleArgs {
         description = "图标：briefcase、graduation-cap、book、pen、file、laptop、code、flask、calculator、lightbulb、target、house、cart、utensils、coffee、shirt、baby、paw、heart、gift、dumbbell、bike、heart-pulse、pill、wallet、piggy-bank、plane、car、map-pin、music、camera、palette、gamepad、star、flag、rocket、trophy、wrench、leaf、users；null 改回默认；不给就不改"
     )]
     pub icon: Option<Option<FolderIcon>>,
+}
+
+#[derive(Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SetPrefsArgs {
+    #[serde(default, deserialize_with = "nullable")]
+    #[schemars(
+        with = "Option<RemindInput>",
+        description = "有具体时间的事项设截止时间时默认带的提醒，整个换掉原来的：提前多久写 \"30m\"、\"2h\"、\"1d\" 或分钟数，0 是截止时，如 [\"30m\", 0]；null 或 [] 不带；不给就不改"
+    )]
+    pub remind_timed: Option<Option<RemindText>>,
+    #[serde(default, deserialize_with = "nullable")]
+    #[schemars(
+        with = "Option<RemindInput>",
+        description = "只有日期的事项设截止时间时默认带的提醒，整个换掉原来的：截止那天的几点 \"09:00\"，提前几天的几点 \"1d 20:00\"，整天的 \"1d\" 是提前那么多天的 09:00；null 或 [] 不带；不给就不改"
+    )]
+    pub remind_dated: Option<Option<RemindText>>,
+    #[serde(default, deserialize_with = "nullable")]
+    #[schemars(
+        with = "Option<String>",
+        description = "主题色：预设的 emerald（默认）、lime、cyan、blue、indigo、purple、pink，或自己调的 #rrggbb；null 改回默认；不给就不改"
+    )]
+    pub accent: Option<Option<Accent>>,
+    #[schemars(description = "日历里有没有时间轴视图，默认 true")]
+    pub time_grid: Option<bool>,
+    #[schemars(description = "日历里标不标国家规定的放假和补班，默认 true")]
+    pub holidays: Option<bool>,
+    #[schemars(with = "Option<u8>", description = "文件夹里最近完成的几项划掉后留在原处，0–20，默认 0")]
+    pub keep_done: Option<KeepDone>,
+    #[serde(default, deserialize_with = "nullable")]
+    #[schemars(with = "Option<String>", description = "快速添加栏固定放进的文件夹路径，/ 是根目录；null 改回用上次选的；不给就不改")]
+    pub add_to: Option<Option<String>>,
 }
 
 #[derive(Clone, Deserialize, JsonSchema)]

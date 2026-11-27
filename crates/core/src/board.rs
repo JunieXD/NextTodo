@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::model::{
-    AiJob, Attachment, Completion, Date, Dependency, Due, Folder, FolderId, Holder, Person, Share, SortKey, Task, TaskId, Time,
+    AiJob, Attachment, Completion, Date, Dependency, Due, Folder, FolderId, Holder, Person, Prefs, Share, SortKey, Task, TaskId, Time,
 };
 
 /// All a user can see: their own data and the folders shared with them, where a folder someone else
@@ -31,6 +31,9 @@ pub struct Snapshot {
     pub shares: Vec<Share>,
     /// The user, everyone in those folders, and whoever made or last changed a task the user sees.
     pub people: Vec<Person>,
+    /// The user's settings that go with the account.
+    #[serde(default)]
+    pub prefs: Prefs,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

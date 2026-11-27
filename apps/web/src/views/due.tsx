@@ -12,7 +12,8 @@ import type { RepeatUnit } from "../api/types/RepeatUnit";
 import { MAX_REMINDERS, day, formatDue, inOrder, isoDate, monthGrid, nextFive, parseTime, startLabel } from "../domain/dates";
 import { dayName, lunarDate, lunarText } from "../domain/lunar";
 import { WORKDAYS, daysBefore, plus, repeatLabel } from "../domain/repeat";
-import { useDefaultReminders } from "../remind-settings";
+import { defaultReminders } from "../remind-settings";
+import { useView } from "../session";
 import { useBack } from "../ui/back";
 import { Seg, Select, Stepper, Switch } from "../ui/controls";
 import { Modal, RootContext, Tip } from "../ui/feedback";
@@ -61,7 +62,7 @@ export function DueEditor({
   const [afterDays, setAfterDays] = useState(dueAfter?.days ?? 7);
   const timing = dueAfter ?? due;
   const [time, setTime] = useState(timing?.time ?? "");
-  const defaults = useDefaultReminders();
+  const defaults = defaultReminders(useView().board);
   const was = due?.repeat;
   // One of the units, every one of them; a year, every 12 months; or every so many of a unit.
   const [kind, setKind] = useState<RepeatUnit | "year" | "custom" | "off">(
@@ -101,7 +102,7 @@ export function DueEditor({
   const named = repeat?.days && !workdays ? repeatLabel(repeat, date) : null;
   const menu = legal ? "legal" : workdays ? "workdays" : named ? "days" : kind;
   // Offered where the days off are marked, or kept as the task has it (docs/design/repeat.md#节日和放假).
-  const [marks] = useHolidayMarks();
+  const marks = useHolidayMarks();
   // Said once saving is tried, until it is put right.
   const [tried, setTried] = useState(false);
   const early = Boolean(startTime && time && (after ? afterDays === 0 : date === start) && time < startTime);
@@ -393,7 +394,7 @@ export function Calendar({
   onPicked?(date: string): void;
 }) {
   const today = isoDate(useNow());
-  const [marks] = useHolidayMarks();
+  const marks = useHolidayMarks();
   const [shown, setShown] = useState(() => monthOf(day(value || (min && min > today ? min : today))));
   const out = (iso: string) => (min !== undefined && iso < min) || (max !== undefined && iso > max);
   const days = useRef<HTMLDivElement>(null);

@@ -5,6 +5,7 @@ import type { Completion } from "./Completion";
 import type { Dependency } from "./Dependency";
 import type { Folder } from "./Folder";
 import type { Person } from "./Person";
+import type { Prefs } from "./Prefs";
 import type { Share } from "./Share";
 import type { Task } from "./Task";
 
@@ -28,4 +29,8 @@ shares: Array<Share>,
 /**
  * The user, everyone in those folders, and whoever made or last changed a task the user sees.
  */
-people: Array<Person>, };
+people: Array<Person>, 
+/**
+ * The user's settings that go with the account.
+ */
+prefs: Prefs, };

@@ -197,3 +197,48 @@ async fn a_folder_takes_a_colour_and_an_icon_that_copies_keep() {
         assert_eq!(t.tool(&s, "style", bad.clone()).await.status, StatusCode::BAD_REQUEST, "{bad}");
     }
 }
+
+#[tokio::test]
+async fn an_agent_reads_and_changes_the_settings_that_go_with_the_account() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "mkdir", json!({ "path": "/工作" })).await;
+    let shown = t.ok(&s, "prefs", json!({})).await;
+    assert!(text(&shown).contains("有具体时间的事项默认提醒：不提醒"), "{shown}");
+    assert_eq!(shown["data"]["add_to"], Value::Null);
+
+    let set = t
+        .ok(
+            &s,
+            "set_prefs",
+            json!({ "remind_timed": ["30m", 0], "remind_dated": "1d", "accent": "blue", "keep_done": 3, "add_to": "/工作" }),
+        )
+        .await;
+    assert!(text(&set).contains("有具体时间的事项默认提醒：截止时、提前 30 分钟"), "{set}");
+    assert!(!text(&set).contains("可撤销"));
+    let data = t.ok(&s, "prefs", json!({})).await["data"].clone();
+    assert_eq!(data["remind_dated"], json!(["1d 09:00"]));
+    assert_eq!((&data["accent"], &data["keep_done"], &data["add_to"]), (&json!("blue"), &json!(3), &json!("/工作")));
+
+    // Only what is given changes; null takes one back to the default.
+    t.ok(&s, "set_prefs", json!({ "remind_dated": null, "add_to": null })).await;
+    let data = t.ok(&s, "prefs", json!({})).await["data"].clone();
+    assert_eq!((&data["remind_timed"], &data["remind_dated"], &data["add_to"]), (&json!([0, 30]), &json!([]), &Value::Null));
+
+    // The folder fixed is gone: no path to write back.
+    t.ok(&s, "set_prefs", json!({ "add_to": "/工作" })).await;
+    t.ok(&s, "delete", json!({ "folders": ["/工作"] })).await;
+    let shown = t.ok(&s, "prefs", json!({})).await;
+    assert_eq!((&shown["data"]["add_to"], &shown["data"]["add_to_gone"]), (&Value::Null, &json!(true)));
+    assert!(text(&shown).contains("固定的文件夹已不在"));
+
+    for bad in [
+        json!({}),
+        json!({ "remind_timed": ["09:00"] }),
+        json!({ "remind_dated": ["90m"] }),
+        json!({ "keep_done": 21 }),
+        json!({ "add_to": "/工作" }),
+    ] {
+        assert_ne!(t.tool(&s, "set_prefs", bad.clone()).await.status, StatusCode::OK, "{bad}");
+    }
+}

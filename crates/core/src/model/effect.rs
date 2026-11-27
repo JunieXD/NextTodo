@@ -1,6 +1,6 @@
 //! What a change did, entity by entity, before and after.
 
-use super::{AiJob, Attachment, Completion, Dependency, Folder, Person, Share, Task};
+use super::{AiJob, Attachment, Completion, Dependency, Folder, Person, Prefs, Share, Task};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -19,6 +19,8 @@ pub enum Effect {
     Share(Change<Share>),
     /// Someone's name changed: only ever updated.
     Person(Change<Person>),
+    /// The user's settings that go with the account changed, seen by the user alone.
+    Prefs(Updated<Prefs>),
 }
 
 impl Effect {
@@ -41,6 +43,13 @@ pub enum Change<T: Clone> {
     Created(T),
     Updated { before: T, after: T },
     Deleted(T),
+}
+
+/// What is only ever changed, never made or deleted.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+pub struct Updated<T> {
+    pub before: T,
+    pub after: T,
 }
 
 /// Dependencies and completion records are only ever added or removed, never changed.

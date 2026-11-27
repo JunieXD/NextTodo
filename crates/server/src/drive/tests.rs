@@ -69,7 +69,7 @@ pub(crate) const SHARED: &[&str] = &[
     "SELECT * FROM attachments ORDER BY id",
     "SELECT id, owner_id, type, size, unused_at, purged FROM files WHERE NOT staged ORDER BY id",
     "SELECT * FROM ai_jobs ORDER BY id",
-    "SELECT id, next_task_number FROM users",
+    "SELECT id, next_task_number, prefs FROM users",
     "SELECT id, owner_id, actor, ops, effects, created_at FROM mutations ORDER BY id",
     "SELECT * FROM ai_notes ORDER BY folder_id",
 ];
@@ -401,6 +401,15 @@ async fn a_completion_date_edit_and_its_undo_sync_between_devices() {
     caught_up(&store, &devices).await;
     assert_same(&devices);
     assert_eq!((dump(a.db(), task_dates), dump(a.db(), record_dates)), old);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn settings_set_on_one_device_reach_the_others() {
+    let (store, devices) = devices(2).await;
+    devices[0].made(json!([{ "op": "prefs.set", "accent": "#336699", "keep_done": 5 }])).await.unwrap();
+    caught_up(&store, &devices).await;
+    assert_same(&devices);
+    assert_eq!(dump(devices[1].db(), "SELECT prefs FROM users"), vec![vec![Value::Text(r##"{"accent":"#336699","keep_done":5}"##.into())]]);
 }
 
 #[tokio::test(flavor = "multi_thread")]

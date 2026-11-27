@@ -8,6 +8,7 @@ mod attachment;
 mod due;
 mod effect;
 mod entity;
+mod prefs;
 mod repeat;
 
 pub use self::ai::*;
@@ -15,6 +16,7 @@ pub use self::attachment::*;
 pub use self::due::*;
 pub use self::effect::*;
 pub use self::entity::*;
+pub use self::prefs::*;
 pub use self::repeat::*;
 pub use crate::sort_key::SortKey;
 use serde::{Deserialize, Deserializer, Serialize};

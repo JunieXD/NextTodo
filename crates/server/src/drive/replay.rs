@@ -2,7 +2,7 @@
 //! device that made it, without doing its operations again. That device worked on the same data, so
 //! every device ends up with the same, whatever version of the app each runs.
 
-use nexttodo_core::model::{AiJob, Attachment, Change, Effect, JobState, Link, MutationId};
+use nexttodo_core::model::{AiJob, Attachment, Change, Effect, JobState, Link, MutationId, Updated};
 use nexttodo_core::ops::Op;
 use rusqlite::{Connection, params};
 
@@ -71,6 +71,7 @@ fn write(c: &Connection, user: &str, id: MutationId, at: i64, effect: &Effect) -
         Effect::AiJob(Change::Deleted(j)) => store::delete_job(c, j.id)?,
         // Local mode has one user, whose name never changes.
         Effect::Person(_) => {}
+        Effect::Prefs(Updated { after, .. }) => store::set_prefs(c, user, after)?,
         Effect::Share(_) => return Err(ApiError::invalid("网盘里的改动不能包含共享", None)),
     }
     Ok(())

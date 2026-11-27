@@ -3,12 +3,12 @@
 // A twin of `crates/core/src/board.rs`; both are checked against `fixtures/board.json`.
 
 import type { Attachment } from "../api/types/Attachment";
+import type { Base } from "./apply";
 import type { Completion } from "../api/types/Completion";
 import type { Folder } from "../api/types/Folder";
 import type { FolderId } from "../api/types/FolderId";
 import type { Person } from "../api/types/Person";
 import type { Share } from "../api/types/Share";
-import type { Snapshot } from "../api/types/Snapshot";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import { isoDate, isoTime } from "./dates";
@@ -100,7 +100,7 @@ export class Board {
   private firstAfter?: Map<TaskId, Dated>;
 
   constructor(
-    readonly snapshot: Snapshot,
+    readonly snapshot: Base,
     readonly now: Now,
     readonly me: string,
   ) {

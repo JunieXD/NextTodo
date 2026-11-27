@@ -69,7 +69,7 @@ async fn every_connection_gets_every_change() {
     let me = t.me(&s).await;
     let addr = serve(&t).await;
     let mut web = Client::connect(addr, Some(&s)).await;
-    assert_eq!(web.hello(&me, None, 0).await, json!({ "type": "changes", "seq": 0, "changes": [] }), "synced, nothing new");
+    assert_eq!(web.hello(&me, None, 0).await, json!({ "type": "changes", "seq": 0, "changes": [], "prefs": {} }), "synced, nothing new");
     let mut app = Client::connect(addr, None).await;
     app.hello(&me, Some(&s), 0).await;
 
@@ -122,6 +122,22 @@ async fn bad_mutations_are_rejected_and_bad_connections_closed() {
     rude.send(json!({ "type": "mutate", "mutation": {} })).await;
     assert_eq!(rude.recv().await.unwrap()["type"], "error");
     assert_eq!(rude.recv().await, None);
+}
+
+#[tokio::test]
+async fn connecting_brings_the_settings_that_go_with_the_account() {
+    // For a copy downloaded while the server was too old to keep them: it has none.
+    let t = TestApp::new();
+    let s = t.admin().await;
+    let me = t.me(&s).await;
+    let addr = serve(&t).await;
+    let mut c = Client::connect(addr, Some(&s)).await;
+    c.hello(&me, None, 0).await;
+    t.mutate(&s, json!([{ "op": "prefs.set", "keep_done": 3 }])).await;
+    let pushed = c.recv().await.unwrap();
+    assert_eq!((pushed["changes"][0]["effects"][0]["kind"].as_str(), pushed.get("prefs")), (Some("prefs"), None), "later, as changes");
+    let mut later = Client::connect(addr, Some(&s)).await;
+    assert_eq!(later.hello(&me, None, 1).await["prefs"], json!({ "keep_done": 3 }));
 }
 
 #[tokio::test]

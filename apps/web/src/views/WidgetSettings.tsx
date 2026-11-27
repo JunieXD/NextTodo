@@ -23,7 +23,7 @@ import { Icon } from "../ui/icons";
 import { type DesktopLook, setDesktopLook, useDesktopLook } from "../widget";
 import { setZoom, useZoom } from "../zoom";
 import { useTimeGridOn } from "./calendar";
-import { PAGES, PanelPageName } from "./Panel";
+import { PAGES, PanelPageIcon, PanelPageName } from "./Panel";
 
 const SCALES: Record<WidgetTextSize, number> = { small: 0.88, standard: 1, large: 1.15 };
 
@@ -117,14 +117,17 @@ function DesktopWidgetRow({ label }: { label: string }) {
   return (
     <div className="row">
       <div className="row-inner">
+        <PanelPageIcon path={path ?? "/"} />
         <span className="row-name truncate">
           <PanelPageName path={path ?? "/"} />
         </span>
-        <Tip label="移除小组件">
-          <button type="button" className="icon-btn sm" onClick={remove}>
-            <Icon of={X} size={18} />
-          </button>
-        </Tip>
+        <span className="row-value">
+          <Tip label="移除小组件">
+            <button type="button" className="icon-btn sm" onClick={remove}>
+              <Icon of={X} size={18} />
+            </button>
+          </Tip>
+        </span>
       </div>
     </div>
   );

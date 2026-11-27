@@ -54,6 +54,16 @@ export function restorePage() {
   history.replaceState(null, "", path);
 }
 
+/** The icon of the page at `path`, as the menu of pages has it. */
+export function PanelPageIcon({ path }: { path: string }) {
+  const { board } = useView();
+  const [grid] = useTimeGridOn();
+  const p = PAGES.find((p) => p.path === availablePath(path, grid));
+  if (p) return <Icon of={p.icon} size={18} />;
+  const folder = folderPage(path);
+  return <FolderGlyph board={board} id={folder && board.folder(folder) ? folder : null} />;
+}
+
 export function PanelPageName({ path }: { path: string }) {
   const { board } = useView();
   const [grid] = useTimeGridOn();
@@ -118,7 +128,8 @@ export function Panel() {
       ) : (
         <QuickAdd key={path} on={agenda ? board.now.today : undefined} folder={next || agenda ? undefined : folder} />
       ))}
-      <div key={path} className="panel-scroll">
+      {/* Keyed apart from the quick add beside it, which is keyed by the page too. */}
+      <div key={`page:${path}`} className="panel-scroll">
         {next ? <NextBody now={now} /> : agenda ? <AgendaBody now={now} /> : view ? <CalendarBody now={now} view={view} onView={setView} pick={pick} compact /> : <FolderBody folder={folder} now={now} />}
       </div>
       {batch.on && <BatchBar />}

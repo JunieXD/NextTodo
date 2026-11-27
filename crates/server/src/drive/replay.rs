@@ -170,7 +170,7 @@ mod tests {
         /// without the drive.
         fn assert_same(&self) {
             for sql in SHARED {
-                let sql = sql.replace("SELECT * FROM ai_jobs", "SELECT id, owner_id, folder_id, kind, text, local_time, state, error, suggestions, created_at, updated_at, reminders FROM ai_jobs");
+                let sql = sql.replace("SELECT * FROM ai_jobs", "SELECT id, owner_id, folder_id, kind, text, local_time, state, error, suggestions, created_at, updated_at, reminders, day, time FROM ai_jobs");
                 assert_eq!(dump(&self.a, &sql), dump(&self.b, &sql), "{sql}");
             }
         }

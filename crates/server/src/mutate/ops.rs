@@ -381,20 +381,29 @@ impl Cx<'_> {
                 let (a, side) = self.attachment(*id)?;
                 self.delete_attachment(a, side)
             }
-            Op::AiJobCreate { id, kind, text, local_time, folder_id, reminders } => {
+            Op::AiJobCreate { id, kind, text, local_time, folder_id, reminders, day, time } => {
                 if store::job_id_taken(self.c, *id)? {
                     return Err(ApiError::conflict("请求 ID 已存在"));
                 }
-                asks(kind.unwrap_or_default(), text)?;
+                let kind = kind.unwrap_or_default();
+                if day.is_some() && kind != JobKind::Organize {
+                    return Err(ApiError::invalid("只有整理成事项的请求可以指定日历日期", Some("day".into())));
+                }
+                if time.is_some() && day.is_none() {
+                    return Err(ApiError::invalid("指定日历钟点时也要指定日期", Some("time".into())));
+                }
+                asks(kind, text)?;
                 if let Some(f) = folder_id {
                     self.folder(*f)?;
                 }
                 self.create_job(AiJob {
                     id: *id,
                     folder_id: *folder_id,
-                    kind: kind.unwrap_or_default(),
+                    kind,
                     text: text.clone(),
                     local_time: local_time.clone(),
+                    day: day.clone(),
+                    time: time.clone(),
                     reminders: reminders.clone(),
                     state: JobState::Waiting,
                     error: None,

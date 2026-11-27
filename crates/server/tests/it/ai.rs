@@ -147,6 +147,7 @@ async fn a_job_becomes_tasks_and_undoing_that_gives_it_back() {
     assert_eq!(shown["folder"], "/手工");
     assert_eq!(shown["open_tasks"], json!([{ "number": 1, "title": "买材料", "due": "2026-11-06" }]));
     assert_eq!(shown["text"], "先写初稿，写完明天下午三点前改好");
+    assert!(shown.get("day").is_none());
 
     // The job's course is in the log as the AI's: started, then done in one change.
     let log = t.call("GET", "/changes?since=0", Some(&s), None).await.body;
@@ -170,6 +171,68 @@ async fn a_job_becomes_tasks_and_undoing_that_gives_it_back() {
     let report = snap["tasks"].as_array().unwrap().iter().find(|t| t["title"] == "交周报").unwrap();
     assert_eq!(report["due"], json!({ "date": "2026-11-06", "repeat": { "every": 1, "unit": "week", "from": "due" } }));
     assert!(fake.asked().pop().unwrap().1.contains("\"text\": \"每周五交周报\""));
+}
+
+#[tokio::test]
+async fn calendar_dates_and_times_are_only_for_organizing_and_times_need_dates() {
+    let fake = Arc::new(Fake::default());
+    let t = TestApp::with_ai(Ai::new(Some(SecretKey::from_base64(KEY).unwrap()), fake.clone()));
+    let s = t.admin().await;
+    t.call("PUT", "/ai/settings", Some(&s), Some(config())).await;
+    for (fields, field) in [
+        (json!({ "day": "2026-02-29" }), None),
+        (json!({ "day": "2026-11-4" }), None),
+        (json!({ "day": "2026-11-30", "time": "24:00" }), None),
+        (json!({ "day": "2026-11-30", "time": "9:00" }), None),
+        (json!({ "time": "13:00" }), Some("time")),
+        (json!({ "kind": "tidy", "day": "2026-11-30" }), Some("day")),
+        (json!({ "kind": "tidy", "day": "2026-11-30", "time": "13:00" }), Some("day")),
+    ] {
+        let mut op = create(&id(), "寄发票", None);
+        op.as_object_mut().unwrap().extend(fields.as_object().unwrap().clone());
+        let res = t.mutate(&s, json!([op])).await;
+        assert_eq!(res.status, StatusCode::BAD_REQUEST, "{fields}: {}", res.body);
+        if let Some(field) = field {
+            assert_eq!(res.body["details"]["field"], field, "{}", res.body);
+        }
+    }
+    assert!(t.snapshot(&s).await["ai_jobs"].as_array().unwrap().is_empty());
+    assert!(fake.asked().is_empty());
+}
+
+#[tokio::test]
+async fn a_calendar_job_keeps_its_day_and_time_when_retried() {
+    let (t, fake) = server();
+    let s = t.admin().await;
+    t.call("PUT", "/ai/settings", Some(&s), Some(config())).await;
+    for (time, expected) in [(None, "2026-11-30 星期一"), (Some("13:00"), "2026-11-30 星期一 13:00")] {
+        let job = id();
+        let mut op = create(&job, "寄发票", None);
+        op["day"] = "2026-11-30".into();
+        if let Some(time) = time {
+            op["time"] = time.into();
+        }
+        fake.answer(Err("模型出错"));
+        let res = t.mutate(&s, json!([op])).await;
+        assert_eq!(res.status, StatusCode::OK, "{}", res.body);
+        let snap = until(&t, &s, |s| job_state(s, &job).is_some_and(|(state, _)| state == "failed")).await;
+        assert_eq!(snap["ai_jobs"][0]["day"], "2026-11-30");
+        assert_eq!(snap["ai_jobs"][0].get("time").and_then(Value::as_str), time);
+        let first: Value = serde_json::from_str(&fake.asked().last().unwrap().1).unwrap();
+        assert_eq!(first["day"], expected);
+        assert_eq!(first["local_time"], "2026-11-04 16:30 星期三 农历九月廿六");
+
+        fake.answer(Err("模型仍出错"));
+        let res = t.mutate(&s, json!([{ "op": "ai_job.retry", "id": job, "text": "邮寄发票" }])).await;
+        assert_eq!(res.status, StatusCode::OK, "{}", res.body);
+        let retried = until(&t, &s, |s| job_state(s, &job).is_some_and(|(state, _)| state == "failed")).await;
+        assert_eq!(retried["ai_jobs"][0]["day"], snap["ai_jobs"][0]["day"]);
+        assert_eq!(retried["ai_jobs"][0].get("time"), snap["ai_jobs"][0].get("time"));
+        let second: Value = serde_json::from_str(&fake.asked().last().unwrap().1).unwrap();
+        assert_eq!(second["day"], first["day"]);
+        assert_eq!(second["text"], "邮寄发票");
+        assert_eq!(t.mutate(&s, json!([{ "op": "ai_job.delete", "id": job }])).await.status, StatusCode::OK);
+    }
 }
 
 #[tokio::test]

@@ -112,6 +112,11 @@ pub(super) fn due_text(d: &Due) -> String {
     }
 }
 
+const CALENDAR: &str = r#"输入若带 day，是用户在日历选中的日期、星期和可选的钟点，例如 "2026-11-30 星期一 13:00"。它不是今天。只用它补齐待做事项的截止时间：
+- 原文说了截止日期，按原文；“明天”“周五”“三天后”等仍从 local_time 算。没说截止日期，用 day 的日期，即使原文没提到时间。
+- 原文说了几点，用原文的钟点；没说几点而 day 带钟点，用 day 的钟点；两处都没给钟点，只写日期。例如选了周一 13:00，只说“下午三点寄件”，截止在周一 15:00。
+- 不用 day 改变开始、重复、提醒或完成时间的规则。已有 due_after 或由重复规则算出的首次截止日期，不改用 day 的日期。不添加早于开始时间的默认截止。"#;
+
 /// What a chat shows: the tasks, by the numbers it shows them by, the only ones its tasks may follow or
 /// come before (by id, as a task's number changes if it moves to another owner's while the model
 /// answers); and the job's attachments, the first by the ref "1".
@@ -170,6 +175,17 @@ pub fn prompt(
         "open_tasks": tasks,
         "text": job.text.as_str(),
     });
+    if let Some(day) = &job.day {
+        // The Unix epoch was a Thursday.
+        let weekday = (day.days_after(&Date::utc(0)) + 3).rem_euclid(7) as usize;
+        let weekday = ["一", "二", "三", "四", "五", "六", "日"][weekday];
+        let mut picked = format!("{} 星期{weekday}", day.as_str());
+        if let Some(time) = &job.time {
+            picked.push(' ');
+            picked.push_str(time.as_str());
+        }
+        input["day"] = picked.into();
+    }
     if !notes.is_empty() {
         input["notes"] = notes.into();
     }
@@ -209,11 +225,11 @@ pub fn prompt(
 
 /// The chat that gives the model `input`, a job and its folder as `prompt` makes them, with the
 /// instructions `system` and those for what else the input has: the people of a shared folder, the
-/// user's notes, the job's attachments. Without pictures. The local time has the day in the lunar
-/// calendar after it, `2026-11-26 10:00 星期四 农历十月十八`: models can't work it out.
+/// user's notes, the job's attachments and the calendar day. Without pictures. The local time has
+/// the day in the lunar calendar after it, `2026-11-26 10:00 星期四 农历十月十八`: models can't work it out.
 pub fn chat(system: &str, input: &Value) -> Prompt {
     let mut system = system.to_owned();
-    for (key, more) in [("people", ASSIGN), ("notes", NOTES), ("attachments", ATTACHMENTS)] {
+    for (key, more) in [("people", ASSIGN), ("notes", NOTES), ("attachments", ATTACHMENTS), ("day", CALENDAR)] {
         if input.get(key).is_some() {
             system = format!("{system}\n\n{more}");
         }

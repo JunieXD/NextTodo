@@ -97,7 +97,7 @@ function useDropAnywhere(add: (files: File[]) => unknown, off: boolean) {
  * tasks; that text can be expanded to write at length. Files pasted or dropped in go with what is
  * added. In a folder (`null` for the root) it adds there; elsewhere to a folder picked beside it, as
  * `add-to.ts` keeps it. In the calendar, `on` the day picked there, a task is due that day, with the
- * defaults for a due date; it has no AI organizing, which dates tasks by what the text says. Hidden by
+ * defaults for a due date; AI organizing there also receives the day and time if picked. Hidden by
  * `hide`, it keeps what it has, the folder picked and the files still being saved. `onSent` hears of
  * what each add sent. `at` a time picked on the day, it is due then, and takes the focus. */
 export function QuickAdd({
@@ -165,7 +165,8 @@ export function QuickAdd({
     return !refused;
   };
   // The device remembers the mode last used.
-  const ai = useAiMode() && on === undefined;
+  const canOrganize = !inCard || on === undefined;
+  const ai = useAiMode() && canOrganize;
   const [enterSends] = useEnterSends();
   const online = useConnection() === "online";
   const vision = useAiVision(user.id, online && ai && staged.some((f) => isPicture(f.type)));
@@ -276,7 +277,15 @@ export function QuickAdd({
     if (!canSend()) return false;
     const id = uuidv7();
     const reminders = jobReminders();
-    const op: Op = { op: "ai_job.create", id, text: c.value, local_time: localTime(new Date()), ...(into && { folder_id: into }), ...(reminders && { reminders }) };
+    const op: Op = {
+      op: "ai_job.create",
+      id,
+      text: c.value,
+      local_time: localTime(new Date()),
+      ...(into && { folder_id: into }),
+      ...(reminders && { reminders }),
+      ...(on && { day: on, ...(at && { time: at }) }),
+    };
     const made = commit([op, ...addOps(staged, { job_id: id })]);
     if (!made) return false;
     edit("");
@@ -292,7 +301,7 @@ export function QuickAdd({
     if (empty) return;
     if (ai) return void organize();
     const c = checkTitle(title);
-    if (!c.ok) return snack([...title.trim()].length > 200 && on === undefined ? `${c.error}；长段文字可点 ✦ 交给 AI 整理` : c.error);
+    if (!c.ok) return snack([...title.trim()].length > 200 && canOrganize ? `${c.error}；长段文字可点 ✦ 交给 AI 整理` : c.error);
     if (!canSend()) return;
     const id = uuidv7();
     const op: Op = {
@@ -345,7 +354,7 @@ export function QuickAdd({
     </ChooseFiles>
   );
   // Not taking the focus from the text: on a phone the keyboard would go down and come up again.
-  const spark = on === undefined && (
+  const spark = canOrganize && (
     <Tip label="AI 整理">
       <button type="button" className={`qa-btn icon${ai ? " on" : ""}`} aria-pressed={ai} onMouseDown={(e) => e.preventDefault()} onClick={() => void switchMode()}>
         <Icon of={Sparkles} size={16} />

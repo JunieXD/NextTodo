@@ -254,6 +254,7 @@ mod tests {
         let db = Db::open(&old_path).unwrap();
         let mark = |c: &Connection| {
             let j = crate::store::load_job(c, &user, id).unwrap().unwrap();
+            assert_eq!((j.day, j.time), (None, None));
             serde_json::to_value(j.suggestions).unwrap()[0]["done"].clone()
         };
         assert_eq!(db.hold(|c| mark(c)), true);
@@ -269,7 +270,7 @@ mod tests {
         super::unpack(&super::take(&db, &dir).unwrap(), &snapshot).unwrap();
         let c = Connection::open(&snapshot).unwrap();
         let version: i64 = c.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
-        assert_eq!(version, 30);
+        assert_eq!(version, 31);
         c.pragma_update(None, "user_version", version + 1).unwrap();
         assert!(crate::backup::convert(&snapshot, None).unwrap_err().is::<crate::db::Newer>());
         c.pragma_update(None, "user_version", version).unwrap();

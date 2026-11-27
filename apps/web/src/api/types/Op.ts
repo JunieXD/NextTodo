@@ -102,7 +102,7 @@ kind?: JobKind, text: JobText, local_time: LocalTime, folder_id?: FolderId,
 /**
  * The device's own (docs/ai.md#提示词和结果).
  */
-reminders?: DefaultReminders, } | { "op": "ai_job.retry", id: AiJobId, text?: JobText, 
+reminders?: DefaultReminders, day?: Date, time?: Time, } | { "op": "ai_job.retry", id: AiJobId, text?: JobText, 
 /**
  * `null` is the root.
  */

@@ -392,7 +392,7 @@ async fn a_completion_date_edit_and_its_undo_sync_between_devices() {
     a.drive().mutate(a.maker(), m, None).await.unwrap();
     let bytes = b.view.get("g/log/2.json").unwrap().unwrap();
     let commit = super::parse(&bytes).unwrap();
-    assert_eq!(commit.format, 11);
+    assert_eq!(commit.format, 12);
     caught_up(&store, &devices).await;
     assert_eq!(dump(b.db(), task_dates), vec![vec![Value::Text("2020-11-21".into()), Value::Text("2020-11-19".into())]]);
     assert_eq!(dump(b.db(), record_dates), vec![vec![Value::Text("2020-11-20".into()), Value::Text("2020-11-19".into())]]);
@@ -611,6 +611,20 @@ async fn a_tool_preview_changes_nothing_anywhere() {
 
 fn job_create(job: &str) -> serde_json::Value {
     json!([{ "op": "ai_job.create", "id": job, "text": "整理一下", "local_time": "2026-11-17 10:00 星期二" }])
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_calendar_job_keeps_its_day_and_time_on_another_device() {
+    let (store, devices) = devices(2).await;
+    let (a, b) = (&devices[0], &devices[1]);
+    let job = id();
+    let mut create = job_create(&job);
+    create[0]["day"] = "2026-11-30".into();
+    create[0]["time"] = "13:00".into();
+    a.made(create).await.unwrap();
+    caught_up(&store, &devices).await;
+    let dates = "SELECT day, time FROM ai_jobs";
+    assert_eq!(dump(b.db(), dates), [[Value::Text("2026-11-30".into()), Value::Text("13:00".into())]]);
 }
 
 #[tokio::test(flavor = "multi_thread")]

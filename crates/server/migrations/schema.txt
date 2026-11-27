@@ -615,3 +615,18 @@ table tasks:
         UNIQUE (owner_id, number)
     ) STRICT
 -- migration 30
+-- migration 31
+table ai_jobs:
+    CREATE TABLE "ai_jobs" (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+        folder_id TEXT REFERENCES folders (id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('organize', 'tidy')),
+        text TEXT NOT NULL,
+        local_time TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('waiting', 'running', 'failed', 'ready')),
+        error TEXT CHECK ((error IS NOT NULL) = (state = 'failed')),
+        suggestions TEXT CHECK ((suggestions IS NOT NULL) = (state = 'ready')),
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    , run TEXT, reminders TEXT CHECK (reminders IS NULL OR json_valid(reminders)), day TEXT CHECK (day IS NULL OR kind = 'organize'), time TEXT CHECK (time IS NULL OR day IS NOT NULL)) STRICT

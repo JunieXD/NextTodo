@@ -58,8 +58,8 @@ struct RawCase {
     #[serde(default)]
     #[allow(dead_code, reason = "people read it, the eval does not")]
     note: String,
-    /// What the server gives the model: for organizing, local_time, folder, open_tasks and text; for
-    /// tidying, what `tidy::prompt` sends, with `request`.
+    /// What the server gives the model: for organizing, what `organize::chat` takes, with `day`
+    /// when picked in the calendar; for tidying, what `tidy::prompt` sends, with `request`.
     input: Value,
     expect: Value,
 }

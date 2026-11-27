@@ -477,6 +477,8 @@ class Applier {
           kind: op.kind ?? "organize",
           text: op.text,
           local_time: op.local_time,
+          ...(op.day && { day: op.day }),
+          ...(op.time && { time: op.time }),
           ...(op.reminders && { reminders: op.reminders }),
           state: "waiting",
           error: null,

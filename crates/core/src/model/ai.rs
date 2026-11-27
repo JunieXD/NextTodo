@@ -2,7 +2,7 @@
 
 use super::{
     AiJobId, Date, DefaultReminders, Description, Due, DueAfter, FolderColor, FolderIcon, FolderId, JobText, LocalTime, Occurrence, Remind,
-    RemindAt, TaskId, Title, nullable,
+    RemindAt, TaskId, Time, Title, nullable,
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -208,6 +208,12 @@ pub struct AiJob {
     pub suggestions: Option<Vec<Suggestion>>,
     pub created_at: i64,
     pub updated_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub day: Option<Date>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub time: Option<Time>,
 }
 
 #[cfg(test)]

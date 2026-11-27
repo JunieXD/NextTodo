@@ -290,7 +290,7 @@ export class Files {
       this.user,
       m.id,
       job && {
-        place: job.folder_id ?? "root",
+        place: job.day ? "calendar" : (job.folder_id ?? "root"),
         text: job.text,
         files: adds(m).map((a) => ({ id: a.id, name: a.name, type: a.type, size: a.size, ...(a.id === add.id && { error: reason }) })),
       },

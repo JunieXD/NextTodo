@@ -11,7 +11,7 @@ use nexttodo_core::model::{
 use rusqlite::{Connection, OptionalExtension, Params, Row, params};
 
 const FOLDER_COLUMNS: &str = "id, parent_id, name, sort_key, created_at, updated_at, color, icon";
-const JOB_COLUMNS: &str = "id, folder_id, kind, text, local_time, state, error, suggestions, created_at, updated_at, reminders";
+const JOB_COLUMNS: &str = "id, folder_id, kind, text, local_time, state, error, suggestions, created_at, updated_at, reminders, day, time";
 /// Attachments, with what their files are.
 const ATTACHMENTS: &str =
     "SELECT a.id, a.task_id, a.job_id, a.name, f.type, f.size, a.created_at FROM attachments a JOIN files f ON f.id = a.id";
@@ -133,6 +133,8 @@ fn job_row(r: &Row) -> rusqlite::Result<AiJob> {
         kind: r.get(2)?,
         text: r.get(3)?,
         local_time: r.get(4)?,
+        day: r.get(11)?,
+        time: r.get(12)?,
         state: r.get(5)?,
         error: r.get(6)?,
         suggestions: suggestions
@@ -549,7 +551,7 @@ pub fn delete_completion(c: &Connection, r: &Completion) -> rusqlite::Result<()>
 /// The AI jobs in the subtree rooted at `id`, with whose they are.
 pub fn subtree_jobs(c: &Connection, id: FolderId) -> rusqlite::Result<Vec<(AiJob, String)>> {
     c.prepare_cached(&format!("{SUBTREE} SELECT {JOB_COLUMNS}, owner_id FROM ai_jobs WHERE folder_id IN (SELECT id FROM sub)"))?
-        .query_map([id], |r| Ok((job_row(r)?, r.get(11)?)))?
+        .query_map([id], |r| Ok((job_row(r)?, r.get(13)?)))?
         .collect()
 }
 
@@ -583,7 +585,7 @@ pub fn job_id_taken(c: &Connection, id: AiJobId) -> rusqlite::Result<bool> {
 
 pub fn insert_job(c: &Connection, owner: &str, j: &AiJob) -> rusqlite::Result<()> {
     c.execute(
-        &format!("INSERT INTO ai_jobs (owner_id, {JOB_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"),
+        &format!("INSERT INTO ai_jobs (owner_id, {JOB_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)"),
         params![
             owner,
             j.id,
@@ -596,7 +598,9 @@ pub fn insert_job(c: &Connection, owner: &str, j: &AiJob) -> rusqlite::Result<()
             suggestions(j),
             j.created_at,
             j.updated_at,
-            reminders(j)
+            reminders(j),
+            j.day,
+            j.time
         ],
     )?;
     Ok(())

@@ -98,7 +98,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 { "id": "…", "task_id": "…", "job_id": null, "name": "图片 1.png", "type": "image/png", "size": 182044, "created_at": … }
 // 依赖
 { "before": "<前置 id>", "after": "<后续 id>", "created_at": … }
-// AI 整理请求
+// AI 整理请求：从日历提交时还可能有 day、time（见 AI 整理的接口）
 { "id": "…", "folder_id": "…", "text": "…", "local_time": "2026-11-04 16:30 星期三", "state": "failed", "error": "API 密钥无效（接口返回 401：…）",
   "created_at": …, "updated_at": … }
 // 共享的文件夹：共享人和成员的用户 id

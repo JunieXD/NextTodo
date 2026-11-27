@@ -518,9 +518,9 @@ test("AI jobs: only a failed one is retried, they go with their folder, and one 
   const job = (state: "waiting" | "running" | "failed") => ({ ...d.jobs.get(id(2))!, state, error: state === "failed" ? "接口超时" : null });
   run(d, 110, [
     { op: "folder.create", id: id(1), name: "读书" },
-    { op: "ai_job.create", id: id(2), text: "读完第三章", local_time: "2026-11-04 16:30 星期三", folder_id: id(1) },
+    { op: "ai_job.create", id: id(2), text: "读完第三章", local_time: "2026-11-04 16:30 星期三", folder_id: id(1), day: "2026-11-30", time: "13:00" },
   ]);
-  expect(d.jobs.get(id(2))!.state).toBe("waiting");
+  expect(d.jobs.get(id(2))).toMatchObject({ state: "waiting", day: "2026-11-30", time: "13:00" });
   expect(() => apply(d, [{ op: "ai_job.retry", id: id(2) }], cx)).toThrow("这条请求已在等待整理");
 
   // As the server has it by now: organizing, then failed.
@@ -528,7 +528,7 @@ test("AI jobs: only a failed one is retried, they go with their folder, and one 
   expect(() => apply(d, [{ op: "ai_job.retry", id: id(2), text: "改" }], cx)).toThrow("正在整理，稍后再改");
   d.jobs.set(id(2), job("failed"));
   run(d, 111, [{ op: "ai_job.retry", id: id(2), text: "读完第四章", folder_id: null }]);
-  expect(d.jobs.get(id(2))).toMatchObject({ state: "waiting", error: null, text: "读完第四章", folder_id: null });
+  expect(d.jobs.get(id(2))).toMatchObject({ state: "waiting", error: null, text: "读完第四章", folder_id: null, day: "2026-11-30", time: "13:00" });
 
   // Back in the folder and organizing: deleting the folder takes it, undoing brings it back failed.
   d.jobs.set(id(2), { ...job("running"), folder_id: id(1) });

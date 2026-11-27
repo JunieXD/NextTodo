@@ -263,6 +263,12 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         reminders: Option<DefaultReminders>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        day: Option<Date>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        time: Option<Time>,
     },
     /// Puts a failed job, or a tidying with suggestions, back in the queue, with its text or folder
     /// changed if given.

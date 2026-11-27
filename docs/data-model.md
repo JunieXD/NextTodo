@@ -201,6 +201,7 @@
 | kind | TEXT | `organize`（整理请求）或 `tidy`（整理文件夹） |
 | text | TEXT | 原文，或整理文件夹的要求；1–10000 字；除换行和制表符外不含控制字符 |
 | local_time | TEXT | 提交时的本地时间，如 `2026-11-04 16:30 星期三`，单行，最长 40 字 |
+| day / time | TEXT，可空 | 提交时在日历里选中的日期、钟点，重试不变；见 [AI 整理](ai.md#接口) |
 | reminders | TEXT，可空 | 提交（或重试）整理的设备的[默认提醒](ai.md#提示词和结果)，JSON `{timed, dated}`：`timed` 是 `[{before}]`，`dated` 是 `[{days, time}]`，各自排好序、不重复，每样最多 100 个；那台设备没设的为空 |
 | state | TEXT | `waiting`（等待）、`running`（整理中）、`failed`（失败）或 `ready`（整理文件夹的建议待确认） |
 | error | TEXT，可空 | 失败的原因，只在 `failed` 时有 |

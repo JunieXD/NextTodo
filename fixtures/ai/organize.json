@@ -548,5 +548,30 @@
     "note": "补记已做的新事项，昨天而非截止",
     "input": { "local_time": "2026-11-27 10:00 星期五", "folder": "/工作", "open_tasks": [], "text": "记一下昨天开了组会" },
     "expect": { "tasks": [1, 1], "facts": [["组会"]], "done_on": [["组会", "2026-11-26"]], "due": [], "start": [] }
+  },
+  {
+    "id": "calendar-date-only",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "day": "2026-11-30 星期一", "folder": "/生活", "open_tasks": [], "text": "买打印纸" },
+    "expect": { "tasks": [1, 1], "facts": [["打印纸"]], "description": false, "due": ["2026-11-30"], "start": [] }
+  },
+  {
+    "id": "calendar-clock-in-text",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "day": "2026-11-30 星期一 13:00", "folder": "/生活", "open_tasks": [], "text": "下午两点去修眼镜" },
+    "expect": { "tasks": [1, 1], "facts": [["眼镜"]], "description": false, "due": ["2026-11-30 14:00"], "start": [] }
+  },
+  {
+    "id": "calendar-tomorrow",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "day": "2026-11-30 星期一", "folder": "/生活", "open_tasks": [], "text": "明天还图书馆的书" },
+    "expect": { "tasks": [1, 1], "facts": [["还"]], "description": false, "due": ["2026-11-05"], "start": [] }
+  },
+  {
+    "id": "calendar-explicit-date",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "day": "2026-11-30 星期一", "folder": "/生活", "open_tasks": [], "text": "12 月 8 日去配钥匙" },
+    "expect": { "tasks": [1, 1], "facts": [["钥匙"]], "description": false, "due": ["2026-12-08"], "start": [] }
+  },
+  {
+    "id": "calendar-picked-time",
+    "input": { "local_time": "2026-11-04 16:30 星期三", "day": "2026-11-30 星期一 13:00", "folder": "/生活", "open_tasks": [], "text": "给自行车打气" },
+    "expect": { "tasks": [1, 1], "facts": [["打气"]], "description": false, "due": ["2026-11-30 13:00"], "start": [] }
   }
 ]

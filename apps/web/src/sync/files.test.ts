@@ -5,7 +5,7 @@ import "fake-indexeddb/auto";
 import { openDB } from "idb";
 import { expect, test, vi } from "vitest";
 import type { Mutation } from "../api/types/Mutation";
-import { withdraw, withdrawn } from "./drafts";
+import { draft, stagedFiles, withdraw, withdrawn } from "./drafts";
 import { type FileMessage, Files } from "./files";
 import { load, unqueue } from "./persist";
 import { Store } from "./store";
@@ -102,6 +102,26 @@ test("a change whose file is no longer on the device goes, as one turned down, a
   await vi.waitFor(() => expect(open.sent).toEqual([after]));
   // With why, for another tab the user may be in.
   expect(open.told).toEqual([{ rejected: m.id, told: { user: u, text: "“图片 1.png”上传失败：文件已不在这台设备上" } }]);
+  open.files.stop();
+});
+
+test("the calendar gets back a job's draft when an attachment cannot go", async () => {
+  const u = user(5);
+  const job = id(9);
+  const text = "买打印纸";
+  const m: Mutation = {
+    id: id(1),
+    ops: [
+      { op: "ai_job.create", id: job, text, local_time: "2026-11-04 16:30 星期三", day: "2026-11-30", time: "13:00" },
+      { op: "attachment.add", id: id(6), name: "图片 1.png", type: "image/png", size: 3, job_id: job },
+    ],
+  };
+  await device(u, [m], []);
+  const open = tab(u, [m]);
+  await vi.waitFor(() => expect(open.store.queued).toEqual([]));
+  expect(draft(u, "calendar")).toBe(text);
+  expect(stagedFiles(u, "calendar")).toMatchObject([{ id: id(6), error: expect.any(String) }]);
+  expect(draft(u, "root")).toBe("");
   open.files.stop();
 });
 

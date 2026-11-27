@@ -306,6 +306,7 @@ function FieldValue({ field, value, was = false }: { field: ChangedField; value:
     );
   }
   if (field === "description") return <Clamped text={value} className={className} />;
+  if (field === "done_at") return <span className={className}>{formatMoment(Number(value), new Date())}</span>;
   return <span className={className}>{value}</span>;
 }
 

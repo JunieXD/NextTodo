@@ -3,11 +3,12 @@
 // library, `crates/core/src/calendar.rs`, for the agenda; both are checked against
 // `fixtures/board.json`.
 
+import type { Op } from "../api/types/Op";
 import type { Completion } from "../api/types/Completion";
 import type { Task } from "../api/types/Task";
 import { type Board, cmp } from "./board";
 import { day, isoDate } from "./dates";
-import { nextDue } from "./repeat";
+import { daysBefore, nextDue } from "./repeat";
 
 /** A task due on a day: when it is due now, or, `later`, a time a repeating one will be due after that. */
 export interface DueOn {
@@ -77,6 +78,28 @@ export const endingRecord = (board: Board, task: Task): Completion | undefined =
   task.done_at === null || task.dropped
     ? undefined
     : board.completions(task.id).reduce<Completion | undefined>((l, r) => (r.due === task.due?.date && (!l || r.again > l.again) ? r : l), undefined);
+
+export function completionTimeOps(board: Board, task: Task, done_at: number): Op[] {
+  const record = endingRecord(board, task);
+  return [
+    { op: "task.update", id: task.id, done_at },
+    ...(record ? [editCompletion(record, isoDate(new Date(done_at)))] : []),
+  ];
+}
+
+export function completionDateOps(board: Board, task: Task, record: Completion, done: string): Op[] {
+  const ops = [editCompletion(record, done)];
+  const ended = endingRecord(board, task);
+  if (ended?.due !== record.due || ended.again !== record.again || task.done_at === null) return ops;
+  const at = new Date(task.done_at);
+  at.setDate(at.getDate() + daysBefore(isoDate(at), done));
+  ops.push({ op: "task.update", id: task.id, done_at: at.getTime() });
+  return ops;
+}
+
+function editCompletion({ task_id, due, again }: Completion, done: string): Op {
+  return { op: "completion.update", task_id, due, again, done };
+}
 
 /** What the user did, by day: the tasks done, on the day they were here, and the times repeating tasks
  * were done, those given up since too. A task done for good the last time it repeated is there once,

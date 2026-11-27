@@ -204,6 +204,8 @@ pub enum Command {
         assign: Vec<String>,
         #[arg(long, num_args = 1.., value_name = "用户名", help = "去掉负责人")]
         unassign: Vec<String>,
+        #[arg(long, num_args = 1..=2, value_name = "时间", help = "修改完成时间：YYYY-MM-DD 或 YYYY-MM-DD HH:MM")]
+        done_at: Vec<String>,
     },
     #[command(about = "标为完成")]
     Done {
@@ -211,6 +213,8 @@ pub enum Command {
         tasks: Vec<String>,
         #[arg(long, help = "重复的事项结束重复、直接完成，如读完一本书时")]
         end_repeat: bool,
+        #[arg(long, num_args = 1..=2, value_name = "时间", help = "补记完成：YYYY-MM-DD 或 YYYY-MM-DD HH:MM")]
+        at: Vec<String>,
     },
     #[command(about = "放弃：不做了，和完成一样不再挡着后续；重复的事项整个结束")]
     Drop {

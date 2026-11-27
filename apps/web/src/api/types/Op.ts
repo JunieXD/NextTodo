@@ -45,7 +45,7 @@ start_reminders?: Array<Remind>, remind_at?: Array<RemindAt>, due?: Due,
 /**
  * In place of `due` (docs/design/dates.md#前置完成后的截止).
  */
-due_after?: DueAfter, sort_key?: SortKey, done?: boolean, 
+due_after?: DueAfter, sort_key?: SortKey, done?: boolean, done_at?: number, 
 /**
  * User ids, in a shared folder only.
  */
@@ -79,7 +79,7 @@ due?: Due | null,
  * In place of `due` (docs/design/dates.md#前置完成后的截止); `null` clears it and the due date it
  * gave.
  */
-due_after?: DueAfter | null, sort_key?: SortKey, done?: boolean, 
+due_after?: DueAfter | null, sort_key?: SortKey, done?: boolean, done_at?: number, 
 /**
  * The day on the device that marks a task done: a repeating task's next due date counts
  * from it, so it must be given for one.
@@ -94,7 +94,7 @@ occurrence?: Occurrence,
  * User ids to add to its assignees and to take off them, those it has then: two people
  * assigning at once both count.
  */
-assign?: Array<string>, unassign?: Array<string>, } | { "op": "task.drop", id: TaskId, } | { "op": "task.delete", id: TaskId, } | { "op": "dep.add", before: TaskId, after: TaskId, } | { "op": "dep.remove", before: TaskId, after: TaskId, } | { "op": "attachment.add", id: AttachmentId, name: FileName, type: MediaType, size: FileSize, task_id?: TaskId, job_id?: AiJobId, } | { "op": "attachment.update", id: AttachmentId, name?: FileName, task_id?: TaskId, } | { "op": "attachment.delete", id: AttachmentId, } | { "op": "ai_job.create", id: AiJobId, 
+assign?: Array<string>, unassign?: Array<string>, } | { "op": "task.drop", id: TaskId, } | { "op": "task.delete", id: TaskId, } | { "op": "completion.update", task_id: TaskId, due: Date, again: number, done: Date, } | { "op": "dep.add", before: TaskId, after: TaskId, } | { "op": "dep.remove", before: TaskId, after: TaskId, } | { "op": "attachment.add", id: AttachmentId, name: FileName, type: MediaType, size: FileSize, task_id?: TaskId, job_id?: AiJobId, } | { "op": "attachment.update", id: AttachmentId, name?: FileName, task_id?: TaskId, } | { "op": "attachment.delete", id: AttachmentId, } | { "op": "ai_job.create", id: AiJobId, 
 /**
  * Organizing when not given.
  */

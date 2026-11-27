@@ -21,6 +21,19 @@ pub enum Effect {
     Person(Change<Person>),
 }
 
+impl Effect {
+    pub fn completion_edit<'a>(before: &'a Self, after: &'a Self) -> Option<(&'a Completion, &'a Completion)> {
+        match (before, after) {
+            (Self::Completion(Link::Removed(b)), Self::Completion(Link::Added(a)))
+                if b.task_id == a.task_id && b.due == a.due && b.again == a.again && b.done != a.done =>
+            {
+                Some((b, a))
+            }
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[serde(try_from = "Sides<T>", into = "Sides<T>")]
 #[ts(as = "Sides<T>")]

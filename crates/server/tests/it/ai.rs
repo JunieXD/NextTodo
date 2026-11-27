@@ -754,3 +754,21 @@ async fn a_job_is_given_the_users_own_notes_from_the_root_down_to_its_folder() {
     t.call("PUT", "/ai/notes", Some(&s), Some(note(Value::Null, " "))).await;
     assert!(!listed(t.call("GET", "/ai/notes", Some(&s), None).await.body).contains(&"标题简短".to_owned()));
 }
+
+#[tokio::test]
+async fn organizing_a_completed_task_shifts_the_creation_timestamp_by_local_days() {
+    let (t, fake) = server();
+    let s = t.admin().await;
+    t.call("PUT", "/ai/settings", Some(&s), Some(config())).await;
+    fake.answer(Ok(r#"{"tasks":[{"title":"开组会","done":"2025-11-01"}]}"#));
+    let job = id();
+    let mut op = create(&job, "记一下昨天开了组会", None);
+    op["local_time"] = "2025-11-02 09:05 星期日".into();
+    assert_eq!(t.mutate(&s, json!([op])).await.status, StatusCode::OK);
+    let snap =
+        until(&t, &s, |s| s["ai_jobs"].as_array().unwrap().is_empty() || job_state(s, &job).is_some_and(|(state, _)| state == "failed"))
+            .await;
+    assert_eq!(job_state(&snap, &job), None);
+    assert_eq!(snap["tasks"][0]["done_at"], 1_761_913_600_000_i64);
+    assert!(snap["tasks"][0]["due"].is_null());
+}

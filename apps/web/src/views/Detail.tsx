@@ -11,8 +11,8 @@ import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
 import type { TaskFields } from "../domain/apply";
 import type { Board } from "../domain/board";
-import { lateness } from "../domain/calendar";
-import { day, dueAfterLabel, dueIn, formatDay, formatDue, formatMoment, isoDate, startBeforeLabel, startLabel } from "../domain/dates";
+import { completionDateOps, completionTimeOps, lateness } from "../domain/calendar";
+import { day, dueAfterLabel, dueIn, formatDay, formatDue, formatMoment, isoDate, isoTime, startBeforeLabel, startLabel } from "../domain/dates";
 import { daysBefore, doneToday, repeatText, skippable } from "../domain/repeat";
 import { draggingFiles, filesIn, reference } from "../attach";
 import { checkDescription } from "../domain/text";
@@ -23,7 +23,7 @@ import { useWide } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { useTaskActions } from "./actions";
 import { useAddFiles, useAttachments } from "./attachments";
-import { DueEditor, StartEditor } from "./due";
+import { Calendar as DatePicker, DueEditor, StartEditor, TimeRow } from "./due";
 import { FolderGlyph, styled } from "./folder-look";
 import { useMarks } from "./marks";
 import { folderUrl, useSelection } from "./nav";
@@ -36,7 +36,7 @@ import { source, Title, DescriptionSection } from "./detail-text";
 
 const STATUS = { ready: "可做", waiting: "等待中", done: "已完成", dropped: "已放弃" };
 
-type Panel = "folder" | "assignees" | "start" | "due" | "pred" | "succ" | "completions" | null;
+type Panel = "folder" | "assignees" | "start" | "due" | "pred" | "succ" | "completions" | "doneAt" | null;
 
 /** Who made a change, followed by a space before the Chinese. */
 const who = (board: Board, user: string, via: string | null) => {
@@ -215,6 +215,9 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
             onClick={t.completions ? () => setPanel("completions") : undefined}
           />
         )}
+        {t.done_at !== null && (
+          <Prop icon={CalendarClock} label={t.dropped ? "放弃于" : "完成于"} value={endedMoment(t.done_at, now)} onClick={() => setPanel("doneAt")} />
+        )}
       </div>
 
       <DescriptionSection
@@ -324,29 +327,91 @@ export function Detail({ id, now, closing, onClose }: { id: TaskId; now: Date; c
           onClose={() => setPanel(null)}
         />
       )}
+      {panel === "doneAt" && t.done_at !== null && (
+        <DoneAtEditor at={t.done_at} dropped={t.dropped} now={now} onClose={() => setPanel(null)} onSave={(done_at) => {
+          if (done_at === t.done_at) return;
+          const r = commit(completionTimeOps(board, t, done_at));
+          if (r) snack({ text: t.dropped ? "已改放弃时间" : "已改完成时间", action: "撤销", onAction: () => undo(r.id) });
+        }} />
+      )}
       {panel === "completions" && t.completions && (
-        <Completions records={board.completions(t.id)} count={t.completions.count} now={now} onClose={() => setPanel(null)} />
+        <Completions records={board.completions(t.id)} count={t.completions.count} now={now} onClose={() => setPanel(null)} onSave={(c, done) => {
+          if (c.done === done) return;
+          const r = commit(completionDateOps(board, t, c, done));
+          if (r) snack({ text: "已改完成日期", action: "撤销", onAction: () => undo(r.id) });
+        }} />
       )}
     </div>
   );
 }
 
+function endedMoment(at: number, now: Date): string {
+  const label = formatDay(at, now);
+  return label === "今天" || label === "昨天" ? `${label} ${isoTime(new Date(at))}` : formatMoment(at, now);
+}
+
+function DoneAtEditor({ at, dropped, now, onSave, onClose }: { at: number; dropped: boolean; now: Date; onSave(at: number): void; onClose(): void }) {
+  const [date, setDate] = useState(() => isoDate(new Date(at)));
+  const [time, setTime] = useState(() => isoTime(new Date(at)));
+  const today = isoDate(now);
+  const [error, setError] = useState(false);
+  const save = () => {
+    const picked = new Date(`${date}T${time}`).getTime();
+    if (picked > Date.now()) return setError(true);
+    onSave(date === isoDate(new Date(at)) && time === isoTime(new Date(at)) ? at : picked);
+    onClose();
+  };
+  return (
+    <Modal title={dropped ? "放弃时间" : "完成时间"} onClose={onClose} footer={
+      <>
+        {error && <p className="form-error" role="alert">时间不能晚于现在</p>}
+        <button className="filled-btn" onClick={save}>保存</button>
+      </>
+    }>
+      <DatePicker value={date} max={today} onChange={(d) => {
+        setDate(d);
+        if (d === today && time > isoTime(now)) setTime(isoTime(now));
+        setError(false);
+      }} />
+      <div className="group">
+        <TimeRow value={time} max={date === today ? isoTime(now) : undefined} onChange={(t) => {
+          if (date === today && t > isoTime(now)) return setError(true);
+          setTime(t);
+          setError(false);
+        }} />
+      </div>
+    </Modal>
+  );
+}
+
 /** The times a repeating task was done, the latest first, `count` in all: those done before there were
  * records are only counted. */
-function Completions({ records, count, now, onClose }: { records: Completion[]; count: number; now: Date; onClose(): void }) {
+function Completions({ records, count, now, onClose, onSave }: { records: Completion[]; count: number; now: Date; onClose(): void; onSave(record: Completion, date: string): void }) {
+  const [editing, setEditing] = useState<Completion | null>(null);
+  const [date, setDate] = useState("");
+  if (editing) {
+    return (
+      <Modal title="完成日期" onClose={() => setEditing(null)}>
+        <DatePicker value={date} max={isoDate(now)} onChange={setDate} onPicked={(picked) => {
+          onSave(editing, picked);
+          setEditing(null);
+        }} />
+      </Modal>
+    );
+  }
   const unrecorded = count - records.length;
   return (
     <Modal title="完成记录" onClose={onClose}>
       <div className="group">
         {records.map((c) => (
-          <div key={`${c.due} ${c.again}`} className="row prop">
+          <button key={`${c.due} ${c.again}`} className="row prop" onClick={() => { setEditing(c); setDate(c.done); }}>
             <div className="row-inner controls">
               <span className="row-name">{formatDay(day(c.done).getTime(), now)}</span>
               <span className="row-value">
                 截止{formatDue({ date: c.due }, now)} · {lateness(c)}
               </span>
             </div>
-          </div>
+          </button>
         ))}
       </div>
       {unrecorded > 0 && <p className="group-note">更早的 {unrecorded} 次没有记录</p>}

@@ -30,7 +30,7 @@ use crate::error::ApiError;
 use crate::store;
 use crate::tools::write::copy_name;
 
-pub(crate) use check::{at_times, both_due};
+pub(crate) use check::{at_times, both_due, check_completion_date};
 
 /// Who is making the change.
 pub struct Actor<'a> {
@@ -107,7 +107,7 @@ pub fn run(c: &Connection, actor: &Actor, ops: &[Op], now: i64, local: &Now) -> 
     }
     let mut cx = Cx::new(c, actor, now);
     for op in ops {
-        cx.op(op)?;
+        cx.op(op, local)?;
     }
     cx.settle(local)?;
     cx.introduce()?;

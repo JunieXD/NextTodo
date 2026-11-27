@@ -6,8 +6,8 @@ use std::collections::{HashMap, HashSet};
 use nexttodo_core::board::{Board, Now, Snapshot};
 use nexttodo_core::dag::find_path;
 use nexttodo_core::model::{
-    AiJob, Date, DefaultReminders, Description, Folder, FolderColor, FolderIcon, FolderId, FolderLook, MAX_REMINDERS, NewTask, Period,
-    Reorder, Repeat, RepeatFrom, Restyle, Suggestion, Task, TaskDeletion, TaskEdit, TaskId, Title, Was,
+    AiJob, CompletionMark, Date, DefaultReminders, Description, Folder, FolderColor, FolderIcon, FolderId, FolderLook, MAX_REMINDERS,
+    NewTask, Period, Reorder, Repeat, RepeatFrom, Restyle, Suggestion, Task, TaskDeletion, TaskEdit, TaskId, Title, Was,
 };
 use nexttodo_core::ops::MAX_OPS;
 use serde::Deserialize;
@@ -59,12 +59,12 @@ pub const SYSTEM: &str = r#"你负责按用户的要求整理一个文件夹里�
    - remind：提醒，整个换掉原来的。提前多久写 "30m"、"2h"、"1d"、"1w"（提前 30 分钟、2 小时、1 天、1 周）或分钟数，0 表示到截止时间时提醒；提前几分钟、几小时的要有带具体时间的截止时间，只有日期的截止上 "1d" 这类整天的是提前那么多天的 09:00；说了在几点提醒的写几点："09:00" 是截止那天的几点，"1d 20:00" 是提前 1 天的 20:00。按开始时间提醒的前面加 start，如 "start 30m"、"start 0"，只给有 start 的事项；另有截止、又要在别的某个时刻提醒一次的，写那个时刻，如 "2026-12-15 10:00"。几个提醒写成列表。“不用提醒了”是去掉提醒，写 clear: ["remind"]，不是写 0。
    - repeat、repeat_from、repeat_until：重复，只在 request 要求设或改重复时写，写法同输入；要有截止时间，事项原来没有截止时间的，同时写 due（第一次）。按天数说的照天数写（每 90 天是 90d，不是 3m）；在一周里某几天的写周几，“每个工作日”是 workdays（周一到周五，跳过放假、算上补班的周末），说了“周一到周五”、放假也照常的才是 1w:1,2,3,4,5，都不是 1d（1d 周末也会出现）。request 说了重复到哪天为止的写 repeat_until，截止时间不能晚于它。这三项也只写要改的，不写的照旧，如只改间隔时不写 repeat_from 和 repeat_until；新设的重复不写 repeat_from 就是从截止日期算，不写 repeat_until 就是一直重复。
    - clear：要清除的设置，是一个列表，可以包含 "due"、"remind"、"repeat"、"repeat_until"（不再重复到哪天，一直重复下去），如 "clear": ["due"]；清除截止时间时，提醒和重复一起清除。去掉前置用 drop_requires，不用 clear。
-   - done：true 标为完成（重复的事项会顺延到下一次，做的是 repeat_until 以前的最后一次的直接完成；request 说这件事整个做完了、不再重复的，如书读完了，同时在 clear 里写 "repeat"），false 重新打开 done_tasks 里的事项。done_tasks 里的事项可以删除；要改别的，先重新打开。
+   - done：true 标为完成（重复的事项会顺延到下一次，做的是 repeat_until 以前的最后一次的直接完成；request 说这件事整个做完了、不再重复的，如书读完了，同时在 clear 里写 "repeat"），false 重新打开 done_tasks 里的事项。request 明确说哪天做完（如“组会昨天就开完了”），不要写 true 或 due：按 local_time 换成公历日期，只写 "YYYY-MM-DD"，即使说了几点也不要带时间；不能晚于当地今天。也可这样改 done_tasks 里的完成日期；要改其他字段，先重新打开。
    - folder：移进 subfolders 里的哪个文件夹，写它的完整路径。subfolders 里没有的文件夹移不进去，这样的移动不要提。
    - requires：这一项要新加的前置，也就是要先做完、才能做这一项的事项：事项的编号，或新建事项的 ref；已有的不用写。
    - drop_requires：要去掉的这一项已有的前置，写编号。
 2. 删除已有的事项：写 number 和 "delete": true。
-3. 新建事项，放进这个文件夹：写 ref，依次是 "a"、"b"、"c"……，和 title；选填 description、due、remind、repeat、repeat_from、repeat_until，以及 requires（要先做完、才能做它的事项）和 required_by（要等它做完才能做的事项），写事项的编号或新建事项的 ref：新建的事项还没有编号，只能用 ref 指它。request 明确说新建的事项不用提醒的，写 "remind": []；没说提醒的不写 remind，会按用户自己设的默认提醒加上。
+3. 新建事项，放进这个文件夹：写 ref，依次是 "a"、"b"、"c"……，和 title；选填 description、due、remind、repeat、repeat_from、repeat_until、done，以及 requires（要先做完、才能做它的事项）和 required_by（要等它做完才能做的事项），写事项的编号或新建事项的 ref：新建的事项还没有编号，只能用 ref 指它。新建已经做完的事项必须在同一条建议里写 done（不能用 due 或只写在 reason 里）。例如 local_time 是 2026-11-12 10:00，request 是“补记昨天换好了滤芯”，就写 {"ref": "a", "title": "更换滤芯", "done": "2026-11-11", "reason": "补记已完成的更换"}。request 明确说新建的事项不用提醒的，写 "remind": []；没说提醒的不写 remind，会按用户自己设的默认提醒加上。
 4. 调整顺序：order 是 open_tasks 里事项的编号，按新的顺序排；只写要调整的那些，它们在原来占着的位置之间重新排列。order 只改列表里的位置，前置总排在后续前面。request 要的顺序和已有的先后冲突时（如要把“上线”排到最前，而它要等“测试”），保留先后，只排没有冲突的那些；除非 request 明说要改先后，不要为了排序去掉或反转前置。
 5. 改文件夹的颜色和图标：写 folder，照抄 looks 里的一个路径，不在 looks 里的文件夹不能改；再只写要改的 color、icon，每个文件夹最多出现一次。color 是 red、orange、amber、yellow、lime、green、teal、cyan、blue、indigo、purple、pink、brown、gray 之一，或 # 加六位十六进制数，如 #3478f6；icon 是 briefcase、graduation-cap、book、pen、file、laptop、code、flask、calculator、lightbulb、target、house、cart、utensils、coffee、shirt、baby、paw、heart、gift、dumbbell、bike、heart-pulse、pill、wallet、piggy-bank、plane、car、map-pin、music、camera、palette、gamepad、star、flag、rocket、trophy、wrench、leaf、users 之一，只能用这些名字，没有贴切的就选意思最接近的。改回默认的写 clear: ["color"] 或 clear: ["icon"]。
 
@@ -306,7 +306,7 @@ struct Suggested {
     repeat_until: Option<Date>,
     #[serde(default)]
     clear: Vec<Setting>,
-    done: Option<bool>,
+    done: Option<CompletionMark>,
     folder: Option<String>,
     color: Option<FolderColor>,
     icon: Option<FolderIcon>,
@@ -379,7 +379,7 @@ impl Suggested {
         self.repeat_from = later.repeat_from.or(self.repeat_from);
         self.repeat_until = later.repeat_until.or(self.repeat_until.take());
         self.clear.extend(later.clear);
-        self.done = later.done.or(self.done);
+        self.done = later.done.or(self.done.take());
         self.folder = later.folder.or(self.folder.take());
         self.color = later.color.or(self.color);
         self.icon = later.icon.or(self.icon);
@@ -486,6 +486,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
     let mut order = None;
     let mut deleted = HashSet::new();
     for (s, id) in suggestions.into_iter().zip(ids) {
+        super::check_completion_mark(&s.done).map_err(|e| e.describe())?;
         if let Some(numbers) = s.order {
             if s.number.is_some() || s.name.is_some() {
                 return Err("调整顺序的建议不能同时写 number 或 ref".into());
@@ -499,12 +500,15 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             out.extend(restyle(&board, shown, s)?.map(Suggestion::Style));
             continue;
         }
+        if matches!(&s.done, Some(CompletionMark::Date(date)) if date > &shown.now.today) {
+            return Err("完成日期不能晚于今天".into());
+        }
         let Some(n) = s.number else {
             let id = id.expect("new tasks have ids");
             let title = s.title.ok_or("新事项缺少标题")?;
-            if s.delete || s.done.is_some() || s.folder.is_some() || !s.clear.is_empty() || !s.unlink.is_empty() {
+            if s.delete || s.folder.is_some() || !s.clear.is_empty() || !s.unlink.is_empty() {
                 return Err(format!(
-                    "新事项“{}”只能写 title、description、due、remind、repeat、repeat_from、repeat_until、requires 和 required_by",
+                    "新事项“{}”只能写 title、description、due、remind、repeat、repeat_from、repeat_until、requires、required_by 和 done",
                     title.as_str()
                 ));
             }
@@ -513,6 +517,10 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             let failed = |e: ApiError| format!("新事项“{}”：{}", title.as_str(), e.describe());
             let (_, remind_at) = others(remind.start, remind.at, None, &shown.now).map_err(failed)?;
             let (due, _) = new_due(s.due, None, remind.due, repeat, None, &shown.now).map_err(failed)?;
+            let done = s.done.filter(|d| *d != CompletionMark::State(false));
+            if done.is_some() && due.as_ref().is_some_and(|d| d.repeat.is_some()) {
+                return Err(format!("新事项“{}”不能同时标为完成和设置重复", title.as_str()));
+            }
             let after = distinct(s.after.iter().map(&resolve))?;
             let before = distinct(s.before.iter().map(&resolve))?;
             new.insert(id, title.clone());
@@ -522,6 +530,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
                 description: s.description,
                 due,
                 remind_at,
+                done,
                 after,
                 before,
                 reason: s.reason,
@@ -539,6 +548,8 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             title: t.title.clone(),
             description: t.description.clone(),
             due: t.due.clone(),
+            done_at: t.done_at,
+            occurrence: t.occurrence(),
             due_after: t.due_after.clone(),
             start_reminders: t.start_reminders.clone(),
             remind_at: t.remind_at.clone(),
@@ -616,6 +627,7 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
                 repeat_until,
                 assign: Vec::new(),
                 unassign: Vec::new(),
+                done_at: None,
             };
             let edit = edit_fields(&board, t, args).map_err(|e| format!("事项 #{n}：{}", e.describe()))?;
             if given { edit } else { Edit { start_reminders: None, remind_at: None, ..edit } }
@@ -651,14 +663,14 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<Suggestion>, String> {
             due: due.filter(|d| if t.due_after.is_some() { d.is_some() } else { *d != t.due }),
             start_reminders,
             remind_at,
-            done: s.done.filter(|&d| d != t.done_at.is_some()),
+            done: s.done.filter(|d| *d != CompletionMark::State(t.done_at.is_some())),
             folder,
             after,
             unlink,
             reason: s.reason,
             was,
         };
-        if state == Seen::Done && edit.done.is_none() && changes(&edit) {
+        if state == Seen::Done && edit.done != Some(CompletionMark::State(false)) && changes(&edit) {
             return Err(format!("事项 #{n} 已完成，要先重新打开才能修改"));
         }
         out.push(Suggestion::Edit(Box::new(edit)));
@@ -861,6 +873,31 @@ mod tests {
     }
 
     #[test]
+    fn only_calendar_dates_can_backdate_completions() {
+        let (_, shown) = prompt(&job(), snap(), "me", vec![]);
+        for invalid in ["2026-11-06 14:00", "2026-11-08"] {
+            let out = json!({"suggestions": [{"number": 5, "done": invalid}]}).to_string();
+            assert!(parse(&out, &shown).is_err());
+        }
+        let out = r#"{"suggestions": [{"number": 5, "done": "2026-11-06"},{"ref":"a","title":"开会","done":"2026-11-07"},{"number": 4,"done":"2026-11-06"}]}"#;
+        let got = parse(out, &shown).unwrap();
+        let [Suggestion::Edit(existing), Suggestion::Create(new), Suggestion::Edit(repeat)] = got.as_slice() else { panic!("{got:?}") };
+        assert_eq!(existing.done, Some(CompletionMark::Date("2026-11-06".to_owned().try_into().unwrap())));
+        assert_eq!(new.done, Some(CompletionMark::Date("2026-11-07".to_owned().try_into().unwrap())));
+        assert_eq!(serde_json::to_value(&repeat.was.occurrence).unwrap(), json!({ "due": "2026-11-09", "completions": 0 }));
+    }
+
+    #[test]
+    fn a_repeat_can_be_backdated_to_the_epoch_but_not_before() {
+        let (_, shown) = prompt(&job(), snap(), "me", vec![]);
+        let answer = |date| json!({"suggestions": [{"number": 4, "done": date}]}).to_string();
+        assert_eq!(parse(&answer("1969-12-31"), &shown).unwrap_err(), "完成日期不能早于 1970-01-01（done）");
+        let got = parse(&answer("1970-01-01"), &shown).unwrap();
+        let [Suggestion::Edit(edit)] = got.as_slice() else { panic!("{got:?}") };
+        assert_eq!(edit.done, Some(CompletionMark::Date(Date::utc(0))));
+    }
+
+    #[test]
     fn shows_the_folder() {
         let (prompt, shown) = prompt(&job(), snap(), "me", vec![]);
         let input: Value = serde_json::from_str(&prompt.user).unwrap();
@@ -925,12 +962,12 @@ mod tests {
         assert_eq!(b.folder, Some(FolderId(id(101).parse().unwrap())));
         assert!(b.after.is_empty() && b.unlink.is_empty());
         // Not having seen the description, no new title.
-        assert!(c.title.is_none() && c.done == Some(true));
+        assert!(c.title.is_none() && c.done == Some(CompletionMark::State(true)));
         assert_eq!(c.due.clone().flatten().unwrap().repeat, None);
         assert_eq!(d.delete, tid(3));
         assert_eq!(e.before, [tid(2)]);
         assert_eq!(e.due.as_ref().unwrap().at.as_ref().unwrap().remind_before, [60]);
-        assert!(f.done == Some(false) && f.after == [tid(1)]);
+        assert!(f.done == Some(CompletionMark::State(false)) && f.after == [tid(1)]);
         assert_eq!(g.order, [tid(2), tid(1)]);
         // Given twice, a task's suggestion is one, the later's way where they differ.
         let twice = r#"{"suggestions": [

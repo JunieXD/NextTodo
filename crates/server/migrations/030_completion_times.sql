@@ -1,0 +1,2 @@
+-- A tidying may suggest a completion date in place of a boolean (docs/ai.md#整理文件夹).
+-- The tables stay as they are, but older versions must turn down snapshots and backups with it.

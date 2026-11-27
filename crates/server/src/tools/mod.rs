@@ -6,8 +6,8 @@ mod read;
 pub(crate) mod text;
 pub(crate) mod write;
 
-pub use write::plan_into;
 pub(crate) use write::{Edit, RepeatGiven, edit_fields, new_due, others};
+pub(crate) use write::{PlannedTask, plan_into};
 
 use std::sync::Arc;
 
@@ -124,8 +124,8 @@ tools! {
     Read "attachment"(AttachmentArgs) => read::attachment, "读一个附件（ID 见 show）：PNG、JPEG、WebP、GIF 图片（5 MB 以内）返回图片，UTF-8 文本文件（1 MB 以内）返回内容，其他文件只给名称、类型和大小。";
     Sync "sync"(NoArgs) => sync, "本机模式借网盘同步时立即同步：读完网盘里别的设备的改动、写完这台设备的再回答，最多等 15 秒。用户说刚在别的设备上改过的，先用它再读。连服务器时不需要。";
     Write "add"(AddArgs) => write::add, "添加一个事项；文件夹不存在时一起新建。一次加多个、带依赖的事项时用 apply。";
-    Write "edit"(EditArgs) => write::edit, "修改事项的标题、描述、截止时间、提醒或负责人；只改给出的字段，due、remind 给 null 表示清除，assign、unassign 在现有的负责人上加、减。改描述中的一段用 replace、加内容用 append，不要读出整段再整段写回，以免盖掉用户同时做的修改。";
-    Write "done"(DoneArgs) => write::done, "把事项标为完成，结果里会列出因此变成可做的事项。重复的事项不会完成，而是把截止时间顺延到下一次，这时要给 today；打卡的长期事项全部做完时用 end_repeat 结束重复并完成。";
+    Write "edit"(EditArgs) => write::edit, "修改事项的标题、描述、截止时间、提醒或负责人；只改给出的字段，due、remind 给 null 表示清除，assign、unassign 在现有的负责人上加、减。用 done_at 改已结束事项的完成时间或重复事项最晚完成的那条记录的日期；其他记录只能用 HTTP API 修改。改描述中的一段用 replace、加内容用 append，不要读出整段再整段写回，以免盖掉用户同时做的修改。";
+    Write "done"(DoneArgs) => write::done, "把事项标为完成，结果里会列出因此变成可做的事项。重复的事项不会完成，而是把截止时间顺延到下一次，给了 at 就用它的日期，不给 at 时须给 today；用 at 补记实际完成的当地日期或时刻，未同时给 today 和 time 时按 UTC 换算；打卡的长期事项全部做完时用 end_repeat 结束重复并完成。";
     Write "drop"(DropArgs) => write::drop_tasks, "放弃事项：不做了，和完成一样结束、不再挡着后续，结果里会列出因此变成可做的事项；重复的事项整个结束，只是这一次不做用 skip。with_after 连同还没结束的后续一起放弃。";
     Write "reopen"(TasksArgs) => write::reopen, "重新打开已完成或放弃的事项。";
     Write "skip"(TasksArgs) => write::skip, "跳过重复事项的这一次：截止时间顺延到下一次，但不算完成，要给 today。已是最后一次的不能跳过，不再做了用 done 的 end_repeat。";
@@ -152,11 +152,11 @@ fn with_common(schema: Arc<JsonObject>, kind: Kind) -> Arc<JsonObject> {
     let properties = s.entry("properties").or_insert_with(|| json!({}));
     properties["today"] = json!({
         "type": "string",
-        "description": "用户当地今天的日期，如 2026-11-08：开始时间到了没有按它算，完成重复的事项时必须给，下一次的截止时间据此计算。不给时按 UTC 的现在",
+        "description": "用户当地今天的日期，如 2026-11-08：开始时间到了没有按它算，完成重复事项时用 at 的日期，未给 at 才必须给 today，下一次的截止日期据此计算。不带 today 时，开始时间按 UTC 判断",
     });
     properties["time"] = json!({
         "type": "string",
-        "description": "用户当地现在的时间，如 18:30，和 today 一起给：开始时间到了没有按它算。只给 today 时，那天开始的都算已经到了",
+        "description": "用户当地现在的时间，如 18:30，和 today 一起给：开始时间到了没有按它算。只给 today 时，那天开始的都算已经到了；at 和 done_at 的时刻换算需同时给 today 和 time，否则按 UTC",
     });
     if kind != Kind::Read {
         properties["request_id"] = json!({

@@ -24,7 +24,7 @@ import type { Share } from "../api/types/Share";
 import type { Snapshot } from "../api/types/Snapshot";
 import type { Task } from "../api/types/Task";
 import type { TaskId } from "../api/types/TaskId";
-import { type Now, cmp, comesRound, holdsUp } from "./board";
+import { type Now, cmp, compareCompletion, comesRound, holdsUp } from "./board";
 import { MAX_REMINDERS, startInOrder, timesInOrder } from "./dates";
 import { lunarDate } from "./lunar";
 import { nextDue, occurrence, plus, shifted } from "./repeat";
@@ -49,6 +49,11 @@ export const MAX_OPS = 1000;
 
 export const depKey = (before: TaskId, after: TaskId) => `${before}>${after}`;
 export const completionKey = (c: Pick<Completion, "task_id" | "due" | "again">) => `${c.task_id} ${c.due} ${c.again}`;
+
+function completionReplacement(previous: Effect | undefined, next: Effect): Completion | undefined {
+  if (previous?.kind !== "completion" || !previous.before || previous.after || next.kind !== "completion" || next.before || !next.after) return;
+  if (completionKey(previous.before) === completionKey(next.after) && previous.before.done !== next.after.done) return previous.before;
+}
 
 export function fromSnapshot(s: Snapshot): Data {
   return {
@@ -157,6 +162,7 @@ export class Rejected extends Error {
   constructor(
     readonly code: string,
     message: string,
+    readonly field?: string,
   ) {
     super(message);
   }
@@ -260,6 +266,11 @@ class Applier {
       case "task.create": {
         if (this.d.tasks.has(op.id)) throw new Rejected("conflict", "事项 ID 已存在");
         if (op.due && op.due_after) throw bothDue();
+        if (op.done_at !== undefined) {
+          checkDoneAt(op.done_at, now);
+          if (!op.done) throw new Rejected("invalid", "新建事项时，只有标为完成才能指定完成时间", "done_at");
+          if (op.due?.repeat) throw new Rejected("invalid", "重复的事项要修改完成记录里的日期", "done_at");
+        }
         const folder = op.folder_id ?? null;
         if (folder) this.folder(folder);
         const keys = [...this.d.tasks.values()].filter((t) => t.folder_id === folder).map((t) => t.sort_key);
@@ -271,7 +282,7 @@ class Applier {
           folder_id: folder,
           title: op.title,
           description: op.description ?? "",
-          done_at: op.done ? now : null,
+          done_at: op.done ? (op.done_at ?? now) : null,
           dropped: false,
           start: op.start ?? null,
           start_time: op.start_time,
@@ -326,10 +337,17 @@ class Applier {
           checkAssignees(this.space(t.folder_id), op.assign ?? []);
           t.assignees = [...new Set([...t.assignees, ...(op.assign ?? [])])].filter((u) => !op.unassign?.includes(u)).sort();
         }
+        if (op.done_at !== undefined) {
+          checkDoneAt(op.done_at, now);
+          if (t.due?.repeat) throw new Rejected("invalid", "重复的事项要修改完成记录里的日期", "done_at");
+          if (op.done === false || (op.done !== true && t.done_at === null)) {
+            throw new Rejected("invalid", "只有已结束或标为完成的事项才能指定完成时间", "done_at");
+          }
+        }
         let record: Completion | undefined;
         // Done from a list behind the task: that time of a repeating one is done already, or gone
         // (docs/api.md#改动).
-        const time = occurrence(t);
+        const time = occurrence(before);
         const behind = !!op.occurrence && !!time && (op.occurrence.due !== time.due || op.occurrence.completions !== time.completions);
         // Done once given up, it was done after all, ending when it did; not a time of a repeating one
         // a list behind showed, which giving it up ended (docs/api.md#改动).
@@ -357,6 +375,7 @@ class Applier {
             t.completions = { count: (t.completions?.count ?? 0) + 1, last: op.today };
           } else t.done_at = op.done ? now : null;
         }
+        if (op.done_at !== undefined) t.done_at = op.done_at;
         this.updateTask(before, t);
         if (record) this.recordCompletion(record);
         return;
@@ -376,6 +395,34 @@ class Applier {
         this.task(op.id);
         this.deleteTask(op.id);
         return;
+      case "completion.update": {
+        const before = this.task(op.task_id);
+        const old = this.d.completions.get(completionKey(op));
+        if (!old) throw new Rejected("not_found", "该完成记录不存在");
+        if (op.done < "1970-01-01") throw new Rejected("invalid", "完成日期不能早于 1970-01-01", "done");
+        if (op.done > this.cx.local.today) throw new Rejected("invalid", "完成日期不能晚于今天", "done");
+        if (op.done === old.done) return;
+        const others = [...this.d.completions.values()].filter((c) => c.task_id === op.task_id && c !== old);
+        const latest = !others.some((c) => compareCompletion(c, old) > 0);
+        const t = { ...before };
+        this.deleteCompletion(old);
+        this.recordCompletion({ ...old, done: op.done });
+        if (t.completions) t.completions = { ...t.completions, last: others.reduce((last, c) => c.done > last ? c.done : last, op.done) };
+        if (latest && t.due?.repeat?.from === "done") {
+          const next = nextDue(t.due.repeat, op.due, op.done);
+          const date = next ?? op.due;
+          if (t.start) t.start = shifted(t.start, t.due.date, date);
+          if (next) {
+            t.due = { ...t.due, date };
+          } else {
+            const { repeat, ...due } = t.due;
+            t.due = { ...due, date };
+            t.done_at = now;
+          }
+        }
+        this.updateTask(before, t);
+        return;
+      }
       case "dep.add":
         if (op.before === op.after) throw new Rejected("invalid", "事项不能依赖自己");
         if (!this.together(op.before, op.after)) {
@@ -832,7 +879,13 @@ class Applier {
     // time done again before a time kept a record each had its earlier record taken out after the
     // count went up.
     const counted = new Set(effects.flatMap((e) => (e.kind === "task" && e.before && e.after && !same(e.before.completions, e.after.completions) ? [e.before.id] : [])));
+    const edited = new Set(effects.flatMap((e, i) => {
+      const record = completionReplacement(effects[i - 1], e);
+      return record ? [record.task_id] : [];
+    }));
+    let skip: number | undefined;
     for (const [i, e] of [...effects.entries()].reverse()) {
+      if (i === skip) continue;
       if (e.kind === "folder") {
         if (!e.before) {
           const id = e.after!.id;
@@ -867,18 +920,21 @@ class Applier {
         } else {
           const cur = this.d.tasks.get(e.before.id);
           const fields = ["folder_id", "title", "description", "done_at", "dropped", "start", "start_time", "start_reminders", "remind_at", "due_after", "unlocked_on", "completions", "sort_key"] as const;
-          // Done again or taken back since, maybe to the same count on the same day: setting the count
-          // back would undo that too.
           const { before, after } = e;
+          // A date correction may reschedule a repeat even when its summary stays the same.
+          const moved = edited.has(before.id) && (!same(before.due, after.due) || before.start !== after.start || before.done_at !== after.done_at);
           if (
             cur &&
-            !same(before.completions, after.completions) &&
+            (moved || !same(before.completions, after.completions)) &&
             (!same(cur.completions, after.completions) || !stillLast(before.completions, after.completions, this.completionsSince(id, cur.id, effects.slice(i + 1))))
           ) {
             throw new Rejected("conflict", `“${cur.title}”在这之后又完成或撤销过，请先撤销后来的那次`);
           }
           if (cur) {
             const restored = restore(cur, e.before, e.after, fields);
+            if (before.done_at !== null && after.done_at !== null && before.dropped === after.dropped && cur.done_at !== after.done_at) {
+              restored.done_at = cur.done_at;
+            }
             restored.start_time = restored.start ? restored.start_time : undefined;
             // A due date `due_after` gave is given again.
             const set = (t: Task) => (t.due_after ? null : t.due);
@@ -941,7 +997,14 @@ class Applier {
       } else if (e.kind === "completion") {
         const cur = this.d.completions.get(completionKey((e.before ?? e.after)!));
         if (!e.before) {
-          if (cur) this.deleteCompletion(cur);
+          const added = e.after!;
+          const replaced = completionReplacement(effects[i - 1], e);
+          if (replaced) skip = i - 1;
+          if (cur) {
+            if (replaced && cur.done !== added.done) throw new Rejected("conflict", "该完成记录后来又修改过，请先撤销后来的改动");
+            this.deleteCompletion(cur);
+            if (replaced) this.recordCompletion(replaced);
+          }
         } else if (!cur && counted.has(e.before.task_id) && this.d.tasks.has(e.before.task_id)) this.recordCompletion(e.before);
       } else if (!e.before) {
         const dep = this.d.deps.get(depKey(e.after!.before, e.after!.after));
@@ -1020,6 +1083,11 @@ function restoreDue(cur: Due | null, before: Due | null, after: Due | null): Due
 function checkRepeat(title: string, due: Due | null) {
   if (due?.repeat?.until && due.repeat.until < due.date) throw new Rejected("invalid", `“${title}”的重复到不能早于截止日期`);
   if (due?.repeat?.lunar && !lunarDate(due.date)) throw new Rejected("invalid", `“${title}”的按农历重复的截止日期应在 1900-01-31 到 2101-01-28 之间`);
+}
+
+function checkDoneAt(at: number, now: number) {
+  if (at < 0) throw new Rejected("invalid", "完成时间不能早于 1970-01-01", "done_at");
+  if (at > now) throw new Rejected("invalid", "完成时间不能晚于现在", "done_at");
 }
 
 const bothDue = () => new Rejected("invalid", "due 和 due_after 只能给一个：截止日期，或者前置完成后几天内");

@@ -1,8 +1,10 @@
 import { expect, test } from "vitest";
 import type { Completion } from "../api/types/Completion";
+import type { Op } from "../api/types/Op";
 import type { Task } from "../api/types/Task";
+import { apply, fromSnapshot, toSnapshot } from "./apply";
 import { Board } from "./board";
-import { doneByDay, dueBetween } from "./calendar";
+import { completionDateOps, completionTimeOps, doneByDay, dueBetween } from "./calendar";
 
 const ME = "019a4b2c-0000-7000-8000-0000000000ee";
 const id = (n: number) => `019a4b2c-0000-7000-8000-${String(n).padStart(12, "0")}`;
@@ -65,4 +67,46 @@ test("what was done on a day: tasks on the day done, and times repeating ones we
   ]);
   expect(on("2026-11-18")).toEqual([["喝水", "2026-11-19"]]);
   expect(on("2026-11-20")).toBeUndefined();
+});
+
+test("editing a completion so a repeat ends does not add a third completion to the calendar", () => {
+  const t = task(1, "练卷子", {
+    start: "2026-11-16",
+    due: { date: "2026-11-17", repeat: { every: 2, unit: "day", from: "done", until: "2026-11-18" } },
+    completions: { count: 2, last: "2026-11-15" },
+  });
+  const b = board([t], [
+    { task_id: t.id, due: "2026-11-13", done: "2026-11-13", again: 0 },
+    { task_id: t.id, due: "2026-11-15", done: "2026-11-15", again: 0 },
+  ]);
+  const d = fromSnapshot(b.snapshot);
+  const now = new Date(2026, 10, 20, 9).getTime();
+  apply(d, [{ op: "completion.update", task_id: t.id, due: "2026-11-15", again: 0, done: "2026-11-17" }], {
+    me: ME, now, local: b.now, effectsOf: () => undefined, effectsAfter: () => [],
+  });
+  const ended = new Board(toSnapshot(d), b.now, ME);
+  expect(ended.task(t.id)?.done_at).toBe(now);
+  const done = doneByDay(ended);
+  expect([...done].map(([day, list]) => [day, list.length]).sort()).toEqual([["2026-11-13", 1], ["2026-11-17", 1]]);
+});
+
+test("the last repeat's timestamp and completion record stay together from either editor", () => {
+  const at = (day: number, hour: number, minute = 0) => new Date(2026, 10, day, hour, minute).getTime();
+  const t = task(1, "练卷子", { due: { date: "2026-11-15" }, done_at: at(15, 17), completions: { count: 2, last: "2026-11-15" } });
+  const previous = { task_id: t.id, due: "2026-11-14", done: "2026-11-14", again: 0 };
+  const last = { task_id: t.id, due: "2026-11-15", done: "2026-11-15", again: 0 };
+  const b = board([t], [previous, last]);
+  const d = fromSnapshot(b.snapshot);
+  const cx = { me: ME, now: at(20, 19), local: b.now, effectsOf: () => undefined, effectsAfter: () => [] };
+  const edit = (ops: Op[], doneAt: number, dates: string[]) => {
+    apply(d, ops, cx);
+    const changed = new Board(toSnapshot(d), b.now, ME);
+    const ended = changed.task(t.id)!;
+    expect(ended.done_at).toBe(doneAt);
+    expect(changed.snapshot.completions.map((c) => c.done).sort()).toEqual(dates);
+    return { changed, ended };
+  };
+  const time = edit(completionTimeOps(b, t, at(16, 12, 30)), at(16, 12, 30), ["2026-11-14", "2026-11-16"]);
+  const date = edit(completionDateOps(time.changed, time.ended, last, "2026-11-17"), at(17, 12, 30), ["2026-11-14", "2026-11-17"]);
+  edit(completionDateOps(date.changed, date.ended, previous, "2026-11-13"), at(17, 12, 30), ["2026-11-13", "2026-11-17"]);
 });

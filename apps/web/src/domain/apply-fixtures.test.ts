@@ -2,6 +2,8 @@
 // cases (crates/server/tests/it/apply.rs). Names stand for ids, and things are called by their ids.
 
 import { expect, test } from "vitest";
+import type { Effect } from "../api/types/Effect";
+import type { Mutation } from "../api/types/Mutation";
 import type { JobState } from "../api/types/JobState";
 import type { Op } from "../api/types/Op";
 import cases from "../../../../fixtures/apply.json";
@@ -17,10 +19,12 @@ type Case = {
   attachments?: [string, string][];
   jobs?: [string, string | null, JobState][];
   /** As the API takes them (docs/api.md#改动). */
+  prior?: Mutation[];
+  no_effects?: boolean;
   ops: Op[];
   /** The day on the device the change is made on. */
   today?: string;
-} & ({ error: { code: string; message: string } } | { expect: Partial<Seen> });
+} & ({ error: { code: string; message: string; field?: string } } | { expect: Partial<Seen> });
 
 /** The data as the user sees it, made as the case says. */
 function given(c: Case): Data {
@@ -88,18 +92,27 @@ const seen = (d: Data) => ({
   due: Object.fromEntries([...d.tasks.values()].flatMap((t) => (t.due ? [[t.id, t.due.date]] : []))),
   start_reminders: Object.fromEntries([...d.tasks.values()].flatMap((t) => (t.start_reminders ? [[t.id, t.start_reminders]] : []))),
   ended: Object.fromEntries([...d.tasks.values()].flatMap((t) => (t.done_at === null ? [] : [[t.id, t.dropped ? "dropped" : "done"]]))),
+  done_at: Object.fromEntries([...d.tasks.values()].map((t) => [t.id, t.done_at])),
+  start: Object.fromEntries([...d.tasks.values()].map((t) => [t.id, t.start])),
+  completions: Object.fromEntries([...d.tasks.values()].map((t) => [t.id, t.completions ?? null])),
+  records: [...d.completions.values()].map((c) => [c.task_id, c.due, c.again, c.done]).sort((a,b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
   repeating: [...d.tasks.values()].filter((t) => t.due?.repeat).map((t) => t.id).toSorted(),
 });
 
 test.each(cases as Case[])("changes go as the fixtures say: $name", (c) => {
   const d = given(c);
+  const log = new Map<string, Effect[]>();
+  const run = (ops: Op[], today?: string) => apply(d, ops, {
+    me: c.me ?? "alice", now: 1000, local: { today: today ?? "1970-01-01" },
+    effectsOf: (id) => log.get(id),
+    effectsAfter: (id) => [...log.values()].slice([...log.keys()].indexOf(id) + 1),
+  });
+  for (const batch of c.prior ?? []) log.set(batch.id, run(batch.ops, batch.today));
   const before = structuredClone(d);
-  const local = { today: c.today ?? "1970-01-01" };
-  const run = () => apply(d, c.ops, { me: c.me ?? "alice", now: 1000, local, effectsOf: () => undefined, effectsAfter: () => [] });
   if ("error" in c) {
     let thrown: unknown;
     try {
-      run();
+      run(c.ops, c.today);
     } catch (e) {
       thrown = e;
     }
@@ -111,7 +124,8 @@ test.each(cases as Case[])("changes go as the fixtures say: $name", (c) => {
     return;
   }
   expect(Object.keys(c.expect)).not.toHaveLength(0);
-  run();
+  const effects = run(c.ops, c.today);
+  if (c.no_effects) expect(effects).toEqual([]);
   const now = seen(d);
   for (const what of Object.keys(c.expect) as (keyof Seen)[]) {
     const sorted = (v: unknown) => (what === "deps" ? (v as string[][]).toSorted() : v);

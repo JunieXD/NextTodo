@@ -129,9 +129,10 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | `folder.create` | `id`、`name`，可选 `parent_id`、`sort_key`、`color`、`icon` | 不给 `sort_key` 时排在同一层最后 |
 | `folder.update` | `id`，可选 `name`、`parent_id`、`sort_key`、`color`、`icon` | `parent_id: null` 表示移到根目录；`color`、`icon` 给 `null` 表示改回默认 |
 | `folder.delete` | `id` | 连同子文件夹、事项和相关依赖 |
-| `task.create` | `id`、`title`，可选 `folder_id`、`description`、`start`、`start_time`、`start_reminders`、`remind_at`、`due` 或 `due_after`、`sort_key`、`done`、`assignees` | `assignees` 是负责人的用户 ID |
-| `task.update` | `id`，可选 `folder_id`、`title`、`description`、`start`、`start_time`、`start_reminders`、`remind_at`、`due` 或 `due_after`、`sort_key`、`done`、`today`、`occurrence`、`assign`、`unassign` | 只带要改的字段；`start: null` 清除开始时间（连同几点和按它算的提醒）；只给 `start` 时几点和提醒不变，`start_time: null` 只清除几点，按开始算的提前多久的提醒一起去掉；`start_reminders`、`remind_at` 整个换掉原来的，`[]` 清除；有 `start_time` 就要有开始日期；`due: null` 清除截止时间（连同重复和 `due_after`），给了日期就不再是前置完成后的；`due_after: null` 清除它和它给的截止日期；`done: true/false` 完成或重新打开，放弃了的完成时改成完成、结束的时间不变；`assign`、`unassign` 是要加上、去掉的负责人，两个人同时指派时都算数 |
+| `task.create` | `id`、`title`，可选 `folder_id`、`description`、`start`、`start_time`、`start_reminders`、`remind_at`、`due` 或 `due_after`、`sort_key`、`done`、`done_at`、`assignees` | `assignees` 是负责人的用户 ID |
+| `task.update` | `id`，可选 `folder_id`、`title`、`description`、`start`、`start_time`、`start_reminders`、`remind_at`、`due` 或 `due_after`、`sort_key`、`done`、`done_at`、`today`、`occurrence`、`assign`、`unassign` | 只带要改的字段；`start: null` 清除开始时间（连同几点和按它算的提醒）；只给 `start` 时几点和提醒不变，`start_time: null` 只清除几点，按开始算的提前多久的提醒一起去掉；`start_reminders`、`remind_at` 整个换掉原来的，`[]` 清除；有 `start_time` 就要有开始日期；`due: null` 清除截止时间（连同重复和 `due_after`），给了日期就不再是前置完成后的；`due_after: null` 清除它和它给的截止日期；`done: true/false` 完成或重新打开，放弃了的完成时改成完成，没指定 `done_at` 时结束的时间不变；`assign`、`unassign` 是要加上、去掉的负责人，两个人同时指派时都算数 |
 | `task.drop` | `id` | [放弃](design.md#放弃)：结束并标为放弃，重复的事项去掉重复，不记完成；已完成的改成放弃、结束的时间不变，已经放弃的不变。连同后续一起放弃是一个改动里的几个 `task.drop` |
+| `completion.update` | `task_id`、`due`、`again`、`done` | 改一条[完成记录](design/repeat.md#重复)完成的那天；找不到记录返回 404；`done` 晚于“今天”（见下）返回 400。改的是修改前最晚做完的那次（按 `done`、`due`、`again` 依次比较）、事项还在重复、下一次从完成那天算的，截止和开始换成从新的日子算出的下一次；超过 `until` 则结束重复，截止改为这条记录的 `due`，开始随之平移，`done_at` 记为现在。修改后 `completions.last` 取所有记录中最大的 `done`。`done` 不能早于 `1970-01-01`，见[完成时间](design.md#完成时间) |
 | `task.delete` | `id` | 连同相关依赖 |
 | `dep.add` | `before`、`after` | |
 | `dep.remove` | `before`、`after` | |
@@ -143,7 +144,9 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
 | `share.remove` | `folder_id`、`user_id` | 共享人移除成员，或成员自己退出。最后一个成员离开时文件夹回到私人的 |
 | `undo` | `mutation` | 撤销一个改动：按相反顺序把它的变化恢复回去，恢复时同样要通过所有规则。要改回去的东西已经不存在的跳过；要恢复的事项或文件夹原来所在的文件夹、要恢复的依赖连着的事项已经被删除时，整个撤销不生效 |
 
-`task.update` 把有[重复](design/repeat.md#重复)的事项标为完成（`done: true`）时不记完成时间，而是按 `today`（发出改动的设备上的当天，`YYYY-MM-DD`）把截止日期顺延到下一次，`completions` 的次数加一、日期记为 `today`；这时缺了 `today` 返回 400。顺延出的下一次晚于重复的 `until` 时，这次就是最后一次：次数同样加一、日期记为 `today`，然后去掉重复、记完成时间。同一个改动里的 `due` 先生效，所以去掉重复的同时 `done: true` 就是结束重复并完成：记完成时间，不动 `completions`，也不看 `today`。别的事项只用 `today` 定下[前置完成后的截止](#前置完成后的截止)。带上 `occurrence`（要完成的那一次：`{due, completions}`，它的截止日期和那时完成过的次数）时，重复的事项现在已经不是这一次的，这次完成不生效，改动照样成功：那一次已经在别处完成、跳过或改了日期，再完成就会把下一次也完成掉。只看日期不够：从完成那天算的提前完成了，下一次可能还是同一天截止。App 和网页上勾选完成（包括批量完成）、手机的通知、提醒卡片和小组件上的“完成”都给重复的事项带着它：列表可能过时，几台设备也可能离线时各自完成了同一次；结束重复并完成不带；不重复的事项不看 `occurrence`。[放弃](design.md#放弃)了的事项不再有下一次，带 `occurrence` 的完成对它不生效，不带的把它改成完成。已结束（完成或放弃）的事项不能有重复，截止日期不能晚于重复的 `until`，新建或修改出这样的事项返回 400。
+`task.update` 把有[重复](design/repeat.md#重复)的事项标为完成（`done: true`）时不记完成时间，而是按 `today`（发出改动的设备上的当天，`YYYY-MM-DD`）把截止日期顺延到下一次，`completions` 的次数加一、日期记为 `today`；这时缺了 `today` 返回 400。顺延出的下一次晚于重复的 `until` 时，这次就是最后一次：次数同样加一、日期记为 `today`，然后去掉重复、记完成时间。同一个改动里的 `due` 先生效，所以去掉重复的同时 `done: true` 就是结束重复并完成：记完成时间，不动 `completions`，也不看 `today`。别的事项只用 `today` 定下[前置完成后的截止](#前置完成后的截止)。带上 `occurrence`（要完成的那一次：`{due, completions}`，它的截止日期和那时完成过的次数）时，用操作前的事项判断是哪一次，匹配后按操作给的截止和重复完成。操作前的重复事项已经不是这一次的，这次完成不生效，改动照样成功：那一次已经在别处完成、跳过或改了日期，再完成就会把下一次也完成掉。只看日期不够：从完成那天算的提前完成了，下一次可能还是同一天截止。App 和网页上勾选完成（包括批量完成）、手机的通知、提醒卡片和小组件上的“完成”都给重复的事项带着它：列表可能过时，几台设备也可能离线时各自完成了同一次；结束重复并完成不带；不重复的事项不看 `occurrence`。[放弃](design.md#放弃)了的事项不再有下一次，带 `occurrence` 的完成对它不生效，不带的把它改成完成。已结束（完成或放弃）的事项不能有重复，截止日期不能晚于重复的 `until`，新建或修改出这样的事项返回 400。
+
+`done_at` 是[完成时间](design.md#完成时间)（毫秒）：和 `done: true` 一起给时代替收到时的时间；单独给时改已结束的事项的完成（放弃）时间。不能与 `done: false` 一起给；新建时必须给 `done: true`。早于 `1970-01-01`（小于 0）、晚于服务端当前时间、不满足上述条件或给重复中的事项时返回 400（`field` 是 `done_at`）。重复的事项补记哪天的完成，`today` 给那天。
 
 ### 前置完成后的截止
 
@@ -165,7 +168,7 @@ MCP 端点是 `/mcp`（不在 `/api/v1` 下），见 [agent 接入](agent.md#mcp
   { "kind": "dependency", "before": null, "after": { "before": "…", "after": "…", "created_at": … } } ]
 ```
 
-`kind` 是 `folder`、`task`、`dependency`、`completion`、`attachment`、`ai_job`、`share` 或 `person`。`before` 为空表示新建，`after` 为空表示删除，都不为空表示修改。`completion` 是重复事项的一条[完成记录](design/repeat.md#重复) `{task_id, due, done, again}`，`again` 是同一次（同一个 `due`）在这一回以前完成过几回，通常是 0；和 `dependency` 一样只有新建和删除，由完成重复的事项、删除事项和撤销带来，改动里不能直接写。客户端按顺序应用 `after` 就能得到最新状态。`share` 是一个文件夹的共享人和成员，有了成员是新建，最后一个成员离开是删除；`person` 是这个用户的数据里新出现的人（新建：加入了共享的文件夹，或者添加、修改过一个刚看得到的事项）或改了显示名的人（修改）。
+`kind` 是 `folder`、`task`、`dependency`、`completion`、`attachment`、`ai_job`、`share` 或 `person`。`before` 为空表示新建，`after` 为空表示删除，都不为空表示修改。`completion` 是重复事项的一条[完成记录](design/repeat.md#重复) `{task_id, due, done, again}`，`again` 是同一次（同一个 `due`）在这一回以前完成过几回，通常是 0；和 `dependency` 一样只有新建和删除，由完成重复的事项、删除事项和撤销带来；`completion.update` 先删除原记录，再添加同一 `(task_id, due, again)` 的新记录。客户端按顺序应用 `after` 就能得到最新状态。`share` 是一个文件夹的共享人和成员，有了成员是新建，最后一个成员离开是删除；`person` 是这个用户的数据里新出现的人（新建：加入了共享的文件夹，或者添加、修改过一个刚看得到的事项）或改了显示名的人（修改）。
 
 每个人收到的是自己看得到的那部分：事项移出共享的文件夹，留下的成员收到的是它被删除，移进来时是新建，它的附件、依赖也一样。`/changes` 和同步推送里的每条记录是 `{seq, id, user, actor, effects, created_at}`，`id` 是改动 ID，`user` 是提交改动的用户 ID，`actor` 是 API 令牌名（会话为空，AI 整理是“AI 整理”）。
 

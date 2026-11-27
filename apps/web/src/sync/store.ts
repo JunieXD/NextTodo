@@ -321,11 +321,11 @@ export class Store {
   }
 
   /** Whether a change is to say the day and time it is made: where a due date may count from them
-   * (docs/design/dates.md#前置完成后的截止). Not otherwise, as a server older than that turns down every change
-   * that does. */
+   * (docs/design/dates.md#前置完成后的截止), or a completion record's new day must not be after it. Not
+   * otherwise, as a server older than that turns down every change that does. */
   private countsDays(ops: Op[]): boolean {
     return (
-      ops.some((op) => (op.op === "task.create" || op.op === "task.update") && op.due_after) ||
+      ops.some((op) => op.op === "completion.update" || ((op.op === "task.create" || op.op === "task.update") && op.due_after)) ||
       [...this.data.tasks.values()].some((t) => t.due_after)
     );
   }

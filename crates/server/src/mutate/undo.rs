@@ -169,7 +169,12 @@ impl Cx<'_> {
                 _ => None,
             })
             .collect();
+        let edited: HashSet<_> = seen.windows(2).filter_map(|e| Effect::completion_edit(&e[0], &e[1]).map(|(r, _)| r.task_id)).collect();
+        let mut skip = None;
         for (i, effect) in seen.iter().cloned().enumerate().rev() {
+            if skip == Some(i) {
+                continue;
+            }
             match effect {
                 Effect::Folder(Change::Created(f)) => match self.visible_folder(f.id)? {
                     Some((_, owner)) if only_folders_of(self.c, f.id, &HashSet::from([f.id]))? => self.delete_folder(f.id, &owner)?,
@@ -216,9 +221,9 @@ impl Cx<'_> {
                 }
                 Effect::Task(Change::Updated { before: b, after: a }) => {
                     if let Some((cur, owner)) = self.visible_task(b.id)? {
-                        // Done again or taken back since, maybe to the same count on the same day: setting
-                        // the count back would undo that too.
-                        if b.completions != a.completions
+                        // A date correction may reschedule a repeat even when its summary stays the same.
+                        let moved = edited.contains(&b.id) && (b.due != a.due || b.start != a.start || b.done_at != a.done_at);
+                        if (moved || b.completions != a.completions)
                             && (cur.completions != a.completions
                                 || !still_last(&b.completions, &a.completions, self.completions_since(seq, b.id, &seen[i + 1..])?))
                         {
@@ -242,6 +247,9 @@ impl Cx<'_> {
                             completions,
                             sort_key
                         );
+                        if b.done_at.is_some() && a.done_at.is_some() && b.dropped == a.dropped && cur.done_at != a.done_at {
+                            restored.done_at = cur.done_at;
+                        }
                         // A time without its date, which was cleared since, goes too; so does the day
                         // prerequisites were done, without a due date counting from it, and giving up
                         // one open since.
@@ -275,11 +283,22 @@ impl Cx<'_> {
                     }
                 }
                 Effect::Completion(Link::Added(r)) => {
-                    if let Some(r) = store::load_completion(self.c, r.task_id, &r.due, r.again)?
+                    let replaced = i.checked_sub(1).and_then(|prev| {
+                        let (old, _) = Effect::completion_edit(&seen[prev], &seen[i])?;
+                        skip = Some(prev);
+                        Some(old)
+                    });
+                    if let Some(cur) = store::load_completion(self.c, r.task_id, &r.due, r.again)?
                         && let Some((t, owner)) = self.visible_task(r.task_id)?
                     {
                         let space = self.space(&owner, t.folder_id)?;
-                        self.delete_completion(r, &space)?;
+                        if replaced.is_some() && cur != r {
+                            return Err(ApiError::conflict("该完成记录后来又修改过，请先撤销后来的改动"));
+                        }
+                        self.delete_completion(cur, &space)?;
+                        if let Some(old) = replaced {
+                            self.record_completion(old.clone())?;
+                        }
                     }
                 }
                 Effect::Completion(Link::Removed(r)) => {

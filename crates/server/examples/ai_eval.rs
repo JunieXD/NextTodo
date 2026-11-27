@@ -13,11 +13,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use clap::Parser;
 use nexttodo_core::board::{Board, Now, Snapshot};
 use nexttodo_core::dag::find_path;
-use nexttodo_core::model::{AiJob, Date, Due, Period, Remind, RemindAt, Repeat, RepeatFrom, Suggestion, TaskId, Time, days_in_month};
+use nexttodo_core::model::{
+    AiJob, CompletionMark, Date, Due, Period, Remind, RemindAt, Repeat, RepeatFrom, Suggestion, TaskId, Time, days_in_month,
+};
 use nexttodo_core::ops::{MAX_OPS, Op};
 use nexttodo_server::ai::llm::{Api, Config, Http, Prompt, Thinking};
 use nexttodo_server::ai::{organize, tidy};
-use nexttodo_server::tools;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -106,6 +107,9 @@ struct Expect {
     due_after: Option<Vec<(String, String)>>,
     /// The start times, in any order.
     start: Option<Vec<String>>,
+    /// Completed new tasks and which day, in the fixture's UTC clock.
+    #[serde(default)]
+    done_on: Vec<(String, String)>,
     /// The repeated tasks, each by a word in its title, and its due date in full as `due_text` writes
     /// it; empty for none.
     repeat: Option<Vec<(String, String)>>,
@@ -166,6 +170,10 @@ struct TidyExpect {
     /// How many are deleted, whichever they are.
     deletes: Option<usize>,
     done: Option<Vec<i64>>,
+    #[serde(default)]
+    done_on: Vec<(i64, String)>,
+    #[serde(default)]
+    new_done_on: Vec<(String, String)>,
     reopened: Option<Vec<i64>>,
     /// Tasks moved, and where to.
     moved: Option<Vec<(i64, String)>>,
@@ -317,6 +325,12 @@ fn board<'a>(snap: &'a Snapshot, input: &Value) -> Board<'a> {
     Board::new(snap, Now { today, time }, ME)
 }
 
+fn fixture_now(local: &Now) -> i64 {
+    let time = local.time.as_ref().expect("a fixture clock");
+    let (h, m) = time.as_str().split_once(':').expect("HH:MM");
+    (local.today.days_after(&Date::utc(0)) * 1440 + h.parse::<i64>().unwrap() * 60 + m.parse::<i64>().unwrap()) * 60_000
+}
+
 fn ask(config: &Config, system: Option<&str>, case: &Case, index: usize, run: usize) -> Outcome {
     let e = match &case.expect {
         Kind::Organize(e) => e,
@@ -332,8 +346,10 @@ fn ask(config: &Config, system: Option<&str>, case: &Case, index: usize, run: us
         Ok(text) => {
             // As the server adds them: what it refuses fails the job.
             let planned = organize::parse(&text, &shown)
-                .and_then(|(tasks, _)| {
-                    tools::plan_into(&board(&snap, &case.input), snap.folders.first().map(|f| f.id), tasks, &shown.tasks)
+                .and_then(|answer| {
+                    let b = board(&snap, &case.input);
+                    organize::plan(&b, snap.folders.first().map(|f| f.id), &answer, &shown, fixture_now(b.now()), None)
+                        .map(|plan| plan.ops)
                         .map_err(|e| e.describe())
                 })
                 .and_then(|ops| accepted(&snap, &ops).map(|()| ops));
@@ -473,6 +489,20 @@ fn check(e: &Expect, input: &Value, v: &Value, snap: &Snapshot, ops: &[Op]) -> (
         }
     }
 
+    for (word, want) in &e.done_on {
+        let got: Vec<_> = ops
+            .iter()
+            .filter_map(|op| match op {
+                Op::TaskCreate { title, done: true, done_at: Some(at), .. } if squash(title.as_str()).contains(&squash(word)) => {
+                    Some(Date::utc(*at).as_str().to_owned())
+                }
+                _ => None,
+            })
+            .collect();
+        if got != [want.clone()] {
+            problems.push(format!("{word} 的完成时间 {got:?}，应为 {want}"));
+        }
+    }
     if let Some(want) = &e.due {
         let got: Vec<String> = sorted(ops.iter().filter_map(|op| match op {
             Op::TaskCreate { due, remind_at, .. } if due.is_some() || !remind_at.is_empty() => {
@@ -821,7 +851,7 @@ fn tidy_data(input: &Value) -> (Snapshot, AiJob) {
     .expect("a snapshot");
     let job = serde_json::from_value(json!({
         "id": id(999), "folder_id": folder, "kind": "tidy", "text": input["request"], "local_time": input["local_time"],
-        "state": "running", "error": null, "created_at": 0, "updated_at": 0,
+        "state": "running", "error": null, "created_at": fixture_now(board(&snap, input).now()), "updated_at": 0,
     }))
     .expect("a job");
     (snap, job)
@@ -866,6 +896,36 @@ fn check_tidy(e: &TidyExpect, snap: &Snapshot, input: &Value, s: &[Suggestion]) 
     let b = board(snap, input);
     let number = |id: &TaskId| b.task(*id).map(|t| t.number);
     let mut problems = Vec::new();
+    for (n, want) in &e.done_on {
+        let got: Vec<_> = s
+            .iter()
+            .filter_map(|s| match s {
+                Suggestion::Edit(t) if number(&t.task) == Some(*n) => match &t.done {
+                    Some(CompletionMark::Date(date)) => Some(date.as_str().to_owned()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        if got != [want.clone()] {
+            problems.push(format!("#{n} 的完成时间 {got:?}，应为 {want}"));
+        }
+    }
+    for (word, want) in &e.new_done_on {
+        let got: Vec<_> = s
+            .iter()
+            .filter_map(|s| match s {
+                Suggestion::Create(t) if squash(t.title.as_str()).contains(&squash(word)) => match &t.done {
+                    Some(CompletionMark::Date(date)) => Some(date.as_str().to_owned()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        if got != [want.clone()] {
+            problems.push(format!("新事项 {word} 的完成时间 {got:?}，应为 {want}"));
+        }
+    }
     let mut kinds = BTreeSet::new();
     let (mut deleted, mut done, mut reopened, mut moved, mut due, mut new_due, mut touched) =
         (vec![], vec![], vec![], vec![], vec![], vec![], vec![]);
@@ -886,8 +946,8 @@ fn check_tidy(e: &TidyExpect, snap: &Snapshot, input: &Value, s: &[Suggestion]) 
                     ("title", t.title.is_some()),
                     ("description", t.description.is_some()),
                     ("due", t.due.is_some() || t.start_reminders.is_some() || t.remind_at.is_some()),
-                    ("done", t.done == Some(true)),
-                    ("reopen", t.done == Some(false)),
+                    ("done", matches!(t.done, Some(CompletionMark::State(true) | CompletionMark::Date(_)))),
+                    ("reopen", t.done == Some(CompletionMark::State(false))),
                     ("folder", t.folder.is_some()),
                     ("after", !t.after.is_empty()),
                     ("unlink", !t.unlink.is_empty()),
@@ -911,8 +971,8 @@ fn check_tidy(e: &TidyExpect, snap: &Snapshot, input: &Value, s: &[Suggestion]) 
                     due.push((n, format!("{}{}", due_text(d), more_text(now.start_time.as_ref(), by_start, at)).trim().to_owned()));
                 }
                 match t.done {
-                    Some(true) => done.push(n),
-                    Some(false) => reopened.push(n),
+                    Some(CompletionMark::State(true) | CompletionMark::Date(_)) => done.push(n),
+                    Some(CompletionMark::State(false)) => reopened.push(n),
                     None => {}
                 }
                 if let Some(f) = t.folder {

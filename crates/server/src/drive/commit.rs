@@ -14,7 +14,8 @@ use uuid::Uuid;
 /// default reminders, and a task may be due some days after its prerequisites are done. 7: a task may be
 /// given up. 8: a tidying may suggest a folder's colour and icon. 9: a repeat may be every statutory
 /// working day. 10: a task may be reminded by its start and at times of its own.
-pub(crate) const FORMAT: i64 = 10;
+/// 11: completion times and dates can be edited, and AI can suggest a completion date.
+pub(crate) const FORMAT: i64 = 11;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct Commit {

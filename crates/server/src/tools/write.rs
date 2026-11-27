@@ -17,9 +17,9 @@ use serde_json::json;
 use uuid::Uuid;
 
 use super::args::{
-    AddArgs, ApplyArgs, AttachArgs, CopyArgs, DeleteArgs, DepArgs, DetachArgs, DoneArgs, DropArgs, DueAfterText, EditArgs, MkdirArgs,
-    Monthly, MoveArgs, PeriodText, Plan, PlanRef, PlanTask, RenameArgs, RepeatText, Replace, ShareArgs, StyleArgs, TaskRef, TasksArgs,
-    UndoArgs, UnshareArgs, WhenText, task_ref,
+    AddArgs, ApplyArgs, AttachArgs, CopyArgs, DeleteArgs, DepArgs, DetachArgs, DoneArgs, DoneWhen, DropArgs, DueAfterText, EditArgs,
+    MkdirArgs, Monthly, MoveArgs, PeriodText, Plan, PlanRef, PlanTask, RenameArgs, RepeatText, Replace, ShareArgs, StyleArgs, TaskRef,
+    TasksArgs, UndoArgs, UnshareArgs, WhenText, task_ref,
 };
 use super::text::{self, Names, task_view};
 use super::{Output, WriteFn, find_folder, find_task, person};
@@ -360,10 +360,27 @@ fn repeat(given: RepeatGiven, due: Option<(&Date, Option<u32>)>) -> Result<Optio
     Ok(Some(Repeat { every: r.every, period, from: from.unwrap_or(RepeatFrom::Due), until }))
 }
 
-/// The operations adding `tasks` to `folder` as those of a plan for it: what AI organizing adds. The
-/// numbers in it are those of the tasks the model was `shown`, which must still be there.
-pub fn plan_into(b: &Board, folder: Option<FolderId>, tasks: Vec<PlanTask>, shown: &HashMap<i64, TaskId>) -> Result<Vec<Op>, ApiError> {
-    plan_ops(b, Plan { folder: Some(b.path(folder)), tasks }, &|n| shown.get(&n).copied().filter(|&id| b.task(id).is_some()))
+pub(crate) struct PlannedTask {
+    pub id: TaskId,
+    pub fields: PlanTask,
+    pub done: bool,
+    pub done_at: Option<i64>,
+}
+
+impl From<PlanTask> for PlannedTask {
+    fn from(fields: PlanTask) -> Self {
+        Self { id: TaskId(Uuid::now_v7()), fields, done: false, done_at: None }
+    }
+}
+
+/// The numbers in an AI plan are those of the tasks the model was shown, which must still be there.
+pub(crate) fn plan_into(
+    b: &Board,
+    folder: Option<FolderId>,
+    tasks: Vec<PlannedTask>,
+    shown: &HashMap<i64, TaskId>,
+) -> Result<Vec<Op>, ApiError> {
+    build_plan(b, &b.path(folder), tasks, &|n| shown.get(&n).copied().filter(|&id| b.task(id).is_some()))
 }
 
 /// The user's own tasks by number, as tools take them.
@@ -378,17 +395,20 @@ fn people(b: &Board, usernames: &[String]) -> Result<Vec<String>, ApiError> {
 
 /// The operations a plan amounts to; `number` finds the tasks plain numbers in it stand for.
 fn plan_ops(b: &Board, plan: Plan, number: &dyn Fn(i64) -> Option<TaskId>) -> Result<Vec<Op>, ApiError> {
+    build_plan(b, plan.folder.as_deref().unwrap_or("/"), plan.tasks.into_iter().map(PlannedTask::from).collect(), number)
+}
+
+fn build_plan(b: &Board, folder: &str, tasks: Vec<PlannedTask>, number: &dyn Fn(i64) -> Option<TaskId>) -> Result<Vec<Op>, ApiError> {
     let mut ops = Vec::new();
     let mut folders = Folders { board: b, made: HashMap::new() };
-    let (base, base_path) = folders.ensure(&mut ops, plan.folder.as_deref().unwrap_or("/"))?;
-    let ids: Vec<TaskId> = plan.tasks.iter().map(|_| TaskId(Uuid::now_v7())).collect();
+    let (base, base_path) = folders.ensure(&mut ops, folder)?;
     let mut refs = HashMap::new();
-    for (t, &id) in plan.tasks.iter().zip(&ids) {
-        let Some(name) = &t.name else { continue };
+    for PlannedTask { fields, id, .. } in &tasks {
+        let Some(name) = &fields.name else { continue };
         if task_ref(name).is_some() {
             return Err(ApiError::invalid(format!("ref“{name}”会被识别为事项编号，请改用非数字的名称"), None));
         }
-        if refs.insert(name.clone(), id).is_some() {
+        if refs.insert(name.clone(), *id).is_some() {
             return Err(ApiError::invalid(format!("计划中有多个事项的 ref 均为“{name}”"), None));
         }
     }
@@ -404,7 +424,7 @@ fn plan_ops(b: &Board, plan: Plan, number: &dyn Fn(i64) -> Option<TaskId>) -> Re
         }
     };
     let mut links = Vec::new();
-    for (t, &id) in plan.tasks.into_iter().zip(&ids) {
+    for PlannedTask { id, fields, done, done_at } in tasks {
         let PlanTask {
             name: _,
             title,
@@ -420,7 +440,7 @@ fn plan_ops(b: &Board, plan: Plan, number: &dyn Fn(i64) -> Option<TaskId>) -> Re
             assign,
             after,
             before,
-        } = t;
+        } = fields;
         let folder_id = match folder {
             None => base,
             Some(p) if p.trim_start().starts_with('/') => folders.ensure(&mut ops, &p)?.0,
@@ -446,7 +466,8 @@ fn plan_ops(b: &Board, plan: Plan, number: &dyn Fn(i64) -> Option<TaskId>) -> Re
             due,
             due_after,
             sort_key: None,
-            done: false,
+            done,
+            done_at,
             assignees: people(b, &assign)?,
         });
         for r in &after {
@@ -497,6 +518,19 @@ pub fn apply(w: &WriteCx, a: ApplyArgs) -> Result<Write, ApiError> {
 
 pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
     let t = find_task(w.board, &a.task)?;
+    let mut completion = None;
+    let mut done_at = None;
+    if let Some(at) = &a.done_at {
+        let invalid = |message| ApiError::invalid(message, Some("done_at".into()));
+        if t.due.as_ref().is_some_and(|d| d.repeat.is_some()) {
+            let r = store::latest_completion(w.c, t.id)?.ok_or_else(|| ApiError::not_found("该事项没有完成记录"))?;
+            completion = Some(Op::CompletionUpdate { task_id: t.id, due: r.due, again: r.again, done: at.date.clone() });
+        } else if t.done_at.is_some() {
+            done_at = Some(at.at(w.board.now(), w.now, t.done_at).map_err(invalid)?);
+        } else {
+            return Err(invalid("只能修改已结束事项的完成时间或重复事项的完成记录".into()));
+        }
+    }
     let Edit { id, title, description, start, start_reminders, remind_at, due, due_after, assign, unassign } = edit_fields(w.board, t, a)?;
     // A start date given without a time starts at the start of its day; cleared, its time goes too.
     let (start, start_time) = match start {
@@ -517,12 +551,13 @@ pub fn edit(w: &WriteCx, a: EditArgs) -> Result<Write, ApiError> {
         due_after,
         sort_key: None,
         done: None,
+        done_at,
         today: None,
         occurrence: None,
         assign,
         unassign,
     };
-    Ok(vec![op].into())
+    Ok(std::iter::once(op).chain(completion).collect::<Vec<_>>().into())
 }
 
 /// The fields `edit` sets on a task, the due date in full; `None` where it leaves one as it is; and
@@ -554,6 +589,7 @@ pub(crate) fn edit_fields(b: &Board, t: &Task, a: EditArgs) -> Result<Edit, ApiE
         && !changes_repeat
         && a.assign.is_empty()
         && a.unassign.is_empty()
+        && a.done_at.is_none()
     {
         return Err(ApiError::invalid("未指定要修改的内容", None));
     }
@@ -728,16 +764,26 @@ fn revise(current: &str, replace: Vec<Replace>, append: Option<String>) -> Resul
 
 /// Marks `tasks` done or open again; a repeating task done is due next time, counted from `today`,
 /// unless `end_repeat`, which stops it repeating so that it is done.
-fn set_done(b: &Board, tasks: Vec<TaskRef>, done: bool, today: Option<Date>, end_repeat: bool) -> Result<Write, ApiError> {
+fn set_done(w: &WriteCx, tasks: Vec<TaskRef>, done: bool, end_repeat: bool, at: Option<DoneWhen>) -> Result<Write, ApiError> {
     if tasks.is_empty() {
         return Err(ApiError::invalid("至少需要指定一个事项", Some("tasks".into())));
     }
+    let done_at =
+        at.as_ref().map(|at| at.at(w.board.now(), w.now, None)).transpose().map_err(|e| ApiError::invalid(e, Some("at".into())))?;
     let mut seen = HashSet::new();
     let mut ops = Vec::new();
     for r in &tasks {
-        let t = find_task(b, r)?;
+        let t = find_task(w.board, r)?;
         if seen.insert(t.id) {
             let due = t.due.as_ref().filter(|d| end_repeat && d.repeat.is_some()).map(|d| Some(Due { repeat: None, ..d.clone() }));
+            let repeating = !end_repeat && t.due.as_ref().is_some_and(|d| d.repeat.is_some());
+            let today = if repeating {
+                at.as_ref().map(|at| at.date.clone()).or_else(|| w.today.clone())
+            } else if done {
+                w.today.clone()
+            } else {
+                None
+            };
             ops.push(Op::TaskUpdate {
                 id: t.id,
                 folder_id: None,
@@ -751,7 +797,8 @@ fn set_done(b: &Board, tasks: Vec<TaskRef>, done: bool, today: Option<Date>, end
                 due_after: None,
                 sort_key: None,
                 done: Some(done),
-                today: today.clone(),
+                done_at: if repeating { None } else { done_at },
+                today,
                 occurrence: None,
                 assign: Vec::new(),
                 unassign: Vec::new(),
@@ -762,13 +809,11 @@ fn set_done(b: &Board, tasks: Vec<TaskRef>, done: bool, today: Option<Date>, end
 }
 
 pub fn done(w: &WriteCx, a: DoneArgs) -> Result<Write, ApiError> {
-    let b = w.board;
-    set_done(b, a.tasks, true, w.today.clone(), a.end_repeat)
+    set_done(w, a.tasks, true, a.end_repeat, a.at)
 }
 
 pub fn reopen(w: &WriteCx, a: TasksArgs) -> Result<Write, ApiError> {
-    let b = w.board;
-    set_done(b, a.tasks, false, None, false)
+    set_done(w, a.tasks, false, false, None)
 }
 
 /// Gives up `tasks`, with `with_after` those after them not ended yet, theirs too (docs/design.md#放弃).
@@ -827,6 +872,7 @@ pub fn skip(w: &WriteCx, a: TasksArgs) -> Result<Write, ApiError> {
             due_after: None,
             sort_key: None,
             done: None,
+            done_at: None,
             today: None,
             occurrence: None,
             assign: Vec::new(),
@@ -919,6 +965,7 @@ pub fn move_to(w: &WriteCx, a: MoveArgs) -> Result<Write, ApiError> {
             due_after: None,
             sort_key: None,
             done: None,
+            done_at: None,
             today: None,
             occurrence: None,
             assign: Vec::new(),
@@ -1021,6 +1068,7 @@ pub fn copy(w: &WriteCx, a: CopyArgs) -> Result<Write, ApiError> {
             due_after: t.due_after.clone(),
             sort_key: Some(t.sort_key.clone()),
             done: false,
+            done_at: None,
             // Still in the shared folder it was in, a task keeps who it is assigned to.
             assignees: if shared_root(t.folder_id) == shared_root(to) { t.assignees.clone() } else { Vec::new() },
         });

@@ -14,7 +14,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use nexttodo_core::board::{Board, Now};
 use nexttodo_core::model::{
-    AiJob, AiJobId, Attachment, Date, FolderId, Holder, JobKind, JobState, MutationId, NoteText, Suggestion, TaskId, Time,
+    AiJob, AiJobId, Attachment, CompletionMark, Date, FolderId, Holder, JobKind, JobState, MutationId, NoteText, Suggestion, Time,
 };
 use nexttodo_core::ops::Op;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
@@ -30,9 +30,8 @@ use crate::auth::Auth;
 use crate::drive::{self, Drive, Maker, Route, StepFn};
 use crate::error::{ApiError, Json};
 use crate::mutate::{self, Actor, Done};
-use crate::tools::args::{PlanTask, RemindText};
+use crate::store;
 use crate::{AppState, Hub};
-use crate::{store, tools};
 use llm::{Api, Config, Endpoint, Failure, PROVIDERS, Provider, Thinking};
 use secret::SecretKey;
 
@@ -45,6 +44,14 @@ const TEST_TIMEOUT: Duration = Duration::from_secs(60);
 /// How many jobs are organized at once, of all users together.
 const SLOTS: usize = 4;
 
+fn check_completion_mark(done: &Option<CompletionMark>) -> Result<(), ApiError> {
+    if let Some(CompletionMark::Date(date)) = done {
+        mutate::check_completion_date(date).map_err(|e| ApiError::invalid(e, Some("done".into())))?;
+    }
+    Ok(())
+}
+
+/// Who the changes made for jobs are by.
 fn actor(owner: &str) -> Actor<'_> {
     Actor { user: owner, token_id: "", via: Some(ACTOR) }
 }
@@ -428,7 +435,7 @@ enum Shown {
 
 /// What a job's model answered: tasks, with the refs of the attachments each lists; or suggestions.
 enum Answer {
-    Tasks(Vec<PlanTask>, Vec<Vec<String>>, organize::Shown),
+    Tasks(Vec<organize::OrganizedTask>, organize::Shown),
     Suggestions(Vec<Suggestion>),
 }
 
@@ -483,7 +490,7 @@ async fn organize(st: AppState, turn: Turn, job: AiJobId, config: Config, round:
                 Ok(text) => (
                     None,
                     match shown {
-                        Shown::Organize(shown) => organize::parse(&text, &shown).map(|(tasks, listed)| Answer::Tasks(tasks, listed, shown)),
+                        Shown::Organize(shown) => organize::parse(&text, &shown).map(|tasks| Answer::Tasks(tasks, shown)),
                         Shown::Tidy(shown) => tidy::parse(&text, &shown).map(Answer::Suggestions),
                     },
                 ),
@@ -514,8 +521,8 @@ async fn finish(st: &AppState, owner: &str, job: AiJobId, outcome: Result<Answer
             });
             return Ok(if change(st, owner, job, round, ready).await? { Ended::Done } else { Ended::Dropped });
         }
-        Ok(Answer::Tasks(tasks, listed, shown)) => {
-            let add: StepFn = Box::new(move |c, actor, now| added(c, actor, job, &tasks, &listed, &shown, now));
+        Ok(Answer::Tasks(tasks, shown)) => {
+            let add: StepFn = Box::new(move |c, actor, now| added(c, actor, job, &tasks, &shown, now));
             match change(st, owner, job, round, add).await {
                 Ok(added) => return Ok(if added { Ended::Done } else { Ended::Dropped }),
                 Err(e) if e.code() == "internal" => return Err(e),
@@ -534,8 +541,7 @@ fn added(
     c: &Connection,
     actor: &Actor,
     job: AiJobId,
-    tasks: &[PlanTask],
-    listed: &[Vec<String>],
+    answer: &[organize::OrganizedTask],
     shown: &organize::Shown,
     now: i64,
 ) -> Result<Option<(Vec<Op>, Done)>, ApiError> {
@@ -544,30 +550,12 @@ fn added(
     let snap = store::snapshot(c, owner)?;
     let local = asked(&j);
     let board = Board::new(&snap, local.clone(), owner);
-    let mut tasks = tasks.to_vec();
-    // Those the model gave a due date and no word on reminders get the asking device's
-    // (docs/ai.md#提示词和结果); `[]` is its word for none.
-    if let Some(r) = &j.reminders {
-        for t in tasks.iter_mut().filter(|t| t.remind.is_none()) {
-            let timed = t.due.as_ref().map(|d| d.time.is_some()).or(t.due_after.as_ref().map(|a| a.time.is_some()));
-            t.remind = timed.map(|timed| RemindText { due: r.for_due(timed), ..RemindText::default() });
-        }
-    }
-    let mut ops = tools::plan_into(&board, j.folder_id, tasks, &shown.tasks)?;
-    // The job's attachments go to the tasks they were put under, in the same change; one added since
-    // the model was asked, to the first.
-    let made: Vec<TaskId> = ops
-        .iter()
-        .filter_map(|op| match op {
-            Op::TaskCreate { id, .. } => Some(*id),
-            _ => None,
-        })
-        .collect();
-    let under = organize::place(shown.attachments.len(), listed);
+    let mut plan = organize::plan(&board, j.folder_id, answer, shown, j.created_at, j.reminders.as_ref())?;
     for a in snap.attachments.iter().filter(|a| a.holder == Holder::Job(job)) {
-        let task = made[shown.attachments.iter().position(|&s| s == a.id).map_or(0, |i| under[i])];
-        ops.push(Op::AttachmentUpdate { id: a.id, name: None, task_id: Some(task) });
+        let task = plan.holder(a.id);
+        plan.ops.push(Op::AttachmentUpdate { id: a.id, name: None, task_id: Some(task) });
     }
+    let mut ops = plan.ops;
     ops.push(Op::AiJobDelete { id: job });
     let done = mutate::run(c, actor, &ops, now, &local)?;
     Ok(Some((ops, done)))

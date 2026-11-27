@@ -226,6 +226,60 @@ mod tests {
     }
 
     #[test]
+    fn snapshots_with_dated_suggestions_use_a_new_database_version_and_old_backups_still_open() {
+        let dir = std::env::temp_dir().join(format!("nexttodo-snapshot-{}", uuid::Uuid::now_v7()));
+        std::fs::create_dir(&dir).unwrap();
+        let old_path = dir.join("old.db");
+        let mut old = Connection::open(&old_path).unwrap();
+        for sql in &crate::db::MIGRATIONS[..29] {
+            old.execute_batch(sql).unwrap();
+        }
+        old.pragma_update(None, "user_version", 29).unwrap();
+        let user = crate::local::local_user(&mut old, 1).unwrap();
+        let id = nexttodo_core::model::AiJobId(uuid::Uuid::now_v7());
+        let task = uuid::Uuid::now_v7();
+        let suggestions = |done: serde_json::Value| {
+            serde_json::json!([{"task":task,"after":[],"done":done,"reason":"","was":{"title":"组会","description":"","due":null}}])
+                .to_string()
+        };
+        old.execute(
+            "INSERT INTO ai_jobs (id, owner_id, kind, text, local_time, state, suggestions, created_at, updated_at)
+             VALUES (?1, ?2, 'tidy', '组会已开完', '2026-11-26 10:00 星期四', 'ready', ?3, 1, 1)",
+            rusqlite::params![id, user, suggestions(serde_json::json!(true))],
+        )
+        .unwrap();
+        drop(old);
+
+        crate::backup::convert(&old_path, None).unwrap();
+        let db = Db::open(&old_path).unwrap();
+        let mark = |c: &Connection| {
+            let j = crate::store::load_job(c, &user, id).unwrap().unwrap();
+            serde_json::to_value(j.suggestions).unwrap()[0]["done"].clone()
+        };
+        assert_eq!(db.hold(|c| mark(c)), true);
+        db.hold(|c| {
+            c.execute(
+                "UPDATE ai_jobs SET suggestions = ?1 WHERE id = ?2",
+                rusqlite::params![suggestions(serde_json::json!("2026-11-25")), id],
+            )
+        })
+        .unwrap();
+
+        let snapshot = dir.join("snapshot.db");
+        super::unpack(&super::take(&db, &dir).unwrap(), &snapshot).unwrap();
+        let c = Connection::open(&snapshot).unwrap();
+        let version: i64 = c.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
+        assert_eq!(version, 30);
+        c.pragma_update(None, "user_version", version + 1).unwrap();
+        assert!(crate::backup::convert(&snapshot, None).unwrap_err().is::<crate::db::Newer>());
+        c.pragma_update(None, "user_version", version).unwrap();
+        crate::backup::convert(&snapshot, None).unwrap();
+        assert_eq!(mark(&c), "2026-11-25");
+        drop((c, db));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn a_snapshot_has_nothing_of_what_is_this_devices_own() {
         let (db, dir) = (Db::open_in_memory().unwrap(), std::env::temp_dir().join(format!("nexttodo-snapshot-{}", uuid::Uuid::now_v7())));
         db.hold(|c| {

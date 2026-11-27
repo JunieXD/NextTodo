@@ -12,7 +12,8 @@ import { groups, ops } from "./tidy";
 const ME = "019a4b2c-0000-7000-8000-0000000000ee";
 
 const id = (n: number) => `019a4b2c-0000-7000-8000-${String(n).padStart(12, "0")}`;
-const cx = { me: ME, now: 1000, local: { today: "2026-11-20" }, effectsOf: () => undefined, effectsAfter: () => [] };
+const askedAt = Date.UTC(2026, 10, 9, 2);
+const cx = { me: ME, now: Date.UTC(2026, 10, 20), local: { today: "2026-11-20" }, effectsOf: () => undefined, effectsAfter: () => [] };
 const was = (title: string) => ({ title, description: "", due: null });
 
 function task(n: number, title: string, extra: Partial<Task> = {}): Task {
@@ -48,14 +49,15 @@ function tidy(
   folders: Folder[] = [],
   at: number | null = null,
 ) {
-  const job: AiJob = { id: id(99), folder_id: at === null ? null : id(at), kind: "tidy", text: "整理", local_time: "2026-11-09 10:00 星期一", state: "ready", error: null, suggestions, created_at: 0, updated_at: 0 };
+  const job: AiJob = { id: id(99), folder_id: at === null ? null : id(at), kind: "tidy", text: "整理", local_time: "2026-11-09 10:00 星期一", state: "ready", error: null, suggestions, created_at: askedAt, updated_at: askedAt };
   const dependencies = deps.map(([b, a]) => ({ before: id(b), after: id(a), created_at: 0 }));
   const board = new Board({ folders, tasks, dependencies, completions: [], attachments: [], ai_jobs: [job], shares: [], people: [] }, { today: "2026-11-12" }, ME);
   const shown = groups(job, board, (_, p) => keep(p.key));
   const taken = shown.flatMap((g) => g.parts.filter((p) => keep(p.key)));
   const d = fromSnapshot(board.snapshot);
-  apply(d, ops(taken, job, board), cx);
-  return { shown, after: new Board(toSnapshot(d), { today: "2026-11-12" }, ME) };
+  const picked = ops(taken, job, board);
+  apply(d, picked, cx);
+  return { shown, board, picked, after: new Board(toSnapshot(d), { today: "2026-11-12" }, ME) };
 }
 
 test("turned round, a dependency is taken away before the other way is added", () => {
@@ -285,4 +287,56 @@ test("a folder's colour and icon are taken or left each, and one changed since i
     ["文件夹“英语 / 英语”", [["图标", undefined]]],
   ]);
   expect([60, 61].map((n) => [after.folder(id(n))!.color, after.folder(id(n))!.icon])).toEqual([["blue", null], [null, "code"]]);
+});
+
+test("taking AI completion dates shifts the job's timestamp, except for recurring occurrences", () => {
+  const due = { date: "2026-11-06", repeat: { every: 1, unit: "day", from: "done" } } as const;
+  const { after } = tidy(
+    [task(1, "开组会"), task(2, "打卡", { due }), task(3, "交报告", { done_at: 900, dropped: true })],
+    [],
+    [
+      { task: id(1), done: "2026-11-08", after: [], reason: "", was: was("开组会") },
+      { task: id(2), done: "2026-11-08", after: [], reason: "", was: { ...was("打卡"), due, occurrence: { due: due.date, completions: 0 } } },
+      { task: id(3), done: "2026-11-07", after: [], reason: "", was: { ...was("交报告"), done_at: 900 } },
+      { create: id(4), title: "完成培训", done: "2026-11-09", after: [], before: [], reason: "" },
+    ],
+  );
+  expect([1, 2, 3, 4].map((i) => after.task(id(i))!.done_at)).toEqual([Date.UTC(2026, 10, 8, 2), null, Date.UTC(2026, 10, 7, 2), askedAt]);
+  expect(after.task(id(3))!.dropped).toBe(true);
+  expect(after.completions(id(2)).map((c) => c.done)).toEqual(["2026-11-08"]);
+  expect(after.task(id(2))!.due?.date).toBe("2026-11-09");
+});
+
+test("a suggestion to date an already completed task leaves it open if reopened since", () => {
+  const { shown, after } = tidy([task(1, "开组会")], [], [
+    { task: id(1), title: "开项目组会", done: "2026-11-08", after: [], reason: "", was: { ...was("开组会"), done_at: askedAt } },
+  ]);
+  expect(shown.flatMap((g) => g.parts.map((p) => p.key))).toEqual(["text"]);
+  expect(after.task(id(1))).toMatchObject({ title: "开项目组会", done_at: null });
+});
+
+test("a suggestion queued before another device checked in does not complete the next occurrence", () => {
+  const due = { date: "2026-11-08", repeat: { every: 1, unit: "day", from: "done" } } as const;
+  const { board, picked, after } = tidy(
+    [task(1, "打卡", { due })],
+    [],
+    [{ task: id(1), done: "2026-11-08", after: [], reason: "", was: { ...was("打卡"), due, occurrence: { due: due.date, completions: 0 } } }],
+  );
+  expect(after.completions(id(1)).map((c) => c.done)).toEqual(["2026-11-08"]);
+  const d = fromSnapshot(board.snapshot);
+  apply(d, [{ op: "task.update", id: id(1), done: true, today: "2026-11-07" }], cx);
+  apply(d, picked, cx);
+  const synced = new Board(toSnapshot(d), board.now, ME);
+  expect(synced.task(id(1))).toMatchObject({ done_at: null, due, completions: { count: 1, last: "2026-11-07" } });
+  expect(synced.completions(id(1)).map((c) => c.done)).toEqual(["2026-11-07"]);
+});
+
+test("taking both a new deadline and a completion date still finishes the same occurrence", () => {
+  const repeat = { every: 1, unit: "day", from: "due" } as const;
+  const due = { date: "2026-11-07", repeat };
+  const { after } = tidy([task(1, "打卡", { due })], [], [
+    { task: id(1), due: { date: "2026-11-09", repeat }, done: "2026-11-08", after: [], reason: "", was: { ...was("打卡"), due, occurrence: { due: due.date, completions: 0 } } },
+  ]);
+  expect(after.completions(id(1))).toEqual([{ task_id: id(1), due: "2026-11-09", done: "2026-11-08", again: 0 }]);
+  expect(after.task(id(1))?.due?.date).toBe("2026-11-10");
 });

@@ -371,6 +371,39 @@ async fn changes_made_at_once_on_several_devices_all_go_in_and_every_device_ends
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_completion_date_edit_and_its_undo_sync_between_devices() {
+    let (store, devices) = devices(2).await;
+    let (a, b) = (&devices[0], &devices[1]);
+    let task = id();
+    a.made(json!([
+        { "op": "task.create", "id": task, "title": "组会", "due": { "date": "2020-11-20", "repeat": { "every": 2, "unit": "day", "from": "done" } } },
+        { "op": "task.update", "id": task, "done": true, "today": "2020-11-20" },
+    ])).await.unwrap();
+    caught_up(&store, &devices).await;
+    let task_dates = "SELECT due_date, last_completed FROM tasks";
+    let record_dates = "SELECT due_date, done_on FROM completions";
+    let old = (dump(b.db(), task_dates), dump(b.db(), record_dates));
+
+    let edit = id();
+    let m = serde_json::from_value(json!({ "id": edit, "today": "2020-11-25", "ops": [
+        { "op": "completion.update", "task_id": task, "due": "2020-11-20", "again": 0, "done": "2020-11-19" }
+    ] }))
+    .unwrap();
+    a.drive().mutate(a.maker(), m, None).await.unwrap();
+    let bytes = b.view.get("g/log/2.json").unwrap().unwrap();
+    let commit = super::parse(&bytes).unwrap();
+    assert_eq!(commit.format, 11);
+    caught_up(&store, &devices).await;
+    assert_eq!(dump(b.db(), task_dates), vec![vec![Value::Text("2020-11-21".into()), Value::Text("2020-11-19".into())]]);
+    assert_eq!(dump(b.db(), record_dates), vec![vec![Value::Text("2020-11-20".into()), Value::Text("2020-11-19".into())]]);
+
+    b.made(json!([{ "op": "undo", "mutation": edit }])).await.unwrap();
+    caught_up(&store, &devices).await;
+    assert_same(&devices);
+    assert_eq!((dump(a.db(), task_dates), dump(a.db(), record_dates)), old);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn a_change_another_device_made_impossible_meanwhile_is_turned_down() {
     let (store, devices) = devices(2).await;
     let (a, b) = (&devices[0], &devices[1]);

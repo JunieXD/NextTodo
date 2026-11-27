@@ -3,8 +3,9 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
+use nexttodo_core::board::Now;
 use nexttodo_core::model::{
-    AiJob, Attachment, Completion, Completions, Dependency, Folder, Holder, JobKind, JobState, JobText, SortKey, Task,
+    AiJob, Attachment, Completion, Completions, Dependency, Folder, Holder, JobKind, JobState, JobText, RepeatFrom, SortKey, Task,
 };
 use nexttodo_core::ops::Op;
 
@@ -15,7 +16,17 @@ use super::Cx;
 use super::check::{at_times, both_due, by_start, check_assignees};
 
 impl Cx<'_> {
-    pub(super) fn op(&mut self, op: &Op) -> Result<(), ApiError> {
+    fn check_done_at(&self, at: i64) -> Result<(), ApiError> {
+        if at < 0 {
+            return Err(done_at_error("完成时间不能早于 1970-01-01"));
+        }
+        if at > self.now {
+            return Err(done_at_error("完成时间不能晚于现在"));
+        }
+        Ok(())
+    }
+
+    pub(super) fn op(&mut self, op: &Op, local: &Now) -> Result<(), ApiError> {
         match op {
             Op::FolderCreate { id, name, parent_id, sort_key, color, icon } => {
                 if store::folder_id_taken(self.c, *id)? {
@@ -75,6 +86,7 @@ impl Cx<'_> {
                 due_after,
                 sort_key,
                 done,
+                done_at,
                 assignees,
             } => {
                 if store::task_id_taken(self.c, *id)? {
@@ -82,6 +94,15 @@ impl Cx<'_> {
                 }
                 if due.is_some() && due_after.is_some() {
                     return Err(both_due());
+                }
+                if let Some(at) = done_at {
+                    self.check_done_at(*at)?;
+                    if !done {
+                        return Err(done_at_error("新建事项时，只有标为完成才能指定完成时间"));
+                    }
+                    if due.as_ref().is_some_and(|d| d.repeat.is_some()) {
+                        return Err(done_at_error("重复的事项要修改完成记录里的日期"));
+                    }
                 }
                 let owner = self.owner_in(*folder_id)?;
                 let mut assignees = assignees.clone();
@@ -98,7 +119,7 @@ impl Cx<'_> {
                     folder_id: *folder_id,
                     title: title.clone(),
                     description: description.clone(),
-                    done_at: done.then_some(self.now),
+                    done_at: done.then_some(done_at.unwrap_or(self.now)),
                     dropped: false,
                     start: start.clone(),
                     start_time: start_time.clone(),
@@ -132,6 +153,7 @@ impl Cx<'_> {
                 due_after,
                 sort_key,
                 done,
+                done_at,
                 today,
                 occurrence,
                 assign,
@@ -192,10 +214,19 @@ impl Cx<'_> {
                     people.retain(|u| !unassign.contains(u));
                     t.assignees = people.into_iter().collect();
                 }
+                if let Some(at) = done_at {
+                    self.check_done_at(*at)?;
+                    if t.due.as_ref().is_some_and(|d| d.repeat.is_some()) {
+                        return Err(done_at_error("重复的事项要修改完成记录里的日期"));
+                    }
+                    if *done == Some(false) || (*done != Some(true) && t.done_at.is_none()) {
+                        return Err(done_at_error("只有已结束或标为完成的事项才能指定完成时间"));
+                    }
+                }
                 let mut record = None;
                 // Done from a list behind the task: that time of a repeating one is done already, or
                 // gone (docs/api.md#改动).
-                let behind = occurrence.as_ref().is_some_and(|o| t.occurrence().is_some_and(|now| now != *o));
+                let behind = occurrence.as_ref().is_some_and(|o| before.occurrence().is_some_and(|was| was != *o));
                 // Done once given up, it was done after all, ending when it did; not a time of a
                 // repeating one a list behind showed, which giving it up ended (docs/api.md#改动).
                 if *done == Some(true) && t.dropped && occurrence.is_none() {
@@ -231,6 +262,9 @@ impl Cx<'_> {
                         _ => t.done_at = done.then_some(self.now),
                     }
                 }
+                if let Some(at) = done_at {
+                    t.done_at = Some(*at);
+                }
                 self.update_task(before, &owner, t, None)?;
                 match record {
                     Some(r) => self.record_completion(r),
@@ -252,6 +286,42 @@ impl Cx<'_> {
             Op::TaskDelete { id } => {
                 self.task(*id)?;
                 self.delete_task(*id)
+            }
+            Op::CompletionUpdate { task_id, due, again, done } => {
+                let (before, owner) = self.task(*task_id)?;
+                let old = store::load_completion(self.c, *task_id, due, *again)?.ok_or_else(|| ApiError::not_found("该完成记录不存在"))?;
+                super::check_completion_date(done).map_err(|e| ApiError::invalid(e, Some("done".into())))?;
+                if done > &local.today {
+                    return Err(ApiError::invalid("完成日期不能晚于今天", Some("done".into())));
+                }
+                if *done == old.done {
+                    return Ok(());
+                }
+                let latest = store::latest_completion(self.c, *task_id)?.as_ref() == Some(&old);
+                let space = self.space(&owner, before.folder_id)?;
+                let new = Completion { done: done.clone(), ..old.clone() };
+                self.delete_completion(old, &space)?;
+                self.record_completion(new)?;
+                let mut t = before.clone();
+                if let Some(c) = &mut t.completions {
+                    c.last = store::latest_completion(self.c, *task_id)?.expect("just recorded").done;
+                }
+                if latest
+                    && let Some(d) = &mut t.due
+                    && let Some(r) = &d.repeat
+                    && r.from == RepeatFrom::Done
+                {
+                    let date = if let Some(next) = r.next(due, done) {
+                        next
+                    } else {
+                        d.repeat = None;
+                        t.done_at = Some(self.now);
+                        due.clone()
+                    };
+                    t.start = t.start.as_ref().map(|s| s.shifted(&d.date, &date));
+                    d.date = date;
+                }
+                self.update_task(before, &owner, t, None)
             }
             Op::DepAdd { before, after } => {
                 if before == after {
@@ -391,4 +461,8 @@ fn asks(kind: JobKind, text: &JobText) -> Result<(), ApiError> {
         return Err(ApiError::invalid("要求不能为空", Some("text".into())));
     }
     Ok(())
+}
+
+fn done_at_error(message: &str) -> ApiError {
+    ApiError::invalid(message, Some("done_at".into()))
 }

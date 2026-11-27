@@ -15,9 +15,9 @@ import type { Suggestion } from "../api/types/Suggestion";
 import type { TaskId } from "../api/types/TaskId";
 import type { TaskFields } from "./apply";
 import { Board } from "./board";
-import { dueAfterLabel, formatDue, isoDate, remindAtLabel, remindLabel, startRemindLabel } from "./dates";
+import { dueAfterLabel, formatDue, formatMoment, isoDate, remindAtLabel, remindLabel, startRemindLabel } from "./dates";
 import { arrange } from "./reorder";
-import { lastTime, repeatText } from "./repeat";
+import { daysBefore, lastTime, repeatText } from "./repeat";
 
 /** What taking a part does. */
 type Act =
@@ -73,6 +73,12 @@ const sameList = (a: unknown[] | undefined, b: unknown[] | undefined) => JSON.st
 
 /** What `s` would still do: to tasks and folders there and in the state it found them, and links not
  * made yet. */
+function completionAt(job: AiJob, date: string): number {
+  const asked = job.local_time.trim().split(/\s+/, 1)[0];
+  const today = /^\d{4}-\d{2}-\d{2}$/.test(asked) && Number.isFinite(Date.parse(asked)) ? asked : new Date(job.created_at).toISOString().slice(0, 10);
+  return job.created_at + daysBefore(today, date) * 864e5;
+}
+
 function group(s: Suggestion, j: AiJob, board: Board, created: Map<TaskId, string>): Group | null {
   const now = new Date();
   const name = (id: TaskId) => {
@@ -105,6 +111,7 @@ function group(s: Suggestion, j: AiJob, board: Board, created: Map<TaskId, strin
     const text = [
       s.title,
       s.description,
+      s.done && (s.done === true ? "已完成" : `完成于 ${formatDue({ date: s.done }, now)}`),
       (s.due || s.remind_at) && `${s.due ? "截止" : "提醒"}：${timingText({ due: s.due ?? null, remind_at: s.remind_at }, now)}`,
       s.after.length && `前置：${s.after.map(name).join("、")}`,
       s.before.length && `后续：${s.before.map(name).join("、")}`,
@@ -129,8 +136,10 @@ function group(s: Suggestion, j: AiJob, board: Board, created: Map<TaskId, strin
     const part: Part = { key: "delete", label: "删除", text: "删除这个事项", act: { remove: id }, ...(changed && { now: "整理后改过这个事项", current }) };
     return { key: id, heading: heading!, reason: s.reason, parts: [part] };
   }
+  if (!t) return null;
+  const date = typeof s.done === "string" && (s.was.done_at === undefined) === (t.done_at === null) ? s.done : undefined;
   // Done since, it needs none of it, unless it was to be opened again.
-  if (!t || (t.done_at !== null && s.done !== false)) return null;
+  if (t.done_at !== null && s.done !== false && !date) return null;
   const parts: Part[] = [];
   // A new title and description go together: the title may have left details to the description.
   const text = { ...(s.title !== undefined && { title: s.title }), ...(s.description !== undefined && { description: s.description }) };
@@ -174,12 +183,18 @@ function group(s: Suggestion, j: AiJob, board: Board, created: Map<TaskId, strin
     const fields = { ...(s.due !== undefined && { due: s.due }), ...(byStart && { start_reminders: byStart }), ...(s.remind_at && { remind_at: s.remind_at }) };
     parts.push({ key: "due", label: s.due === undefined ? "提醒" : "截止", text: `${timingText(from, now)} → ${timingText(to, now)}`, act: { update: id, fields }, ...was });
   }
-  if (s.done !== undefined && s.done !== (t.done_at !== null)) {
-    // As the suggestion's own due date, taken with it by default, has it.
+  const done = typeof s.done === "boolean" ? s.done : date && t.done_at === null ? true : undefined;
+  const done_at = date ? completionAt(j, date) : undefined;
+  if ((done !== undefined && done !== (t.done_at !== null)) || (done_at !== undefined && done_at !== t.done_at)) {
     const due = s.due === undefined ? t.due : s.due;
-    const moves = due?.repeat && !lastTime(due, isoDate(now));
-    const text = !s.done ? "重新打开" : moves ? "标为完成，截止时间顺延到下一次" : "标为完成";
-    parts.push({ key: "done", label: "状态", text, act: { update: id, fields: { done: s.done } } });
+    const moves = due?.repeat && !lastTime(due, date ?? isoDate(now));
+    const at = date && formatDue({ date }, now);
+    const action = s.done === false ? "重新打开" : t.done_at !== null ? "修改完成时间" : moves ? "标为完成，截止时间顺延到下一次" : "标为完成";
+    const text = at ? `${action}（${at}）` : action;
+    const current = t.done_at !== null && s.was.done_at !== undefined && s.was.done_at !== t.done_at
+      ? { now: `整理后已改为：${formatMoment(t.done_at, now)}`, current: String(t.done_at) } : {};
+    const fields = { done, done_at, today: date, occurrence: date ? s.was.occurrence : undefined };
+    parts.push({ key: "done", label: "状态", text, act: { update: id, fields }, ...current });
   }
   if (s.folder !== undefined && board.folder(s.folder) && t.folder_id !== s.folder) {
     const moved = t.folder_id !== j.folder_id && { now: `整理后已移到“${board.place(t.folder_id)}”`, current: t.folder_id ?? "" };
@@ -211,7 +226,7 @@ export function ops(parts: Part[], j: AiJob, board: Board): Op[] {
     if ("create" in a) {
       const c = a.create;
       made.add(c.create);
-      creates.push({ op: "task.create", id: c.create, title: c.title, ...(c.description && { description: c.description }), ...(c.due && { due: c.due }), ...(c.remind_at && { remind_at: c.remind_at }), ...(j.folder_id && { folder_id: j.folder_id }) });
+      creates.push({ op: "task.create", id: c.create, title: c.title, ...(c.description && { description: c.description }), ...(c.due && { due: c.due }), ...(c.remind_at && { remind_at: c.remind_at }), ...(c.done && { done: true, ...(typeof c.done === "string" && { done_at: completionAt(j, c.done) }) }), ...(j.folder_id && { folder_id: j.folder_id }) });
       links.push(...c.after.map((b): [TaskId, TaskId] => [b, c.create]), ...c.before.map((x): [TaskId, TaskId] => [c.create, x]));
     } else if ("update" in a) updates.set(a.update, { ...updates.get(a.update), ...a.fields });
     else if ("remove" in a) removed.add(a.remove);
@@ -227,7 +242,10 @@ export function ops(parts: Part[], j: AiJob, board: Board): Op[] {
   const today = isoDate(new Date());
   const out: Op[] = [
     ...creates,
-    ...[...updates].map(([id, f]): Op => ({ op: "task.update", id, ...f, ...(f.done && { today }) })),
+    ...[...updates].map(([id, { done_at, today: doneOn, ...f }]): Op => {
+      const due = f.due === undefined ? board.task(id)?.due : f.due;
+      return { op: "task.update", id, ...f, ...(f.done && due?.repeat ? { today: doneOn ?? today } : { done_at }) };
+    }),
     ...[...removed].map((id): Op => ({ op: "task.delete", id })),
     // Taken away before others are added: turned round, a link would otherwise close a cycle.
     ...unlinks.filter(([b, a]) => there(b) && there(a)).map(([before, after]): Op => ({ op: "dep.remove", before, after })),

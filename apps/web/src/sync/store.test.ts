@@ -4,6 +4,7 @@ import type { ErrorBody } from "../api/types/ErrorBody";
 import type { LogEntry } from "../api/types/LogEntry";
 import type { Mutation } from "../api/types/Mutation";
 import type { Task } from "../api/types/Task";
+import { isoDate } from "../domain/dates";
 import { type Pending, type Saved, Store } from "./store";
 
 /** The user whose data it is. */
@@ -113,6 +114,16 @@ test("changes the Android widget could not send join the queue in the order made
   release();
   await settle();
   expect(sent.map((m) => m.id)).toEqual([mine.id, earlier.id]);
+});
+
+test("a completion record moved to today says the day here, which the server checks it against", async () => {
+  const today = isoDate(new Date());
+  const due = { date: "2026-11-30", repeat: { every: 1, unit: "day" as const, from: "due" as const } };
+  const record = { task_id: id(1), due: "2026-11-20", done: "2026-11-20", again: 0 };
+  const { store, sent } = setup({ ...Store.empty(), base: { ...Store.empty().base, tasks: [task(1, "吃药", { due })], completions: [record] } });
+  store.commit([{ op: "completion.update", task_id: id(1), due: record.due, again: 0, done: today }]);
+  await settle();
+  expect(sent[0].today).toBe(today);
 });
 
 test("changes from elsewhere merge under the ones still queued", () => {

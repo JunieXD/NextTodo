@@ -5,15 +5,18 @@ use std::collections::HashMap;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use nexttodo_core::board::Board;
-use nexttodo_core::model::{AiJob, Attachment, AttachmentId, Date, Due, FileSize, Task, TaskId};
+use nexttodo_core::model::{
+    AiJob, Attachment, AttachmentId, CompletionMark, Date, DefaultReminders, Due, FileSize, FolderId, Task, TaskId,
+};
+use nexttodo_core::ops::Op;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::llm::{Picture, Prompt};
 use crate::attachments::showable_image;
-use crate::error::from_value;
+use crate::error::{ApiError, from_value};
 use crate::files::Files;
-use crate::tools::args::{PlanRef, PlanTask, due_after_text, task_ref};
+use crate::tools::args::{PlanRef, PlanTask, RemindText, due_after_text, task_ref};
 
 /// How many of the folder's open tasks the model is shown.
 const SHOWN: usize = 50;
@@ -49,6 +52,7 @@ pub const SYSTEM: &str = r#"你负责把用户随手写下的一段话整理成�
 字段：
 - title：必填，一行，简短（最好不超过 30 个字），以动作开头，如“写开题报告初稿”。原文没说是什么动作的，不要猜，保留原文的说法。
 - description：选填，Markdown，只写标题装不下的信息。
+- done：只有原文明确是记一件已经做完的事时才写（如“记一下昨天开了组会”），照 local_time 换算完成的公历日期，写 "YYYY-MM-DD"，不要带几点；不能晚于当地今天。明确做完但没说是哪天的写 true，待做的不写。这是完成时间，不是 due 或 start；没有待做事项也要把这件事列出来。
 - start：选填，开始时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"，按农历说的见第 8 条：没到时事项等着，不显示在待办里。不能晚于 due。
 - due：选填，截止时间，"YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM"，按农历说的见第 8 条。
 - due_after：选填，代替 due：前置事项（after）都完成后多久以内截止，"30d"（天）、"2w"（周）或 "3d 18:00"，从前置都完成的那天起算，"0d" 是当天。
@@ -249,7 +253,66 @@ pub fn sees_red(answer: &str) -> bool {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Answer {
-    tasks: Vec<PlanTask>,
+    tasks: Vec<Value>,
+}
+
+pub struct OrganizedTask {
+    fields: PlanTask,
+    done: Option<CompletionMark>,
+    attachments: Vec<AttachmentId>,
+}
+
+pub struct OrganizedPlan {
+    pub ops: Vec<Op>,
+    first: TaskId,
+    holders: HashMap<AttachmentId, TaskId>,
+}
+
+impl OrganizedPlan {
+    pub(super) fn holder(&self, attachment: AttachmentId) -> TaskId {
+        self.holders.get(&attachment).copied().unwrap_or(self.first)
+    }
+}
+
+pub fn plan(
+    b: &Board,
+    folder: Option<FolderId>,
+    answer: &[OrganizedTask],
+    shown: &Shown,
+    created_at: i64,
+    reminders: Option<&DefaultReminders>,
+) -> Result<OrganizedPlan, ApiError> {
+    let mut planned = Vec::new();
+    let mut holders = HashMap::new();
+    for item in answer {
+        let mut task = crate::tools::PlannedTask::from(item.fields.clone());
+        if let Some(r) = reminders
+            && task.fields.remind.is_none()
+        {
+            let t = &task.fields;
+            let timed = t.due.as_ref().map(|d| d.time.is_some()).or(t.due_after.as_ref().map(|a| a.time.is_some()));
+            task.fields.remind = timed.map(|timed| RemindText { due: r.for_due(timed), ..RemindText::default() });
+        }
+        match &item.done {
+            None => {}
+            Some(CompletionMark::State(state)) => task.done = *state,
+            Some(CompletionMark::Date(date)) => {
+                let days = date.days_after(&b.now().today);
+                if days > 0 {
+                    return Err(ApiError::invalid("完成日期不能晚于今天", Some("done".into())));
+                }
+                task.done = true;
+                task.done_at = Some(created_at + days * 86_400_000);
+            }
+        }
+        for &attachment in &item.attachments {
+            holders.entry(attachment).or_insert(task.id);
+        }
+        planned.push(task);
+    }
+    let first = planned[0].id;
+    let ops = crate::tools::plan_into(b, folder, planned, &shown.tasks)?;
+    Ok(OrganizedPlan { ops, first, holders })
 }
 
 /// The answer without what models put around JSON: their thinking, and a code fence.
@@ -267,25 +330,23 @@ pub fn unwrap(answer: &str) -> &str {
 
 /// The tasks in the model's answer, linked only to each other and to tasks in `shown`; with the refs of
 /// the attachments each lists.
-pub fn parse(answer: &str, shown: &Shown) -> Result<(Vec<PlanTask>, Vec<Vec<String>>), String> {
-    let mut v: Value = serde_json::from_str(unwrap(answer)).map_err(|_| "模型返回的不是合法的 JSON".to_owned())?;
-    // Models write an empty field for one they have nothing for, `"due": ""` say: it is left out. The
-    // title has to be there.
-    let listed: Vec<Vec<String>> = v["tasks"]
-        .as_array_mut()
-        .into_iter()
-        .flatten()
-        .map(|t| {
-            let Some(fields) = t.as_object_mut() else { return Vec::new() };
-            fields.retain(|k, f| k == "title" || !(f.is_null() || f.as_str().is_some_and(|s| s.trim().is_empty())));
-            refs(fields.remove("attachments"))
-        })
-        .collect();
-    let Answer { tasks } = from_value(v).map_err(|e| format!("模型返回的结果不符合格式：{}", e.describe()))?;
+pub fn parse(answer: &str, shown: &Shown) -> Result<Vec<OrganizedTask>, String> {
+    let v: Value = serde_json::from_str(unwrap(answer)).map_err(|_| "模型返回的不是合法的 JSON".to_owned())?;
+    let invalid = |e: ApiError| format!("模型返回的结果不符合格式：{}", e.describe());
+    let Answer { tasks } = from_value(v).map_err(invalid)?;
     if tasks.is_empty() {
         return Err("模型没有整理出事项".into());
     }
-    for t in &tasks {
+    let shown_attachments: HashMap<_, _> = shown.attachments.iter().enumerate().map(|(i, &id)| ((i + 1).to_string(), id)).collect();
+    let mut parsed = Vec::new();
+    for mut fields in tasks {
+        let Some(values) = fields.as_object_mut() else { return Err("模型返回的事项不是对象".into()) };
+        // Models may leave an empty field for one they have nothing for, but the title has to be there.
+        values.retain(|k, f| k == "title" || !(f.is_null() || f.as_str().is_some_and(|s| s.trim().is_empty())));
+        let done = values.remove("done").map(from_value).transpose().map_err(invalid)?;
+        super::check_completion_mark(&done).map_err(invalid)?;
+        let attachments = attachments(values.remove("attachments"), &shown_attachments);
+        let t: PlanTask = from_value(fields).map_err(invalid)?;
         if t.folder.is_some() {
             return Err("模型返回的结果指定了文件夹".into());
         }
@@ -302,29 +363,19 @@ pub fn parse(answer: &str, shown: &Shown) -> Result<(Vec<PlanTask>, Vec<Vec<Stri
                 return Err(format!("结果引用了不在这个文件夹里的事项 #{n}"));
             }
         }
+        parsed.push(OrganizedTask { fields: t, done, attachments });
     }
-    Ok((tasks, listed))
+    Ok(parsed)
 }
 
 /// The refs in a task's `attachments`, which models write as strings or numbers; nothing else is one.
-fn refs(attachments: Option<Value>) -> Vec<String> {
+fn attachments(attachments: Option<Value>, shown: &HashMap<String, AttachmentId>) -> Vec<AttachmentId> {
     let Some(Value::Array(refs)) = attachments else { return Vec::new() };
     refs.into_iter()
         .filter_map(|r| match r {
-            Value::String(s) => Some(s.trim().to_owned()),
-            Value::Number(n) => Some(n.to_string()),
+            Value::String(s) => shown.get(s.trim()).copied(),
+            Value::Number(n) => shown.get(&n.to_string()).copied(),
             _ => None,
-        })
-        .collect()
-}
-
-/// Which task each of the `shown` attachments goes under, by the refs the tasks `listed`: the first
-/// that lists it, else the first task. Refs to no attachment are left.
-pub fn place(shown: usize, listed: &[Vec<String>]) -> Vec<usize> {
-    (1..=shown)
-        .map(|n| {
-            let r = n.to_string();
-            listed.iter().position(|refs| refs.contains(&r)).unwrap_or(0)
         })
         .collect()
 }
@@ -366,23 +417,49 @@ mod tests {
     fn checks_the_answer() {
         let shown = Shown { tasks: HashMap::from([(12, TaskId(uuid::Uuid::nil()))]), attachments: Vec::new() };
         let ok = r##"{"tasks": [{"ref": "a", "title": "写初稿"}, {"title": "改稿", "after": ["a", 12, "#12"]}]}"##;
-        assert_eq!(parse(ok, &shown).unwrap().0.len(), 2);
+        assert_eq!(parse(ok, &shown).unwrap().len(), 2);
         assert_eq!(parse("好的", &shown).err().unwrap(), "模型返回的不是合法的 JSON");
         assert_eq!(parse(r#"{"tasks": []}"#, &shown).err().unwrap(), "模型没有整理出事项");
         assert!(parse(r#"{"tasks": [{"title": " "}]}"#, &shown).err().unwrap().starts_with("模型返回的结果不符合格式：标题不能为空"));
-        let (empty, _) = parse(r#"{"tasks": [{"title": "交初稿", "due": "", "description": null, "ref": " "}]}"#, &shown).unwrap();
-        assert!(empty[0].due.is_none() && empty[0].description.is_none() && empty[0].name.is_none());
+        let empty = parse(r#"{"tasks": [{"title": "交初稿", "due": "", "description": null, "ref": " "}]}"#, &shown).unwrap();
+        assert!(empty[0].fields.due.is_none() && empty[0].fields.description.is_none() && empty[0].fields.name.is_none());
         assert!(parse(r#"{"tasks": [{"title": "a", "note": "b"}]}"#, &shown).is_err());
         assert_eq!(parse(r#"{"tasks": [{"title": "a", "folder": "/x"}]}"#, &shown).err().unwrap(), "模型返回的结果指定了文件夹");
         assert_eq!(parse(r#"{"tasks": [{"title": "a", "before": [7]}]}"#, &shown).err().unwrap(), "结果引用了不在这个文件夹里的事项 #7");
     }
 
     #[test]
-    fn attachments_go_under_the_first_task_listing_them_else_the_first() {
+    fn a_task_can_be_organized_as_done_at_the_epoch_but_not_before() {
         let shown = Shown { tasks: HashMap::new(), attachments: Vec::new() };
-        let answer = r#"{"tasks": [{"title": "a", "attachments": ["3", 9]}, {"title": "b", "attachments": [2, " 3", {}]}, {"title": "c", "attachments": "1"}]}"#;
-        let (_, listed) = parse(answer, &shown).unwrap();
-        assert_eq!(listed, [vec!["3", "9"], vec!["2", "3"], vec![]]);
-        assert_eq!(place(4, &listed), [0, 1, 0, 0]);
+        let answer = |date| json!({"tasks": [{"title": "开会", "done": date}]}).to_string();
+        assert_eq!(parse(&answer("1969-12-31"), &shown).err().unwrap(), "模型返回的结果不符合格式：完成日期不能早于 1970-01-01（done）");
+        let answer = parse(&answer("1970-01-01"), &shown).unwrap();
+        let snap = nexttodo_core::board::Snapshot::default();
+        let now = 86_400_000;
+        let b = Board::new(&snap, nexttodo_core::board::Now::utc(now), "me");
+        let plan = plan(&b, None, &answer, &shown, now, None).unwrap();
+        assert!(matches!(plan.ops.as_slice(), [Op::TaskCreate { done: true, done_at: Some(0), .. }]));
+    }
+
+    #[test]
+    fn attachments_go_under_the_first_task_listing_them_else_the_first() {
+        let attachments = std::array::from_fn::<_, 4, _>(|_| AttachmentId(uuid::Uuid::now_v7()));
+        let shown = Shown { tasks: HashMap::new(), attachments: attachments[..3].to_vec() };
+        let answer = r#"{"tasks": [{"title": "a", "attachments": ["3", 9]}, {"title": "b", "done": "2026-11-07", "attachments": [2, " 3", {}]}, {"title": "c", "attachments": "1"}]}"#;
+        let answer = parse(answer, &shown).unwrap();
+        let snap = nexttodo_core::board::Snapshot::default();
+        let now = 1_794_096_000_000;
+        let b = Board::new(&snap, nexttodo_core::board::Now::utc(now), "me");
+        let plan = plan(&b, None, &answer, &shown, now, None).unwrap();
+        let [
+            Op::TaskCreate { id: first, done: false, .. },
+            Op::TaskCreate { id: second, done: true, done_at: Some(at), .. },
+            Op::TaskCreate { done: false, .. },
+        ] = plan.ops.as_slice()
+        else {
+            panic!("{:?}", plan.ops)
+        };
+        assert_eq!(attachments.map(|a| plan.holder(a)), [*first, *second, *first, *first]);
+        assert_eq!(*at, now - 86_400_000);
     }
 }

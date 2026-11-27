@@ -374,5 +374,213 @@
       { "op": "task.update", "id": "开会", "start_time": null }
     ],
     "expect": { "start_reminders": { "抢票": [{ "days": 1, "time": "20:00" }, { "days": 0, "time": "09:00" }, { "before": 30 }, { "before": 0 }], "开会": [{ "days": 0, "time": "08:00" }] } }
+  },
+  {
+    "name": "create and finish at a given time, then edit the time without reopening",
+    "ops": [{"op": "task.create", "id": "a", "title": "a", "done": true, "done_at": 0}, {"op": "task.update", "id": "a", "done": true, "done_at": 1}, {"op": "task.update", "id": "a", "done_at": 2}, {"op": "task.create", "id": "b", "title": "b", "done": true, "done_at": 4}],
+    "expect": {"done_at": {"a": 2, "b": 4}, "ended": {"a": "done", "b": "done"}}
+  },
+  {
+    "name": "finishing and changing a dropped task use the chosen time",
+    "ops": [{"op": "task.create", "id": "a", "title": "a"}, {"op": "task.update", "id": "a", "done": true, "done_at": 4}, {"op": "task.create", "id": "b", "title": "b"}, {"op": "task.drop", "id": "b"}, {"op": "task.update", "id": "b", "done_at": 5}, {"op": "task.create", "id": "c", "title": "c"}, {"op": "task.drop", "id": "c"}, {"op": "task.update", "id": "c", "done": true, "done_at": 6}],
+    "expect": {"done_at": {"a": 4, "b": 5, "c": 6}, "ended": {"a": "done", "b": "dropped", "c": "done"}}
+  },
+  {
+    "name": "cannot create an open task with a completion time",
+    "ops": [{"op": "task.create", "id": "a", "title": "a", "done_at": 4}],
+    "error": {"code": "invalid", "message": "新建事项时，只有标为完成才能指定完成时间", "field": "done_at"}
+  },
+  {
+    "name": "create cannot set a future completion time",
+    "ops": [{"op": "task.create", "id": "a", "title": "a", "done": true, "done_at": 8000000000000}],
+    "error": {"code": "invalid", "message": "完成时间不能晚于现在", "field": "done_at"}
+  },
+  {
+    "name": "update cannot set a future completion time",
+    "ops": [{"op": "task.create", "id": "a", "title": "a"}, {"op": "task.update", "id": "a", "done": true, "done_at": 8000000000000}],
+    "error": {"code": "invalid", "message": "完成时间不能晚于现在", "field": "done_at"}
+  },
+  {
+    "name": "an open task cannot have an edit of its completion time",
+    "ops": [{"op": "task.create", "id": "a", "title": "a"}, {"op": "task.update", "id": "a", "done_at": 4}],
+    "error": {"code": "invalid", "message": "只有已结束或标为完成的事项才能指定完成时间", "field": "done_at"}
+  },
+  {
+    "name": "a reopened task cannot have an edit of its completion time",
+    "ops": [{"op": "task.create", "id": "a", "title": "a", "done": true}, {"op": "task.update", "id": "a", "done": false, "done_at": 4}],
+    "error": {"code": "invalid", "message": "只有已结束或标为完成的事项才能指定完成时间", "field": "done_at"}
+  },
+  {
+    "name": "a repeating task cannot be completed using a timestamp",
+    "ops": [{"op": "task.create", "id": "a", "title": "a", "due": {"date": "2026-11-20", "repeat": {"every": 1, "unit": "day", "from": "due"}}}, {"op": "task.update", "id": "a", "done": true, "done_at": 4}],
+    "error": {"code": "invalid", "message": "重复的事项要修改完成记录里的日期", "field": "done_at"}
+  },
+  {
+    "name": "cannot edit a completion record that does not exist",
+    "ops": [{"op": "task.create", "id": "a", "title": "a", "due": {"date": "2026-11-20", "repeat": {"every": 1, "unit": "day", "from": "due"}}}, {"op": "completion.update", "task_id": "a", "due": "2026-11-20", "again": 0, "done": "2026-11-19"}],
+    "error": {"code": "not_found", "message": "该完成记录不存在"}
+  },
+  {
+    "name": "completion dates cannot be later than the local day",
+    "ops": [{"op": "task.create", "id": "a", "title": "a", "due": {"date": "2026-11-20", "repeat": {"every": 1, "unit": "day", "from": "due"}}}, {"op": "task.update", "id": "a", "done": true, "today": "2026-11-20"}, {"op": "completion.update", "task_id": "a", "due": "2026-11-20", "again": 0, "done": "2026-11-22"}],
+    "today": "2026-11-21",
+    "error": {"code": "invalid", "message": "完成日期不能晚于今天", "field": "done"}
+  },
+  {
+    "name": "an older record made later becomes the summary without moving the next due date",
+    "prior": [{"id": "started", "ops": [{"op": "task.create", "id": "group", "title": "组会", "start": "2026-11-19", "due": {"date": "2026-11-20", "repeat": {"every": 2, "unit": "day", "from": "done", "until": "2026-11-25"}}}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-20"}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-22"}], "today": "2026-11-27"}],
+    "today": "2026-11-27",
+    "ops": [{"op": "completion.update", "task_id": "group", "due": "2026-11-20", "again": 0, "done": "2026-11-23"}],
+    "expect": {"due": {"group": "2026-11-24"}, "start": {"group": "2026-11-23"}, "completions": {"group": {"count": 2, "last": "2026-11-23"}}, "records": [["group", "2026-11-20", 0, "2026-11-23"], ["group", "2026-11-22", 0, "2026-11-22"]], "ended": {}, "repeating": ["group"]}
+  },
+  {
+    "name": "moving the latest completion before another uses its new day for the due date and the largest recorded day for the summary",
+    "prior": [{"id": "started", "ops": [{"op": "task.create", "id": "group", "title": "组会", "start": "2026-11-19", "due": {"date": "2026-11-20", "repeat": {"every": 2, "unit": "day", "from": "done", "until": "2026-11-25"}}}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-20"}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-22"}], "today": "2026-11-27"}],
+    "today": "2026-11-27",
+    "ops": [{"op": "completion.update", "task_id": "group", "due": "2026-11-22", "again": 0, "done": "2026-11-19"}],
+    "expect": {"due": {"group": "2026-11-21"}, "start": {"group": "2026-11-20"}, "completions": {"group": {"count": 2, "last": "2026-11-20"}}, "records": [["group", "2026-11-20", 0, "2026-11-20"], ["group", "2026-11-22", 0, "2026-11-19"]], "ended": {}, "repeating": ["group"]}
+  },
+  {
+    "name": "changing the latest date past the last occurrence ends the repeat",
+    "prior": [{"id": "started", "ops": [{"op": "task.create", "id": "group", "title": "组会", "start": "2026-11-19", "due": {"date": "2026-11-20", "repeat": {"every": 2, "unit": "day", "from": "done", "until": "2026-11-25"}}}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-20"}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-22"}], "today": "2026-11-27"}],
+    "today": "2026-11-27",
+    "ops": [{"op": "completion.update", "task_id": "group", "due": "2026-11-22", "again": 0, "done": "2026-11-24"}],
+    "expect": {"due": {"group": "2026-11-22"}, "start": {"group": "2026-11-21"}, "completions": {"group": {"count": 2, "last": "2026-11-24"}}, "records": [["group", "2026-11-20", 0, "2026-11-20"], ["group", "2026-11-22", 0, "2026-11-24"]], "ended": {"group": "done"}, "repeating": []}
+  },
+  {
+    "name": "undoing a date change restores an older record even without a change to the task",
+    "prior": [{"id": "started", "ops": [{"op": "task.create", "id": "group", "title": "组会", "start": "2026-11-19", "due": {"date": "2026-11-20", "repeat": {"every": 2, "unit": "day", "from": "done", "until": "2026-11-25"}}}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-20"}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-22"}], "today": "2026-11-27"}, {"id": "change date", "ops": [{"op": "completion.update", "task_id": "group", "due": "2026-11-20", "again": 0, "done": "2026-11-19"}], "today": "2026-11-27"}],
+    "today": "2026-11-27",
+    "ops": [{"op": "undo", "mutation": "change date"}],
+    "expect": {"due": {"group": "2026-11-24"}, "start": {"group": "2026-11-23"}, "completions": {"group": {"count": 2, "last": "2026-11-22"}}, "records": [["group", "2026-11-20", 0, "2026-11-20"], ["group", "2026-11-22", 0, "2026-11-22"]], "ended": {}, "repeating": ["group"]}
+  },
+  {
+    "name": "undoing a date change that ended a repeat restores the record, deadline and start",
+    "prior": [{"id": "started", "ops": [{"op": "task.create", "id": "group", "title": "组会", "start": "2026-11-19", "due": {"date": "2026-11-20", "repeat": {"every": 2, "unit": "day", "from": "done", "until": "2026-11-25"}}}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-20"}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-22"}], "today": "2026-11-27"}, {"id": "change date", "ops": [{"op": "completion.update", "task_id": "group", "due": "2026-11-22", "again": 0, "done": "2026-11-24"}], "today": "2026-11-27"}],
+    "today": "2026-11-27",
+    "ops": [{"op": "undo", "mutation": "change date"}],
+    "expect": {"due": {"group": "2026-11-24"}, "start": {"group": "2026-11-23"}, "completions": {"group": {"count": 2, "last": "2026-11-22"}}, "records": [["group", "2026-11-20", 0, "2026-11-20"], ["group", "2026-11-22", 0, "2026-11-22"]], "done_at": {"group": null}, "ended": {}, "repeating": ["group"]}
+  },
+  {
+    "name": "undoing a completion date undo puts back the edited record and schedule",
+    "prior": [{"id": "started", "ops": [{"op": "task.create", "id": "group", "title": "组会", "start": "2026-11-19", "due": {"date": "2026-11-20", "repeat": {"every": 2, "unit": "day", "from": "done", "until": "2026-11-25"}}}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-20"}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-22"}], "today": "2026-11-27"}, {"id": "change date", "ops": [{"op": "completion.update", "task_id": "group", "due": "2026-11-22", "again": 0, "done": "2026-11-19"}], "today": "2026-11-27"}, {"id": "undone", "ops": [{"op": "undo", "mutation": "change date"}], "today": "2026-11-27"}],
+    "today": "2026-11-27",
+    "ops": [{"op": "undo", "mutation": "undone"}],
+    "expect": {"due": {"group": "2026-11-21"}, "start": {"group": "2026-11-20"}, "completions": {"group": {"count": 2, "last": "2026-11-20"}}, "records": [["group", "2026-11-20", 0, "2026-11-20"], ["group", "2026-11-22", 0, "2026-11-19"]], "ended": {}, "repeating": ["group"]}
+  },
+  {
+    "name": "an older completion edited a second time cannot be overwritten by undoing the first edit",
+    "prior": [{"id": "started", "ops": [{"op": "task.create", "id": "group", "title": "组会", "start": "2026-11-19", "due": {"date": "2026-11-20", "repeat": {"every": 2, "unit": "day", "from": "done", "until": "2026-11-25"}}}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-20"}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-22"}], "today": "2026-11-27"}, {"id": "change date", "ops": [{"op": "completion.update", "task_id": "group", "due": "2026-11-20", "again": 0, "done": "2026-11-19"}], "today": "2026-11-27"}, {"id": "changed again", "ops": [{"op": "completion.update", "task_id": "group", "due": "2026-11-20", "again": 0, "done": "2026-11-18"}], "today": "2026-11-27"}],
+    "today": "2026-11-27",
+    "ops": [{"op": "undo", "mutation": "change date"}],
+    "error": {"code": "conflict", "message": "该完成记录后来又修改过，请先撤销后来的改动"}
+  },
+  {
+    "name": "after the due date was rolled back the latest record is the one with the latest completion day",
+    "prior": [{"id": "rolled", "ops": [{"op": "task.create", "id": "group", "title": "组会", "start": "2026-11-25", "due": {"date": "2026-11-26", "repeat": {"every": 1, "unit": "day", "from": "done"}}}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-26"}, {"op": "completion.update", "task_id": "group", "due": "2026-11-26", "again": 0, "done": "2026-11-20"}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-27"}], "today": "2026-11-27"}],
+    "today": "2026-11-27",
+    "ops": [{"op": "completion.update", "task_id": "group", "due": "2026-11-21", "again": 0, "done": "2026-11-25"}],
+    "expect": {"due": {"group": "2026-11-26"}, "start": {"group": "2026-11-25"}, "completions": {"group": {"count": 2, "last": "2026-11-25"}}, "records": [["group", "2026-11-21", 0, "2026-11-25"], ["group", "2026-11-26", 0, "2026-11-20"]], "ended": {}, "repeating": ["group"]}
+  },
+  {
+    "name": "using a completion date already recorded changes nothing",
+    "prior": [{"id": "started", "ops": [{"op": "task.create", "id": "group", "title": "组会", "start": "2026-11-19", "due": {"date": "2026-11-20", "repeat": {"every": 2, "unit": "day", "from": "done", "until": "2026-11-25"}}}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-20"}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-22"}], "today": "2026-11-27"}],
+    "today": "2026-11-27",
+    "ops": [{"op": "completion.update", "task_id": "group", "due": "2026-11-22", "again": 0, "done": "2026-11-22"}],
+    "expect": {"due": {"group": "2026-11-24"}, "start": {"group": "2026-11-23"}, "completions": {"group": {"count": 2, "last": "2026-11-22"}}, "records": [["group", "2026-11-20", 0, "2026-11-20"], ["group", "2026-11-22", 0, "2026-11-22"]], "ended": {}, "repeating": ["group"]},
+    "no_effects": true
+  },
+  {
+    "name": "undoing just a timestamp does not complete a task reopened since",
+    "prior": [{"id": "made", "ops": [{"op": "task.create", "id": "group", "title": "组会", "done": true, "done_at": 20}], "today": "2026-11-27"}, {"id": "time", "ops": [{"op": "task.update", "id": "group", "done_at": 50}], "today": "2026-11-27"}, {"id": "reopened", "ops": [{"op": "task.update", "id": "group", "done": false}], "today": "2026-11-27"}],
+    "today": "2026-11-27",
+    "ops": [{"op": "undo", "mutation": "time"}],
+    "expect": {"done_at": {"group": null}, "ended": {}},
+    "no_effects": true
+  },
+  {
+    "name": "undoing just a timestamp leaves a newer drop time alone",
+    "prior": [{"id": "dropped", "ops": [{"op": "task.create", "id": "group", "title": "组会"}, {"op": "task.drop", "id": "group"}], "today": "2026-11-27"}, {"id": "time", "ops": [{"op": "task.update", "id": "group", "done_at": 50}], "today": "2026-11-27"}, {"id": "later", "ops": [{"op": "task.update", "id": "group", "done_at": 70}], "today": "2026-11-27"}],
+    "today": "2026-11-27",
+    "ops": [{"op": "undo", "mutation": "time"}],
+    "expect": {"done_at": {"group": 70}, "ended": {"group": "dropped"}},
+    "no_effects": true
+  },
+  {
+    "name": "undoing a completion timestamp undo restores the edited time",
+    "prior": [{"id": "made", "ops": [{"op": "task.create", "id": "group", "title": "组会", "done": true, "done_at": 20}], "today": "2026-11-27"}, {"id": "time", "ops": [{"op": "task.update", "id": "group", "done_at": 50}], "today": "2026-11-27"}, {"id": "undone", "ops": [{"op": "undo", "mutation": "time"}], "today": "2026-11-27"}],
+    "today": "2026-11-27",
+    "ops": [{"op": "undo", "mutation": "undone"}],
+    "expect": {"done_at": {"group": 50}, "ended": {"group": "done"}}
+  },
+  {
+    "name": "create rejects completion timestamps before the epoch",
+    "prior": [],
+    "today": "2026-11-27",
+    "ops": [{"op": "task.create", "id": "group", "title": "组会", "done": true, "done_at": -1}],
+    "error": {"code": "invalid", "message": "完成时间不能早于 1970-01-01", "field": "done_at"}
+  },
+  {
+    "name": "update rejects completion timestamps before the epoch",
+    "prior": [],
+    "today": "2026-11-27",
+    "ops": [{"op": "task.create", "id": "group", "title": "组会", "done": true, "done_at": 0}, {"op": "task.update", "id": "group", "done_at": -1}],
+    "error": {"code": "invalid", "message": "完成时间不能早于 1970-01-01", "field": "done_at"}
+  },
+  {
+    "name": "record editing rejects completion dates before the epoch",
+    "prior": [{"id": "started", "ops": [{"op": "task.create", "id": "group", "title": "组会", "start": "2026-11-19", "due": {"date": "2026-11-20", "repeat": {"every": 2, "unit": "day", "from": "done", "until": "2026-11-25"}}}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-20"}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-22"}], "today": "2026-11-27"}],
+    "today": "2026-11-27",
+    "ops": [{"op": "completion.update", "task_id": "group", "due": "2026-11-20", "again": 0, "done": "1969-12-31"}],
+    "error": {"code": "invalid", "message": "完成日期不能早于 1970-01-01", "field": "done"}
+  },
+  {
+    "name": "the epoch is a valid date for a completion record",
+    "prior": [{"id": "started", "ops": [{"op": "task.create", "id": "group", "title": "组会", "start": "2026-11-19", "due": {"date": "2026-11-20", "repeat": {"every": 2, "unit": "day", "from": "done", "until": "2026-11-25"}}}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-20"}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-22"}], "today": "2026-11-27"}],
+    "today": "2026-11-27",
+    "ops": [{"op": "completion.update", "task_id": "group", "due": "2026-11-20", "again": 0, "done": "1970-01-01"}],
+    "expect": {"due": {"group": "2026-11-24"}, "start": {"group": "2026-11-23"}, "completions": {"group": {"count": 2, "last": "2026-11-22"}}, "records": [["group", "2026-11-20", 0, "1970-01-01"], ["group", "2026-11-22", 0, "2026-11-22"]], "ended": {}, "repeating": ["group"]}
+  },
+  {
+    "name": "ties in completion day and due pick the last repeat of that occurrence",
+    "prior": [{"id": "same day", "ops": [{"op": "task.create", "id": "group", "title": "组会", "start": "2026-11-19", "due": {"date": "2026-11-20", "repeat": {"every": 1, "unit": "day", "from": "done"}}}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-20"}, {"op": "task.update", "id": "group", "due": {"date": "2026-11-20", "repeat": {"every": 1, "unit": "day", "from": "done"}}}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-20"}], "today": "2026-11-27"}],
+    "today": "2026-11-27",
+    "ops": [{"op": "completion.update", "task_id": "group", "due": "2026-11-20", "again": 1, "done": "2026-11-18"}],
+    "expect": {"due": {"group": "2026-11-19"}, "start": {"group": "2026-11-19"}, "completions": {"group": {"count": 2, "last": "2026-11-20"}}, "records": [["group", "2026-11-20", 0, "2026-11-20"], ["group", "2026-11-20", 1, "2026-11-18"]], "ended": {}, "repeating": ["group"]}
+  },
+  {
+    "name": "完成日期修正只改了日程，也不能撤销在它之后完成的顺延",
+    "prior": [{"id": "started", "ops": [{"op": "task.create", "id": "group", "title": "组会", "start": "2026-11-19", "due": {"date": "2026-11-20", "repeat": {"every": 1, "unit": "day", "from": "done"}}}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-24"}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-24"}], "today": "2026-11-27"}, {"id": "shifted", "ops": [{"op": "completion.update", "task_id": "group", "due": "2026-11-25", "again": 0, "done": "2026-11-22"}], "today": "2026-11-27"}, {"id": "later", "ops": [{"op": "task.update", "id": "group", "done": true, "today": "2026-11-25"}], "today": "2026-11-27"}],
+    "today": "2026-11-27",
+    "ops": [{"op": "undo", "mutation": "shifted"}],
+    "error": {"code": "conflict", "message": "“组会”在这之后又完成或撤销过，请先撤销后来的那次"}
+  },
+  {
+    "name": "撤销后来的完成后，可以撤销没有改摘要的日期修正",
+    "prior": [{"id": "started", "ops": [{"op": "task.create", "id": "group", "title": "组会", "start": "2026-11-19", "due": {"date": "2026-11-20", "repeat": {"every": 1, "unit": "day", "from": "done"}}}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-24"}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-24"}], "today": "2026-11-27"}, {"id": "shifted", "ops": [{"op": "completion.update", "task_id": "group", "due": "2026-11-25", "again": 0, "done": "2026-11-22"}], "today": "2026-11-27"}, {"id": "later", "ops": [{"op": "task.update", "id": "group", "done": true, "today": "2026-11-25"}], "today": "2026-11-27"}, {"id": "later undone", "ops": [{"op": "undo", "mutation": "later"}], "today": "2026-11-27"}],
+    "today": "2026-11-27",
+    "ops": [{"op": "undo", "mutation": "shifted"}],
+    "expect": {"due": {"group": "2026-11-25"}, "start": {"group": "2026-11-24"}, "completions": {"group": {"count": 2, "last": "2026-11-24"}}, "records": [["group", "2026-11-20", 0, "2026-11-24"], ["group", "2026-11-25", 0, "2026-11-24"]]}
+  },
+  {
+    "name": "改截止并完成当前这次，按新截止顺延并记录",
+    "prior": [],
+    "today": "2026-11-27",
+    "ops": [{"op": "task.create", "id": "group", "title": "组会", "start": "2026-11-19", "due": {"date": "2026-11-20", "repeat": {"every": 1, "unit": "day", "from": "due"}}}, {"op": "task.update", "id": "group", "due": {"date": "2026-11-26", "repeat": {"every": 1, "unit": "day", "from": "due"}}, "done": true, "today": "2026-11-25", "occurrence": {"due": "2026-11-20", "completions": 0}}],
+    "expect": {"due": {"group": "2026-11-27"}, "ended": {}, "records": [["group", "2026-11-26", 0, "2026-11-25"]]}
+  },
+  {
+    "name": "改截止并完成旧的那次，不会再记一条",
+    "prior": [],
+    "today": "2026-11-27",
+    "ops": [{"op": "task.create", "id": "group", "title": "组会", "start": "2026-11-19", "due": {"date": "2026-11-20", "repeat": {"every": 1, "unit": "day", "from": "due"}}}, {"op": "task.update", "id": "group", "done": true, "today": "2026-11-24"}, {"op": "task.update", "id": "group", "due": {"date": "2026-11-26", "repeat": {"every": 1, "unit": "day", "from": "due"}}, "done": true, "today": "2026-11-25", "occurrence": {"due": "2026-11-20", "completions": 0}}],
+    "expect": {"due": {"group": "2026-11-26"}, "ended": {}, "records": [["group", "2026-11-20", 0, "2026-11-24"]]}
+  },
+  {
+    "name": "同一操作去掉重复并完成，不记一条重复完成",
+    "prior": [],
+    "today": "2026-11-27",
+    "ops": [{"op": "task.create", "id": "group", "title": "组会", "start": "2026-11-19", "due": {"date": "2026-11-20", "repeat": {"every": 1, "unit": "day", "from": "due"}}}, {"op": "task.update", "id": "group", "due": {"date": "2026-11-20"}, "done": true}],
+    "expect": {"due": {"group": "2026-11-20"}, "ended": {"group": "done"}, "records": [], "repeating": []}
   }
 ]

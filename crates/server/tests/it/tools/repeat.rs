@@ -543,3 +543,51 @@ async fn undoing_a_time_done_again_as_an_earlier_version_kept_it_brings_the_reco
     t.ok(&s, "undo", json!({ "batch": undo })).await;
     assert_eq!(done(t.snapshot(&s).await), (vec![(json!("2026-11-13"), json!(0))], json!(2)));
 }
+
+#[tokio::test]
+async fn completion_tools_backdate_by_the_local_day_and_clock() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({"title":"组会"})).await;
+    t.ok(&s, "add", json!({"title":"打卡","due":"2025-10-30","repeat":"1d","repeat_from":"done"})).await;
+    let tool = t.ok(&s, "done", json!({"tasks":[1,2],"today":"2025-11-02","time":"02:26","at":"2025-11-01 20:30"})).await;
+    assert!(tool["data"]["batch"].is_number());
+    let snap = t.snapshot(&s).await;
+    let by = |n: u32| snap["tasks"].as_array().unwrap().iter().find(|v| v["number"] == n).unwrap();
+    assert_eq!(by(1)["done_at"], 1_761_978_600_000_i64);
+    assert_eq!(by(2)["due"]["date"], "2025-11-02");
+    assert_eq!(snap["completions"][0]["done"], "2025-11-01");
+    t.ok(&s, "edit", json!({"task":1,"today":"2025-11-02","time":"02:26","done_at":"2025-10-31"})).await;
+    t.ok(&s, "edit", json!({"task":2,"today":"2025-11-02","time":"02:26","done_at":"2025-10-30"})).await;
+    let snap = t.snapshot(&s).await;
+    let by = |n: u32| snap["tasks"].as_array().unwrap().iter().find(|v| v["number"] == n).unwrap();
+    assert_eq!(by(1)["done_at"], 1_761_892_200_000_i64);
+    assert_eq!(by(2)["due"]["date"], "2025-10-31");
+    assert_eq!(snap["completions"][0]["done"], "2025-10-30");
+    t.ok(&s, "edit", json!({"task":2,"today":"2025-11-02","done_at":"2025-10-28"})).await;
+    t.ok(&s, "done", json!({"tasks":[2],"at":"2025-10-31"})).await;
+    t.ok(&s, "edit", json!({"task":2,"today":"2025-11-02","done_at":"2025-10-29"})).await;
+    let snap = t.snapshot(&s).await;
+    let records = snap["completions"].as_array().unwrap();
+    assert!(records.iter().any(|r| r["due"] == "2025-10-29" && r["done"] == "2025-10-29"));
+    assert!(records.iter().any(|r| r["due"] == "2025-10-30" && r["done"] == "2025-10-28"));
+    let r = t.tool(&s, "done", json!({"tasks":[1],"today":"2025-11-02","time":"02:26","at":"2025-11-02 02:27"})).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    assert_eq!(r.body["details"]["field"], "at");
+}
+
+#[tokio::test]
+async fn a_repeat_can_be_backdated_to_the_epoch_but_not_before() {
+    let t = TestApp::new();
+    let s = t.admin().await;
+    t.ok(&s, "add", json!({"title":"打卡","due":"1970-01-01","repeat":"1d","repeat_from":"done"})).await;
+    let r = t.tool(&s, "done", json!({"tasks":[1],"at":"1969-12-31"})).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    assert_eq!(r.body["details"]["field"], "at");
+    assert_eq!(r.body["message"], "完成日期不能早于 1970-01-01");
+    assert_eq!(t.snapshot(&s).await["completions"], json!([]));
+    t.ok(&s, "done", json!({"tasks":[1],"at":"1970-01-01"})).await;
+    let snap = t.snapshot(&s).await;
+    assert_eq!(snap["completions"][0]["done"], "1970-01-01");
+    assert_eq!(snap["tasks"][0]["due"]["date"], "1970-01-02");
+}

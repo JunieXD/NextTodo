@@ -24,6 +24,8 @@ const compare = (a: Key, b: Key) => a[0] - b[0] || cmp(a[1], b[1]) || cmp(a[2], 
 /** Plain string order, as Rust compares strings. */
 export const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
+export const compareCompletion = (a: Completion, b: Completion) => cmp(a.done, b.done) || cmp(a.due, b.due) || a.again - b.again;
+
 /** Whether a task's title or description has `q`, given trimmed and in lower case. */
 export const matches = (t: Task, q: string) => t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q);
 
@@ -134,7 +136,7 @@ export class Board {
     // Ids are UUIDv7: in the order they were made.
     for (const list of this.attached.values()) list.sort((a, b) => cmp(a.id, b.id));
     for (const c of snapshot.completions) push(this.records, c.task_id, c);
-    for (const list of this.records.values()) list.sort((a, b) => cmp(b.done, a.done) || cmp(b.due, a.due) || b.again - a.again);
+    for (const list of this.records.values()) list.sort((a, b) => compareCompletion(b, a));
   }
 
   task(id: TaskId): Task | undefined {

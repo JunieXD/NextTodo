@@ -132,6 +132,9 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         #[ts(as = "Option<bool>", optional)]
         done: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        done_at: Option<i64>,
         /// User ids, in a shared folder only.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         #[ts(as = "Option<Vec<String>>", optional)]
@@ -182,6 +185,9 @@ pub enum Op {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         done: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        done_at: Option<i64>,
         /// The day on the device that marks a task done: a repeating task's next due date counts
         /// from it, so it must be given for one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -206,6 +212,8 @@ pub enum Op {
     TaskDrop { id: TaskId },
     #[serde(rename = "task.delete")]
     TaskDelete { id: TaskId },
+    #[serde(rename = "completion.update")]
+    CompletionUpdate { task_id: TaskId, due: Date, again: u32, done: Date },
     #[serde(rename = "dep.add")]
     DepAdd { before: TaskId, after: TaskId },
     #[serde(rename = "dep.remove")]

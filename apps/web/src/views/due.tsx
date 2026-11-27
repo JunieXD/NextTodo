@@ -390,7 +390,7 @@ export function Calendar({
   min?: string;
   max?: string;
   onChange(date: string): void;
-  onPicked?(): void;
+  onPicked?(date: string): void;
 }) {
   const today = isoDate(useNow());
   const [marks] = useHolidayMarks();
@@ -451,7 +451,7 @@ export function Calendar({
               aria-current={iso === today ? "date" : undefined}
               disabled={out(iso)}
               aria-label={`${d.getMonth() + 1}月${d.getDate()}日${daySpoken(iso, marks)}`}
-              onClick={() => (pick(d), onPicked?.())}
+              onClick={() => (pick(d), onPicked?.(iso))}
               onKeyDown={(e) => move(e, d)}
             >
               <span>

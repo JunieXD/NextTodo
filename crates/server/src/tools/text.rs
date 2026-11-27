@@ -2,11 +2,11 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use nexttodo_core::board::{Board, Snapshot, Status};
+use nexttodo_core::board::{Board, Now, Snapshot, Status};
 use nexttodo_core::lunar;
 use nexttodo_core::model::{
-    AiJob, Change, Date, Due, DueAfter, Effect, Folder, FolderId, Holder, JobState, Link, Period, Person, Remind, RemindBefore, RemindOn,
-    Repeat, RepeatFrom, Task, TaskId, Time, Weekdays,
+    AiJob, Change, Completion, Date, Due, DueAfter, Effect, Folder, FolderId, Holder, JobState, Link, Period, Person, Remind, RemindBefore,
+    RemindOn, Repeat, RepeatFrom, Task, TaskId, Time, Weekdays,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -648,6 +648,7 @@ fn edited(before: &Task, after: &Task) -> Vec<&'static str> {
     [
         ("title", before.title != after.title),
         ("description", before.description != after.description),
+        ("done_at", before.done_at.zip(after.done_at).is_some_and(|(b, a)| b != a)),
         ("start", start || before.start_time != after.start_time),
         ("due", due),
         ("reminders", before.start_reminders != after.start_reminders || before.remind_at != after.remind_at),
@@ -818,7 +819,11 @@ fn number(e: &Effect, n: &Names) -> Option<i64> {
 /// What `look` makes of each change of a batch, in order. `names` are those from after the batch; this
 /// steps them back over it, one change at a time, so that every change reads with the folders as they
 /// were right after it, also in the middle of a batch and going through the log newest first.
-fn step<T>(effects: &[Effect], names: &mut Names, mut look: impl FnMut(&Effect, &Names) -> T) -> Vec<T> {
+fn step<T>(
+    effects: &[Effect],
+    names: &mut Names,
+    mut look: impl FnMut(&Effect, &Names, Option<(&Completion, &Completion)>) -> T,
+) -> Vec<T> {
     // Sharing changes nothing of whose what is: what a change that stops sharing a folder did in it
     // is its owner's, as before it.
     for e in effects {
@@ -827,9 +832,11 @@ fn step<T>(effects: &[Effect], names: &mut Names, mut look: impl FnMut(&Effect, 
         }
     }
     let mut seen = Vec::with_capacity(effects.len());
-    for e in effects.iter().rev() {
-        seen.push(look(e, names));
+    let mut rest = effects;
+    while let Some((e, before)) = rest.split_last() {
+        seen.push(look(e, names, before.last().and_then(|previous| Effect::completion_edit(previous, e))));
         names.undo(e);
+        rest = before;
     }
     for e in effects {
         if let Effect::Share(Change::Created(sh)) = e {
@@ -843,7 +850,19 @@ fn step<T>(effects: &[Effect], names: &mut Names, mut look: impl FnMut(&Effect, 
 /// What a batch changed: one line per kind of change, listing at most `limit` items per line, and
 /// each change as data, in order, with the names as `step` has them.
 pub fn changes(effects: &[Effect], names: &mut Names, limit: usize) -> (Vec<String>, Vec<Value>) {
-    let described = step(effects, names, |e, n| (number(e, n), describe(e, n)));
+    let described = step(effects, names, |e, n, edit| {
+        let found = match edit {
+            Some((b, a)) => vec![(
+                Kind::TaskEdited,
+                format!("{} 的完成日期", n.mention(a.task_id)),
+                json!({
+                    "number": number(e, n), "fields": ["completion"], "due": a.due, "again": a.again, "before": b.done, "done": a.done
+                }),
+            )],
+            None => describe(e, n),
+        };
+        (number(e, n), found)
+    });
     let mut groups: BTreeMap<Kind, Vec<(Option<i64>, String)>> = BTreeMap::new();
     let mut data = Vec::with_capacity(described.len());
     for (number, found) in described {
@@ -917,6 +936,15 @@ impl LogField {
         let value = |v: &Option<String>| match (v, self.field) {
             (None, _) => "无".into(),
             (Some(v), ChangedField::Description) => excerpt(&v.split_whitespace().collect::<Vec<_>>().join(" "), SHORT),
+            (Some(v), ChangedField::DoneAt) => {
+                let at: i64 = v.parse().expect("a timestamp");
+                if (-62_167_219_200_000..253_402_300_800_000).contains(&at) {
+                    let utc = Now::utc(at);
+                    format!("{} UTC", moment(&utc.today, utc.time.as_ref()))
+                } else {
+                    v.clone()
+                }
+            }
             (Some(v), _) => v.clone(),
         };
         match change {
@@ -942,6 +970,8 @@ pub enum ChangedField {
     Repeat,
     Assignees,
     Completions,
+    DoneAt,
+    CompletionDate,
     Order,
     Name,
     Parent,
@@ -963,6 +993,8 @@ impl ChangedField {
             ChangedField::Repeat => "重复",
             ChangedField::Assignees => "负责人",
             ChangedField::Completions => "完成次数",
+            ChangedField::DoneAt => "完成时间",
+            ChangedField::CompletionDate => "完成日期",
             ChangedField::Order => "顺序",
             ChangedField::Name => "名称",
             ChangedField::Parent => "位置",
@@ -975,7 +1007,22 @@ impl ChangedField {
 
 /// Each thing a batch changed, in order, with the names as `step` has them.
 pub fn items(effects: &[Effect], names: &mut Names) -> Vec<LogItem> {
-    step(effects, names, detail).into_iter().flatten().collect()
+    step(effects, names, |e, n, edit| match edit {
+        Some((b, a)) => vec![LogItem {
+            text: format!("修改 {} 的完成记录（截止 {}）", n.mention(a.task_id), a.due.as_str()),
+            change: LogChange::Updated,
+            fields: vec![LogField {
+                field: ChangedField::CompletionDate,
+                name: ChangedField::CompletionDate.name().into(),
+                before: Some(b.done.as_str().into()),
+                after: Some(a.done.as_str().into()),
+            }],
+        }],
+        None => detail(e, n),
+    })
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 fn detail(e: &Effect, n: &Names) -> Vec<LogItem> {
@@ -1026,6 +1073,9 @@ fn fields(e: &Effect, n: &Names) -> Vec<LogField> {
         Effect::Task(Change::Deleted(t)) => had(task_values(t, n), false),
         Effect::Task(Change::Updated { before, after }) => {
             let mut found = changed(task_values(before, n), task_values(after, n));
+            if let Some((b, a)) = before.done_at.zip(after.done_at).filter(|(b, a)| b != a) {
+                found.push(field(ChangedField::DoneAt, Some(b.to_string()), Some(a.to_string())));
+            }
             // Its place among the same tasks; a move puts it somewhere in the new folder anyway.
             if before.folder_id == after.folder_id && before.sort_key != after.sort_key {
                 found.push(field(ChangedField::Order, None, None));

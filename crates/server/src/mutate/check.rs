@@ -1,6 +1,6 @@
 //! Rules a task and its people are checked against, as an operation leaves them.
 
-use nexttodo_core::model::{Due, DueAfter, MAX_REMINDERS, Remind, RemindAt, Task};
+use nexttodo_core::model::{Date, Due, DueAfter, MAX_REMINDERS, Remind, RemindAt, Task};
 
 use crate::error::ApiError;
 
@@ -21,6 +21,10 @@ pub(crate) fn at_times(given: &[RemindAt]) -> Vec<RemindAt> {
 
 pub(crate) fn both_due() -> ApiError {
     ApiError::invalid("due 和 due_after 只能给一个：截止日期，或者前置完成后几天内", Some("due_after".into()))
+}
+
+pub(crate) fn check_completion_date(date: &Date) -> Result<(), &'static str> {
+    if date.as_str() < "1970-01-01" { Err("完成日期不能早于 1970-01-01") } else { Ok(()) }
 }
 
 /// The due date `t`'s `due_after` gives it, when it has that: none while its prerequisites are not all

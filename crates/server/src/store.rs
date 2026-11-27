@@ -507,6 +507,15 @@ pub fn next_again(c: &Connection, task: TaskId, due: &Date) -> rusqlite::Result<
     })
 }
 
+pub fn latest_completion(c: &Connection, task: TaskId) -> rusqlite::Result<Option<Completion>> {
+    c.query_row(
+        "SELECT task_id, due_date, done_on, again FROM completions WHERE task_id = ?1 ORDER BY done_on DESC, due_date DESC, again DESC LIMIT 1",
+        [task],
+        completion_row,
+    )
+    .optional()
+}
+
 pub fn task_completions(c: &Connection, task: TaskId) -> rusqlite::Result<Vec<Completion>> {
     all(c, "SELECT task_id, due_date, done_on, again FROM completions WHERE task_id = ?1 ORDER BY due_date, again", [task], completion_row)
 }

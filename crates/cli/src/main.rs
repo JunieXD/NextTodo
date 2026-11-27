@@ -225,6 +225,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             no_repeat,
             assign,
             unassign,
+            done_at,
         } => {
             let mut args = Map::new();
             args.insert("task".into(), task.into());
@@ -267,9 +268,18 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             if !unassign.is_empty() {
                 args.insert("unassign".into(), unassign.into());
             }
+            if !done_at.is_empty() {
+                args.insert("done_at".into(), done_at.join(" ").into());
+            }
             write("edit", args.into(), j)
         }
-        Command::Done { tasks, end_repeat } => write("done", json!({ "tasks": tasks, "end_repeat": end_repeat }), j),
+        Command::Done { tasks, end_repeat, at } => {
+            let mut args = json!({ "tasks": tasks, "end_repeat": end_repeat });
+            if !at.is_empty() {
+                args["at"] = at.join(" ").into();
+            }
+            write("done", args, j)
+        }
         Command::Drop { tasks, with_after } => write("drop", json!({ "tasks": tasks, "with_after": with_after }), j),
         Command::Reopen { tasks } => write("reopen", json!({ "tasks": tasks }), j),
         Command::Skip { tasks } => write("skip", json!({ "tasks": tasks }), j),

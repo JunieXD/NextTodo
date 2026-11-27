@@ -9,6 +9,8 @@ use nexttodo_core::model::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer};
 
+use crate::mutate::check_completion_date;
+
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NoArgs {}
@@ -246,6 +248,11 @@ pub struct EditArgs {
     #[serde(default)]
     #[schemars(description = "不再负责的用户名，从服务端当时的负责人里去掉")]
     pub unassign: Vec<String>,
+    #[schemars(
+        with = "Option<String>",
+        description = "改已结束事项的完成时间，或还在重复的事项最晚完成的那条记录的日期。当地时间 YYYY-MM-DD 或 YYYY-MM-DD HH:MM，不早于 1970-01-01，不晚于现在；只给日期保留原来的钟点；未同时提供 today 和 time 时按 UTC 换算"
+    )]
+    pub done_at: Option<DoneWhen>,
 }
 
 #[derive(Clone, Deserialize, JsonSchema)]
@@ -264,6 +271,50 @@ pub struct TasksArgs {
     pub tasks: Vec<TaskRef>,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(try_from = "String")]
+pub struct DoneWhen {
+    pub date: Date,
+    time: Option<Time>,
+}
+
+impl TryFrom<String> for DoneWhen {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, String> {
+        let (date, time) = value.split_once(' ').map_or((value.as_str(), None), |(d, t)| (d, Some(t)));
+        let invalid = |_| "完成时间请写成 YYYY-MM-DD 或 YYYY-MM-DD HH:MM".to_owned();
+        let date = Date::try_from(date.to_owned()).map_err(invalid)?;
+        check_completion_date(&date)?;
+        Ok(Self { date, time: time.map(|t| Time::try_from(t.to_owned()).map_err(invalid)).transpose()? })
+    }
+}
+
+pub(crate) fn local_millis(date: &Date, time: &Time) -> i64 {
+    let (h, m) = time.as_str().split_once(':').expect("HH:MM");
+    let minute = h.parse::<i64>().expect("hours") * 60 + m.parse::<i64>().expect("minutes");
+    (date.days_after(&Date::utc(0)) * 1440 + minute) * 60_000
+}
+
+impl DoneWhen {
+    pub(crate) fn at(&self, local: &Now, now: i64, previous: Option<i64>) -> Result<i64, String> {
+        let utc = Now::utc(now);
+        let local = if local.time.is_some() { local } else { &utc };
+        let clock = local.time.as_ref().expect("a local or UTC time");
+        let utc_minute = now.div_euclid(60_000) * 60_000;
+        let offset = local_millis(&local.today, clock) - utc_minute;
+        let at = match &self.time {
+            Some(time) => local_millis(&self.date, time) - offset,
+            None => {
+                self.date.days_after(&Date::utc(0)) * 86_400_000
+                    + (previous.unwrap_or(now).rem_euclid(86_400_000) + offset).rem_euclid(86_400_000)
+                    - offset
+            }
+        };
+        if at > now { Err("完成时间不能晚于现在".into()) } else { Ok(at) }
+    }
+}
+
 #[derive(Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DoneArgs {
@@ -272,6 +323,11 @@ pub struct DoneArgs {
     #[schemars(description = "重复的事项结束重复、直接完成，如读完一本书时；默认 false")]
     #[serde(default)]
     pub end_repeat: bool,
+    #[schemars(
+        with = "Option<String>",
+        description = "补记完成：当地时间 YYYY-MM-DD 或 YYYY-MM-DD HH:MM，不早于 1970-01-01，不晚于现在；只给日期用现在的钟点，重复事项用 at 的日期而不是 today；未同时提供 today 和 time 时按 UTC 换算"
+    )]
+    pub at: Option<DoneWhen>,
 }
 
 #[derive(Clone, Deserialize, JsonSchema)]
@@ -660,12 +716,6 @@ pub struct RemindText {
     pub start: Vec<Remind>,
     /// Each with its time.
     pub at: Vec<WhenText>,
-}
-
-impl RemindText {
-    pub fn is_empty(&self) -> bool {
-        self.due.is_empty() && self.start.is_empty() && self.at.is_empty()
-    }
 }
 
 #[derive(Deserialize, JsonSchema)]

@@ -30,11 +30,22 @@ struct Case {
     /// AI job, folder, state.
     #[serde(default)]
     jobs: Vec<(String, Option<String>, JobState)>,
+    #[serde(default)]
+    prior: Vec<Batch>,
+    #[serde(default)]
+    no_effects: bool,
     ops: Vec<Value>,
     /// The day on the device the change is made on.
     today: Option<String>,
     error: Option<Value>,
     expect: Option<Map<String, Value>>,
+}
+
+#[derive(Deserialize)]
+struct Batch {
+    id: String,
+    ops: Vec<Value>,
+    today: Option<String>,
 }
 
 /// Task, folder, assignees.
@@ -99,8 +110,12 @@ impl World {
     }
 
     async fn mutate(&mut self, by: &str, ops: &[Value], today: Option<&str>) -> (StatusCode, Value) {
+        self.submit(by, id(), ops, today).await
+    }
+
+    async fn submit(&mut self, by: &str, mutation: String, ops: &[Value], today: Option<&str>) -> (StatusCode, Value) {
         let ops: Vec<Value> = ops.iter().map(|op| self.op(op)).collect();
-        let mut m = json!({ "id": id(), "ops": ops });
+        let mut m = json!({ "id": mutation, "ops": ops });
         if let Some(today) = today {
             m["today"] = today.into();
         }
@@ -163,6 +178,13 @@ impl World {
             .map(|t| (self.names[t["id"].as_str().unwrap()].clone(), json!(if t["dropped"] == true { "dropped" } else { "done" })))
             .collect();
         seen.insert("ended".into(), ended.into());
+        seen.insert("done_at".into(), by("tasks", &|t| t["done_at"].clone()));
+        seen.insert("start".into(), by("tasks", &|t| t["start"].clone()));
+        seen.insert("completions".into(), by("tasks", &|t| t["completions"].clone()));
+        let mut records: Vec<Value> =
+            all("completions").iter().map(|r| json!([self.name(&r["task_id"]), r["due"], r["again"], r["done"]])).collect();
+        records.sort_by_key(Value::to_string);
+        seen.insert("records".into(), records.into());
         let mut repeating: Vec<String> =
             all("tasks").iter().filter(|t| !t["due"]["repeat"].is_null()).map(|t| self.names[t["id"].as_str().unwrap()].clone()).collect();
         repeating.sort();
@@ -246,12 +268,24 @@ async fn changes_go_as_the_fixtures_say() {
         let mut w = World::new().await;
         let me = c.me.clone().unwrap_or_else(|| "alice".into());
         give(&mut w, &c, &me).await;
+        for batch in c.prior {
+            let mutation = w.id(&batch.id);
+            let (status, body) = w.submit(&me, mutation, &batch.ops, batch.today.as_deref()).await;
+            assert_eq!(status, StatusCode::OK, "{name}, {id}: {body}", name = c.name, id = batch.id);
+        }
         let before = w.t.snapshot(&w.secrets[&me]).await;
         let (status, body) = w.mutate(&me, &c.ops, c.today.as_deref()).await;
         let wanted = match (c.error, c.expect) {
             (Some(error), None) => {
                 assert!(!status.is_success(), "{}: {body}", c.name);
-                assert_eq!(json!({ "code": body["code"], "message": body["message"] }), error, "{}", c.name);
+                assert_eq!(body["code"], error["code"], "{}", c.name);
+                if error["code"] == "invalid" {
+                    assert_eq!(status, StatusCode::BAD_REQUEST, "{}", c.name);
+                }
+                assert_eq!(body["message"], error["message"], "{}", c.name);
+                if let Some(field) = error.get("field") {
+                    assert_eq!(&body["details"]["field"], field, "{}", c.name);
+                }
                 // Turned down, the batch leaves nothing behind, what came before the refused operation included.
                 assert_eq!(w.t.snapshot(&w.secrets[&me]).await, before, "{}", c.name);
                 continue;
@@ -260,6 +294,9 @@ async fn changes_go_as_the_fixtures_say() {
             _ => panic!("{}: either an error, or what to expect", c.name),
         };
         assert_eq!(status, StatusCode::OK, "{}: {body}", c.name);
+        if c.no_effects {
+            assert_eq!(body["effects"], json!([]), "{}", c.name);
+        }
         let seen = w.seen(&me).await;
         let wanted: BTreeMap<_, _> = wanted.into_iter().collect();
         for (what, mut value) in wanted {

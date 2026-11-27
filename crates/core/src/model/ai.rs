@@ -1,8 +1,8 @@
 //! AI jobs and the suggestions they make.
 
 use super::{
-    AiJobId, DefaultReminders, Description, Due, DueAfter, FolderColor, FolderIcon, FolderId, JobText, LocalTime, Remind, RemindAt, TaskId,
-    Title, nullable,
+    AiJobId, Date, DefaultReminders, Description, Due, DueAfter, FolderColor, FolderIcon, FolderId, JobText, LocalTime, Occurrence, Remind,
+    RemindAt, TaskId, Title, nullable,
 };
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -46,6 +46,14 @@ pub enum Suggestion {
     Style(Restyle),
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
+#[serde(untagged)]
+#[ts(export)]
+pub enum CompletionMark {
+    State(bool),
+    Date(Date),
+}
+
 /// Changes to a task, the fields given set and the dependencies given added or removed.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -70,7 +78,7 @@ pub struct TaskEdit {
     pub remind_at: Option<Vec<RemindAt>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
-    pub done: Option<bool>,
+    pub done: Option<CompletionMark>,
     /// A folder inside the one tidied, to move it into.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -110,6 +118,9 @@ pub struct NewTask {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[ts(as = "Option<Vec<RemindAt>>", optional)]
     pub remind_at: Vec<RemindAt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub done: Option<CompletionMark>,
     /// Tasks to put before it, new ones among them.
     pub after: Vec<TaskId>,
     /// Tasks already there to put after it.
@@ -155,6 +166,12 @@ pub struct Was {
     pub title: Title,
     pub description: Description,
     pub due: Option<Due>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub done_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub occurrence: Option<Occurrence>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub due_after: Option<DueAfter>,

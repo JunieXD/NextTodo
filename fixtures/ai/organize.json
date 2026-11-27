@@ -542,5 +542,11 @@
     "note": "今天是初一、说的几点已过：第一次是这个月的十五",
     "input": { "local_time": "2026-12-09 10:00 星期三", "folder": "/家人", "open_tasks": [], "text": "每月农历初一、十五早上八点上香" },
     "expect": { "tasks": [1, 1], "facts": [["上香"]], "repeat": [["上香", "2026-12-23 08:00 ~1lm:1,15"]] }
+  },
+  {
+    "id": "completion-time-organize",
+    "note": "补记已做的新事项，昨天而非截止",
+    "input": { "local_time": "2026-11-27 10:00 星期五", "folder": "/工作", "open_tasks": [], "text": "记一下昨天开了组会" },
+    "expect": { "tasks": [1, 1], "facts": [["组会"]], "done_on": [["组会", "2026-11-26"]], "due": [], "start": [] }
   }
 ]

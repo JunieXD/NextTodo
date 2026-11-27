@@ -1,0 +1,18 @@
+/* Sharing (docs/ui.md#共享): people's avatars, overlapping, each ringed in the colour of what is
+   behind them; the share panel and the assignee picker. */
+.people { --size: 22px; display: inline-flex; flex: none; }
+.person { width: var(--size); height: var(--size); border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--surface-highest); color: var(--on-surface-variant);
+  font-size: calc(var(--size) * .45); font-weight: 600; line-height: 1; box-shadow: 0 0 0 2px var(--ring, var(--group-bg)); }
+.person + .person { margin-left: calc(var(--size) / -3); }
+.person.more { font-size: calc(var(--size) * .38); font-variant-numeric: tabular-nums; }
+.share-add { display: flex; align-items: center; gap: 8px; }
+.share-add input { flex: 1; min-width: 0; }
+.share-note { margin: 0 16px 14px; font-size: 14px; line-height: 1.55; color: var(--on-surface-variant); }
+.share-people { --sep-left: 60px; }
+.share-role { font-size: 13px; color: var(--on-surface-variant); }
+.row.selected .people, .row.chosen .people { --ring: var(--secondary-container); }
+.shared-with { --ring: var(--surface); height: 40px; padding: 0 4px; border-radius: 20px; display: inline-flex; align-items: center; }
+.shared-with:active { opacity: .7; }
+.shared-by { color: var(--on-surface-variant); font-weight: 400; }
+.hero-actions { display: flex; align-items: center; flex: none; }
+.over-title { margin: 2px 16px -2px; font-size: 13px; color: var(--on-surface-variant); }

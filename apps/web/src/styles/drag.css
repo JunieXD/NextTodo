@@ -1,0 +1,15 @@
+/* Dragging a row to another place (docs/ui.md#拖动): up or down a list, into a folder, about the folder
+   tree, where a line shows where a folder would go, at the depth of the row below it. */
+.reorderable > .row { -webkit-touch-callout: none; }
+.rail-list.reordering .rail { opacity: 0; }
+.reorderable.reordering > .row { transition: transform .2s var(--ease); }
+.reorderable > .row[data-lifted] { visibility: hidden; }
+/* A copy of the row follows the pointer over the page, which its group would cut off past its corners;
+   over the row it would go into, it lets that show through. */
+.drag-ghost { position: fixed; z-index: 45; margin: 0; border-radius: 14px; overflow: hidden; background: var(--group-bg); box-shadow: var(--shadow-3); pointer-events: none; }
+.drag-ghost.into { opacity: .6; }
+.row[data-drop] > .row-inner, .desk .row[data-drop] > .row-inner { background: var(--primary-container); }
+.sb-item[data-drop] { background: var(--primary-container); color: var(--on-primary-container); }
+.sb-item[data-lifted] { position: relative; z-index: 4; box-shadow: var(--shadow-3); opacity: .6; }
+.sb-item[data-lifted]:not(.on) { background: var(--surface-high); }
+.sb-line { position: absolute; z-index: 5; left: calc(42px + var(--depth) * 18px); right: 8px; height: 2px; margin-top: -2px; border-radius: 1px; background: var(--primary); pointer-events: none; }

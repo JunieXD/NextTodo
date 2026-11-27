@@ -30,7 +30,7 @@ export function zoom(w: Zoomed): Zoom {
 
 async function zoomTo(scale: number) {
   await getCurrentWebview().setZoom(scale);
-  // For what lines up with the macOS window's buttons, which don't zoom (index.css).
+  // For what lines up with the macOS window's buttons, which don't zoom (styles/desktop.css).
   document.documentElement.style.setProperty("--zoom", String(scale));
 }
 

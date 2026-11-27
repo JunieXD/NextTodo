@@ -1,0 +1,181 @@
+/* The month of the due date panel. */
+.cal { margin-bottom: 14px; padding: 6px 8px 8px; }
+.cal-head { display: flex; align-items: center; gap: 4px; padding: 0 2px 4px 10px; }
+.cal-head span { flex: 1; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cal-week, .cal-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cal-week span { height: 28px; display: grid; place-items: center; font-size: 12px; color: var(--outline); }
+.cal-days button { height: 46px; display: grid; place-items: center; font-size: 15px; font-variant-numeric: tabular-nums; outline: none; }
+/* The day, and under it the lunar day (docs/design.md#农历). */
+.cal-days span { position: relative; width: 100%; max-width: 42px; height: 42px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.15; transition: background-color .15s, color .15s; }
+.cal-days small { font-size: 10px; color: var(--on-surface-variant); }
+.cal-days .out, .cal-days .out small, .cal-days [aria-pressed="true"] small, .cal-days :disabled small { color: inherit; }
+.cal-days .out { color: var(--outline); }
+.cal-days :disabled { color: var(--outline); opacity: .4; cursor: default; }
+.cal-days [aria-current="date"] { color: var(--primary); font-weight: 700; }
+.cal-days [aria-pressed="true"] span { background: var(--primary); color: var(--on-primary); font-weight: 600; }
+.cal-days :focus-visible span { box-shadow: 0 0 0 2px var(--primary); }
+.cal-days [aria-pressed="true"]:focus-visible span { box-shadow: 0 0 0 2px var(--group-bg), 0 0 0 4px var(--primary); }
+@media (hover: hover) { .cal-days button:not([aria-pressed="true"], :disabled):hover span { background: var(--press); } }
+.cal-days button:not([aria-pressed="true"], :disabled):active span { background: var(--press); }
+
+/* The calendar page (docs/ui.md#日历): a month or a week of days tinted by how much was done on each,
+   or a year of small ones. As wide as the settings' column on desktops. */
+.desk .cal-page:not(.time, .titles) { max-width: 600px; margin-inline: auto; }
+/* Sideways is the page's own, to turn it; up and down scroll. */
+.cal-swipe { touch-action: pan-y pinch-zoom; }
+/* As high with “今天” as without it. */
+.cal-bar { display: flex; align-items: center; gap: 4px; height: 40px; margin: 14px 16px 6px; scroll-margin-top: 14px; }
+/* Over the time grid, the month and its arrows stay on top too, the days under them. */
+.cal-page.time { --bar: 60px; }
+.cal-page.time .cal-bar { position: sticky; top: 0; z-index: 6; height: var(--bar); margin: 0; padding: 14px 16px 6px; background: var(--surface); }
+.cal-page.time .tg-head { top: var(--bar); }
+.cal-bar > span { flex: 1; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cal-page .cal-week, .cal-grid { margin: 0 12px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cal-grid button { height: 56px; display: grid; place-items: center; font-variant-numeric: tabular-nums; outline: none; }
+/* The whole cell takes a click; the day in it is a tile with room around it, so that tinted ones don't
+   run together. Outlines, as they draw over the tint. */
+.cal-grid button > span { position: relative; width: min(100% - 6px, 48px); height: 50px; display: flex; flex-direction: column; align-items: center; padding-top: 6px; border-radius: 12px; outline: 1px solid transparent; outline-offset: -1px; transition: outline-color .15s, outline-width .15s, outline-offset .15s; }
+.cal-num { font-size: 15px; line-height: 1.2; }
+.cal-grid small { font-size: 10px; line-height: 1.3; color: var(--on-surface-variant); }
+.cal-dots { display: flex; gap: 3px; height: 4px; margin-top: 4px; }
+.cal-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--primary); }
+.cal-dots i.overdue { background: var(--error); }
+.cal-grid .out { color: var(--outline); }
+.cal-grid .out small { color: inherit; }
+.cal-grid [aria-current="date"] .cal-num { color: var(--primary); font-weight: 700; }
+.cal-grid [aria-pressed="true"] > span { outline: 2px solid var(--primary); outline-offset: -2px; }
+.cal-grid button:focus-visible > span { outline: 2px solid var(--primary); outline-offset: 2px; }
+@media (hover: hover) { .cal-grid button:not([aria-pressed="true"]):hover > span { outline-color: var(--outline-variant); } }
+/* How much was done, in four steps: a layer of colour under the day, more or less see-through (not
+   `color-mix()`, which Chromium 99 has not, docs/web.md#浏览器). Days go from half of primary-container to
+   all of it, then to it under more and more of the primary colour, stopping where the small lunar text and
+   today's primary number are still clear: the text keeps its colour on all four. */
+:is(.heat-1, .heat-2, .heat-3, .heat-4) { position: relative; isolation: isolate; }
+:is(.heat-1, .heat-2, .heat-3, .heat-4)::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--primary); }
+.cal-grid :is(.heat-1, .heat-2)::before { background: var(--primary-container); }
+.cal-grid .heat-1::before { opacity: .5; }
+.cal-grid :is(.heat-3, .heat-4) { background: var(--primary-container); }
+.cal-grid .heat-3::before { opacity: .12; }
+.cal-grid .heat-4::before { opacity: .24; }
+:root[data-theme="dark"] .cal-grid .heat-3::before { opacity: .07; }
+:root[data-theme="dark"] .cal-grid .heat-4::before { opacity: .14; }
+.cal-year { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 12px; margin: 10px 16px; }
+.desk .cal-year { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.cal-mini h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+.cal-mini > div { display: grid; grid-template-columns: repeat(7, 12px); gap: 2px; }
+.cal-mini > div > :first-child { grid-column-start: calc(var(--skip) + 1); }
+.cal-mini button { width: 12px; height: 12px; border-radius: 3px; outline: none; background: var(--surface-container); }
+/* Deeper, as days this small would hardly show the lighter steps apart from those with nothing done. */
+.cal-mini .heat-1::before { opacity: .3; }
+.cal-mini .heat-2::before { opacity: .5; }
+.cal-mini .heat-3::before { opacity: .7; }
+.cal-mini .heat-4::before { opacity: 1; }
+.cal-mini [aria-current="date"], .cal-mini button:focus-visible { box-shadow: 0 0 0 1.5px var(--primary); }
+.cal-date { margin: 20px 32px 0; font-size: 16px; font-weight: 600; }
+.cal-lunar { margin-left: 8px; font-size: 14px; font-weight: 400; color: var(--on-surface-variant); }
+/* Festivals, solar terms, 休 and 班 (docs/ui.md#日历). */
+:is(.cal-grid, .cal-days, .tg-day, .cal-titled) small.day-note, .cal-date .day-note { color: var(--primary); }
+.day-mark { position: absolute; top: 3px; right: 4px; font-size: 9px; line-height: 1; font-weight: 700; font-style: normal; }
+.cal-days .day-mark { top: 2px; right: 3px; }
+/* By the number, not in the corner of a column that may be wide. */
+.tg-day .day-mark { top: 17px; right: auto; left: calc(50% + 11px); }
+.cal-holiday { margin-left: 8px; font-size: 14px; }
+:is(.day-mark, .cal-holiday).off { color: var(--primary); }
+:is(.day-mark, .cal-holiday).work { color: var(--warn); }
+.cal-grid .out :is(small.day-note, .day-mark), .cal-days :is(.out, [aria-pressed="true"], :disabled) :is(small.day-note, .day-mark) { color: inherit; }
+/* The primary colour and the amber, small, are too faint on the two deepest tints. */
+.cal-grid :is(.heat-3, .heat-4) :is(small.day-note, .day-mark) { color: var(--on-primary-container); }
+/* The month with titles: a day a cell, edge to edge as the time grid, a line over each week. */
+.cal-page.titles .cal-week { margin: 0; }
+.cal-titles { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cal-titled { position: relative; min-width: 0; height: 92px; display: flex; flex-direction: column; gap: 2px; padding: 2px 2px 0; border-top: 1px solid var(--outline-variant); overflow: hidden; cursor: pointer; }
+.desk .cal-titled { height: 112px; }
+.cal-titled.today::before { content: ""; position: absolute; inset: 0; background: var(--primary); opacity: .05; pointer-events: none; }
+.cal-titled.picked::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 2px var(--primary); pointer-events: none; }
+/* What is written with the day under its number: a phone's cells, and a computer's beside both side
+   panes, are too narrow for “国庆节” beside “15”. */
+.cal-titled-day { display: flex; flex-direction: column; align-items: flex-start; padding: 0 3px; min-width: 0; outline: none; font-variant-numeric: tabular-nums; }
+.cal-titled-day:focus-visible { box-shadow: inset 0 0 0 2px var(--primary); border-radius: 4px; }
+.cal-titled .cal-num { font-size: 13px; line-height: 16px; font-weight: 600; }
+.cal-titled small { max-width: 100%; font-size: 10px; line-height: 12px; color: var(--on-surface-variant); white-space: nowrap; overflow: hidden; }
+.cal-titled.today .cal-num { color: var(--primary); font-weight: 700; }
+.cal-titled.out { color: var(--outline); }
+.cal-titled.out :is(small, .day-mark) { color: inherit; }
+.cal-titled .tg-label { flex: none; text-align: start; }
+.cal-day .empty { margin-inline: 32px; }
+.occurrence .check { cursor: default; }
+
+/* The time grid (docs/ui.md#日历): a week by the hour in half-hour cells, edge to edge on phones. The days
+   and the row of what is due on a day alone stay on top as the hours scroll. */
+.tg { --hour: 4rem; --gutter: 32px; }
+.desk .tg { --gutter: 40px; }
+.tg-head { position: sticky; top: 0; z-index: 5; background: var(--surface); }
+.tg-row { display: grid; grid-template-columns: var(--gutter) repeat(7, minmax(0, 1fr)); }
+.tg-day { position: relative; height: 52px; margin: 2px 1px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 10px; font-variant-numeric: tabular-nums; outline: none; transition: box-shadow .15s; }
+.tg-day small { font-size: 10px; line-height: 1.3; color: var(--on-surface-variant); }
+.tg-day[aria-current="date"] :is(small:first-child, .cal-num) { color: var(--primary); font-weight: 700; }
+.tg-day[aria-pressed="true"] { box-shadow: inset 0 0 0 2px var(--primary); }
+@media (hover: hover) { .tg-day:not([aria-pressed="true"]):hover { box-shadow: inset 0 0 0 1px var(--outline-variant); } }
+.tg-day:focus-visible { box-shadow: 0 0 0 2px var(--primary); }
+.tg-allday { max-height: 40vh; overflow-y: auto; padding: 2px 0 4px; border-bottom: 1px solid var(--outline-variant); }
+.tg-gutter { padding: 3px 4px 0 0; font-size: 10px; text-align: right; color: var(--on-surface-variant); }
+.tg-cell { min-width: 0; min-height: 20px; display: flex; flex-direction: column; gap: 2px; padding: 0 2px; cursor: pointer; }
+.tg-body { display: grid; grid-template-columns: var(--gutter) minmax(0, 1fr); padding-bottom: 12px; }
+.tg-hours { position: relative; height: calc(24 * var(--hour)); }
+.tg-hours span { position: absolute; right: 2px; transform: translateY(-50%); font-size: 10px; letter-spacing: -.2px; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+.tg-hours .now { color: var(--primary); font-weight: 600; }
+.tg-cols { position: relative; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); height: calc(24 * var(--hour)); }
+/* A faint line each hour. */
+.tg-cols::before { content: ""; position: absolute; inset: 0; background: linear-gradient(var(--outline-variant) 1px, transparent 1px) 0 0 / 100% var(--hour); opacity: .6; pointer-events: none; }
+.tg-col { position: relative; min-width: 0; cursor: pointer; }
+.tg-col.today::before { content: ""; position: absolute; inset: 0; background: var(--primary); opacity: .05; pointer-events: none; }
+/* Now, under the blocks, so that it doesn't strike out a title: across the week, and bold on today. */
+.tg-now, .tg-now-today { position: absolute; left: 0; right: 0; z-index: 1; height: 1px; background: var(--primary); pointer-events: none; }
+.tg-now { opacity: .5; }
+.tg-now-today { height: 2px; margin-top: -.5px; }
+.tg-mark { position: absolute; width: 1px; height: 1px; }
+.tg-block, .tg-label { position: relative; overflow: hidden; font-size: 11px; font-weight: 500; }
+.tg-block { position: absolute; z-index: 2; display: grid; place-items: center; padding: 0 3px; border-radius: 6px; line-height: 13px; }
+.tg-block span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; text-align: center; text-wrap: balance; overflow-wrap: anywhere; }
+.tg-block.merged { font-weight: 700; }
+.tg-label { height: 18px; padding: 0 4px; border-radius: 5px; line-height: 18px; white-space: nowrap; text-overflow: ellipsis; text-align: center; }
+.tg-label.more { background: var(--surface-container); color: var(--on-surface-variant); font-weight: 700; }
+/* By the state, as the details' label has it. */
+:is(.tg-block, .tg-label).ready { background: var(--primary-container); color: var(--on-primary-container); }
+:is(.tg-block, .tg-label).overdue { background: var(--error-container); color: var(--error); }
+:is(.tg-block, .tg-label).waiting { background: var(--surface-highest); color: var(--on-surface-variant); }
+:is(.tg-block, .tg-label):is(.done, .dropped) { background: var(--surface-container); color: var(--outline); }
+:is(.tg-block, .tg-label):is(.done, .dropped):not(.merged) { text-decoration: line-through; }
+:is(.tg-block, .tg-label).later { background: var(--group-bg); box-shadow: inset 0 0 0 1px var(--outline-variant); color: var(--primary); }
+:is(.tg-block, .tg-label):active::after { content: ""; position: absolute; inset: 0; background: var(--press); }
+/* The half hour picked to add to, under what is added there. */
+.tg-new { position: absolute; z-index: 1; display: grid; place-items: center; border: 1.5px solid var(--primary); border-radius: 6px; color: var(--primary); }
+.tg-new::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--primary); opacity: .08; }
+
+/* Hours and minutes, side by side. */
+.time-menu { min-width: 0; padding: 6px; }
+.time-input { display: block; width: 100%; height: 40px; margin-bottom: 6px; border: 1px solid transparent; border-radius: 10px; background: var(--surface-container); padding: 0 8px; text-align: center; font: 400 16px var(--font); font-variant-numeric: tabular-nums; color: var(--on-surface); outline: none; }
+.time-input:focus { border-color: var(--primary); }
+.time-input[aria-invalid="true"] { border-color: var(--error); }
+.time-cols { display: flex; gap: 4px; margin-bottom: 4px; }
+.time-cols > div { position: relative; width: 76px; height: 216px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.time-cols button { flex: none; height: 40px; border-radius: 10px; font-size: 16px; font-variant-numeric: tabular-nums; text-align: center; outline: none; transition: background-color .15s, color .15s; }
+.time-cols button:disabled { color: var(--outline); cursor: default; }
+.time-cols button.on { background: var(--primary); color: var(--on-primary); font-weight: 600; }
+.time-cols button:focus-visible { box-shadow: inset 0 0 0 2px var(--primary); }
+@media (hover: hover) { .time-cols button:not(.on, :disabled):hover { background: var(--press); } }
+.time-menu > .menu-item, .until-menu > .menu-item { width: 100%; justify-content: center; color: var(--primary); font-weight: 500; }
+.time-menu > .menu-item:hover, .time-menu > .menu-item:focus-visible, .until-menu > .menu-item:hover, .until-menu > .menu-item:focus-visible { background: var(--press); }
+/* The month to pick the last day of a repeat in, in a menu of its own. */
+.until-menu { width: 300px; max-width: calc(100vw - 16px); padding: 6px; }
+.until-menu .cal { margin: 0; padding: 4px 0 2px; background: none; }
+
+/* The days of the week or month a repeat falls on, seven a line. */
+.days { display: grid; grid-template-columns: repeat(7, 30px); gap: 4px; }
+.days button { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-variant-numeric: tabular-nums; background: var(--surface-container); color: var(--on-surface); }
+.days [aria-pressed="true"] { background: var(--primary); color: var(--on-primary); font-weight: 600; }
+.days.lunar button { font-size: 11px; }
+.days button:disabled { cursor: default; }
+.days button:not(:disabled):active { filter: brightness(.92); }
+.days :focus-visible { box-shadow: 0 0 0 2px var(--group-bg), 0 0 0 4px var(--primary); outline: none; }

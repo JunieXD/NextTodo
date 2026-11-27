@@ -1,0 +1,76 @@
+:root {
+  /* The default accent's primary, which its swatch shows too; the others are made in theme.ts. */
+  --accent-emerald: #1B6B51;
+  --primary: var(--accent-emerald); --on-primary: #FFFFFF;
+  --primary-container: #A6F2D1; --on-primary-container: #002116;
+  --secondary-container: #CEE9DB; --on-secondary-container: #082016;
+  --surface: #F5FBF6; --group-bg: #FFFFFF;
+  --surface-low: #EFF5F0; --surface-container: #E9EFEA; --surface-high: #E4EAE5; --surface-highest: #DEE4DF;
+  --on-surface: #171D1A; --on-surface-variant: #404944;
+  --outline: #707973; --outline-variant: #BFC9C2;
+  --error: #BA1A1A; --error-container: #FFDAD6; --warn: #8A5100;
+  --inverse-surface: #2C322E; --inverse-on-surface: #ECF2ED; --inverse-primary: #8BD6B6;
+  --bar-bg: rgba(245, 251, 246, .8);
+  --press: rgba(23, 29, 26, .06);
+  --seg-on: #FFFFFF; --rail: #BFC9C2;
+  --shadow-1: 0 1px 2px rgba(23, 29, 26, .08), 0 1px 3px rgba(23, 29, 26, .06);
+  --shadow-3: 0 4px 8px rgba(23, 29, 26, .10), 0 2px 3px rgba(23, 29, 26, .08);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "MiSans", "HarmonyOS Sans SC", "Noto Sans SC", Roboto, "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  /* In the Android app, Capacitor's SystemBars writes the insets too: some WebViews say 0 for `env()`
+     while the page runs under the system bars, and SystemBars cuts them down to whole pixels. */
+  --safe-top: max(var(--safe-area-inset-top, 0px), env(safe-area-inset-top, 0px));
+  --safe-bottom: max(var(--safe-area-inset-bottom, 0px), env(safe-area-inset-bottom, 0px));
+  /* 1% of the viewport's height as it is now. Through this, not `dvh` itself: Chromium before 108 has
+     none, and a rule written twice, in `vh` first, loses its first value when the CSS is minified
+     (docs/web.md#浏览器). */
+  --dvh: 1dvh;
+  --tabbar-h: calc(64px + var(--safe-bottom));
+  --ease: cubic-bezier(.2, .9, .25, 1);
+  /* Leaving: slow at first, then away. */
+  --ease-exit: cubic-bezier(.3, 0, .8, .15);
+  /* Moving within the page: off gently, then settling. */
+  --ease-move: cubic-bezier(.2, 0, 0, 1);
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --accent-emerald: #8BD6B6;
+  --primary: var(--accent-emerald); --on-primary: #003827;
+  --primary-container: #00513B; --on-primary-container: #A6F2D1;
+  --secondary-container: #334B40; --on-secondary-container: #CEE9DB;
+  --surface: #0F1512; --group-bg: #1B211E;
+  --surface-low: #171D1A; --surface-container: #222825; --surface-high: #2A302D; --surface-highest: #343A37;
+  --on-surface: #DEE4DF; --on-surface-variant: #BFC9C2;
+  --outline: #89938D; --outline-variant: #3F4944;
+  --error: #FFB4AB; --error-container: #93000A; --warn: #FFB870;
+  --inverse-surface: #DEE4DF; --inverse-on-surface: #2C322E; --inverse-primary: #1B6B51;
+  --bar-bg: rgba(15, 21, 18, .78);
+  --press: rgba(222, 228, 223, .08);
+  --seg-on: #3A413D; --rail: #56605A;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow-3: 0 6px 16px rgba(0, 0, 0, .45);
+  color-scheme: dark;
+}
+@supports not (height: 1dvh) { :root { --dvh: 1vh; } }
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; scrollbar-width: none; }
+*::-webkit-scrollbar { display: none; }
+html, body { margin: 0; height: 100%; background: var(--surface); color: var(--on-surface); }
+body { font: 16px/1.4 var(--font); -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
+/* Screens of an app, not a page to read: a drag, a double click or a right click picks out no words, and
+   the pointer stays an arrow over them; only what is typed, and what is there to be copied, is text. */
+body { -webkit-user-select: none; user-select: none; cursor: default; }
+:is(input, textarea, [contenteditable], .md, .log-value, .dialog-detail, .error-details, .secret) { -webkit-user-select: text; user-select: text; cursor: auto; }
+button, input, textarea { font: inherit; color: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
+[data-action] { cursor: pointer; }
+.scrim, .modal-scrim, .dialog-scrim { cursor: default; }
+svg { display: block; flex: none; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+/* Not Tailwind's, which mixes the text's color: Chromium before 111 would show it unmixed, like typed text. */
+::placeholder { color: var(--outline); }
+.app { position: relative; height: calc(100 * var(--dvh)); overflow: hidden; }
+
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .3s; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

@@ -1,0 +1,166 @@
+.title-edit { width: 100%; margin: 0; padding: 0; border: 0; outline: none; resize: none; background: none; font: 600 22px/1.3 var(--font); color: var(--on-surface); field-sizing: content; }
+.field { display: flex; flex-direction: column; gap: 6px; margin: 0 16px 14px; font-size: 13px; font-weight: 600; color: var(--on-surface-variant); }
+.field input, .select { height: 48px; border-radius: 12px; border: 1px solid var(--outline-variant); background: var(--group-bg); padding: 0 14px; font: 400 16px var(--font); color: var(--on-surface); outline: none; }
+.field input:focus, .select:focus-visible, .select[data-state="open"] { border-color: var(--primary); }
+/* A choice from a menu, in a box like a text field's. */
+.select { display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; }
+.select svg { color: var(--outline); flex: none; }
+.field .hint { font-weight: 400; color: var(--outline); }
+.field textarea { border-radius: 12px; border: 1px solid var(--outline-variant); background: var(--group-bg); padding: 10px 14px; font: 400 15px/1.5 var(--font); color: var(--on-surface); outline: none; resize: vertical; min-height: 120px; }
+.field textarea:focus { border-color: var(--primary); }
+.field .link-btn { color: var(--primary); font-weight: 500; }
+.field-switch { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+/* A part of a form page that is not of the form above it. */
+.field.part { margin-top: 36px; }
+.field.part h2 { margin: 0; font: inherit; }
+.field.part p { margin: 0; }
+.field .hint.full { line-height: 1.5; }
+/* Under a group, where its title is. */
+.group-note { margin: 8px 32px 0; font-size: 13px; line-height: 1.5; color: var(--on-surface-variant); }
+.modal .group-note { margin: 0 16px 14px; }
+.form-ok { margin: -4px 16px 12px; font-size: 13px; color: var(--primary); }
+.field.error input { border-color: var(--error); }
+.field .hint.error-text { color: var(--error); }
+.due-mode { margin: 0 16px 12px; }
+.form-error { margin: -4px 16px 12px; font-size: 13px; color: var(--error); }
+.filled-btn, .tonal-btn { height: 40px; border-radius: 20px; padding: 0 20px; font-size: 14px; font-weight: 600; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.filled-btn { background: var(--primary); color: var(--on-primary); }
+.tonal-btn { background: var(--secondary-container); color: var(--on-secondary-container); }
+.filled-btn:disabled, .tonal-btn:disabled, .actions .text-btn:disabled, .login-local .text-btn:disabled { opacity: .5; cursor: default; }
+/* The buttons that end a panel, all one height: the main one filled, others tonal or plain, and one
+   that removes something apart on the left. */
+.actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin: 22px 16px 0; }
+.actions .danger-text { margin-right: auto; }
+/* Its own height, not more, to scroll within `.app`: with the keyboard up, the form's end too. */
+.login { height: calc(100 * var(--dvh)); display: grid; place-items: center; padding: calc(24px + var(--safe-top)) 0 calc(24px + var(--safe-bottom)); overflow-y: auto; }
+.login-card { width: min(420px, 100%); }
+.login-brand { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 24px; text-align: center; }
+.login-brand .brand-mark { width: 56px; height: 56px; }
+.login-brand h1 { margin: 0; font-size: 28px; font-weight: 700; }
+.login-brand p { margin: 0; color: var(--on-surface-variant); font-size: 15px; }
+.error-details { margin: 8px 0 0; color: var(--on-surface-variant); font-size: 13px; overflow-wrap: anywhere; }
+.login .seg { margin: 0 16px 18px; }
+.login .filled-btn { display: flex; width: calc(100% - 32px); height: 48px; border-radius: 24px; margin: 8px 16px 0; font-size: 15px; }
+.login-local { display: flex; flex-direction: column; align-items: center; gap: 2px; margin: 16px 16px 0; text-align: center; }
+.login-local p { margin: 0; font-size: 13px; color: var(--outline); }
+/* The two ways to use the app, asked when it first opens. */
+.way { display: flex; align-items: center; gap: 14px; width: calc(100% - 32px); margin: 0 16px 12px; padding: 16px; border-radius: 14px; background: var(--group-bg); }
+.way:active { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 6%); }
+/* Disabled only while local mode opens, which ends on another page (on Android, after a restart):
+   dimmed for that moment, the two would flash. */
+.way:disabled { cursor: default; }
+.way > svg:first-child { color: var(--primary); }
+.way > svg:last-child { color: var(--outline); }
+.way-text { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.way-text b { font-size: 16px; font-weight: 600; }
+.way-text span { font-size: 13px; color: var(--on-surface-variant); }
+.help { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
+/* A link to the guide on a line of its own, under what it explains. */
+.help-line { margin: 12px 16px 0; text-align: center; font-size: 14px; }
+.settings-page { padding-bottom: 24px; }
+.settings-page > :first-child { margin-top: 12px; }
+.settings-page > .group + .group { margin-top: 22px; }
+/* A group right under a control or a note of the same title, not under a title of its own. */
+.settings-page > :not(.group, .group-title) + .group { margin-top: 12px; }
+/* The settings are one column in the middle; their title lines up with it, the scroll's padding
+   (12) and the groups' margin (16) accounted for. */
+.desk .settings-page { max-width: 600px; margin-inline: auto; }
+/* The widgets' preview, kept in view as the settings scroll, over a wallpaper half light and half dark
+   rounded as the groups are, on the page's colour that hides what scrolls under it; laid out as the
+   widget is (NextWidget.kt). */
+.settings-page > .widget-stage { position: sticky; top: 0; z-index: 1; margin: 0; padding: 12px 16px; background: var(--surface); }
+.settings-page > .widget-stage + .group-title { margin-top: 10px; }
+.widget-wall { padding: 16px; border-radius: 14px; background: linear-gradient(90deg, #e3e9e5 50%, #1d2420 50%); }
+.widget-card { max-width: 340px; margin: 0 auto; padding-bottom: 6px; border-radius: 20px; font-size: calc(15px * var(--scale)); }
+.widget-head { display: flex; align-items: center; height: 46px; padding: 10px 14px 4px; }
+.widget-head.low { height: 36px; padding: 4px 14px 0; }
+.widget-head b { flex: 1; font-size: calc(17px * var(--scale)); }
+.widget-buttons { display: flex; align-items: center; gap: 14px; }
+.widget-row { position: relative; display: flex; align-items: center; gap: 8px; padding: calc(7px * var(--scale)) 14px calc(7px * var(--scale)) 50px; }
+.widget-row + .widget-row::before { content: ""; position: absolute; top: 0; left: 50px; right: 14px; height: 1px; background: var(--w-divider); }
+.widget-circle { position: absolute; left: 16px; width: 18px; height: 18px; border: 2px solid var(--w-primary); border-radius: 50%; }
+.widget-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.widget-meta { font-size: calc(12px * var(--scale)); white-space: nowrap; }
+.widget-note { padding: 12px 14px; font-size: 14px; }
+.widget-picker { margin: 12px 16px 0; }
+.range { flex: 1; min-width: 0; accent-color: var(--primary); }
+.range-value { min-width: 3em; margin-left: 0; text-align: right; }
+.main-head.narrow { width: 100%; max-width: 624px; margin-inline: auto; }
+/* Its quick add lines up with the groups of the column, 16 inside it as elsewhere. */
+.desk .main-head.narrow + .quick-add { width: calc(100% - 56px); max-width: 568px; margin-inline: auto; }
+.secret { margin: 0 16px 12px; padding: 6px 6px 6px 14px; border-radius: 12px; background: var(--surface-container); font: 13px/1.5 ui-monospace, Menlo, monospace; display: flex; align-items: center; gap: 8px; }
+.secret span { flex: 1; padding: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+.field .secret { margin: 0; font-weight: 400; color: var(--on-surface); }
+.copy-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 8px; }
+.copy-head .seg button { white-space: nowrap; }
+.dialog .field { margin: 0 0 20px; }
+.status-note { margin: 4px 16px 0; font-size: 13px; color: var(--outline); }
+.menu { min-width: 200px; padding: 6px; border-radius: 14px; background: var(--surface-high); box-shadow: var(--shadow-3); z-index: 60;
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin, var(--radix-context-menu-content-transform-origin, var(--radix-select-content-transform-origin, var(--radix-popover-content-transform-origin)))); }
+.menu[data-state="open"] { animation: menu-in .18s var(--ease); }
+.menu[data-state="closed"] { animation: menu-out .12s var(--ease-exit) forwards; }
+@keyframes menu-in { from { transform: scale(.94); opacity: 0; } }
+@keyframes menu-out { to { transform: scale(.96); opacity: 0; } }
+.menu-item { display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 10px; font-size: 15px; color: var(--on-surface); outline: none; cursor: pointer; transition: background-color .15s; }
+.menu-item[data-highlighted] { background: var(--press); }
+.menu-item.danger-text { color: var(--error); }
+/* A menu to choose from: the current one ticked, the rest scrolled to past its room. */
+.menu.choose { max-height: min(400px, var(--radix-select-content-available-height)); }
+.menu.choose.multi { max-height: min(400px, var(--radix-dropdown-menu-content-available-height)); display: flex; flex-direction: column; }
+.menu.multi .menu-scroll { min-height: 0; overflow-y: auto; }
+.menu-item.noted { color: var(--on-surface-variant); }
+.menu-note { font-size: 12px; }
+.menu .tick { margin-left: auto; color: var(--primary); display: grid; }
+.menu.suggest { min-width: 0; width: var(--radix-popover-trigger-width); max-height: min(280px, var(--radix-popover-content-available-height)); overflow-y: auto; font-weight: 400; }
+.menu.suggest .menu-item { display: block; height: 40px; line-height: 40px; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Sized for a finger above; with a mouse, as compact as the system's menus. Before the time menu, which
+   keeps its own room. */
+@media (pointer: fine) {
+  .menu { min-width: 180px; padding: 4px; border-radius: 12px; }
+  .menu-item { height: 32px; gap: 10px; padding: 0 10px; border-radius: 8px; font-size: 14px; }
+  .menu-item svg { width: 16px; height: 16px; }
+  .menu.suggest .menu-item { height: 32px; line-height: 32px; }
+}
+
+/* The square box of a checklist item. */
+.box { width: 18px; height: 18px; border-radius: 5px; border: 1.8px solid var(--outline); display: grid; place-items: center; color: transparent; flex: none; transition: background-color .15s, border-color .15s, color .15s; }
+.box[data-checked="true"] { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+
+/* Rows of settings in a panel, the value of each on the right; those that open a menu with a chevron. */
+.group.settings { --sep-left: 16px; }
+.settings .row-value { display: flex; align-items: center; gap: 8px; }
+/* Too wide beside their row's name, controls go under it, and onto lines of their own when too wide
+   side by side too, rather than squeeze it, or the words on them, to a character a line. */
+.row-inner.controls { flex-wrap: wrap; row-gap: 8px; }
+.controls .row-value { flex-wrap: wrap; justify-content: flex-end; }
+/* The panel's shortcut, in a box that takes a new one when clicked. */
+.keys { flex: none; min-width: 88px; text-align: center; height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--outline-variant); font-size: 15px; color: var(--on-surface); }
+.keys.none { color: var(--on-surface-variant); }
+.keys.taking, .keys:focus-visible { border-color: var(--primary); outline: none; }
+.keys.taking { color: var(--primary); }
+.row.pick > .row-inner > svg { margin-left: -4px; color: var(--outline); flex: none; }
+/* The name keeps its width; a long value, such as the names of folders, is cut short instead. */
+.row-name { flex: none; }
+.row-value.long { display: block; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Rows that only hold controls don't light up as clickable rows do. */
+.desk .settings > div.row:hover > .row-inner { background: var(--group-bg); }
+.row.pick:disabled { cursor: default; }
+.row.pick:disabled > .row-inner { color: var(--outline); }
+.row.pick:disabled .row-value, .row.pick:disabled svg { color: var(--outline); opacity: .6; }
+
+/* What a button without words does, on hovering it. */
+.tip { z-index: 70; max-width: var(--radix-tooltip-content-available-width); overflow-wrap: anywhere; padding: 6px 10px; border-radius: 8px; background: var(--inverse-surface); color: var(--inverse-on-surface); font-size: 13px; line-height: 1.3; box-shadow: var(--shadow-1); pointer-events: none; }
+.tip[data-state$="open"] { animation: fade .12s; }
+.detail-actions { margin: 22px 16px 0; --sep-left: 16px; }
+.detail-actions .end-repeat .row-inner { color: var(--primary); justify-content: center; font-weight: 500; }
+
+/* Tips at the top of “接下来”: the Android app's first-start one, the start time one. */
+.tip-card { margin: 8px 16px 4px; padding: 14px 16px 6px; border-radius: 14px; background: var(--secondary-container); color: var(--on-secondary-container); font-size: 14px; line-height: 1.5; }
+.tip-actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 4px; }
+
+/* A number, stepped by − and + or typed. */
+.stepper { display: inline-flex; align-items: center; padding: 2px; border-radius: 10px; background: var(--surface-container); }
+.stepper button { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--on-surface); }
+.stepper button:disabled { color: var(--outline); opacity: .5; cursor: default; }
+.stepper button:not(:disabled):active { background: var(--press); }
+.stepper input { height: 30px; border: 0; outline: none; background: none; padding: 0; text-align: center; font: 600 15px var(--font); font-variant-numeric: tabular-nums; color: var(--on-surface); }

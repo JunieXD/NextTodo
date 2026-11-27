@@ -14,7 +14,7 @@
 | `src/local.ts` | 两个 App 的[本机模式](local.md)：打开 App 里的服务端，进入和离开，备份和恢复 |
 | `src/ui/` | 通用组件：图标、勾选圈、分段控件、底部面板、弹窗和对话框、提示条、没人处理的错误的提示（`failures.tsx`）、Markdown 描述 |
 | `src/views/` | 页面：登录、手机和电脑两种布局、接下来、文件夹、关系图（`Graph.tsx`，布局在 `graph-layout.ts`）、搜索、详情、设置、各种选择面板 |
-| `src/index.css` | 样式：原型的样式原样放在 `components` 层，Tailwind 提供基础样式和颜色工具类 |
+| `src/index.css`、`src/styles/` | 样式：`index.css` 引入 Tailwind 和 `styles/`，并用 `@theme inline` 定义颜色工具类；`styles/` 里按界面的部分各一个文件，都放在 `components` 层，按引入的先后层叠 |
 
 技术选型见[总体设计](design.md#技术栈)；路由用 wouter，IndexedDB 用 idb，顺序键用 fractional-indexing，ID 用 uuid（v7）。
 

@@ -1,0 +1,217 @@
+.scrim { position: absolute; z-index: 20; inset: 0; background: rgba(0, 0, 0, .36); transition: opacity .3s; }
+.scrim.half { opacity: 0; pointer-events: none; }
+.scrim.enter { animation: fade .3s; }
+.scrim.leave { animation: fade-out .28s var(--ease-exit) forwards; }
+@keyframes fade { from { opacity: 0; } }
+@keyframes fade-out { to { opacity: 0; } }
+.sheet { position: absolute; z-index: 21; left: 0; right: 0; bottom: 0; height: calc(100 * var(--dvh) - var(--safe-top) - 10px); display: flex; flex-direction: column;
+  background: var(--surface-low); border-radius: 28px 28px 0 0; box-shadow: 0 -8px 32px rgba(0, 0, 0, .14); transition: transform .38s var(--ease); }
+.sheet.half { transform: translateY(calc(100% - 60 * var(--dvh))); }
+.sheet.enter { animation: sheet-in .42s var(--ease); }
+.sheet.leave { animation: sheet-out .28s var(--ease-exit) forwards; }
+@keyframes sheet-in { from { transform: translateY(100%); } }
+@keyframes sheet-out { to { transform: translateY(100%); } }
+.sheet.dragging { transition: none; }
+.sheet-grab { flex: none; height: 26px; display: grid; place-items: center; touch-action: none; cursor: grab; }
+.handle { width: 36px; height: 5px; border-radius: 3px; background: var(--outline-variant); }
+.sheet-scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding-bottom: calc(24px + var(--safe-bottom)); }
+/* in the half state the lower part of the sheet is off screen; pad so the content can still scroll fully into view */
+.sheet.half .sheet-scroll { padding-bottom: calc(40 * var(--dvh) - var(--safe-top) + 14px + var(--safe-bottom)); }
+
+.detail { padding-bottom: 8px; }
+.d-head { display: flex; align-items: flex-start; gap: 14px; padding: 6px 12px 14px 16px; touch-action: none; }
+.d-head .check { margin-top: 3px; }
+.d-title-wrap { flex: 1; min-width: 0; }
+.d-title { margin: 0; font-size: 22px; line-height: 1.3; font-weight: 600; }
+.d-title button { text-align: left; }
+/* In a narrow column the parts go on to another line whole; a long `@alice#42` breaks anywhere. */
+.d-status { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; font-size: 13px; color: var(--on-surface-variant); overflow-wrap: anywhere; }
+.pill { height: 22px; border-radius: 11px; padding: 0 9px; display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; }
+.pill.ready { background: var(--primary-container); color: var(--on-primary-container); }
+.pill.waiting { background: var(--surface-highest); color: var(--on-surface-variant); }
+.pill.done, .pill.dropped { background: var(--surface-highest); color: var(--outline); }
+.prop .row-inner { min-height: 50px; gap: 12px; }
+.prop svg { color: var(--on-surface-variant); }
+.prop .row-value .people { margin-right: 8px; vertical-align: middle; }
+/* A row with a button of its own at the end: the rest of the row is a button too, and the two share
+   the whole row, a finger's width for the one at the end. */
+.prop-split > .row-inner { padding: 0; gap: 0; }
+.prop-main { flex: 1; min-width: 0; align-self: stretch; display: flex; align-items: center; gap: 12px; padding: 10px 0 10px 16px; }
+.prop-side { flex: none; align-self: stretch; width: 52px; display: grid; place-items: center; }
+.prop-side svg { transition: color .15s; }
+@media (hover: hover) { .prop-side:hover svg { color: var(--on-surface); } }
+.d-sec { margin: 22px 32px 8px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.d-sec h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--on-surface-variant); }
+.d-sec p { margin: 2px 0 0; font-size: 12px; color: var(--outline); }
+.d-sec .seg { width: 120px; }
+.md { padding: 14px 16px; font-size: 15px; line-height: 1.65; }
+.md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+.md :is(h1, h2, h3, h4, h5, h6) { margin: 12px 0 4px; font-size: 16px; font-weight: 600; }
+.md p { margin: 6px 0; }
+.md :is(ul, ol) { margin: 6px 0; padding-left: 20px; }
+.md ul { list-style: disc; } .md ol { list-style: decimal; }
+.md a { color: var(--primary); text-decoration: underline; }
+.md pre { overflow-x: auto; margin: 8px 0; padding: 10px 12px; border-radius: 10px; background: var(--surface-container); }
+.md pre code { padding: 0; background: none; }
+.md hr { border: 0; border-top: .5px solid var(--outline-variant); margin: 12px 0; }
+.md table { border-collapse: collapse; } .md :is(th, td) { border: .5px solid var(--outline-variant); padding: 4px 8px; }
+.md ul.contains-task-list { list-style: none; padding-left: 0; }
+/* The box beside the text, which flows as a paragraph does: lines broken in it start under the first. */
+.md li.ck { position: relative; padding: 3px 0 3px 28px; list-style: none; cursor: pointer; }
+.md li.ck .box { position: absolute; left: 0; top: 7px; }
+.md li.ck.on { color: var(--outline); text-decoration: line-through; }
+.md blockquote { margin: 8px 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--primary-container); color: var(--on-surface-variant); }
+.md code { font: 13px ui-monospace, Menlo, monospace; background: var(--surface-container); padding: 1px 5px; border-radius: 5px; }
+.md-edit { display: block; width: 100%; min-height: 200px; border: 0; outline: none; resize: vertical; padding: 14px 16px; background: var(--group-bg); font: 14px/1.6 ui-monospace, Menlo, monospace; }
+/* The list buttons below a description being written, in sight at the bottom when the box runs past it,
+   as above the keyboard. Its group clips without scrolling, which would keep them inside it. */
+.group.writing { overflow: clip; }
+.md-tools { position: sticky; bottom: 0; display: flex; padding: 0 6px; border-top: .5px solid var(--outline-variant); background: var(--group-bg); }
+.md-tools .icon-btn { width: 44px; height: 44px; border-radius: 10px; }
+.md-tools > :last-child { margin-left: auto; }
+.md-tools .icon-btn:disabled { opacity: .38; }
+@media (pointer: fine) { .md-tools .icon-btn { width: 32px; height: 32px; border-radius: 8px; } }
+/* The changelog (views/Changelog.tsx): after an update, what changed since, by kind, each item with
+   its version when there are several; in the settings, a section for each release, its version and day. */
+.release-since { margin: 0 16px; font-size: 13px; color: var(--on-surface-variant); }
+.release + .release { border-top: .5px solid var(--outline-variant); }
+.release { padding-bottom: 12px; }
+.release h4 { margin: 16px 16px 0; display: flex; align-items: baseline; gap: 8px; font-size: 16px; font-weight: 600; }
+.release h4 span { font-size: 13px; font-weight: 400; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+.changes h5 { margin: 14px 16px 4px; display: flex; align-items: baseline; gap: 6px; font-size: 14px; font-weight: 600; }
+.changes h5 span { font-weight: 400; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+.changes ul { margin: 0; padding: 0 16px 0 34px; font-size: 14px; line-height: 1.6; }
+.changes li + li { margin-top: 4px; }
+.changes .version { margin-left: 8px; font-size: 12px; color: var(--on-surface-variant); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.earlier { margin: 8px 2px 0; }
+.dep .row-inner { min-height: 52px; gap: 12px; }
+.dot { width: 10px; height: 10px; border-radius: 5px; border: 2px solid var(--outline); flex: none; margin: 0 7px; }
+.dot.ready { border-color: var(--primary); } .dot.done { background: var(--primary); border-color: var(--primary); } .dot.dropped { background: var(--outline); border-color: var(--outline); } .dot.waiting { border-style: dashed; border-color: var(--outline-variant); }
+.dep-main { flex: 1; min-width: 0; display: flex; flex-direction: column; text-align: left; }
+.dep-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dep.done .dep-title, .dep.dropped .dep-title { color: var(--outline); text-decoration: line-through; }
+.dep-path { font-size: 12px; color: var(--on-surface-variant); }
+.add-row .row-inner { color: var(--primary); font-weight: 500; min-height: 48px; }
+/* As wide as the dots of the rows below it. */
+.add-row.dep svg { margin: 0 2px; flex: none; }
+/* Attachments (docs/ui.md#附件): pictures as square thumbnails, three a row on a phone and four on a
+   computer; other files as rows; the files staged in an add box; references in a description. */
+.spin svg { animation: spin 1s linear infinite; }
+.att-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 10px; }
+.desk .att-grid { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); }
+.att-grid + .row::before { display: none; }
+.att-thumb { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: var(--surface-container); }
+.att-open { display: block; width: 100%; height: 100%; }
+.att-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.att-open:active { opacity: .8; }
+/* Inside: the thumbnail's rounded corners cut off what is outside. */
+.att-open:focus-visible { outline-offset: -2px; border-radius: 10px; }
+.att-quick { position: absolute; top: 4px; right: 4px; display: none; gap: 4px; }
+.att-quick button { width: 28px; height: 28px; border-radius: 14px; display: grid; place-items: center; background: rgba(0, 0, 0, .55); color: #fff; transition: background-color .15s; }
+.att-quick button:hover { background: rgba(0, 0, 0, .75); }
+@media (hover: hover) { .att-thumb:hover .att-quick, .att-thumb:focus-within .att-quick { display: flex; } }
+.att-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--outline); }
+.att-state { position: absolute; right: 4px; bottom: 4px; width: 22px; height: 22px; border-radius: 11px; display: grid; place-items: center; background: rgba(0, 0, 0, .55); color: #fff; }
+.att-file .row-inner { min-height: 52px; gap: 12px; cursor: default; }
+.att-file .row-inner > svg { flex: none; color: var(--on-surface-variant); }
+.att-name { flex: 1; min-width: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.att-size { flex: none; font-size: 13px; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+.att-file .icon-btn { margin-right: -8px; }
+.drop-cover { position: absolute; z-index: 10; inset: 8px; border: 2px dashed var(--primary); border-radius: 16px; display: grid; place-items: center; background: color-mix(in srgb, var(--surface), transparent 15%); color: var(--primary); font-weight: 500; pointer-events: none; }
+.quick-add > .drop-cover { inset: 0; border-radius: inherit; font-size: 14px; }
+.ref-chip { display: inline-flex; align-items: center; gap: 4px; height: 22px; max-width: 100%; padding: 0 6px; border-radius: 6px; vertical-align: -5px; background: var(--secondary-container); color: var(--on-secondary-container); font-size: 13px; line-height: 22px; }
+.ref-chip svg { flex: none; }
+.ref-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ref-chip.gone { background: var(--surface-container); color: var(--outline); text-decoration: line-through; cursor: default; }
+.staged-list { display: flex; gap: 8px; overflow-x: auto; padding: 10px 12px 2px; scrollbar-width: none; }
+.staged { position: relative; flex: none; height: 48px; }
+.staged-main { height: 48px; max-width: 180px; padding: 0 12px; display: flex; align-items: center; gap: 6px; border-radius: 10px; background: var(--surface-high); font-size: 13px; }
+.staged-main span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.staged.picture .staged-main { width: 48px; padding: 0; justify-content: center; overflow: hidden; }
+.staged.picture img { width: 100%; height: 100%; object-fit: cover; }
+.staged.refused .staged-main { outline: 2px solid var(--error); outline-offset: -2px; }
+.staged-error { position: absolute; top: -5px; right: -5px; width: 18px; height: 18px; border-radius: 9px; display: grid; place-items: center; background: var(--error); color: var(--group-bg); pointer-events: none; }
+.staged-remove { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 10px; display: grid; place-items: center; background: var(--inverse-surface); color: var(--inverse-on-surface); }
+/* What AI organizing does not show the model, on the picture's lower left. */
+.staged-unseen { position: absolute; left: 2px; bottom: 2px; padding: 1px 3px; border-radius: 4px; background: rgba(0, 0, 0, .62); color: #fff; font-size: 9px; line-height: 12px; white-space: nowrap; pointer-events: none; }
+/* The mark has the corner, and × goes below it. */
+.staged.refused .staged-remove { top: auto; bottom: -6px; }
+/* The picture viewer: full screen, black, over the panels and under dialogs and the snackbar. */
+.viewer { position: absolute; z-index: 35; inset: 0; display: flex; flex-direction: column; background: #000; color: #fff; outline: none; }
+.viewer.enter { animation: fade .2s; }
+.viewer.leave { animation: fade-out .18s var(--ease-exit) forwards; }
+.viewer-bar { position: relative; z-index: 1; flex: none; display: flex; align-items: center; gap: 4px; padding: calc(8px + var(--safe-top)) 8px 8px; background: linear-gradient(rgba(0, 0, 0, .6), transparent); }
+/* White, and shadowed to show over a light picture too. */
+.viewer-bar .icon-btn { color: inherit; filter: drop-shadow(0 0 2px rgba(0, 0, 0, .6)); }
+.viewer-bar .icon-btn:active { background: rgba(255, 255, 255, .12); }
+.viewer-title { flex: 1; min-width: 0; margin: 0 4px; display: flex; gap: 8px; align-items: baseline; font-size: 15px; font-weight: 500; }
+.viewer-title span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.viewer-title span + span { flex: none; font-size: 13px; opacity: .7; }
+/* Flex, not grid: WebKit sizes a grid's row to the picture's own height and centres the picture, kept
+   to the stage's height, in that. */
+.viewer-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: none; }
+.viewer-stage img { max-width: 100%; max-height: 100%; -webkit-touch-callout: none; }
+.viewer-empty { opacity: .6; }
+.viewer-step { position: absolute; top: 50%; width: 48px; height: 48px; margin-top: -24px; border-radius: 24px; display: grid; place-items: center; background: rgba(255, 255, 255, .12); color: #fff; transition: background-color .15s; }
+.viewer-step.prev { left: 16px; } .viewer-step.next { right: 16px; }
+.viewer-step:disabled { opacity: .3; }
+.viewer-step:hover:not(:disabled) { background: rgba(255, 255, 255, .2); }
+.provenance { margin: 18px 32px 0; font-size: 12px; color: var(--outline); display: flex; align-items: center; gap: 6px; }
+
+.modal-scrim { position: absolute; z-index: 30; inset: 0; background: rgba(0, 0, 0, .36); }
+.modal-scrim.enter { animation: fade .25s; }
+.modal-scrim.leave { animation: fade-out .26s var(--ease-exit) forwards; }
+.modal { position: absolute; z-index: 31; left: 0; right: 0; bottom: 0; max-height: calc(86 * var(--dvh)); display: flex; flex-direction: column; background: var(--surface-low); border-radius: 28px 28px 0 0; padding-bottom: calc(16px + var(--safe-bottom)); overflow: hidden; }
+.modal.enter { animation: sheet-in .38s var(--ease); }
+.modal.leave { animation: sheet-out .26s var(--ease-exit) forwards; }
+/* One page of the settings for another: the panel stays, its content moves on or back. */
+.modal.forth:not(.leave) :is(.modal-head h3, .modal-body) { animation: page-forth .3s var(--ease); }
+.modal.back:not(.leave) :is(.modal-head h3, .modal-body) { animation: page-back .3s var(--ease); }
+@keyframes page-forth { from { transform: translateX(40px); opacity: 0; } }
+@keyframes page-back { from { transform: translateX(-40px); opacity: 0; } }
+/* A folder's page in the task picker, after a step into a subfolder or up. */
+.page-forth { animation: page-forth .3s var(--ease); }
+.page-back { animation: page-back .3s var(--ease); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 12px 10px 16px; }
+.modal-head h3 { margin: 0; font-size: 18px; font-weight: 600; }
+.modal-body { overflow-y: auto; padding-bottom: 8px; }
+.actions.modal-foot { flex-wrap: wrap; margin: 0; padding: 12px 16px 0; border-top: .5px solid var(--outline-variant); }
+/* What went wrong as a button below was pressed: in the footer, as the content may have scrolled it out of sight. */
+.modal-foot .form-error { flex-basis: 100%; margin: 0; }
+.search { margin: 0 16px 12px; height: 40px; border-radius: 12px; background: var(--surface-container); display: flex; align-items: center; gap: 8px; padding: 0 12px; color: var(--on-surface-variant); }
+.search input { flex: 1; border: 0; background: none; outline: none; font-size: 16px; color: var(--on-surface); min-width: 0; }
+.picker .row:disabled { opacity: .45; }
+.danger .row-inner { color: var(--error); justify-content: center; font-weight: 500; }
+.token-ic { width: 30px; height: 30px; border-radius: 8px; background: var(--surface-container); display: grid; place-items: center; color: var(--on-surface-variant); flex: none; }
+.dialog-scrim { position: absolute; z-index: 40; inset: 0; background: rgba(0, 0, 0, .4); display: grid; place-items: center; padding: 24px; }
+.dialog-scrim.enter { animation: fade .2s; }
+.dialog { width: min(320px, 100%); background: var(--surface-high); border-radius: 28px; padding: 24px 24px 16px; }
+.dialog-scrim.enter .dialog { animation: dialog-in .25s var(--ease); }
+.dialog-scrim.leave { animation: fade-out .16s var(--ease-exit) forwards; }
+.dialog-scrim.leave .dialog { animation: dialog-out .16s var(--ease-exit) forwards; }
+@keyframes dialog-in { from { transform: scale(.92); opacity: 0; } }
+@keyframes dialog-out { to { transform: scale(.96); opacity: 0; } }
+.dialog h3 { margin: 0 0 12px; font-size: 22px; font-weight: 500; }
+.dialog p { margin: 0 0 20px; font-size: 14px; line-height: 1.55; color: var(--on-surface-variant); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.dialog-actions.stacked { flex-direction: column; align-items: flex-end; }
+.dialog-detail { max-height: 240px; overflow: auto; margin: -8px 0 20px; padding: 10px 12px; border-radius: 12px; background: var(--surface-container);
+  font: inherit; font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--on-surface); }
+.text-btn { height: 40px; padding: 0 14px; border-radius: 20px; color: var(--primary); font-size: 14px; font-weight: 600; }
+.text-btn.danger-text { color: var(--error); }
+a.text-btn { display: inline-flex; align-items: center; }
+.copy-value { height: 40px; padding: 0 10px; border-radius: 20px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.copy-value:active { background: var(--press); }
+.text-btn:active { background: var(--press); }
+
+/* Above a panel too, which leaves nothing else to take a click. */
+.snackbar { pointer-events: auto; position: absolute; z-index: 50; left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 72px); min-height: 48px; padding: 6px 8px 6px 16px; border-radius: 12px;
+  display: flex; align-items: center; gap: 8px; background: var(--inverse-surface); color: var(--inverse-on-surface); font-size: 14px; box-shadow: var(--shadow-3);
+  touch-action: pan-y; transition: transform .2s var(--ease), opacity .2s var(--ease); }
+.snackbar.swiping { transition: none; }
+.snackbar.enter { animation: snack-in .3s var(--ease); }
+.snackbar.leave { animation: fade-out .16s var(--ease-exit) forwards; pointer-events: none; }
+@keyframes snack-in { from { transform: translateY(16px); opacity: 0; } }
+.snackbar span { flex: 1; }
+.snackbar button { height: 36px; padding: 0 12px; border-radius: 18px; color: var(--inverse-primary); font-weight: 600; }
+.snackbar .snack-close { width: 36px; padding: 0; display: grid; place-items: center; color: var(--inverse-on-surface); }

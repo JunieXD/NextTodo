@@ -29,7 +29,7 @@ export const useMarks = () => useContext(MarksContext);
 export const useMarking = () => useContext(MarkingContext);
 
 const LINGER_MS = 900;
-/** As long as `.task.leaving` takes to fold (index.css). */
+/** As long as `.task.leaving` takes to fold (styles/lists.css). */
 const LEAVE_MS = 300;
 const FLASH_MS = 1700;
 const POP_MS = 400;

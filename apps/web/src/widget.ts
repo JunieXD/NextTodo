@@ -40,7 +40,7 @@ export function setDesktopLook(look: DesktopLook) {
 
 export const useDesktopLook = () => useSyncExternalStore(onLook, desktopLook);
 
-/** In the widget: its colours on the page, for index.css, as chosen and as the theme is light or dark;
+/** In the widget: its colours on the page, for styles/desktop.css, as chosen and as the theme is light or dark;
  * again whenever either changes. */
 export function paintWidget() {
   const paint = () => {

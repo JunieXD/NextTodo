@@ -1,0 +1,314 @@
+.group-title { margin: 22px 32px 8px; font-size: 13px; font-weight: 600; color: var(--on-surface-variant); display: flex; justify-content: space-between; }
+.group-title.overdue { color: var(--error); }
+.group-title.today { color: var(--warn); }
+/* “接下来”'s groups fold away by their titles (docs/design.md#接下来): taller than the text to take a tap. */
+.fold-title { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 0; margin: -6px 0; }
+.fold-title .chev { display: inline-flex; margin-left: auto; transition: transform .2s, color .15s; }
+.fold-title[aria-expanded="false"] .chev { transform: rotate(-90deg); }
+.fold-count { font-weight: 400; }
+@media (hover: hover) { .fold-title:hover .chev { color: var(--on-surface-variant); } }
+.group { margin: 0 16px; background: var(--group-bg); border-radius: 14px; overflow: hidden; position: relative; }
+.row { position: relative; display: block; width: 100%; }
+.row + .row::before, .rail-list + .row::before, .rail-note + .rail-list > .row:first-child::before, .row + .fold > div > .row:first-child::before, .fold + .row::before { content: ""; position: absolute; z-index: 3; top: 0; right: 0; left: var(--sep-left, 52px); height: .5px; background: var(--outline-variant); }
+.row-inner { position: relative; display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 16px; background: var(--group-bg); transition: transform .25s var(--ease), background-color .15s; }
+.row:active > .row-inner, .row.pressed > .row-inner { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 6%); }
+.row.selected > .row-inner { background: var(--secondary-container); }
+/* Batch operations: the box on the right, the row tinted once chosen; what cannot be chosen fades. */
+.row.chosen > .row-inner { background: var(--secondary-container); }
+.folder-row, .row.job, .add-row, .rail-note { transition: opacity .2s; }
+.choosing .folder-row, .choosing .row.job, .choosing .add-row, .choosing .rail-note { opacity: .4; pointer-events: none; }
+.row.task .box { width: 20px; height: 20px; animation: box-in .2s var(--ease); }
+@keyframes box-in { from { transform: scale(.5); opacity: 0; } }
+.row-value { margin-left: auto; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+/* After .row-value, which it greys. */
+.muted { color: var(--outline); }
+.swipe-bg { position: absolute; inset: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; font-size: 14px; font-weight: 600; }
+.swipe-bg span { display: inline-flex; align-items: center; gap: 6px; }
+.row.swiping .swipe-bg { background: linear-gradient(90deg, var(--primary) 50%, var(--error) 50%); color: var(--on-primary); }
+.row.swiping .row-inner { transition: none; }
+:root[data-theme="dark"] .row.swiping .swipe-bg { color: var(--surface); }
+
+.check { position: relative; width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--outline); display: grid; place-items: center; color: transparent; flex: none; background: var(--group-bg); transition: background .2s, border-color .2s, color .15s; }
+.check::before { content: ""; position: absolute; inset: -10px; }
+.check.ready { border-color: var(--primary); }
+.check.waiting { border: 2px dashed var(--rail); }
+.check.done { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.check.dropped { background: var(--outline); border-color: var(--outline); color: var(--surface); }
+.check.pop { animation: pop .35s var(--ease); }
+@keyframes pop { 40% { transform: scale(1.22); } }
+@media (hover: hover) { .check.ready:hover { color: var(--primary); } }
+.check.lg { width: 30px; height: 30px; }
+
+.task-main { min-width: 0; flex: 1; display: block; text-align: left; }
+.task-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.task-title { display: block; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Whole, however long the title before it. */
+.task-step { flex: none; font-size: 13px; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+.task.waiting .task-title { color: var(--on-surface-variant); }
+.task.done .task-title, .task.dropped .task-title { color: var(--outline); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--outline), transparent 40%); }
+.task-meta { display: flex; gap: 10px; margin-top: 2px; font-size: 13px; color: var(--on-surface-variant); white-space: nowrap; overflow: hidden; }
+.task-meta > span { display: inline-flex; align-items: center; gap: 3px; }
+.m-path { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; display: inline-block !important; }
+.overdue { color: var(--error); }
+.today { color: var(--warn); }
+.m-unlock, .m-done-today { color: var(--primary); font-weight: 500; }
+.m-warn { color: var(--warn); font-weight: 500; }
+.task.unlocked > .row-inner { animation: unlock 1.6s ease-out; }
+.task.unlocked .check { animation: ring 1s ease-out; }
+@keyframes unlock { 0%, 30% { background: var(--primary-container); } }
+@keyframes ring { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary), transparent 30%); } 100% { box-shadow: 0 0 0 12px transparent; } }
+
+/* rail list: the dependency gutter */
+.rail-list { position: relative; }
+.rail-list .row-inner { height: 64px; min-height: 0; padding-left: var(--gutter); }
+.rail-list .check { position: absolute; z-index: 2; top: 20px; }
+.rail { position: absolute; z-index: 1; top: 0; left: 0; pointer-events: none; overflow: visible; transition: opacity .2s; }
+/* A completed task folds away, the rows below moving up; the rail waits for them to settle. */
+.task.leaving { overflow: hidden; animation: fold .3s var(--ease-move) forwards; }
+@keyframes fold { from { height: var(--h); } to { height: 0; opacity: 0; } }
+.rail-list:has(.leaving) .rail { opacity: 0; }
+.rail path { fill: none; stroke: var(--rail); stroke-width: 2; stroke-linecap: round; }
+.rail path.live { stroke: color-mix(in srgb, var(--primary), transparent 35%); }
+.rail-note .row-inner { min-height: 44px; justify-content: space-between; font-size: 13px; color: var(--on-surface-variant); }
+
+/* What follows a task in “接下来” (docs/ui.md#接下来里的后续): the rail goes on from the row's circle. */
+.chain-btn { position: relative; flex: none; margin-right: -6px; }
+.chain-btn::before { content: ""; position: absolute; inset: -6px; }
+.chain-btn svg { transition: transform .2s; }
+.chain-btn.open { background: var(--secondary-container); color: var(--on-secondary-container); }
+.chain-btn.open svg { transform: rotate(180deg); }
+.row.chain-open > .row-inner::after { content: ""; position: absolute; left: 27px; top: 50%; bottom: 0; width: 2px; background: color-mix(in srgb, var(--primary), transparent 35%); }
+.row.chain-open .check { z-index: 1; }
+.chain { position: relative; padding-bottom: 4px; }
+.chain .rail circle { fill: var(--group-bg); stroke-width: 2; }
+.chain .rail circle.waiting { stroke: var(--rail); stroke-dasharray: 3 2.5; }
+.chain .rail circle.ready { stroke: var(--primary); }
+.chain-item { display: flex; align-items: center; gap: 8px; width: 100%; height: 40px; padding: 0 16px 0 var(--gutter); color: var(--on-surface-variant); background: var(--group-bg); transition: background-color .15s; }
+.chain-item:active { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 6%); }
+.desk .chain-item:not(.selected):hover, .panel .chain-item:not(.selected):hover { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 4%); }
+.chain-item.selected { background: var(--secondary-container); }
+.chain-title { flex: 1; min-width: 0; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chain-item.ready .chain-title { color: var(--on-surface); }
+.chain-note { max-width: 60%; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.chain-more { display: flex; align-items: center; width: 100%; height: 36px; padding: 0 16px 0 var(--gutter); font-size: 13px; font-weight: 600; color: var(--primary); }
+
+.folder-row .row-inner { gap: 12px; }
+/* A folder's colour (docs/ui.md#文件夹的颜色和图标): what it draws comes with it, from folder-look.tsx; drawn
+   on the page, its icon is the one for the theme. */
+.fc { --fc-accent: var(--fc-light); }
+:root[data-theme="dark"] .fc { --fc-accent: var(--fc-dark); }
+/* Colours to choose from: a folder's, the accent. Ringed when chosen, the gap showing what is behind. */
+.color-choices { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; margin: 0 12px; }
+.color-choices.accents { margin: 0 16px; }
+.color-choice { height: 36px; display: grid; place-items: center; border-radius: 50%; }
+.color-choice .swatch { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--swatch); color: var(--swatch-on, var(--surface)); }
+.color-choice[aria-pressed="true"] .swatch { outline: 2px solid var(--swatch); outline-offset: 2px; }
+/* A folder's default: no colour of its own, its icon in the text's. */
+.color-choice .swatch.none { background: none; color: var(--on-surface-variant); box-shadow: inset 0 0 0 2px var(--outline); }
+.color-choice[aria-pressed="true"] .swatch.none { outline-color: var(--outline); }
+/* Every hue, as on the bar a colour of one's own is picked on. */
+:root { --hues: #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00; }
+.color-choice .swatch.rainbow { background: conic-gradient(var(--hues)); }
+/* A colour of one's own: saturation across and value up the square, of the hue chosen on the bar. */
+.color-picker { display: flex; flex-direction: column; gap: 14px; margin: 14px 16px 0; }
+.color-sv, .color-hue { position: relative; touch-action: none; cursor: crosshair; outline: none; }
+.color-sv { height: 160px; border-radius: 12px; background: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent), hsl(var(--hue) 100% 50%); }
+.color-hue { height: 24px; border-radius: 12px; cursor: pointer; background: linear-gradient(to right, var(--hues)); }
+.color-thumb { position: absolute; width: 24px; height: 24px; margin: -12px; border-radius: 50%; background: var(--thumb); border: 3px solid #fff; box-shadow: 0 0 0 1px rgb(0 0 0 / .2), 0 1px 4px rgb(0 0 0 / .3); pointer-events: none; }
+.color-sv:focus-visible .color-thumb, .color-hue:focus-visible .color-thumb { box-shadow: 0 0 0 2px var(--primary), 0 1px 4px rgb(0 0 0 / .3); }
+.color-fields { display: flex; gap: 10px; }
+.color-fields label { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; font-size: 13px; color: var(--on-surface-variant); }
+.color-fields label:first-child { flex: 1.8; }
+.color-fields input { width: 100%; min-width: 0; height: 36px; border-radius: 10px; border: 1px solid var(--outline-variant); background: var(--group-bg); padding: 0 8px; font: 400 15px var(--font); color: var(--on-surface); outline: none; font-variant-numeric: tabular-nums; }
+.color-fields input:focus { border-color: var(--primary); }
+.folder-glyph { display: inline-flex; flex: none; color: var(--fc-accent, currentColor); }
+/* In a list, where a task's tick is, so that the names start alike. */
+:is(.folder-row, .picker) .folder-glyph { width: 24px; justify-content: center; }
+/* Centred on the title's characters, whose middle is about .36em above the baseline (Chinese ones, in PingFang
+   and Noto Sans CJK alike); the icon stands on its bottom edge, half its height below its middle. */
+.title-ic { vertical-align: calc(.36em - 14px); margin-right: 8px; }
+.main-title .title-ic { vertical-align: calc(.36em - 12px); }
+.m-folder { min-width: 0; flex-shrink: 1; overflow: hidden; }
+.prop .row-value .folder-glyph { margin-right: 4px; vertical-align: -2px; }
+.prop .prop-note { display: block; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--on-surface-variant); }
+.prop .folder-glyph svg { color: inherit; }
+.look-preview { display: flex; align-items: center; gap: 12px; margin: 4px 16px 0; font-size: 16px; font-weight: 500; min-width: 0; }
+.look-title { margin: 18px 16px 8px; font-size: 13px; font-weight: 600; color: var(--on-surface-variant); }
+.look-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 6px; margin: 0 12px; }
+.look-icon { height: 40px; display: grid; place-items: center; border-radius: 10px; color: var(--on-surface-variant); transition: background-color .15s; }
+.look-icon:hover { background: var(--press); }
+.look-icon[aria-pressed="true"] { background: var(--secondary-container); color: var(--on-secondary-container); }
+.folder-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* One line each, as in task rows: dragging takes the rows of a list to be as tall as each other. */
+.folder-main > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.folder-sub { font-size: 13px; color: var(--on-surface-variant); }
+.note-place { margin: 0 16px 10px; font-size: 13px; color: var(--on-surface-variant); }
+.note-above { margin: 0 16px 12px; max-height: 160px; overflow: auto; font-size: 13px; line-height: 1.5; color: var(--outline); }
+.note-above p { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.note-above b { margin-right: 6px; font-weight: 600; }
+/* Unless it says what to do, to be read in full: why updates failed, say. */
+.folder-main > .folder-sub.full { white-space: normal; }
+.log-more { margin: 4px 8px; }
+/* Short of room, who made it gives way: the batch number is what an undo of it names. */
+.folder-main > .log-sub { display: flex; }
+.log-sub > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.log-sub > :last-child { flex: none; white-space: pre; }
+/* The change detail: a block for each thing changed, a field's name above what it was, struck through,
+   and what it became. */
+.log-item + .log-item { margin-top: 12px; }
+.log-field { flex-direction: column; align-items: stretch; gap: 2px; }
+.log-name { font-size: 13px; color: var(--on-surface-variant); }
+.log-value { white-space: pre-wrap; overflow-wrap: anywhere; }
+.log-value.was { color: var(--on-surface-variant); text-decoration: line-through; }
+/* A line through doesn't reach into an inline flex box by itself. */
+.log-value.was .look-value { text-decoration: line-through; }
+.log-value.clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
+.log-open { align-self: flex-start; }
+.look-value { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; }
+.look-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--fc-accent); }
+.chev { color: var(--outline); }
+.done-toggle .row-inner { color: var(--on-surface-variant); font-size: 15px; min-height: 48px; }
+.done-toggle .chev { transition: transform .2s; margin-left: auto; }
+.done-toggle.open .chev { transform: rotate(90deg); }
+/* Unfolding into place and folding away (ui/fold.tsx); clipped only meanwhile, so that a folder
+   dragged out of its place in the tree still shows. */
+.fold { display: grid; grid-template-rows: 1fr; }
+.fold > div { min-height: 0; min-width: 0; }
+.fold.opening { overflow: hidden; animation: unfold .25s var(--ease-move); }
+.fold.closing { overflow: hidden; pointer-events: none; animation: fold-away .2s var(--ease-move) forwards; }
+@keyframes unfold { from { grid-template-rows: 0fr; opacity: 0; } }
+@keyframes fold-away { to { grid-template-rows: 0fr; opacity: 0; } }
+.empty { margin: 8px 16px; color: var(--on-surface-variant); font-size: 15px; line-height: 1.6; }
+
+/* segmented control */
+/* On or off: on in the primary color, the dot on the right. */
+.switch { flex: none; position: relative; width: 44px; height: 26px; border-radius: 13px; background: var(--outline-variant); transition: background .2s; }
+.switch[data-state="checked"] { background: var(--primary); }
+.switch span { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .2s var(--ease); }
+.switch span[data-state="checked"] { transform: translateX(18px); }
+.switch:focus-visible { box-shadow: 0 0 0 2px var(--group-bg), 0 0 0 4px var(--primary); outline: none; }
+label.row { cursor: pointer; }
+.seg { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 2px; border-radius: 10px; background: var(--surface-container); }
+/* The thumb under the one picked, of `--n`, slides to it from the one before. */
+.seg::before { content: ""; position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc((100% - 4px) / var(--n)); border-radius: 8px; background: var(--seg-on); box-shadow: var(--shadow-1); transform: translateX(calc(var(--i) * 100%)); transition: transform .25s var(--ease); }
+.seg button { position: relative; height: 30px; border-radius: 8px; font-size: 14px; font-weight: 500; color: var(--on-surface-variant); display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 10px; transition: color .2s; }
+.seg button[data-state="checked"] { color: var(--on-surface); }
+.seg.sm button { height: 26px; font-size: 13px; }
+.seg button:disabled { color: var(--outline); cursor: default; }
+.view-seg { margin: 14px 16px 4px; }
+
+/* quick add: a field with its own fill and the buttons beside it, at the bottom as the field grows */
+.quick-add { position: absolute; z-index: 4; left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 10px); display: flex; align-items: flex-end; gap: 6px; padding: 5px; border-radius: 25px;
+  background: var(--group-bg); box-shadow: var(--shadow-3); }
+/* A layer of its own above the tab bar: without one, Android's WebView (Chrome 145) left a strip of the
+   page's list, shifted down, above the bar after switching here from the calendar or the settings, a
+   compositing slip next to the tab bar's backdrop filter. */
+.screen .quick-add { will-change: transform; }
+.qa-field { flex: 1; min-width: 0; display: flex; flex-direction: column; border-radius: 20px; background: var(--surface-container); }
+.qa-field textarea { min-width: 0; border: 0; background: none; outline: none; resize: none; font-size: 16px; line-height: 22px; padding: 9px 14px; max-height: calc(22px * 5 + 18px); overflow-y: auto; text-overflow: ellipsis; }
+/* The placeholder takes one line, cut short with the field's ellipsis. */
+.qa-field ::placeholder { white-space: nowrap; overflow: hidden; text-overflow: inherit; }
+.qa-side { align-self: stretch; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; gap: 4px; padding-bottom: 2px; flex: none; }
+.qa-side .expand { margin-bottom: auto; }
+.qa-btns { display: flex; gap: 4px; }
+.qa-btn { height: 36px; border-radius: 18px; padding: 0 12px; display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 500; color: var(--on-surface-variant); background: var(--surface-container); white-space: nowrap; transition: background-color .2s, color .2s; }
+.qa-btn.on { background: var(--primary); color: var(--on-primary); }
+.qa-btn.icon { width: 36px; padding: 0; justify-content: center; flex: none; }
+.qa-btn.folder { max-width: 132px; }
+.qa-btn.folder span { overflow: hidden; text-overflow: ellipsis; }
+.qa-btn.send { background: var(--primary); color: var(--on-primary); }
+.qa-btn.send:disabled { opacity: .4; }
+/* Narrow, and in the quick add card, two layers: the field the whole width, and the buttons in a row
+   under it. Narrow and out of use, the field alone, as a one-line bar. */
+.quick-add.layered { flex-direction: column; align-items: stretch; gap: 0; transition: border-radius .2s; }
+.quick-add.layered:not(.shut) { border-radius: 22px; }
+.quick-add.layered:not(.shut) .qa-field { border-radius: 17px; }
+.qa-row { display: grid; grid-template-rows: 1fr; transition: grid-template-rows .2s var(--ease-move), opacity .2s; }
+.quick-add.shut .qa-row { grid-template-rows: 0fr; opacity: 0; }
+.qa-row-in { min-height: 0; overflow: hidden; display: flex; justify-content: space-between; gap: 4px; }
+.qa-row-in .qa-btns { padding-top: 5px; min-width: 0; }
+/* AI organizing's text expanded: a page of its own on phones, a large window on computers */
+.editor { position: absolute; z-index: 31; inset: 0; display: flex; flex-direction: column; background: var(--surface-low); padding: var(--safe-top) 0 calc(12px + var(--safe-bottom)); }
+.editor.enter { animation: sheet-in .38s var(--ease); }
+.editor.leave { animation: sheet-out .26s var(--ease-exit) forwards; }
+.editor textarea { flex: 1; min-height: 0; border: 0; background: none; outline: none; resize: none; font-size: 16px; line-height: 1.6; padding: 4px 16px 12px; }
+.editor .staged-list { padding-inline: 16px; }
+.editor-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 16px 0; }
+.editor-foot > :first-child { margin-right: auto; }
+
+/* AI jobs in lists */
+.job-ic { width: 24px; height: 24px; display: grid; place-items: center; flex: none; color: var(--primary); }
+.job.waiting .job-ic { color: var(--outline); }
+.job.running .job-ic svg { animation: spin 1s linear infinite; }
+.job.failed .job-ic, .job.failed .job-status { color: var(--error); }
+.job.ready .job-status { color: var(--primary); }
+.suggestion-reason { margin: -2px 32px 8px; font-size: 13px; line-height: 1.5; color: var(--on-surface-variant); }
+.suggestion-part .row-inner { align-items: flex-start; cursor: pointer; }
+.suggestion-part .box { margin-top: 2px; }
+.suggestion-text { flex: 1; min-width: 0; max-height: 12em; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.5; }
+.suggestion-text b { display: block; font-size: 12px; font-weight: 600; color: var(--on-surface-variant); }
+.suggestion-now { display: block; margin-top: 4px; font-size: 13px; color: var(--warn); }
+.job-status { overflow: hidden; text-overflow: ellipsis; min-width: 0; display: inline-block !important; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.job-detail-status { margin: 0 16px 12px; font-size: 14px; color: var(--on-surface-variant); }
+.job-detail-status.failed { color: var(--error); }
+
+/* chips & fab */
+.graph-tools { display: flex; gap: 8px; padding: 10px 16px 8px; overflow-x: auto; flex: none; }
+.chip { height: 32px; border-radius: 8px; padding: 0 12px; border: 1px solid var(--outline-variant); display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; color: var(--on-surface-variant); white-space: nowrap; max-width: 100%; }
+.chip.on { background: var(--secondary-container); border-color: transparent; color: var(--on-secondary-container); }
+/* “接下来”'s folder filter, when it filters; when not, it is an icon button. Narrower on the narrowest
+   phones, for the large title to keep its one line. */
+.next-filter { height: 32px; max-width: min(180px, 40vw); border-radius: 16px; padding: 0 12px 0 10px; display: inline-flex; align-items: center; gap: 6px; background: var(--secondary-container); color: var(--on-secondary-container); font-size: 14px; font-weight: 500; white-space: nowrap; transition: opacity .15s; }
+.next-filter:active { opacity: .7; }
+.next-filter span { overflow: hidden; text-overflow: ellipsis; }
+/* Its words start where the text above does. */
+.empty .text-btn { margin-top: 4px; padding-left: 0; }
+.fab { position: absolute; z-index: 4; right: 16px; bottom: calc(var(--tabbar-h) + 16px); height: 56px; border-radius: 16px; padding: 0 20px 0 16px; display: inline-flex; align-items: center; gap: 8px;
+  background: var(--primary-container); color: var(--on-primary-container); font-size: 15px; font-weight: 600; box-shadow: var(--shadow-3); }
+.fab.on { background: var(--primary); color: var(--on-primary); }
+/* On phones the graph's 连线 stands over its quick add bar (docs/ui.md#关系图): the two in one column
+   at the bottom, out of each other's way however tall the bar grows. */
+.graph-bottom { position: absolute; z-index: 4; left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 10px); display: flex; flex-direction: column; align-items: flex-end; gap: 12px; pointer-events: none; }
+.graph-bottom > * { pointer-events: auto; }
+.graph-bottom .fab { position: static; margin-right: 4px; }
+.graph-bottom .quick-add { position: relative; inset: auto; align-self: stretch; }
+/* And the snackbar over both, where it isn't over the button: but for Chromium 99, which lacks `:has()`. */
+.app:has(.graph-bottom .quick-add:not([hidden])) .snackbar { bottom: calc(var(--tabbar-h) + 140px); }
+
+/* graph */
+.graph-area { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.graph-wrap { position: relative; flex: 1; overflow: hidden;
+  --xy-background-pattern-color: color-mix(in srgb, var(--outline-variant), transparent 30%); }
+.graph-defs { position: absolute; width: 0; height: 0; }
+#arrow path, #arrow-hl path { fill: none; stroke: var(--outline); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#arrow-hl path { stroke: var(--primary); }
+.react-flow__handle { visibility: hidden; }
+/* React Flow turns off pointer events on nodes it has no handlers for; the tasks handle their own. */
+.react-flow__node .node { pointer-events: auto; }
+.react-flow__edge { cursor: pointer; transition: opacity .2s; }
+.react-flow__edge-path { fill: none; stroke: var(--outline); stroke-opacity: .55; stroke-width: 1.6; }
+.react-flow__edge.hl .react-flow__edge-path { stroke: var(--primary); stroke-opacity: 1; stroke-width: 2.2; }
+.react-flow__edge.dim { opacity: .2; }
+.node { border-radius: 14px; padding: 8px 12px; display: flex; flex-direction: column; justify-content: center; gap: 2px; text-align: left;
+  background: var(--group-bg); border: 1px solid var(--outline-variant); color: var(--on-surface); transition: opacity .2s, box-shadow .2s; }
+.node.ready { background: var(--primary-container); color: var(--on-primary-container); border-color: transparent; }
+.node.done, .node.dropped { background: var(--surface-container); border-color: transparent; color: var(--outline); }
+.node.done .n-title, .node.dropped .n-title { text-decoration: line-through; }
+.node.ghost { background: color-mix(in srgb, var(--surface), transparent 20%); border: 1.5px dashed var(--outline); color: var(--on-surface-variant); }
+.node.sel { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--primary); }
+.node.dim { opacity: .28; }
+.node.source { animation: source 1.2s ease-in-out infinite; }
+.node.unlocked { animation: ring 1s ease-out; }
+@keyframes source { 50% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 6px color-mix(in srgb, var(--primary), transparent 40%); } }
+.n-title { font-size: 14px; font-weight: 500; line-height: 1.3; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.node.has-meta .n-title { -webkit-line-clamp: 1; }
+.n-meta, .n-folder { font-size: 12px; display: flex; align-items: center; gap: 3px; opacity: .85; white-space: nowrap; overflow: hidden; }
+.n-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.n-line .people { margin-left: auto; }
+.node { --ring: var(--group-bg); }
+.node.ready { --ring: var(--primary-container); }
+.node.done, .node.dropped { --ring: var(--surface-container); }
+.node.ready .n-meta { opacity: .75; }
+.connect-banner { position: absolute; z-index: 5; top: 8px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 20px;
+  background: var(--inverse-surface); color: var(--inverse-on-surface); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: var(--shadow-3); }

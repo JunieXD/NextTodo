@@ -1,0 +1,134 @@
+.desk-cols { --side-w: var(--sidebar); --pane-w: var(--pane); display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr) var(--pane-w); height: 100%; transition: grid-template-columns .32s var(--ease); }
+.desk-cols.side-closed { --side-w: 0px; }
+.desk-cols.pane-closed { --pane-w: 0px; }
+.desk-cols.resizing, .desk-cols.resizing :is(.sb-inner, .pane-inner) { transition: none; }
+.desk-cols.resizing { cursor: col-resize; }
+/* What a column is dragged by to be wider or narrower (columns.ts), over the line between it and the
+   middle; that line lights up once the pointer rests on it, at once as it is dragged. */
+.col-edge { position: absolute; z-index: 3; top: 0; bottom: 0; width: 8px; cursor: col-resize; touch-action: none; }
+.sidebar-edge { left: -4px; }
+.pane-edge { right: -4px; }
+.col-edge::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: var(--primary); opacity: 0; transition: opacity .15s; }
+.col-edge:hover::after { opacity: 1; transition-delay: .25s; }
+.col-edge:active::after { opacity: 1; transition-delay: 0s; }
+.sidebar { background: var(--surface-low); border-right: 1px solid var(--outline-variant); overflow: hidden; min-width: 0; transition: border-color .32s; }
+/* Its width moves with its column's, which the other opening or folding can change. */
+.sb-inner { width: var(--sidebar); height: 100%; display: flex; flex-direction: column; transition: width .32s var(--ease); }
+.side-closed .sidebar { border-right-color: transparent; }
+.sb-foot { display: flex; align-items: center; gap: 4px; padding: 8px; border-top: 1px solid var(--outline-variant); }
+.sb-user { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 12px; transition: background-color .15s; }
+.sb-user:hover { background: var(--press); }
+.sb-user.on { background: var(--secondary-container); }
+.sb-user .avatar { width: 32px; height: 32px; margin: 0; font-size: 14px; }
+.sb-user .folder-main > span:first-child { font-size: 14px; font-weight: 600; }
+.sb-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 16px 12px 18px; }
+.brand { font-size: 17px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.brand-mark { width: 26px; height: 26px; }
+/* Its edges where the items' are when pressed, its icon over theirs. */
+.sidebar .search { margin: 0 8px 10px; padding: 0 10px; height: 36px; }
+.sb-scroll { position: relative; flex: 1; overflow-y: auto; padding: 0 8px 16px; }
+.sb-item { width: 100%; height: 36px; margin-bottom: 2px; border-radius: 10px; display: flex; align-items: center; gap: 8px; padding: 0 10px; font-size: 14px; color: var(--on-surface); transition: background-color .15s, color .15s; }
+.sb-item:hover { background: var(--press); }
+.sb-item.on { background: var(--secondary-container); color: var(--on-secondary-container); font-weight: 600; }
+.sb-item .count { margin-left: auto; font-size: 13px; color: var(--on-surface-variant); font-variant-numeric: tabular-nums; }
+.sb-item .tw { width: 16px; display: grid; place-items: center; color: var(--outline); transition: transform .15s; }
+.sb-item .tw.open { transform: rotate(90deg); }
+.sb-label { margin: 18px 10px 6px; font-size: 12px; font-weight: 600; color: var(--on-surface-variant); display: flex; align-items: center; justify-content: space-between; height: 16px; }
+.sb-label .sb-fold { width: 24px; height: 24px; border-radius: 6px; margin-right: -4px; }
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+.main-tools { display: flex; justify-content: space-between; padding: 10px 14px 0; flex: none; }
+/* Where the actions don't fit beside the title, a narrow middle column, they go on a line below it. */
+.main-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; padding: 2px 28px 14px; flex: none; }
+.crumbs { font-size: 13px; color: var(--on-surface-variant); margin-bottom: 2px; min-height: 18px; }
+.crumbs a, .crumb { color: inherit; transition: color .15s, opacity .15s; }
+.crumbs a:hover, .crumb:hover { color: var(--primary); }
+.crumbs .crumb-back { display: inline-flex; align-items: center; gap: 2px; margin-left: -4px; color: var(--primary); font-weight: 500; }
+.crumbs .crumb-back:hover { opacity: .8; }
+.main-title { margin: 0; font-size: 28px; font-weight: 700; line-height: 1.2; }
+.main-head .seg { min-width: 200px; }
+/* The calendar's views, four with the time grid, each in a line. */
+:is(.main-head, .hero-actions) .seg button { white-space: nowrap; }
+/* Short of room, such as the batch's in a narrow middle column, whole buttons go on to another line. */
+.head-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-left: auto; }
+.main-scroll { flex: 1; overflow-y: auto; padding: 0 12px 40px; }
+.main > :not(.main-tools) { animation: fade .2s var(--ease); }
+.main-scroll .group-title:first-child { margin-top: 6px; }
+.desk .quick-add { position: relative; inset: auto; margin: 4px 28px 6px; box-shadow: none; border: 1px solid var(--outline-variant); }
+.desk .graph-tools { padding: 0 28px 10px; }
+/* The graph is outside the scroll's padding: its note starts with the title all the same. */
+.desk .graph-area .empty { margin-inline: 28px; }
+.desk .graph-tools .spacer { flex: 1; }
+.desk .connect-banner { top: 12px; }
+/* Relative: what covers the details while files are dragged over covers the pane, not what scrolls in it. */
+.detail-pane { position: relative; background: var(--surface-low); border-left: 1px solid var(--outline-variant); overflow: hidden; min-width: 0; transition: border-color .32s; }
+.pane-inner { width: var(--pane); height: 100%; overflow-y: auto; padding: 20px 0 32px; transition: width .32s var(--ease); }
+.pane-closed .detail-pane { border-left-color: transparent; }
+.detail-empty { height: 100%; display: grid; place-items: center; color: var(--outline); font-size: 14px; text-align: center; padding: 32px; }
+.desk .modal { left: 0; right: 0; margin: 0 auto; bottom: auto; top: 12vh; width: 440px; border-radius: 28px; max-height: calc(88vh - 24px); padding-bottom: 12px; }
+.desk .modal.wide { width: clamp(440px, 56%, 640px); }
+.desk .modal.enter { animation: dialog-in .25s var(--ease); }
+.desk .modal-scrim.leave { animation-duration: .16s; }
+.desk .modal.leave, .desk .editor.leave { animation: dialog-out .16s var(--ease-exit) forwards; }
+.desk .editor { inset: auto; left: 0; right: 0; top: 10vh; margin: 0 auto; width: 640px; height: min(560px, 76vh); border-radius: 28px; padding: 0 0 16px; }
+.desk .editor.enter { animation: dialog-in .25s var(--ease); }
+.desk .snackbar { left: 0; right: 0; margin: 0 auto; bottom: 24px; width: 440px; }
+.desk .row:hover > .row-inner { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 4%); }
+.desk .row.selected > .row-inner { background: var(--secondary-container); }
+.desk .row.chosen > .row-inner { background: var(--secondary-container); }
+
+/* ---------- macOS app ---------- */
+/* The window's buttons sit at the top left, over the page, their middle 28 from the top
+   (tauri.conf.json): the phone layout's bar is 56 high, and the middle column's buttons come up to
+   it. The bars around them move the window (data-tauri-drag-region). */
+.macos { --zoom: 1; }
+.macos .brand { visibility: hidden; }
+.macos .desk .main-tools { padding-top: 8px; transition: padding-left .32s var(--ease); }
+/* The window's buttons don't zoom with the page (docs/desktop.md#界面大小): what lines up with them is
+   placed in the window's points, a pixel being `--zoom` of one. */
+.macos .desk .main-tools > *, .macos .phone .nav > *, .macos .viewer-bar > * { translate: 0 calc(28px / var(--zoom) - 28px); }
+.macos .side-closed .main-tools { padding-left: calc(84px / var(--zoom)); }
+.macos .phone .nav, .macos .viewer-bar { padding-left: calc(84px / var(--zoom)); }
+
+/* ---------- the desktop app's menu bar or tray panel ---------- */
+/* On macOS the window is clear outside the panel's rounded corners (src-tauri/src/panel.rs). */
+.macos.in-panel, .macos.in-panel body { background: transparent; }
+.panel { display: flex; flex-direction: column; background: var(--surface); }
+.macos .panel { border-radius: 12px; border: .5px solid var(--outline-variant); }
+/* The desktop widget (docs/desktop.md#桌面小组件): a card in the colour and opacity chosen (widget.ts),
+   its lists and fields clear on it, in its text colour. Menus and dialogs keep the theme's. */
+.in-widget, .in-widget body { background: transparent; }
+.in-widget .panel { background: var(--w-bg); border-radius: 12px; border: none; }
+.in-widget :is(.panel-head, .panel-scroll, .quick-add, .status-note, .batch-bar, .panel-out, .login) {
+  --on-surface: var(--w-text); --on-surface-variant: var(--w-secondary); --outline: var(--w-done); --outline-variant: var(--w-divider);
+  --primary: var(--w-primary); --on-primary: var(--w-on-primary); --error: var(--w-overdue); --warn: var(--w-today);
+  --surface: var(--w-surface); --group-bg: transparent; --bar-bg: transparent; --surface-container: var(--w-divider);
+  --secondary-container: var(--w-divider); --on-secondary-container: var(--w-text); --press: color-mix(in srgb, var(--w-text) 8%, transparent);
+  /* The time grid's blocks, in its colours, as the text on them is: the theme's would be off it. */
+  --primary-container: var(--w-primary-container); --on-primary-container: var(--w-on-primary-container);
+  --error-container: var(--w-error-container); --surface-highest: var(--w-divider);
+  color: var(--w-text);
+}
+/* The lock screen's fields, clear, are seen by their edges. */
+.in-widget .login { --outline-variant: var(--w-done); }
+/* A row's swipe actions, under it, show through a clear row: only while it is swiped, as it is opaque. */
+.in-widget .row:not(.swiping) .swipe-bg { visibility: hidden; }
+.in-widget .row.swiping > .row-inner { background: var(--surface); }
+/* The page's name starts where the groups do; pressed, the button around it reaches further out. */
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 6px 2px 4px; flex: none; }
+.panel-pages { display: flex; align-items: center; gap: 4px; min-width: 0; height: 36px; padding: 0 8px; border-radius: 10px; font-size: 17px; font-weight: 600; transition: background-color .15s; }
+.panel-pages:hover, .panel-pages[data-state="open"] { background: var(--press); }
+.panel-menu { max-width: 300px; max-height: var(--radix-dropdown-menu-content-available-height); overflow-y: auto; }
+.menu-sep { height: .5px; margin: 6px 8px; background: var(--outline-variant); }
+.menu-label { padding: 10px 12px 4px; font-size: 12px; font-weight: 600; color: var(--on-surface-variant); }
+.panel .quick-add { position: relative; inset: auto; flex: none; margin: 6px 12px; box-shadow: none; border: 1px solid var(--outline-variant); }
+.panel-scroll { flex: 1; overflow-y: auto; padding-bottom: 16px; }
+/* The lists only: dialogs opened from the panel keep their own. */
+.panel-scroll .group-title { margin: 16px 28px 6px; }
+.panel-scroll .group { margin: 0 12px; }
+.panel-scroll .empty { margin: 8px 12px; }
+.panel-scroll .tip-card { margin-inline: 12px; }
+.panel .status-note { margin-inline: 12px; }
+.panel .row:hover:not(.swiping) > .row-inner { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 4%); }
+.panel .batch-bar { position: static; flex: none; }
+.panel .snackbar { bottom: 12px; }
+.panel-out { height: 100%; display: grid; place-content: center; justify-items: center; gap: 16px; padding: 24px; text-align: center; color: var(--on-surface-variant); }

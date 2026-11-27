@@ -166,7 +166,7 @@ NEXTTODO_HOST=myserver NEXTTODO_DIR=/srv/nexttodo NEXTTODO_PORT=8080 deploy/depl
 | 命令 | 做什么 |
 |---|---|
 | `deploy/build.sh` | 先跑全部检查（`check.sh`），再构建全部，版本 `0.1.<提交数>`。`target/deploy` 是镜像的内容（两种架构的服务端、网页和 `/app/` 下的更新），`target/release-assets` 是安装包、iOS 的 SideStore 软件源 `sidestore.json`、各平台的命令行 `nexttodo-*`、本机模式用的更新（`android.json`、`desktop.json`、`NextTodo.app.tar.gz` 和 `NextTodo-x64.app.tar.gz`）和 `SHA256SUMS` |
-| `deploy/release.sh` | 发布已推送的提交：镜像推到 GHCR（版本号和 `latest` 两个标签），安装包传到 GitHub Releases（标签 `v<版本号>`），说明取 `CHANGELOG.md` 最上面一节，它的版本号要和这次发布的一样（见[更新日志](design.md#更新日志)）：写这一节的提交就是要发布的，版本号是提交以后的提交数。要先 `docker login ghcr.io` 并登录 `gh` |
+| `deploy/release.sh` | 发布已推送的提交：镜像推到 GHCR（版本号和 `latest` 两个标签），安装包传到 GitHub Releases（标签 `v<版本号>`，本地也打上，[提交钩子](android.md#更新)按它算），说明取 `CHANGELOG.md` 最上面一节，它的版本号要和这次发布的一样（见[更新日志](design.md#更新日志)）：写这一节的提交就是要发布的，版本号是提交以后的提交数。要先 `docker login ghcr.io` 并登录 `gh` |
 | `deploy/deploy.sh` | 见[用部署脚本](#用部署脚本) |
 
 - 三个脚本都要求工作区干净。

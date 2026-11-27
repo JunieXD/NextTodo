@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Stops the commit that first raises the Android app's native version since the last release: once
+# deployed, Android apps on a server must install a new APK to keep getting web updates
+# (docs/android.md#更新). Later ones before the next release add nothing to that.
+set -euo pipefail
+
+native=(apps/android apps/web/capacitor.config.ts)
+staged=$(git diff --cached --name-only -- "${native[@]}")
+[[ -n $staged && ${NEXTTODO_NATIVE:-} != 1 ]] || exit 0
+# As the builds count it (apps/web/vite.config.ts).
+count() { git rev-list --count "$1" -- "${native[@]}"; }
+release=$(git describe --tags --abbrev=0 --match 'v*')
+released=$(count "$release")
+now=$(count HEAD)
+(( now <= released )) || exit 0
+cat >&2 <<EOF
+这是 $release 以来第一个改动 Android 原生部分的提交：
+$staged
+它会让原生版本加一，部署后连服务器的 Android App 都要装新的 APK 才能继续更新（docs/android.md#更新）。
+只是顺手改注释、链接的，把这些文件拿出这次提交；确实要改的，用 NEXTTODO_NATIVE=1 git commit … 提交。
+EOF
+exit 1

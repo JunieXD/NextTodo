@@ -229,6 +229,8 @@ docker compose pull && docker compose up -d
 
 服务器每天在 `data/snapshots/` 里保存一份数据库快照，保留最近 7 份。附件的文件不在快照里，在 `data/files/`。把这些快照和 `data/files/` 定期复制到别处，就是备份。从快照恢复的步骤见[部署文档](https://github.com/JunieXD/NextTodo/blob/main/docs/deploy.md#备份和恢复)。
 
+每个用户也可以在设置里导出自己的数据，用来搬到本机或别的服务器，见[搬到服务器和搬回本机](./local#move)；它不能代替整台服务器的备份。
+
 ## 遇到问题 {#troubleshooting}
 
 先看 NextTodo 的日志：在 `nexttodo` 目录里运行 `docker compose logs --tail 100`。

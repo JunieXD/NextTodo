@@ -1,6 +1,6 @@
 # 接入 agent
 
-agent 指 Claude Code、Codex 这类能在电脑上执行命令的 AI 助手。接入 NextTodo 后，可以让它拆分计划、添加事项、设置先后、勾选完成、添加和读取附件，就像在 App 里操作一样，改动会同步到所有设备。
+agent 指 Claude Code、Codex 这类能在电脑上执行命令的 AI 助手。接入 NextTodo 后，可以让它拆分计划、添加事项、设置先后、截止时间（也能写农历日子或“前置完成后几天内”）和提醒、勾选完成或放弃、添加和读取附件，就像在 App 里操作一样，改动会同步到所有设备。
 
 agent 有两种接入方式，任选其一：
 
@@ -71,5 +71,7 @@ App 在本机运行时，每次启动的地址都不同，所以 agent 要经过
 agent 改完后，App 的提示条会写明它做了什么，比如“Claude Code 在‘求职’中添加了 4 项”，点“撤销”即可撤回。
 
 每次改动都有记录。错过了提示条，可以在“设置 → 改动记录”里找到这一次，点“撤销”，见[改动记录](./basics#log)；也可以让 agent 运行 `nexttodo log` 查看最近的改动，再用 `nexttodo undo <批次>` 撤销其中一次。
+
+命令行还能用 `nexttodo export`、`nexttodo import` 导出和导入账号的数据，见[搬到服务器和搬回本机](./local#move)。
 
 更完整的说明（工具列表、计划的格式）见开发文档 [agent 接入](https://github.com/JunieXD/NextTodo/blob/main/docs/agent.md)。

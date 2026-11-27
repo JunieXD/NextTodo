@@ -8,11 +8,12 @@ import { v7 as uuidv7 } from "uuid";
 import { useAiVision } from "../ai";
 import type { AiJob } from "../api/types/AiJob";
 import type { Op } from "../api/types/Op";
+import type { TaskId } from "../api/types/TaskId";
 import { isPicture, seesAny, split } from "../attach";
 import { lastKey } from "../domain/apply";
 import { type Board, cmp } from "../domain/board";
 import { blank, checkJobText } from "../domain/text";
-import { jobReminders } from "../remind-settings";
+import { dueWithDefaults, jobReminders } from "../remind-settings";
 import { useCommit, useConnection, useSession, useUndo } from "../session";
 import { Modal, useFeedback } from "../ui/feedback";
 import { Icon } from "../ui/icons";
@@ -44,6 +45,25 @@ function asIs(j: AiJob, board: Board): string {
   return [...line.replace(/\t/g, " ").trim()].slice(0, 200).join("");
 }
 
+export function originalTaskOps(j: AiJob, board: Board, id: TaskId) {
+  const text = j.text.trim();
+  const title = asIs(j, board);
+  const ops: Op[] = [
+    {
+      op: "task.create",
+      id,
+      title,
+      ...(text && text !== title && { description: text }),
+      sort_key: lastKey(board.contents(j.folder_id).map((t) => t.sort_key)),
+      ...(j.folder_id && { folder_id: j.folder_id }),
+      ...(j.day && { due: dueWithDefaults(j.day, j.time) }),
+    },
+    ...filesOf(j, board).map((a): Op => ({ op: "attachment.update", id: a.id, task_id: id })),
+    { op: "ai_job.delete", id: j.id },
+  ];
+  return { title, ops };
+}
+
 function status(j: AiJob): string {
   if (j.state === "waiting") return "等待整理";
   if (j.state === "running") return "正在整理";
@@ -70,21 +90,7 @@ function useJobActions() {
     /** Adds the text as it is, its title as `asIs` has it, all of it the description when there is more,
      * with the job's files. */
     addAsIs(j: AiJob, board: Board) {
-      const text = j.text.trim();
-      const title = asIs(j, board);
-      const id = uuidv7();
-      const ops: Op[] = [
-        {
-          op: "task.create",
-          id,
-          title,
-          ...(text && text !== title && { description: text }),
-          sort_key: lastKey(board.contents(j.folder_id).map((t) => t.sort_key)),
-          ...(j.folder_id && { folder_id: j.folder_id }),
-        },
-        ...filesOf(j, board).map((a): Op => ({ op: "attachment.update", id: a.id, task_id: id })),
-        { op: "ai_job.delete", id: j.id },
-      ];
+      const { title, ops } = originalTaskOps(j, board, uuidv7());
       const r = commit(ops);
       if (r) snack({ text: `已添加“${title}”`, action: "撤销", onAction: () => undo(r.id) });
     },

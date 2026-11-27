@@ -9,18 +9,17 @@ import { useLocation, useSearchParams } from "wouter";
 import { NextTodo, inCard } from "../mobile";
 import { app } from "../api/http";
 import type { AiJobId } from "../api/types/AiJobId";
-import type { Due } from "../api/types/Due";
 import type { FolderId } from "../api/types/FolderId";
 import type { MutationId } from "../api/types/MutationId";
 import type { Op } from "../api/types/Op";
 import type { TaskId } from "../api/types/TaskId";
 import { lastKey } from "../domain/apply";
 import { aiReady, setAiMode, useAiMode, useAiVision } from "../ai";
-import { day, formatDay, inOrder, localTime } from "../domain/dates";
+import { day, formatDay, localTime } from "../domain/dates";
 import { blank, checkJobText, checkTitle } from "../domain/text";
 import { useCommit, useConnection, useSession, useView } from "../session";
 import { useNextFolders } from "../next-folders";
-import { defaultReminders, jobReminders } from "../remind-settings";
+import { dueWithDefaults, jobReminders } from "../remind-settings";
 import { addOps, draggingFiles, filesIn, isPicture, plan, seesAny, unseen } from "../attach";
 import { type Staged, draft, keepDraft, keepStaged, onDrafts, stagedFiles } from "../sync/drafts";
 import { dropFiles } from "../sync/files";
@@ -33,17 +32,6 @@ import { addedTo, pickAddTo, useAddTo } from "./add-to";
 import { ChooseFiles, StagedFiles, useKeepFiles } from "./attachments";
 import { settingsUrl } from "./nav";
 import { FolderPicker } from "./pickers";
-
-/** A due date on `date`, at `time` if any, with this device's defaults for one so. */
-function due(date: string, time: string | null): Due {
-  const defaults = defaultReminders();
-  if (time === null) {
-    const reminders = inOrder(defaults.dated, undefined);
-    return { date, ...(reminders.length > 0 && { reminders }) };
-  }
-  const reminders = inOrder(defaults.timed, time);
-  return { date, time, ...(reminders.length > 0 && { reminders }) };
-}
 
 /** What a quick add sent: its changes, and the task it added or the AI job it asked for. */
 export type Sent = { changes: MutationId[] } & ({ task: TaskId; job?: never } | { job: AiJobId; task?: never });
@@ -310,7 +298,7 @@ export function QuickAdd({
       title: c.value,
       sort_key: lastKey(board.contents(into).map((t) => t.sort_key)),
       ...(into && { folder_id: into }),
-      ...(on && { due: due(on, at) }),
+      ...(on && { due: dueWithDefaults(on, at ?? undefined) }),
     };
     const made = commit([op]);
     if (!made) return;

@@ -4,6 +4,8 @@
 
 import { useSyncExternalStore } from "react";
 import type { DefaultReminders } from "./api/types/DefaultReminders";
+import type { Due } from "./api/types/Due";
+import { inOrder } from "./domain/dates";
 
 const DEFAULTS = "nexttodo.defaultReminders";
 const HIDE = "nexttodo.hideReminders";
@@ -38,6 +40,13 @@ function kept<T>(key: string, none: string): () => T {
 }
 
 export const defaultReminders = kept<DefaultReminders>(DEFAULTS, '{"timed":[],"dated":[]}');
+
+/** A due date on the calendar with this device's defaults for a timed or untimed task. */
+export function dueWithDefaults(date: string, time?: string): Due {
+  const defaults = defaultReminders();
+  const reminders = time === undefined ? inOrder(defaults.dated, undefined) : inOrder(defaults.timed, time);
+  return { date, ...(time !== undefined && { time }), ...(reminders.length > 0 && { reminders }) };
+}
 
 /** Those for AI organizing to give the tasks it makes with a due date and no reminders
  * (docs/ai.md#提示词和结果): none when there are none. */

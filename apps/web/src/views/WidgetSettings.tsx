@@ -2,24 +2,26 @@
 // widgets (docs/android/widgets.md#小组件的设置); in the desktop app the desktop widget's, shown or not, with the
 // same colours (docs/desktop.md#桌面小组件).
 
-import { Plus, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { app } from "../api/http";
-import { desktopWidget } from "../desktop";
+import { desktopWidget, widgetPageKey } from "../desktop";
 import { type Hex, parseHex } from "../domain/color";
 import { dueKind, formatDue } from "../domain/dates";
 import { type WidgetLook, type WidgetTextSize, type WidgetWeek, widgetColors } from "../domain/widget-look";
 import { NextTodo } from "../mobile";
 import { nextFolders, readyIn } from "../next-folders";
-import { useSession, useView } from "../session";
+import { useKept } from "../kept";
+import { useView } from "../session";
 import { useDark } from "../theme";
 import { ColorPicker } from "../ui/color-picker";
 import { Seg, Switch } from "../ui/controls";
-import { forUser, useFeedback } from "../ui/feedback";
+import { forUser, Tip, useFeedback } from "../ui/feedback";
 import { useMedia } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { type DesktopLook, setDesktopLook, useDesktopLook } from "../widget";
 import { setZoom, useZoom } from "../zoom";
+import { PanelPageName } from "./Panel";
 
 const SCALES: Record<WidgetTextSize, number> = { small: 0.88, standard: 1, large: 1.15 };
 
@@ -43,33 +45,72 @@ export function WidgetSettings() {
 
 function DesktopWidget() {
   const { snack } = useFeedback();
-  const session = useSession();
   const look = useDesktopLook();
   const size = useZoom("widget");
-  const [shown, setShown] = useState<boolean | null>(null);
+  const [widgets, setWidgets] = useState<Awaited<ReturnType<typeof desktopWidget.list>> | null>(null);
   useEffect(() => {
-    desktopWidget.shown().then(setShown, (e: unknown) => snack(forUser("读取桌面小组件的设置", e)));
-  }, [snack]);
-  const show = async (to: boolean) => {
-    await desktopWidget.show(to).then(
-      () => setShown(to),
-      (e: unknown) => snack(forUser(`${to ? "打开" : "关闭"}桌面小组件`, e)),
+    let active = true;
+    const refresh = async () => {
+      try {
+        const widgets = await desktopWidget.list();
+        if (active) setWidgets(widgets);
+      } catch (e) {
+        if (active) snack(forUser("读取桌面小组件的设置", e));
+      }
+    };
+    const listening = desktopWidget.onChange(() => void refresh()).then(
+      (unlisten) => {
+        if (active) void refresh();
+        return unlisten;
+      },
+      (e: unknown) => {
+        if (active) snack(forUser("监听桌面小组件的变动", e));
+      },
     );
-    // What was done in it offline goes from here, not at the next start; should it be open still, the
-    // server takes what both send once.
-    if (!to) await session.takeOver().catch((e: unknown) => snack(forUser("接过桌面小组件没发出的改动", e)));
-  };
+    return () => {
+      active = false;
+      void listening.then((unlisten) => unlisten?.());
+    };
+  }, [snack]);
+  const add = () => void desktopWidget.add().catch((e: unknown) => snack(forUser("添加桌面小组件", e)));
   return (
     <>
-      {shown !== null && (
-        <div className="group settings">
-          <Switch label="在桌面上显示" sub="常驻桌面，位于其他窗口下方" on={shown} onChange={(to) => void show(to)} />
-        </div>
-      )}
+      <h2 className="group-title">桌面上的小组件</h2>
+      <div className="group settings widget-list">
+        {widgets?.labels.map((label) => (
+          <DesktopWidgetRow key={label} label={label} />
+        ))}
+        <button type="button" className="row" disabled={!widgets || widgets.full} onClick={add}>
+          <span className="row-inner">
+            <Icon of={Plus} size={18} />
+            <span className="row-name">添加小组件</span>
+          </span>
+        </button>
+      </div>
       <Preview look={look} dark={useDark()} size={size} head={{ title: true, refresh: false, add: false }} />
       <Colors look={look} change={(to) => setDesktopLook({ ...look, ...to })} />
       <TextSize value={size} onChange={(z) => void setZoom("widget", z).catch((e: unknown) => snack(forUser("设置文字大小", e)))} />
     </>
+  );
+}
+
+function DesktopWidgetRow({ label }: { label: string }) {
+  const [path] = useKept(widgetPageKey(label));
+  const { snack } = useFeedback();
+  const remove = () => void desktopWidget.remove(label).catch((e: unknown) => snack(forUser("移除桌面小组件", e)));
+  return (
+    <div className="row">
+      <div className="row-inner">
+        <span className="row-name truncate">
+          <PanelPageName path={path ?? "/"} />
+        </span>
+        <Tip label="移除小组件">
+          <button type="button" className="icon-btn sm" onClick={remove}>
+            <Icon of={X} size={18} />
+          </button>
+        </Tip>
+      </div>
+    </div>
   );
 }
 

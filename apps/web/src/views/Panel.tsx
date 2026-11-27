@@ -1,66 +1,98 @@
-// The desktop app's menu bar or tray panel: what is next or a folder, ticked off and added to without
-// the main window (docs/desktop.md#菜单栏小窗); the desktop widget too, which it does not close and which
-// is moved by its top row (docs/desktop.md#桌面小组件).
+// The menu bar panel and the desktop widgets share their contents (docs/desktop.md).
 
-import { AppWindow, CalendarClock, CalendarDays, Check, ChevronDown, CircleCheck } from "lucide-react";
+import { AppWindow, CalendarClock, CalendarDays, CalendarRange, Check, ChevronDown, CircleCheck, List, X } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { type ReactNode, useContext, useEffect } from "react";
 import { Redirect, useLocation } from "wouter";
 import type { FolderId } from "../api/types/FolderId";
-import { hidePanel, inWidget, openMain } from "../desktop";
+import { desktopWidget, hidePanel, inWidget, openMain, widgetLabel, widgetPageKey } from "../desktop";
 import type { PrivacyLock } from "../lock";
 import { useConnection, useView } from "../session";
-import { LockScreen } from "./Lock";
-import { RootContext, Tip } from "../ui/feedback";
+import { forUser, RootContext, Tip, useFeedback } from "../ui/feedback";
 import { useNow } from "../ui/hooks";
 import { Icon } from "../ui/icons";
 import { BatchBar, BatchHead, useBatch } from "./batch";
-import { CalendarBody, type CalendarView, useCalendarPick, useCalendarView, useTimeGridOn } from "./calendar";
-import { FolderBody, NextBody, NextFilter } from "./lists";
-import { QuickAdd } from "./quick-add";
-import { folderUrl } from "./nav";
+import { AgendaBody, CalendarBody, type CalendarView, useCalendarPick, useTimeGridOn } from "./calendar";
 import { FolderGlyph } from "./folder-look";
+import { FolderBody, NextBody, NextFilter } from "./lists";
+import { LockScreen } from "./Lock";
+import { folderUrl } from "./nav";
+import { QuickAdd } from "./quick-add";
 import { FolderName } from "./share";
 import { ConnectionNote } from "./status";
 
-/** The page it shows, remembered on this device, the panel's apart from the widget's; and on the
- * calendar's, the week or the time grid, apart from the main window's. */
-const PAGE = inWidget ? "nexttodo.widgetPage" : "nexttodo.panelPage";
-const CALENDAR_VIEW = `${PAGE}.calendarView`;
+const PANEL_PAGE = "nexttodo.panelPage";
+const PAGE = widgetLabel ? widgetPageKey(widgetLabel) : PANEL_PAGE;
 
-/** What closes the panel; the widget stays. */
+const PAGES = [
+  { path: "/", name: "接下来", icon: CircleCheck },
+  { path: "/agenda", name: "日程", icon: List },
+  { path: "/calendar/week", name: "一周", icon: CalendarRange, view: "week" },
+  { path: "/calendar/month", name: "月历", icon: CalendarDays, view: "month" },
+  { path: "/calendar/time", name: "时间轴", icon: CalendarClock, view: "time" },
+] as const;
+
+const availablePath = (path: string, grid: boolean) => (path === "/calendar/time" && !grid ? "/calendar/week" : path);
+
+function folderPage(path: string) {
+  return path.match(/^\/folders\/([^/]+)$/)?.[1] ?? null;
+}
+
 const close = () => {
   if (!inWidget) void hidePanel();
 };
 
-/** Back on the page it showed last, before it first renders. */
-export const restorePage = () => history.replaceState(null, "", localStorage.getItem(PAGE) ?? "/");
+/** Older versions had one widget and stored the choice of calendar view separately. */
+export function restorePage() {
+  const legacy = widgetLabel === "widget-1" ? "nexttodo.widgetPage" : PAGE;
+  const calendar = `${legacy}.calendarView`;
+  let path = localStorage.getItem(PAGE) ?? localStorage.getItem(legacy) ?? "/";
+  if (path === "/calendar") path = localStorage.getItem(calendar) === "time" ? "/calendar/time" : "/calendar/week";
+  if (legacy !== PAGE) localStorage.removeItem(legacy);
+  localStorage.removeItem(calendar);
+  localStorage.setItem(PAGE, path);
+  history.replaceState(null, "", path);
+}
+
+export function PanelPageName({ path }: { path: string }) {
+  const { board } = useView();
+  const [grid] = useTimeGridOn();
+  const p = PAGES.find((p) => p.path === availablePath(path, grid));
+  if (p) return p.name;
+  const folder = folderPage(path);
+  return path === "/folders" || (folder && board.folder(folder)) ? <FolderName board={board} id={folder} /> : PAGES[0].name;
+}
 
 export function Panel() {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const { board } = useView();
   const connection = useConnection();
   const batch = useBatch();
   const now = useNow();
-  const folder = location.match(/^\/folders\/([^/]+)$/)?.[1] ?? null;
-  const next = location === "/";
-  const calendar = location === "/calendar";
-  const [stored, setView] = useCalendarView(CALENDAR_VIEW);
-  const view = stored === "time" ? "time" : "week";
-  const pick = useCalendarPick(now, view);
-  // Anywhere else, the settings a link leads to say, is the main window's.
-  const elsewhere = !next && !calendar && location !== "/folders" && !folder;
+  const [grid] = useTimeGridOn();
+  const path = availablePath(location, grid);
+  const page = PAGES.find((p) => p.path === path);
+  const folder = folderPage(path);
+  const next = path === "/";
+  const agenda = path === "/agenda";
+  const view = page && "view" in page ? page.view : null;
+  const pick = useCalendarPick(now, view ?? "week");
+  const setView = (view: CalendarView) => navigate(`/calendar/${view}`);
+  // Links out of the pages a panel hosts belong to the main window.
+  const elsewhere = !page && path !== "/folders" && !folder;
   useEffect(() => {
     if (!elsewhere) return;
     void openMain(location);
     history.back();
   }, [elsewhere, location]);
   useEffect(() => {
-    if (!elsewhere) localStorage.setItem(PAGE, location);
-  }, [elsewhere, location]);
+    if (!elsewhere) localStorage.setItem(PAGE, path);
+  }, [elsewhere, path]);
   useEscape(() => (batch.on ? batch.end() : close()));
   if (elsewhere) return null;
+  if (path !== location) return <Redirect to={path} replace />;
   if (folder && !board.folder(folder)) return <Redirect to="/" replace />;
+  const mainPath = view ? `/calendar?view=${view}&on=${pick.picked}` : agenda ? `/calendar?view=week&on=${board.now.today}` : path;
   return (
     <>
       <header className="panel-head" data-tauri-drag-region={inWidget ? "deep" : undefined}>
@@ -68,11 +100,11 @@ export function Panel() {
           <BatchHead />
         ) : (
           <>
-            <Pages page={next ? "next" : calendar ? view : folder} onView={setView} />
+            <Pages path={path} />
             <span className="hero-actions">
-              {next && <NextFilter />}
+              {(next || agenda) && <NextFilter />}
               <Tip label="在主窗口打开">
-                <button className="icon-btn" onClick={() => void openMain(calendar ? `/calendar?view=${view}&on=${pick.picked}` : location)}>
+                <button className="icon-btn" onClick={() => void openMain(mainPath)}>
                   <Icon of={AppWindow} />
                 </button>
               </Tip>
@@ -81,9 +113,13 @@ export function Panel() {
         )}
       </header>
       <ConnectionNote connection={connection} />
-      {!batch.on && (calendar ? <QuickAdd key="calendar" on={pick.picked} at={pick.at} /> : <QuickAdd key={location} folder={next ? undefined : folder} />)}
-      <div className="panel-scroll">
-        {next ? <NextBody now={now} /> : calendar ? <CalendarBody now={now} view={view} onView={setView} pick={pick} /> : <FolderBody folder={folder} now={now} />}
+      {!batch.on && (view ? (
+        <QuickAdd key="calendar" on={pick.picked} at={pick.at} />
+      ) : (
+        <QuickAdd key={path} on={agenda ? board.now.today : undefined} folder={next || agenda ? undefined : folder} />
+      ))}
+      <div key={path} className="panel-scroll">
+        {next ? <NextBody now={now} /> : agenda ? <AgendaBody now={now} /> : view ? <CalendarBody now={now} view={view} onView={setView} pick={pick} compact /> : <FolderBody folder={folder} now={now} />}
       </div>
       {batch.on && <BatchBar />}
     </>
@@ -99,27 +135,17 @@ function useEscape(f: () => void) {
   });
 }
 
-/** Says which page it shows and switches to another: what is next, the calendar's week or time grid,
- * the latter while the settings offer it, or any folder, those others share in a group after the
- * user's own. */
-function Pages({ page, onView }: { page: "next" | "week" | "time" | FolderId | null; onView(v: CalendarView): void }) {
+function Pages({ path }: { path: string }) {
   const { board } = useView();
   const [, navigate] = useLocation();
   const root = useContext(RootContext);
+  const { snack } = useFeedback();
   const [grid] = useTimeGridOn();
-  const item = (key: string, to: string, icon: ReactNode, name: ReactNode, on: boolean, depth = 0, view?: CalendarView) => (
-    <DropdownMenu.Item
-      key={key}
-      className="menu-item"
-      style={{ paddingLeft: 12 + depth * 16 }}
-      onSelect={() => {
-        if (view) onView(view);
-        navigate(to);
-      }}
-    >
+  const item = (to: string, icon: ReactNode, name: ReactNode, depth = 0) => (
+    <DropdownMenu.Item key={to} className="menu-item" style={{ paddingLeft: 12 + depth * 16 }} onSelect={() => navigate(to)}>
       {icon}
       <span className="truncate">{name}</span>
-      {on && (
+      {path === to && (
         <span className="tick">
           <Icon of={Check} size={18} />
         </span>
@@ -127,27 +153,39 @@ function Pages({ page, onView }: { page: "next" | "week" | "time" | FolderId | n
     </DropdownMenu.Item>
   );
   const tree = (id: FolderId | null, depth: number): ReactNode[] => [
-    item(id ?? "root", folderUrl(id), <FolderGlyph board={board} id={id} />, <FolderName board={board} id={id} />, page === id, depth),
+    item(folderUrl(id), <FolderGlyph board={board} id={id} />, <FolderName board={board} id={id} />, depth),
     ...board.subfolders(id).flatMap((f) => tree(f.id, depth + 1)),
   ];
   const theirs = board.sharedWithMe();
+  const remove = () => {
+    if (widgetLabel) void desktopWidget.remove(widgetLabel).catch((e: unknown) => snack(forUser("移除桌面小组件", e)));
+  };
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger className="panel-pages">
-        <span className="truncate">{page === "next" ? "接下来" : page === "week" ? "一周" : page === "time" ? "时间轴" : <FolderName board={board} id={page} />}</span>
+        <span className="truncate">
+          <PanelPageName path={path} />
+        </span>
         <Icon of={ChevronDown} size={18} />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal container={root}>
         <DropdownMenu.Content className="menu panel-menu" align="start" sideOffset={4}>
-          {item("next", "/", <Icon of={CircleCheck} />, "接下来", page === "next")}
-          {item("week", "/calendar", <Icon of={CalendarDays} />, "一周", page === "week", 0, "week")}
-          {grid && item("time", "/calendar", <Icon of={CalendarClock} />, "时间轴", page === "time", 0, "time")}
+          {PAGES.filter((p) => grid || p.path !== "/calendar/time").map((p) => item(p.path, <Icon of={p.icon} />, p.name))}
           <DropdownMenu.Separator className="menu-sep" />
           {tree(null, 0)}
           {theirs.length > 0 && (
             <>
               <DropdownMenu.Label className="menu-label">共享给我</DropdownMenu.Label>
               {theirs.flatMap((f) => tree(f.id, 0))}
+            </>
+          )}
+          {widgetLabel && (
+            <>
+              <DropdownMenu.Separator className="menu-sep" />
+              <DropdownMenu.Item className="menu-item danger-text" onSelect={remove}>
+                <Icon of={X} />
+                移除这个小组件
+              </DropdownMenu.Item>
             </>
           )}
         </DropdownMenu.Content>

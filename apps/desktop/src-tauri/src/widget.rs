@@ -8,20 +8,22 @@ use std::sync::Mutex;
 
 use nexttodo_server::error::for_user;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, LogicalPosition, Manager, WebviewUrl, WebviewWindowBuilder, Window};
+use tauri::{AppHandle, Emitter, LogicalPosition, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, Window};
 
-pub const LABEL: &str = "widget";
+const PREFIX: &str = "widget-";
+const LIMIT: usize = 6;
+const CHANGED: &str = "widgets-changed";
 
-/// Its size at first and the least it takes, in logical pixels; how far from the screen's corner it
-/// first is; how far down the middle of its top row is, by which it is moved.
 const SIZE: (f64, f64) = (340.0, 440.0);
 const LEAST: (f64, f64) = (280.0, 240.0);
 const MARGIN: f64 = 24.0;
 const GRIP: f64 = 22.0;
 
-/// Where it is, as tao places a new window, and how large, in logical pixels at `scale`, that of the
-/// screen it was on. On macOS that is in points on the desktop; on Windows, its pixels over `scale`,
-/// which only with `scale` give back where on which screen.
+pub fn is_widget(label: &str) -> bool {
+    label.starts_with(PREFIX)
+}
+
+/// Logical pixels at the scale of the screen it was on: on Windows the scale gives back its pixels.
 #[derive(Clone, Copy, Serialize, Deserialize)]
 struct Frame {
     x: f64,
@@ -31,15 +33,65 @@ struct Frame {
     scale: f64,
 }
 
-/// What this computer keeps: whether it is shown, and where it was last, for when it is again.
-#[derive(Default, Serialize, Deserialize)]
-struct Kept {
-    shown: bool,
+#[derive(Serialize, Deserialize)]
+struct Widget {
+    id: u32,
     frame: Option<Frame>,
 }
 
-/// Held while the settings show or close it, which two quick turns of the switch could do at once.
+impl Widget {
+    fn label(&self) -> String {
+        format!("{PREFIX}{}", self.id)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct Kept {
+    next_id: u32,
+    widgets: Vec<Widget>,
+}
+
+impl Default for Kept {
+    fn default() -> Self {
+        Self { next_id: 1, widgets: Vec::new() }
+    }
+}
+
+impl Kept {
+    fn add(&mut self, frame: Frame) -> Result<String, String> {
+        if self.widgets.len() >= LIMIT {
+            return Err("最多可放 6 个桌面小组件".into());
+        }
+        let id = self.next_id;
+        self.next_id = id.checked_add(1).ok_or("桌面小组件编号已用完")?;
+        let widget = Widget { id, frame: Some(frame) };
+        let label = widget.label();
+        self.widgets.push(widget);
+        Ok(label)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum OnDisk {
+    Current(Kept),
+    Single { shown: bool, frame: Option<Frame> },
+}
+
+impl From<OnDisk> for Kept {
+    fn from(disk: OnDisk) -> Self {
+        match disk {
+            OnDisk::Current(kept) => kept,
+            // The webview carries the old view over to widget-1, never to a widget added later.
+            OnDisk::Single { shown, frame } => Self { next_id: 2, widgets: if shown { vec![Widget { id: 1, frame }] } else { Vec::new() } },
+        }
+    }
+}
+
+// Commands at once would otherwise open or remove the same window. Moved events take only FILE:
+// Tauri can wait for the main thread while a command holds TURN.
 static TURN: Mutex<()> = Mutex::new(());
+static FILE: Mutex<()> = Mutex::new(());
 
 fn file(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app.path().app_config_dir().map_err(|e| for_user("查找 App 的配置目录", &e))?.join("widget.json"))
@@ -47,62 +99,102 @@ fn file(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn kept(app: &AppHandle) -> Result<Kept, String> {
     match std::fs::read(file(app)?) {
-        Ok(json) => serde_json::from_slice(&json).map_err(|e| for_user("读取桌面小组件的设置", &e)),
+        Ok(json) => serde_json::from_slice::<OnDisk>(&json).map(Kept::from).map_err(|e| for_user("读取桌面小组件的设置", &e)),
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(Kept::default()),
         Err(e) => Err(for_user("读取桌面小组件的设置", &e)),
     }
 }
 
-/// Changes what is kept, one change at a time: it is moved on the main thread while the settings may
-/// show or close it on another.
-fn update(app: &AppHandle, change: impl FnOnce(&mut Kept)) -> Result<(), String> {
-    static FILE: Mutex<()> = Mutex::new(());
+fn update<T>(app: &AppHandle, change: impl FnOnce(&mut Kept) -> Result<T, String>) -> Result<T, String> {
     let _file = FILE.lock().unwrap();
     let mut kept = kept(app)?;
-    change(&mut kept);
+    let result = change(&mut kept)?;
     let file = file(app)?;
     // Written whole, then put in its place: a write cut short leaves the last one as it was.
     let part = file.with_extension("json.part");
     std::fs::create_dir_all(file.parent().expect("in the config directory"))
         .and_then(|()| std::fs::write(&part, serde_json::to_vec(&kept).expect("plain data")))
         .and_then(|()| std::fs::rename(&part, &file))
-        .map_err(|e| for_user("保存桌面小组件的设置", &e))
+        .map_err(|e| for_user("保存桌面小组件的设置", &e))?;
+    Ok(result)
 }
 
-/// Shows it as the app starts, when it was left shown. One that can't be shown is left out, and the
-/// app starts all the same.
 pub fn start(app: &AppHandle) {
-    let shown =
-        kept(app).and_then(|kept| if kept.shown { build(app, kept.frame).map_err(|e| for_user("打开桌面小组件", &e)) } else { Ok(()) });
-    if let Err(e) = shown {
-        tracing::warn!("desktop widget not shown: {e}");
+    match kept(app) {
+        Ok(kept) => {
+            for (i, widget) in kept.widgets.iter().enumerate() {
+                let frame = widget.frame.filter(|f| on_screen(app, f)).unwrap_or_else(|| {
+                    let size = widget.frame.map_or(SIZE, |f| (f.width, f.height));
+                    shifted(corner(app, size), i)
+                });
+                if let Err(e) = build(app, &widget.label(), frame) {
+                    tracing::warn!("desktop widget not shown: {e}");
+                }
+            }
+        }
+        Err(e) => tracing::warn!("desktop widgets not read: {e}"),
     }
     #[cfg(windows)]
     watch(app.clone());
 }
 
-/// Whether it is shown.
-#[tauri::command]
-pub fn widget(app: AppHandle) -> Result<bool, String> {
-    Ok(kept(&app)?.shown)
+#[derive(Serialize)]
+pub struct Widgets {
+    labels: Vec<String>,
+    full: bool,
 }
 
-/// Shows it or closes it, from the settings, and then keeps that: one that didn't open stays off.
-/// Asynchronous: on Windows a window made in a synchronous command never shows.
 #[tauri::command]
-pub async fn set_widget(app: AppHandle, shown: bool) -> Result<(), String> {
+pub fn widgets(app: AppHandle) -> Result<Widgets, String> {
+    let kept = kept(&app)?;
+    Ok(Widgets { labels: kept.widgets.iter().map(Widget::label).collect(), full: kept.widgets.len() >= LIMIT })
+}
+
+// Asynchronous: on Windows a window made in a synchronous command never shows.
+#[tauri::command]
+pub async fn add_widget(app: AppHandle) -> Result<(), String> {
     let _turn = TURN.lock().unwrap();
-    match (shown, app.get_webview_window(LABEL)) {
-        (true, None) => build(&app, kept(&app)?.frame).map_err(|e| for_user("打开桌面小组件", &e))?,
-        (false, Some(widget)) => widget.destroy().map_err(|e| for_user("关闭桌面小组件", &e))?,
-        _ => {}
+    let frame = placement(&app, &kept(&app)?.widgets);
+    let label = update(&app, |kept| kept.add(frame))?;
+    if let Err(e) = build(&app, &label, frame) {
+        forget(&app, &label)?;
+        return Err(for_user("打开桌面小组件", &e));
     }
-    update(&app, |kept| kept.shown = shown)
+    changed(&app, None)
+}
+
+#[tauri::command]
+pub async fn remove_widget(app: AppHandle, label: String) -> Result<(), String> {
+    let _turn = TURN.lock().unwrap();
+    if !is_widget(&label) {
+        return Err("这不是桌面小组件".into());
+    }
+    forget(&app, &label)?;
+    if let Some(widget) = app.get_webview_window(&label) {
+        widget.destroy().map_err(|e| for_user("关闭桌面小组件", &e))?;
+    }
+    changed(&app, Some(&label))
+}
+
+fn forget(app: &AppHandle, label: &str) -> Result<(), String> {
+    update(app, |kept| {
+        kept.widgets.retain(|w| w.label() != label);
+        Ok(())
+    })
+}
+
+fn changed(app: &AppHandle, removed: Option<&str>) -> Result<(), String> {
+    app.emit_to("main", CHANGED, removed).map_err(|e| for_user("通知主窗口小组件有变动", &e))
 }
 
 pub fn moved(window: &Window) {
     let Some(frame) = frame_of(window) else { return };
-    if let Err(e) = update(window.app_handle(), |kept| kept.frame = Some(frame)) {
+    if let Err(e) = update(window.app_handle(), |kept| {
+        if let Some(widget) = kept.widgets.iter_mut().find(|w| w.label() == window.label()) {
+            widget.frame = Some(frame);
+        }
+        Ok(())
+    }) {
         tracing::warn!("desktop widget's place not kept: {e}");
     }
 }
@@ -117,9 +209,8 @@ fn frame_of(window: &Window) -> Option<Frame> {
 /// Where it was, or the top right corner of the main screen, with the screen it was on gone or scaled
 /// otherwise. Not in the taskbar or Alt+Tab, and never in front of another window: clicked or typed
 /// in, it stays under them. Not focused as it shows.
-fn build(app: &AppHandle, frame: Option<Frame>) -> tauri::Result<()> {
-    let frame = frame.filter(|f| on_screen(app, f)).unwrap_or_else(|| corner(app));
-    let builder = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::default())
+fn build(app: &AppHandle, label: &str, frame: Frame) -> tauri::Result<()> {
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::default())
         .title("NextTodo")
         .position(frame.x, frame.y)
         .inner_size(frame.width, frame.height)
@@ -138,20 +229,26 @@ fn build(app: &AppHandle, frame: Option<Frame>) -> tauri::Result<()> {
         .focused(false)
         // Files dragged in reach the page, as in the panel (docs/desktop.md#附件).
         .disable_drag_drop_handler();
-    // Owned, it is neither in the taskbar nor in Alt+Tab.
+    #[cfg(windows)]
+    let builder = builder.owner_raw(desktop());
+    let widget = crate::links(builder).build()?;
+    if let Err(e) = configure(&widget, frame) {
+        widget.destroy()?;
+        return Err(e);
+    }
+    Ok(())
+}
+
+fn configure(_widget: &WebviewWindow, _frame: Frame) -> tauri::Result<()> {
     #[cfg(windows)]
     {
-        let widget = crate::links(builder.owner_raw(owned())).build()?;
-        // Tao takes a logical position to the first screen it is on at that screen's scale, which with
-        // screens of different scales can be another one, and a move between them may leave its pixels
-        // as they were: put where it was and as large, to the pixel.
-        widget.set_position(LogicalPosition::new(frame.x, frame.y).to_physical::<i32>(frame.scale))?;
-        widget.set_size(tauri::LogicalSize::new(frame.width, frame.height).to_physical::<u32>(frame.scale))?;
+        // Tao may turn the logical position and size back into pixels at another screen's scale.
+        let Frame { x, y, width, height, scale } = _frame;
+        _widget.set_position(LogicalPosition::new(x, y).to_physical::<i32>(scale))?;
+        _widget.set_size(tauri::LogicalSize::new(width, height).to_physical::<u32>(scale))?;
     }
     #[cfg(target_os = "macos")]
-    stationary(&crate::links(builder).build()?)?;
-    #[cfg(not(any(windows, target_os = "macos")))]
-    crate::links(builder).build()?;
+    stationary(_widget)?;
     Ok(())
 }
 
@@ -170,12 +267,25 @@ fn on_screen(app: &AppHandle, frame: &Frame) -> bool {
 }
 
 /// The top right corner of the main screen's work area, or of the desktop when tao finds no screen.
-fn corner(app: &AppHandle) -> Frame {
-    let (width, height) = SIZE;
+fn corner(app: &AppHandle, (width, height): (f64, f64)) -> Frame {
     let Ok(Some(screen)) = app.primary_monitor() else { return Frame { x: MARGIN, y: MARGIN, width, height, scale: 1.0 } };
     let (scale, area) = (screen.scale_factor(), screen.work_area());
     let right = (f64::from(area.position.x) + f64::from(area.size.width)) / scale;
     Frame { x: right - width - MARGIN, y: f64::from(area.position.y) / scale + MARGIN, width, height, scale }
+}
+
+fn placement(app: &AppHandle, widgets: &[Widget]) -> Frame {
+    let corner = corner(app, SIZE);
+    (0..=widgets.len())
+        .rev()
+        .map(|i| shifted(corner, i))
+        .find(|frame| !widgets.iter().filter_map(|w| w.frame).any(|f| f.x == frame.x && f.y == frame.y && f.scale == frame.scale))
+        .unwrap_or(corner)
+}
+
+fn shifted(frame: Frame, offset: usize) -> Frame {
+    let shift = MARGIN * offset as f64;
+    Frame { x: frame.x - shift, y: frame.y + shift, ..frame }
 }
 
 /// Stays where it is as the desktop is shown and in Mission Control, and out of ⌘` (as Übersicht's
@@ -199,20 +309,6 @@ fn stationary(widget: &tauri::WebviewWindow) -> tauri::Result<()> {
     })
 }
 
-/// The desktop's window that owns it, as a handle in a number, to tell when Explorer has made another.
-#[cfg(windows)]
-static OWNER: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
-
-/// The desktop's window (Progman), which owns it: an owned window stays just above its owner, which is
-/// below every other window, and is raised with it as the desktop is shown (Win+D and the like), when
-/// a window merely kept at the bottom would be left under it.
-#[cfg(windows)]
-fn owned() -> windows::Win32::Foundation::HWND {
-    let desktop = desktop();
-    OWNER.store(desktop.0 as isize, std::sync::atomic::Ordering::Relaxed);
-    desktop
-}
-
 /// Null while Explorer is not running.
 #[cfg(windows)]
 #[expect(unsafe_code, reason = "the windows crate marks every Win32 call unsafe; this one takes nothing and only returns a handle")]
@@ -228,29 +324,71 @@ fn watch(app: AppHandle) {
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(std::time::Duration::from_secs(10));
-            let Some(widget) = app.get_webview_window(LABEL) else { continue };
             let desktop = desktop();
-            if desktop.is_invalid() || desktop.0 as isize == OWNER.load(std::sync::atomic::Ordering::Relaxed) {
+            if desktop.is_invalid() {
                 continue;
             }
-            match widget.hwnd() {
-                Ok(hwnd) => {
-                    own(hwnd, desktop);
-                    OWNER.store(desktop.0 as isize, std::sync::atomic::Ordering::Relaxed);
+            for (label, widget) in app.webview_windows() {
+                if is_widget(&label) {
+                    match widget.hwnd() {
+                        Ok(hwnd) => restore_owner(hwnd, desktop),
+                        // Closed meanwhile; made again, it takes the new one.
+                        Err(e) => tracing::warn!("desktop widget's owner not checked: {e}"),
+                    }
                 }
-                // Closed meanwhile; made again, it takes the new one.
-                Err(e) => tracing::warn!("desktop widget not handed to the new desktop window: {e}"),
             }
         }
     });
 }
 
-/// Makes `desktop` the owner of `widget`, as `owner_raw` does as a window is made.
+/// Gives the widget to the new desktop, as `owner_raw` does when it is made.
 #[cfg(windows)]
 #[expect(unsafe_code, reason = "the windows crate marks every Win32 call unsafe; this one takes two handles and nothing else")]
-fn own(widget: windows::Win32::Foundation::HWND, desktop: windows::Win32::Foundation::HWND) {
-    use windows::Win32::UI::WindowsAndMessaging::{GWLP_HWNDPARENT, SetWindowLongPtrW};
+fn restore_owner(widget: windows::Win32::Foundation::HWND, desktop: windows::Win32::Foundation::HWND) {
+    use windows::Win32::UI::WindowsAndMessaging::{GW_OWNER, GWLP_HWNDPARENT, GetWindow, SetWindowLongPtrW};
     // SAFETY: both are window handles; for a top-level window GWLP_HWNDPARENT is its owner, and a handle
     // gone meanwhile only makes the call fail.
-    unsafe { SetWindowLongPtrW(widget, GWLP_HWNDPARENT, desktop.0 as isize) };
+    unsafe {
+        if GetWindow(widget, GW_OWNER).ok() != Some(desktop) {
+            SetWindowLongPtrW(widget, GWLP_HWNDPARENT, desktop.0 as isize);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FRAME: Frame = Frame { x: 1200.0, y: 49.0, width: 374.0, height: 459.0, scale: 2.0 };
+
+    #[test]
+    fn upgrades_the_visible_widget_with_its_frame() {
+        let single = serde_json::json!({ "shown": true, "frame": FRAME });
+        let kept = Kept::from(serde_json::from_value::<OnDisk>(single).unwrap());
+        let [widget] = kept.widgets.as_slice() else { panic!("expected one widget") };
+        assert_eq!(widget.label(), "widget-1");
+        assert_eq!(serde_json::to_value(widget.frame).unwrap(), serde_json::to_value(FRAME).unwrap());
+    }
+
+    #[test]
+    fn upgrades_a_hidden_widget_without_restoring_it_or_its_view() {
+        let single = serde_json::json!({ "shown": false, "frame": FRAME });
+        let mut kept = Kept::from(serde_json::from_value::<OnDisk>(single).unwrap());
+        assert!(kept.widgets.is_empty());
+        assert_eq!(kept.add(FRAME).unwrap(), "widget-2");
+    }
+
+    #[test]
+    fn caps_the_list_and_does_not_reuse_removed_numbers() {
+        let mut kept = Kept::default();
+        for id in 1..=6 {
+            assert_eq!(kept.add(FRAME).unwrap(), format!("widget-{id}"));
+        }
+        assert!(kept.add(FRAME).is_err());
+        kept.widgets.remove(1);
+        let disk = serde_json::to_value(&kept).unwrap();
+        let mut kept = Kept::from(serde_json::from_value::<OnDisk>(disk).unwrap());
+        assert_eq!(kept.add(FRAME).unwrap(), "widget-7");
+        assert!(kept.add(FRAME).is_err());
+    }
 }

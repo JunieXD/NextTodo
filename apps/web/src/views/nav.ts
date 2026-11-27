@@ -23,7 +23,10 @@ export function useSelection(): { selected: TaskId | null; select(id: TaskId): v
     selected,
     select(id) {
       // The panel has no room for details: the main window shows them, on the page the panel shows.
-      if (inPanel) return void openMain(`${location}?open=${id}`);
+      if (inPanel) {
+        const page = location.startsWith("/calendar/") || location === "/agenda" ? "/calendar" : location;
+        return void openMain(`${page}?open=${id}`);
+      }
       // Opening pushes an entry for back to close; switching to another task replaces it.
       navigate(`${location}?t=${id}`, selected ? { replace: true, state: history.state } : { state: { sheet: true } });
     },

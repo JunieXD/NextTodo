@@ -22,7 +22,7 @@ const hand = (list: { title: string; body: string; at: number; task?: string }[]
 /** Keeps the app's reminders in step with the local copy, also when the window comes back: the time
  * has moved on. A handover that fails is reported to `failed`; the next change tries again. Returns
  * how to stop and clear them. */
-export function watch(store: Store, failed: (e: unknown) => void): () => Promise<void> {
+export function watch(store: Store, failed: (e: unknown) => void, widgetRemoved: () => void): () => Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   // A handover carries the reminders due since the last one too, which the app may not have shown
   // yet: of those, it shows the ones still wanted, and only those.
@@ -55,20 +55,29 @@ export function watch(store: Store, failed: (e: unknown) => void): () => Promise
   const unwatch = onLock(() => void update().catch(failed));
   document.addEventListener("visibilitychange", shown);
   update().catch(failed);
+  const widgets = desktopWidget.onChange((removed) => {
+    if (removed) {
+      localStorage.removeItem(widgetPageKey(removed));
+      widgetRemoved();
+    }
+  });
+  // Report now even if the session lasts a long time; its cleanup still waits for registration.
+  const unlisten = widgets.catch(failed);
   return async () => {
     unsubscribe();
     unset();
     unwatch();
     document.removeEventListener("visibilitychange", shown);
     clearTimeout(timer);
+    (await unlisten)?.();
     // Those due but not shown yet go too.
     await invoke("clear_reminders");
   };
 }
 
 const label = app === "desktop" ? getCurrentWindow().label : "main";
-/** In the desktop widget (docs/desktop.md#桌面小组件). */
-export const inWidget = label === "widget";
+export const widgetLabel = label.startsWith("widget-") ? label : null;
+export const inWidget = widgetLabel !== null;
 /** In the menu bar or tray panel (docs/desktop.md#菜单栏小窗), or the desktop widget, which shows the
  * same, rather than the main window. */
 export const inPanel = label === "panel" || inWidget;
@@ -112,10 +121,15 @@ export const cli = {
   install: (replace: boolean) => invoke<void>("install_cli", { replace }),
 };
 
-/** Whether the desktop widget is shown, and showing or closing it (`apps/desktop/src-tauri/src/widget.rs`). */
+export const widgetPageKey = (label: string) => `nexttodo.widgetPage.${label}`;
+
+type Widgets = { labels: string[]; full: boolean };
+
 export const desktopWidget = {
-  shown: () => invoke<boolean>("widget"),
-  show: (shown: boolean) => invoke<void>("set_widget", { shown }),
+  list: () => invoke<Widgets>("widgets"),
+  add: () => invoke<void>("add_widget"),
+  remove: (label: string) => invoke<void>("remove_widget", { label }),
+  onChange: (changed: (removed: string | null) => void) => getCurrentWindow().listen<string | null>("widgets-changed", ({ payload }) => changed(payload)),
 };
 
 /** The panel's global shortcut, as `control+alt+KeyK`, and whether another app had it when the app

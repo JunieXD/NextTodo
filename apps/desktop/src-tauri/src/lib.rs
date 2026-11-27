@@ -151,8 +151,9 @@ pub fn run() {
             shortcut::shortcut,
             shortcut::set_shortcut,
             shortcut::pause_shortcut,
-            widget::widget,
-            widget::set_widget
+            widget::widgets,
+            widget::add_widget,
+            widget::remove_widget
         ])
         .setup(|app| {
             attachments::clear();
@@ -187,11 +188,11 @@ pub fn run() {
             // closed in the settings, stays.
             WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
-                if window.label() != widget::LABEL {
+                if !widget::is_widget(window.label()) {
                     let _ = window.hide();
                 }
             }
-            WindowEvent::Moved(_) | WindowEvent::Resized(_) if window.label() == widget::LABEL => widget::moved(window),
+            WindowEvent::Moved(_) | WindowEvent::Resized(_) if widget::is_widget(window.label()) => widget::moved(window),
             WindowEvent::Focused(false) if window.label() == panel::LABEL => panel::blurred(window),
             WindowEvent::Focused(true) => local::focused(window.app_handle()),
             _ => {}

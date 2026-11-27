@@ -21,7 +21,7 @@ import { exclusive } from "./sync/locks";
 import { type Saver, forget, forgetCopy, forgetOthers, load, outbox, saver } from "./sync/persist";
 import { type Connection, Socket } from "./sync/socket";
 import { type Saved, Store } from "./sync/store";
-import { useFeedback } from "./ui/feedback";
+import { forUser, useFeedback } from "./ui/feedback";
 
 const LOGIN = "nexttodo.login";
 
@@ -178,7 +178,11 @@ export class Session {
     const failed = (e: unknown) => this.listeners.appFailed(e);
     // The main window hands the desktop app the reminders, not the panel too.
     if (phoneApp) this.unwatch = mobile.watch(this.store, user.id, failed);
-    else if (app === "desktop" && !desktop.inPanel) this.unwatch = desktop.watch(this.store, failed);
+    else if (app === "desktop" && !desktop.inPanel) {
+      this.unwatch = desktop.watch(this.store, failed, () =>
+        void this.takeOver().catch((e: unknown) => this.listeners.told(forUser("接过桌面小组件没发出的改动", e))),
+      );
+    }
   }
 
   private readonly heard = ({ data }: MessageEvent<Message>) => {
@@ -282,8 +286,8 @@ export class Session {
   }
 
   /** Takes on what the server has not confirmed yet of the changes saved on this device by a window
-   * that closed without handing them over: the desktop widget, turned off from here. */
-  async takeOver() {
+   * that closed without handing them over: a removed desktop widget. */
+  private async takeOver() {
     this.store.adopt((await outbox(this.user.id)).map((p) => p.mutation));
   }
 

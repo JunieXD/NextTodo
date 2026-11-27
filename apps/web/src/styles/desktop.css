@@ -127,6 +127,17 @@
 .panel-scroll .group-title { margin: 16px 28px 6px; }
 .panel-scroll .group { margin: 0 12px; }
 .panel-scroll .empty { margin: 8px 12px; }
+.widget-list > button:disabled { color: var(--outline); cursor: default; }
+.compact-month .cal-bar { margin-top: 4px; }
+.compact-month .cal-week span { height: 22px; }
+.compact-month .cal-grid button { height: 36px; }
+.compact-month .cal-grid button > span { height: 35px; padding-top: 2px; border-radius: 9px; }
+.compact-month :is(.cal-num, .cal-grid small) { line-height: 1.1; }
+.compact-month .cal-dots { height: 3px; margin-top: 1px; }
+.compact-month .cal-dots i { width: 3px; height: 3px; }
+.compact-month .cal-date { margin-top: 12px; }
+.panel-scroll .agenda-time { flex: none; color: var(--on-surface-variant); font-size: 13px; font-variant-numeric: tabular-nums; }
+.panel-scroll .agenda-time.overdue { color: var(--error); }
 .panel-scroll .tip-card { margin-inline: 12px; }
 .panel .status-note { margin-inline: 12px; }
 .panel .row:hover:not(.swiping) > .row-inner { background: color-mix(in srgb, var(--group-bg), var(--on-surface) 4%); }

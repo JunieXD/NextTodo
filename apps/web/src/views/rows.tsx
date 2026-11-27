@@ -57,6 +57,7 @@ export function TaskRow({
   path,
   step,
   dueBy,
+  dueTimeOnly,
   railX,
   leaving,
   batchable,
@@ -73,6 +74,7 @@ export function TaskRow({
   step?: boolean;
   /** In “接下来”, the deadline of a task after it that it is to make (docs/design/dates.md#后续的截止). */
   dueBy?: Dated;
+  dueTimeOnly?: boolean;
   /** Where the check sits on the rail. */
   railX?: number;
   /** Folding away out of its list, completed (docs/ui.md#交互细节). */
@@ -99,7 +101,7 @@ export function TaskRow({
       </span>,
     );
   }
-  if (t.due) {
+  if (!dueTimeOnly && t.due) {
     meta.push(
       <span key="due" className={dueClass(t, now)}>
         <Icon of={t.due.repeat ? Repeat : Clock} size={14} />
@@ -112,14 +114,14 @@ export function TaskRow({
           晚于后续
         </span>,
       );
-  } else if (dueBy) {
+  } else if (!dueTimeOnly && dueBy) {
     meta.push(
       <span key="due" className={dueClass(dueBy, now)}>
         <Icon of={Clock} size={14} />
         后续 {formatDue(dueBy.due, now)}
       </span>,
     );
-  } else if (t.due_after) {
+  } else if (!dueTimeOnly && t.due_after) {
     meta.push(
       <span key="due">
         <Icon of={Clock} size={14} />
@@ -213,6 +215,7 @@ export function TaskRow({
               </span>
               {meta.length > 0 && <span className="task-meta">{meta}</span>}
             </button>
+            {dueTimeOnly && t.due?.time && <span className={`agenda-time ${dueClass(t, now)}`}>{t.due.time}</span>}
             {choosing ? <Box checked={chosen} /> : t.assignees.length > 0 && <Avatars board={board} ids={t.assignees} size={22} max={3} />}
             {chain && (
               <Tip label={chain.open ? "收起后续" : "展开后续"}>
@@ -238,7 +241,7 @@ export function TaskRow({
 }
 
 /** A time a repeating task is due later, or was `done`: not a task to tick, but one to open. */
-export function Occurrence({ task, meta, done, onOpen }: { task: Task; meta: string; done?: boolean; onOpen(): void }) {
+export function Occurrence({ task, meta, done, time, onOpen }: { task: Task; meta: string; done?: boolean; time?: string | null; onOpen(): void }) {
   const { board } = useView();
   return (
     <div className="row task occurrence" onClick={onOpen}>
@@ -255,6 +258,7 @@ export function Occurrence({ task, meta, done, onOpen }: { task: Task; meta: str
             <span>{meta}</span>
           </span>
         </button>
+        {time && <span className="agenda-time">{time}</span>}
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 // The server's own settings, its admin's: its version and upgrading it, invites, and attachments; in
-// local mode the attachments alone, the server being the app's (docs/ui.md#设置).
+// local mode the attachments alone, the server being the app's (docs/ui/settings.md).
 
 import { Copy, Mail } from "lucide-react";
 import { useEffect, useState } from "react";

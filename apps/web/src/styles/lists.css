@@ -71,7 +71,7 @@
 .rail path.live { stroke: color-mix(in srgb, var(--primary), transparent 35%); }
 .rail-note .row-inner { min-height: 44px; justify-content: space-between; font-size: 13px; color: var(--on-surface-variant); }
 
-/* What follows a task in “接下来” (docs/ui.md#接下来里的后续): the rail goes on from the row's circle. */
+/* What follows a task in “接下来” (docs/ui/next.md#接下来里的后续): the rail goes on from the row's circle. */
 .chain-btn { position: relative; flex: none; margin-right: -6px; }
 .chain-btn::before { content: ""; position: absolute; inset: -6px; }
 .chain-btn svg { transition: transform .2s; }
@@ -267,7 +267,7 @@ label.row { cursor: pointer; }
 .fab { position: absolute; z-index: 4; right: 16px; bottom: calc(var(--tabbar-h) + 16px); height: 56px; border-radius: 16px; padding: 0 20px 0 16px; display: inline-flex; align-items: center; gap: 8px;
   background: var(--primary-container); color: var(--on-primary-container); font-size: 15px; font-weight: 600; box-shadow: var(--shadow-3); }
 .fab.on { background: var(--primary); color: var(--on-primary); }
-/* On phones the graph's 连线 stands over its quick add bar (docs/ui.md#关系图): the two in one column
+/* On phones the graph's 连线 stands over its quick add bar (docs/ui/graph.md): the two in one column
    at the bottom, out of each other's way however tall the bar grows. */
 .graph-bottom { position: absolute; z-index: 4; left: 12px; right: 12px; bottom: calc(var(--tabbar-h) + 10px); display: flex; flex-direction: column; align-items: flex-end; gap: 12px; pointer-events: none; }
 .graph-bottom > * { pointer-events: auto; }

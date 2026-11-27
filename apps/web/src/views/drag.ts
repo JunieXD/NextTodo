@@ -1,4 +1,4 @@
-// Dragging rows to put them elsewhere (docs/ui.md#拖动): up or down a list, into a folder, about the
+// Dragging rows to put them elsewhere (docs/ui/drag.md): up or down a list, into a folder, about the
 // folder tree. A finger long-presses a row first, so as not to take a scroll or a swipe for a drag; a
 // mouse just drags it.
 

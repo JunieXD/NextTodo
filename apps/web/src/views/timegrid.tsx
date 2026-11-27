@@ -1,4 +1,4 @@
-// The calendar's time grid (docs/ui.md#日历): a week by the hour, what is due in half-hour cells and
+// The calendar's time grid (docs/ui/calendar.md): a week by the hour, what is due in half-hour cells and
 // what is due on a day alone above them; a tap on an empty cell picks it to add to.
 
 import { Plus } from "lucide-react";

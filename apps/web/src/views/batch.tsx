@@ -1,4 +1,4 @@
-// Batch operations (docs/ui.md#批量操作): tasks chosen on a folder's page or on what is done, then
+// Batch operations (docs/ui/batch.md): tasks chosen on a folder's page or on what is done, then
 // completed, reopened, chained, moved, assigned or deleted together, as one change that one undo takes
 // back.
 

@@ -1,4 +1,4 @@
-// The settings: a home page that lists the sections, each a page of its own (docs/ui.md#设置).
+// The settings: a home page that lists the sections, each a page of its own (docs/ui/settings.md).
 
 import { Bell, ChevronRight, HardDrive, History, Info, KeyRound, LayoutGrid, ListChecks, Lock, type LucideIcon, MonitorSmartphone, Palette, Paperclip, Server, Sparkles } from "lucide-react";
 import { type ReactNode } from "react";

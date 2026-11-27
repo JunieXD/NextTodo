@@ -1,4 +1,4 @@
-// What follows a task in “接下来”, unfolded under its row (docs/ui.md#接下来里的后续).
+// What follows a task in “接下来”, unfolded under its row (docs/ui/next.md#接下来里的后续).
 
 import { useState } from "react";
 import { flushSync } from "react-dom";

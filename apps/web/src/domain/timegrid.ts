@@ -1,4 +1,4 @@
-// What the calendar's time grid shows (docs/ui.md#日历): a week of the user's tasks by the hour they
+// What the calendar's time grid shows (docs/ui/calendar.md): a week of the user's tasks by the hour they
 // are due, in half-hour cells, those due on a date alone in a row of their own.
 
 import type { Completion } from "../api/types/Completion";

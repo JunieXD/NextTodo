@@ -1,4 +1,4 @@
-// Attachments (docs/ui.md#附件): a task's in its details, pictures as thumbnails and other files as
+// Attachments (docs/ui/attachments.md): a task's in its details, pictures as thumbnails and other files as
 // rows, which open, save, are renamed and deleted there; the picture viewer; and the files staged in an
 // add box to go with what is added there.
 

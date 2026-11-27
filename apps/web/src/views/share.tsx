@@ -1,4 +1,4 @@
-// Sharing folders (docs/ui.md#共享): people's avatars, the share panel, and choosing who is to do a
+// Sharing folders (docs/ui/sharing.md): people's avatars, the share panel, and choosing who is to do a
 // task. Adding and taking off people go to the server straight away rather than through the local
 // copy: who a username is, is only known there.
 

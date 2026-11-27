@@ -213,7 +213,7 @@ export class Store {
   }
 
   /** The latest change this copy knows of that did a task one more time, up to `count`: undoing it
-   * takes back the last time a repeating task was done (docs/ui.md#弹窗对话框提示条). Only a change of
+   * takes back the last time a repeating task was done (docs/ui/dialogs.md). Only a change of
    * that task alone: undoing one of several, done together, would take back what was done to the
    * others since, too. */
   completedAt(task: TaskId, count: number): MutationId | undefined {

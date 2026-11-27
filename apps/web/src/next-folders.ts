@@ -1,4 +1,4 @@
-// Which folders “接下来” lists, picked on this device for each user (docs/ui.md#接下来的文件夹筛选):
+// Which folders “接下来” lists, picked on this device for each user (docs/ui/next.md#接下来的文件夹筛选):
 // the root, which is all of them, until others are. The menu bar panel shares the pick with the main
 // window, hearing it change there by `storage`.
 

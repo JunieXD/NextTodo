@@ -1,4 +1,4 @@
-// How lists behave (docs/ui.md#设置): done tasks kept, where quick add puts tasks, and the keys that send.
+// How lists behave (docs/ui/settings.md): done tasks kept, where quick add puts tasks, and the keys that send.
 
 import { useState } from "react";
 import { phoneApp } from "../api/http";
@@ -34,7 +34,7 @@ export function Lists() {
   );
 }
 
-/** Which keys send AI organizing's text, of many lines (docs/ui.md#设置). */
+/** Which keys send AI organizing's text, of many lines (docs/ui/settings.md). */
 function SendKeys() {
   const [enterSends, setEnterSends] = useEnterSends();
   const mod = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘ + Enter" : "Ctrl + Enter";

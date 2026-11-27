@@ -1,4 +1,4 @@
-// The privacy lock's screen, and its page of the settings (docs/ui.md#隐私锁).
+// The privacy lock's screen, and its page of the settings (docs/ui/lock.md).
 
 import { ChevronRight } from "lucide-react";
 import { type ReactNode, useState } from "react";

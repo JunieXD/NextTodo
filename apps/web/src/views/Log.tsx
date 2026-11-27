@@ -1,4 +1,4 @@
-// The change log (docs/ui.md#改动记录): the batches the user sees, newest first, by day, each to be
+// The change log (docs/ui/history.md): the batches the user sees, newest first, by day, each to be
 // undone; or only those that delete something. As the `log` tool gives them, fetched from the top
 // again as changes come in, and undone by the `undo` tool: the local log has only the latest.
 

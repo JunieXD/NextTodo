@@ -1,5 +1,5 @@
 // How many of a folder's most recently completed tasks stay in its list, struck through, instead of
-// folding into its “已完成” (docs/ui.md#设置). Each device keeps its own, as it does the theme.
+// folding into its “已完成” (docs/ui/settings.md). Each device keeps its own, as it does the theme.
 
 import { useSyncExternalStore } from "react";
 

@@ -299,7 +299,7 @@ function useFolderActions(folder: FolderId | null): FolderActions | null {
 
 /** The buttons of the folder shown, or of the root: tidying it, often wanted, on its own, and "…" with
  * the rest of what its right-click menu has and choosing its tasks for
- * [batch operations](docs/ui.md#批量操作). */
+ * [batch operations](docs/ui/batch.md). */
 export function FolderMenu({ folder }: { folder: FolderId | null }) {
   const actions = useFolderActions(folder);
   const { snack } = useFeedback();

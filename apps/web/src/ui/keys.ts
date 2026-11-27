@@ -8,7 +8,7 @@ export const composing = (e: React.KeyboardEvent) => e.nativeEvent.isComposing |
 const SEND_KEY = "nexttodo.enterSends";
 
 /** Whether Enter sends AI organizing's text, of many lines, and Shift + Enter starts a line, as set on
- * this device; else Enter starts one and only Ctrl or ⌘ + Enter sends (docs/ui.md#设置). */
+ * this device; else Enter starts one and only Ctrl or ⌘ + Enter sends (docs/ui/settings.md). */
 export function useEnterSends(): [boolean, (on: boolean) => void] {
   const [kept, keep] = useKept(SEND_KEY);
   return [kept === "on", (on) => keep(on ? "on" : "off")];

@@ -1,4 +1,4 @@
-// The settings of reminders every device has (docs/ui.md#设置): the reminders a task gets as it is given
+// The settings of reminders every device has (docs/ui/settings.md): the reminders a task gets as it is given
 // a due date, and in the apps, which remind, whether reminders hide what they are of, and the daily
 // digest.
 

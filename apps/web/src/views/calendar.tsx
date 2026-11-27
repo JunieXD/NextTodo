@@ -1,4 +1,4 @@
-// The calendar page (docs/ui.md#日历): a month, a week or a year, what is due and done on each day,
+// The calendar page (docs/ui/calendar.md): a month, a week or a year, what is due and done on each day,
 // and the day picked listed under it.
 
 import { ChevronLeft, ChevronRight, LetterText } from "lucide-react";

@@ -18,7 +18,7 @@
 @media (hover: hover) { .cal-days button:not([aria-pressed="true"], :disabled):hover span { background: var(--press); } }
 .cal-days button:not([aria-pressed="true"], :disabled):active span { background: var(--press); }
 
-/* The calendar page (docs/ui.md#日历): a month or a week of days tinted by how much was done on each,
+/* The calendar page (docs/ui/calendar.md): a month or a week of days tinted by how much was done on each,
    or a year of small ones. As wide as the settings' column on desktops. */
 .desk .cal-page:not(.time, .titles) { max-width: 600px; margin-inline: auto; }
 /* Sideways is the page's own, to turn it; up and down scroll. */
@@ -74,7 +74,7 @@
 .cal-mini [aria-current="date"], .cal-mini button:focus-visible { box-shadow: 0 0 0 1.5px var(--primary); }
 .cal-date { margin: 20px 32px 0; font-size: 16px; font-weight: 600; }
 .cal-lunar { margin-left: 8px; font-size: 14px; font-weight: 400; color: var(--on-surface-variant); }
-/* Festivals, solar terms, 休 and 班 (docs/ui.md#日历). */
+/* Festivals, solar terms, 休 and 班 (docs/ui/calendar.md). */
 :is(.cal-grid, .cal-days, .tg-day, .cal-titled) small.day-note, .cal-date .day-note { color: var(--primary); }
 .day-mark { position: absolute; top: 3px; right: 4px; font-size: 9px; line-height: 1; font-weight: 700; font-style: normal; }
 .cal-days .day-mark { top: 2px; right: 3px; }
@@ -106,7 +106,7 @@
 .cal-day .empty { margin-inline: 32px; }
 .occurrence .check { cursor: default; }
 
-/* The time grid (docs/ui.md#日历): a week by the hour in half-hour cells, edge to edge on phones. The days
+/* The time grid (docs/ui/calendar.md): a week by the hour in half-hour cells, edge to edge on phones. The days
    and the row of what is due on a day alone stay on top as the hours scroll. */
 .tg { --hour: 4rem; --gutter: 32px; }
 .desk .tg { --gutter: 40px; }

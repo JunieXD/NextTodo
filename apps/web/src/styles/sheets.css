@@ -94,7 +94,7 @@
 .add-row .row-inner { color: var(--primary); font-weight: 500; min-height: 48px; }
 /* As wide as the dots of the rows below it. */
 .add-row.dep svg { margin: 0 2px; flex: none; }
-/* Attachments (docs/ui.md#附件): pictures as square thumbnails, three a row on a phone and four on a
+/* Attachments (docs/ui/attachments.md): pictures as square thumbnails, three a row on a phone and four on a
    computer; other files as rows; the files staged in an add box; references in a description. */
 .spin svg { animation: spin 1s linear infinite; }
 .att-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 10px; }

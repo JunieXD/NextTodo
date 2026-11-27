@@ -77,11 +77,11 @@ export function TaskRow({
   railX?: number;
   /** Folding away out of its list, completed (docs/ui.md#交互细节). */
   leaving?: boolean;
-  /** On a page where tasks can be chosen for [batch operations](docs/ui.md#批量操作). */
+  /** On a page where tasks can be chosen for [batch operations](docs/ui/batch.md). */
   batchable?: boolean;
   selected: boolean;
   /** In “接下来”, for an open task with open ones after it: whether they are unfolded under the row
-   * (docs/ui.md#接下来里的后续). */
+   * (docs/ui/next.md#接下来里的后续). */
   chain?: { open: boolean; toggle(): void };
   actions: RowActions;
 }) {

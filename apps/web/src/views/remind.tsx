@@ -1,4 +1,4 @@
-// A task's reminders in its detail (docs/ui.md#详情): the row saying them all, its menu ticking them by
+// A task's reminders in its detail (docs/ui/dialogs.md): the row saying them all, its menu ticking them by
 // what they go by, and the dialog adding one not on it; and the rows choosing a reminder, which the
 // settings of default reminders use too.
 

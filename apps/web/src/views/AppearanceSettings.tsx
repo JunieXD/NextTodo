@@ -1,4 +1,4 @@
-// The look (docs/ui.md#设置): the theme, the accent colour, the calendar and, in the desktop app, the zoom.
+// The look (docs/ui/settings.md): the theme, the accent colour, the calendar and, in the desktop app, the zoom.
 
 import { useState } from "react";
 import { app, desktopOs } from "../api/http";

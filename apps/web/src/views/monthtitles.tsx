@@ -1,4 +1,4 @@
-// The calendar's month with titles (docs/ui.md#日历): six weeks of days edge to edge, each with what is on
+// The calendar's month with titles (docs/ui/calendar.md): six weeks of days edge to edge, each with what is on
 // it as the time grid's labels, instead of dots and the tint of what was done.
 
 import { useView } from "../session";

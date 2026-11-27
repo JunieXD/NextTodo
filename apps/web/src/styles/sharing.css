@@ -1,4 +1,4 @@
-/* Sharing (docs/ui.md#共享): people's avatars, overlapping, each ringed in the colour of what is
+/* Sharing (docs/ui/sharing.md): people's avatars, overlapping, each ringed in the colour of what is
    behind them; the share panel and the assignee picker. */
 .people { --size: 22px; display: inline-flex; flex: none; }
 .person { width: var(--size); height: var(--size); border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--surface-highest); color: var(--on-surface-variant);

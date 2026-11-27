@@ -128,7 +128,7 @@ export function NextBody({ now }: { now: Date }) {
   );
 }
 
-/** Which folders “接下来” lists, and picking them, in its title row (docs/ui.md#接下来的文件夹筛选). */
+/** Which folders “接下来” lists, and picking them, in its title row (docs/ui/next.md#接下来的文件夹筛选). */
 export function NextFilter() {
   const { board } = useView();
   const folders = useNextFolders(board);

@@ -1,4 +1,4 @@
-// The account's settings (docs/ui.md#设置): the display name, the password, the devices signed in, signing out, and backups.
+// The account's settings (docs/ui/settings.md): the display name, the password, the devices signed in, signing out, and backups.
 
 import { ChevronRight, Monitor } from "lucide-react";
 import { useId, useRef, useState } from "react";

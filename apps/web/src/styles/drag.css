@@ -1,4 +1,4 @@
-/* Dragging a row to another place (docs/ui.md#拖动): up or down a list, into a folder, about the folder
+/* Dragging a row to another place (docs/ui/drag.md): up or down a list, into a folder, about the folder
    tree, where a line shows where a folder would go, at the depth of the row below it. */
 .reorderable > .row { -webkit-touch-callout: none; }
 .rail-list.reordering .rail { opacity: 0; }

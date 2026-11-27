@@ -1,5 +1,5 @@
 // Markdown: descriptions, whose checklist items can be ticked in place, and whose references to the
-// task's attachments are tags that open them (docs/ui.md#附件). Raw HTML is not rendered. Loaded when
+// task's attachments are tags that open them (docs/ui/attachments.md). Raw HTML is not rendered. Loaded when
 // first shown, being large and not needed to start (`lazyMarkdown`).
 
 import { File as FileIcon, Image as ImageIcon } from "lucide-react";

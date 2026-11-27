@@ -33,11 +33,11 @@ struct Args {
     #[arg(long, default_value_t = 1)]
     repeat: usize,
     /// How many to ask at once.
-    #[arg(long, default_value_t = 4)]
+    #[arg(long, default_value_t = 2)]
     jobs: usize,
-    /// Only the cases whose id has this in it.
-    #[arg(long)]
-    only: Option<String>,
+    /// Only the cases whose id has one of these in it.
+    #[arg(long, value_delimiter = ',', value_parser = clap::builder::NonEmptyStringValueParser::new())]
+    only: Vec<String>,
     #[arg(long, env = "NEXTTODO_EVAL_URL")]
     url: String,
     #[arg(long, env = "NEXTTODO_EVAL_MODEL")]
@@ -248,7 +248,7 @@ fn main() -> anyhow::Result<()> {
             cases.push(Case { id: c.id, input: c.input, expect });
         }
     }
-    cases.retain(|c| args.only.as_ref().is_none_or(|only| c.id.contains(only.as_str())));
+    cases.retain(|c| args.only.is_empty() || args.only.iter().any(|only| c.id.contains(only.as_str())));
 
     let work: Vec<(usize, usize)> = (0..args.repeat).flat_map(|run| (0..cases.len()).map(move |case| (case, run))).collect();
     let next = AtomicUsize::new(0);
@@ -299,6 +299,12 @@ fn main() -> anyhow::Result<()> {
         count("出错"),
         dir.display()
     );
+    let mut listed = HashSet::new();
+    let failed: Vec<&str> =
+        outcomes.iter().filter(|o| !o.problems.is_empty()).map(|o| cases[o.case].id.as_str()).filter(|id| listed.insert(*id)).collect();
+    if !failed.is_empty() {
+        println!("没过的：--only {}", failed.join(","));
+    }
     Ok(())
 }
 

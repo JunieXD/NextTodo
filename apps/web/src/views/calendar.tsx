@@ -111,8 +111,9 @@ export function CalendarBody({ now, view, onView, pick: { picked, at, pick }, co
   const timeGrid = useTimeGridOn();
   const marks = useHolidayMarks();
   const [titled, setTitled] = useMonthTitles();
-  const compactMonth = view === "month" && compact;
-  const titles = view === "month" && titled && !compactMonth;
+  // The panel's and the desktop widgets' month is written with titles, filling the window, as Android's
+  // month widget, with no list under it: a title opens its task, and a day is picked to add to.
+  const titles = view === "month" && (titled || compact);
   useEffect(() => {
     if (asked === null) return;
     if (linked) {
@@ -172,10 +173,10 @@ export function CalendarBody({ now, view, onView, pick: { picked, at, pick }, co
     if (view !== "time") bar.current!.scrollIntoView({ block: "nearest" });
   }, [view]);
   return (
-    <div className={`cal-page${view === "time" ? " time" : titles ? " titles" : compactMonth ? " compact-month" : ""}`}>
+    <div className={`cal-page${view === "time" ? " time" : titles ? " titles" : ""}${titles && compact ? " fill" : ""}`}>
       <div ref={bar} className="cal-bar">
         <span aria-live="polite">{view === "year" ? `${shown.getFullYear()}年` : `${shown.getFullYear()}年${shown.getMonth() + 1}月`}</span>
-        {view === "month" && !compactMonth && (
+        {view === "month" && !compact && (
           <Tip label="显示标题">
             <button type="button" className="icon-btn sm" aria-pressed={titled} onClick={() => setTitled(!titled)}>
               <Icon of={LetterText} size={18} />
@@ -236,7 +237,7 @@ export function CalendarBody({ now, view, onView, pick: { picked, at, pick }, co
                 <span key={w}>{w}</span>
               ))}
             </div>
-            <MonthTitles days={isoDays} month={shown.getMonth()} today={today} picked={picked} now={now} onPick={setPicked} onMove={(e, d) => move(e, day(d))} />
+            <MonthTitles days={isoDays} month={shown.getMonth()} today={today} picked={picked} now={now} fill={compact} onPick={setPicked} onMove={(e, d) => move(e, day(d))} />
           </>
         ) : (
           <>
@@ -281,7 +282,7 @@ export function CalendarBody({ now, view, onView, pick: { picked, at, pick }, co
           </>
         )}
       </div>
-      {(view === "month" || view === "week") && <DayList date={picked} now={now} overdue={picked === today ? overdue(board, today) : []} due={due.get(picked) ?? []} dropped={dropped.get(picked) ?? []} done={done.get(picked) ?? []} />}
+      {((view === "month" && !compact) || view === "week") && <DayList date={picked} now={now} overdue={picked === today ? overdue(board, today) : []} due={due.get(picked) ?? []} dropped={dropped.get(picked) ?? []} done={done.get(picked) ?? []} />}
     </div>
   );
 }

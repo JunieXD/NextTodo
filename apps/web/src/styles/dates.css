@@ -103,6 +103,17 @@
 .cal-titled.out { color: var(--outline); }
 .cal-titled.out :is(small, .day-mark) { color: inherit; }
 .cal-titled .tg-label { flex: none; text-align: start; }
+/* The panel's and the desktop widgets', as Android's month widget: the weeks share the window's height,
+   what is written with a day beside its number, so that six weeks with a title each fit as they open. */
+.cal-page.fill { min-height: 100%; display: flex; flex-direction: column; }
+.cal-page.fill .cal-bar { margin-top: 4px; }
+.cal-page.fill .cal-week span { height: 22px; }
+.cal-page.fill .cal-swipe { flex: 1; display: flex; flex-direction: column; }
+.cal-page.fill .cal-titles { flex: 1; grid-template-rows: repeat(6, minmax(40px, 1fr)); }
+.cal-page.fill .cal-titled { height: auto; }
+.cal-page.fill .cal-titled-day { flex-direction: row; align-items: baseline; gap: 2px; }
+.cal-page.fill .cal-titled-day :is(.cal-num, .day-mark) { flex: none; }
+.cal-page.fill .cal-titled-day .day-mark { position: static; margin-left: auto; }
 .cal-day .empty { margin-inline: 32px; }
 .occurrence .check { cursor: default; }
 

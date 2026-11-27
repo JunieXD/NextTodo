@@ -76,7 +76,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * The reminder card (docs/android.md#弹窗提醒): a window over whatever is on screen, which needs only
+ * The reminder card (docs/android/reminders.md#弹窗提醒): a window over whatever is on screen, which needs only
  * the permission to draw over other apps; an activity started from the background would need HyperOS's
  * own permission too. It takes no focus, so touches around it and the back key go to the app below.
  * One reminder at a time, the others queued behind it. On the main thread.

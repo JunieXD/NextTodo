@@ -75,7 +75,7 @@ class NextTodoPlugin : Plugin() {
     }
 
     /** Hands over the reminders, as JSON in the shape `apps/web/src/mobile.ts` gives
-     * (docs/android.md#提醒). The first time there are some, asks for notifications. */
+     * (docs/android/reminders.md#提醒). The first time there are some, asks for notifications. */
     @PluginMethod
     fun setReminders(call: PluginCall) {
         val reminders = call.getString("reminders")!!
@@ -131,7 +131,7 @@ class NextTodoPlugin : Plugin() {
         call.resolve()
     }
 
-    /** Where reminders' sound and vibration are chosen (docs/android.md#通知): the reminders' channel; the
+    /** Where reminders' sound and vibration are chosen (docs/android/reminders.md#通知): the reminders' channel; the
      * app's page, listing them all, with the card on, which posts through a channel of its own too, or
      * with notifications off, when a channel's page hides its sound. */
     @PluginMethod

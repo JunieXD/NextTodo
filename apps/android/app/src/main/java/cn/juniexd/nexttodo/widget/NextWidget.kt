@@ -90,7 +90,7 @@ private val OccurrenceKey = ActionParameters.Key<String>("occurrence")
 internal fun open(context: Context, url: String) =
     actionStartActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url), context, MainActivity::class.java))
 
-/** The home-screen widget: what can be done now. See docs/android.md#小组件. */
+/** The home-screen widget: what can be done now. See docs/android/widgets.md#小组件. */
 class NextWidget : GlanceAppWidget() {
     /** Laid out for the size it is, to fit more tasks in a low one. */
     override val sizeMode = SizeMode.Exact
@@ -120,7 +120,7 @@ internal val TINY_BELOW = 130.dp
 
 /** How far the content keeps from the widget's sides, and from its top. Inside what is tapped there:
  * the widget leaves no gap, which HyperOS's launcher would give to whichever action it picks
- * (docs/android.md#小组件). */
+ * (docs/android/widgets.md#小组件). */
 internal val EDGE = 14.dp
 internal val TOP = 10.dp
 
@@ -177,10 +177,10 @@ private fun TaskItem(context: Context, item: Item, first: Boolean, ticked: Boole
                 fontSize = 15.sp * scale,
                 textDecoration = if (ticked) TextDecoration.LineThrough else null,
             )
-            // Not when catching up left it due today still: today's time is to do (docs/design.md#重复).
+            // Not when catching up left it due today still: today's time is to do (docs/design/repeat.md#重复).
             val doneToday = "今天已完成".takeIf { item.lastDone == now.toLocalDate() && item.due?.date?.isAfter(now.toLocalDate()) == true }
             // In a line, the folder gives way to the title.
-            // Its own deadline, or else that of a task after it it is to make (docs/design.md#后续的截止).
+            // Its own deadline, or else that of a task after it it is to make (docs/design/dates.md#后续的截止).
             val due = item.due?.label(now) ?: item.dueBy?.let { "后续 ${it.label(now)}" }
             val meta = listOfNotNull(item.folder.takeIf { it.isNotEmpty() && !compact }, doneToday, due).joinToString(" · ")
             val color = when {

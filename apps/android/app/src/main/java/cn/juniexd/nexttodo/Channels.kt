@@ -11,13 +11,13 @@ import java.io.File
 
 /** The app's notification channels, which users can tune in the system settings. */
 object Channels {
-    /** Reminders: a banner at the top of the screen (docs/android.md#通知). */
+    /** Reminders: a banner at the top of the screen (docs/android/reminders.md#通知). */
     const val DUE = "due"
 
-    /** Reminders shown on the reminder card as well: a sound, no banner (docs/android.md#弹窗提醒). */
+    /** Reminders shown on the reminder card as well: a sound, no banner (docs/android/reminders.md#弹窗提醒). */
     const val DUE_QUIET = "due-quiet"
 
-    /** The daily digest: a banner, as reminders (docs/android.md#提醒). */
+    /** The daily digest: a banner, as reminders (docs/android/reminders.md#提醒). */
     const val DIGEST = "digest"
 
     /** Changes made natively that the server turned down later (docs/android.md#原生发出的改动). */

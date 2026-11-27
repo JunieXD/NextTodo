@@ -40,7 +40,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-/** The home-screen agenda: what is due each of the next days. See docs/android.md#日程. */
+/** The home-screen agenda: what is due each of the next days. See docs/android/widgets.md#日程. */
 class AgendaWidget : GlanceAppWidget() {
     /** Laid out for the size it is, as the “接下来” widget is. */
     override val sizeMode = SizeMode.Exact

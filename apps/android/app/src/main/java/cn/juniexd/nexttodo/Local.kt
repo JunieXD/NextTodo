@@ -32,12 +32,12 @@ object Local {
     fun on(context: Context) = Server.prefs(context).getString(MODE, null) == LOCAL
 
     /** What sending to the server needs: no network in local mode, but while it syncs through a drive
-     * (docs/local.md#借网盘同步). */
+     * (docs/local/drive.md#借网盘同步). */
     fun network(context: Context) =
         if (on(context) && !LocalServer.syncing()) NetworkType.NOT_REQUIRED else NetworkType.CONNECTED
 
     /** Has the server look at the drive now, when it syncs through one, waiting up to `waitMs` for
-     * what is new there to be read in (docs/local.md#运行). */
+     * what is new there to be read in (docs/local/drive.md#运行). */
     fun pull(waitMs: Long) = LocalServer.pull(waitMs)
 
     private fun dir(context: Context) = File(context.filesDir, "local").path

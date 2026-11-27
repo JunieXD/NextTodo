@@ -51,7 +51,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 
 /** The home-screen month: six weeks of days and the titles of what is due on them, this month's or the
- * next. See docs/android.md#月历. */
+ * next. See docs/android/widgets.md#月历. */
 class MonthWidget : GlanceAppWidget() {
     // One copy, as the time grid's: the launcher takes the whole widget at once, and this one has much in
     // it. Laid out by the height the options give (`height`).

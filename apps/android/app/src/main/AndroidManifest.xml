@@ -77,7 +77,7 @@
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- The reminder card opened from a notification: a card at the bottom over what is on screen,
-             not a task to come back to. docs/android.md#通知. -->
+             not a task to come back to. docs/android/reminders.md#通知. -->
         <activity
             android:name=".reminders.SnoozeActivity"
             android:exported="false"
@@ -86,7 +86,7 @@
             android:launchMode="singleTask"
             android:theme="@style/Popup" />
 
-        <!-- The reminders' alarm, and what may have missed it. docs/android.md#提醒. -->
+        <!-- The reminders' alarm, and what may have missed it. docs/android/reminders.md#提醒. -->
         <receiver
             android:name=".reminders.ReminderReceiver"
             android:exported="false">
@@ -182,7 +182,7 @@
     <!-- To write the tasks with a deadline into the system calendar: docs/android.md#写进系统日历. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
-    <!-- Reminders: docs/android.md#提醒. The card draws over other apps: #弹窗提醒. -->
+    <!-- Reminders: docs/android/reminders.md#提醒. The card draws over other apps: #弹窗提醒. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />

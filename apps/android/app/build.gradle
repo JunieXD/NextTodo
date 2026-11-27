@@ -84,7 +84,7 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation "androidx.glance:glance-appwidget:$glanceVersion"
-    // The reminder card (docs/android.md#弹窗提醒).
+    // The reminder card (docs/android/reminders.md#弹窗提醒).
     implementation platform("androidx.compose:compose-bom:$composeBomVersion")
     implementation "androidx.compose.material3:material3"
     implementation "androidx.activity:activity-compose:$androidxActivityVersion"

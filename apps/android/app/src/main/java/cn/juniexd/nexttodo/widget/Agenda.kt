@@ -54,7 +54,7 @@ data class Week(
     val now: LocalDateTime,
 )
 
-/** What a calendar writes with a day (docs/design.md#节日和放假), as the app works it out: its festival or
+/** What a calendar writes with a day (docs/design/repeat.md#节日和放假), as the app works it out: its festival or
  * solar term, a `note`, or else its lunar day; and whether it is a day off, `off`, or a made-up working
  * day, `work`, unless the app's settings leave those out. */
 data class DayLabel(val text: String, val note: Boolean, val holiday: String?)
@@ -69,7 +69,7 @@ object Agenda {
     const val DAYS = 7
 
     /** How many days from `today` the data has: to the last of next month's six weeks, which the “月历”
-     * widget shows (docs/android.md#月历). The app's data has as many (`apps/web/src/mobile.ts`). */
+     * widget shows (docs/android/widgets.md#月历). The app's data has as many (`apps/web/src/mobile.ts`). */
     fun span(today: LocalDate): Int {
         val next = today.withDayOfMonth(1).plusMonths(1)
         val last = next.minusDays(next.dayOfWeek.value - 1L).plusDays(41)

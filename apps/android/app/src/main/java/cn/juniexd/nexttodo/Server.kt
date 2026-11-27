@@ -45,7 +45,7 @@ object Server {
 
     /** The data of the read tool `tool` given `args`, of `folders` when given, and the change it is as of. */
     private suspend fun read(context: Context, token: String, tool: String, args: JSONObject, folders: JSONArray?): Pair<JSONObject, Long> {
-        // Today and starts go by the day and time here (docs/design.md#开始时间).
+        // Today and starts go by the day and time here (docs/design/dates.md#开始时间).
         val now = LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES)
         args.put("today", now.toLocalDate().toString()).put("time", now.toLocalTime().toString())
         folders?.let { args.put("folders", it) }

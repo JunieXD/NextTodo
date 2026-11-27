@@ -44,7 +44,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** A task as the widget shows it. `dueBy` is the deadline of a task after it that it is to make, should
- * that come first (docs/design.md#后续的截止); `lastDone` the last day a repeating one was done, and
+ * that come first (docs/design/dates.md#后续的截止); `lastDone` the last day a repeating one was done, and
  * `occurrence` the time shown; `step`, which step it is along its dependencies, such as `2/5`. */
 data class Item(val id: String, val title: String, val folder: String, val due: Due?, val dueBy: Due?, val lastDone: LocalDate?, val occurrence: Occurrence?, val step: String?)
 
@@ -73,7 +73,7 @@ object Widget {
     private const val MORE = "more"
 
     /** The paths of the folders “接下来” lists on this phone, as a JSON array, which the widget's own
-     * fetches ask for too (docs/android.md#小组件); none for all of them. */
+     * fetches ask for too (docs/android/widgets.md#小组件); none for all of them. */
     private const val FOLDERS = "folders"
 
     /** Until when what the widget last drawn says of the time holds, as `until` gave it then. */
@@ -88,7 +88,7 @@ object Widget {
         return (items.mapNotNull { (it.due ?: it.dueBy)?.deadline } + now.toLocalDate().plusDays(1).atStartOfDay()).filter { it.isAfter(now) }.min()
     }
 
-    /** How the widgets look (docs/android.md#小组件的设置). */
+    /** How the widgets look (docs/android/widgets.md#小组件的设置). */
     fun look(context: Context) = Look.read(prefs(context))
 
     suspend fun setLook(context: Context, look: Look) {

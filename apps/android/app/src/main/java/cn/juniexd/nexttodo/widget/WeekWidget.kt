@@ -53,7 +53,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 
 /** The home-screen week: seven days to pick one of, and what is due on it, to tick off. See
- * docs/android.md#一周. */
+ * docs/android/widgets.md#一周. */
 class WeekWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Exact
 
@@ -67,7 +67,7 @@ class WeekWidget : GlanceAppWidget() {
     }
 }
 
-/** The day picked, in the widget's own state: also the “时间轴” widget's. */
+/** The day picked, in the widget's own state. */
 internal val PICKED = stringPreferencesKey("picked")
 
 internal val DayKey = ActionParameters.Key<String>("day")
@@ -114,12 +114,12 @@ private fun WeekContent(context: Context, week: Week, picked: LocalDate?) {
     }
 }
 
-/** The seven days, side by side, each picked by a tap, as `pick` has it: what day of the week, `今`
- * today; its number, filled in the day picked; and, with `dots`, a dot for each of up to three tasks due
+/** The seven days, side by side, each doing what `pick` gives for it: what day of the week, `今`
+ * today; its number, filled in the day `picked`, should there be one; and, with `dots`, a dot for each of up to three tasks due
  * on it, red for one overdue. After a `gutter` as wide as the time grid's hours, should there be one,
  * which opens what its action does. */
 @Composable
-internal fun Days(week: Week, picked: LocalDate, today: LocalDate, scale: Float, pick: (LocalDate) -> Action, dots: Boolean = true, gutter: Pair<Dp, Action>? = null) {
+internal fun Days(week: Week, picked: LocalDate?, today: LocalDate, scale: Float, pick: (LocalDate) -> Action, dots: Boolean = true, gutter: Pair<Dp, Action>? = null) {
     val colors = LocalColors.current
     // Each day from edge to edge of its share of the width, the first and last to the widget's: no gap
     // (see `EDGE`).
@@ -178,7 +178,7 @@ internal fun HolidayMark(holiday: String, color: ColorProvider?, scale: Float) {
     Box(GlanceModifier.fillMaxSize().padding(top = 1.dp, end = 3.dp), contentAlignment = Alignment.TopEnd) { HolidayText(holiday, color, scale) }
 }
 
-/** 休 or 班, as `holiday` has it (docs/ui.md#日历), in `color` or else in the primary colour or the amber. */
+/** 休 or 班, as `holiday` has it (docs/ui/calendar.md#日历), in `color` or else in the primary colour or the amber. */
 @Composable
 internal fun HolidayText(holiday: String, color: ColorProvider?, scale: Float) {
     val colors = LocalColors.current

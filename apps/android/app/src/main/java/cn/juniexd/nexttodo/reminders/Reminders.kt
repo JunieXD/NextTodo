@@ -81,7 +81,7 @@ data class Reminder(
 }
 
 /**
- * The reminders, scheduled and shown here (docs/android.md#提醒): the list the app hands over,
+ * The reminders, scheduled and shown here (docs/android/reminders.md#提醒): the list the app hands over,
  * kept in preferences, and one alarm at the next of them. Each time the alarm goes off or a list comes,
  * the reminders due since the last time are shown. Everything here runs in turn.
  */
@@ -98,7 +98,7 @@ object Reminders {
      * a task: the next of its reminders to come takes the place of the one put off. */
     private const val SNOOZED = "snoozed"
 
-    /** Whether the reminder card is on (docs/android.md#弹窗提醒). */
+    /** Whether the reminder card is on (docs/android/reminders.md#弹窗提醒). */
     private const val CARD = "card"
 
     /** Reminders that came due for the card while the phone was locked or its screen off, by task:
@@ -110,7 +110,7 @@ object Reminders {
     private const val SHOWN = "shown"
 
     /** The daily digests handed over, as JSON `{hide, list: [{at, tasks: [{task, occurrence, title}]}]}`, less
-     * the tasks done here since (docs/android.md#提醒). */
+     * the tasks done here since (docs/android/reminders.md#提醒). */
     private const val DIGEST = "digest"
 
     /** The daily digest's notification: one at a time, the next day's in place of the one before. */
@@ -118,7 +118,7 @@ object Reminders {
 
     /** The times of tasks done here, as JSON `[{id, task, occurrence, seq}]`: `id` the change, `seq`
      * what it became, none while not sent. A list handed over behind one leaves it out
-     * (docs/android.md#提醒). */
+     * (docs/android/reminders.md#提醒). */
     private const val DONE = "done"
 
     /** Whether the app has asked for notifications, which it does once. */

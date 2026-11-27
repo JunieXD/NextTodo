@@ -14,21 +14,16 @@ import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.ImageProvider
 import androidx.glance.action.Action
-import androidx.glance.action.ActionParameters
-import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
-import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.provideContent
-import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.background
-import androidx.glance.currentState
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Row
@@ -50,7 +45,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 
 /** The home-screen time grid: the week's seven days side by side, what is due on them by the hour. See
- * docs/android.md#时间轴. */
+ * docs/android/widgets.md#时间轴. */
 class TimelineWidget : GlanceAppWidget() {
     // One size, which is laid out to fill: the widget is drawn for each size it is given otherwise.
     override val sizeMode = SizeMode.Single
@@ -59,8 +54,7 @@ class TimelineWidget : GlanceAppWidget() {
         val changes = Agenda.weekChanges(context)
         provideContent {
             val week by changes.collectAsState(Agenda.week(context))
-            val picked = currentState(PICKED)?.let(LocalDate::parse)
-            CompositionLocalProvider(LocalColors provides Colors(week.look)) { TimelineContent(context, week, picked) }
+            CompositionLocalProvider(LocalColors provides Colors(week.look)) { TimelineContent(context, week) }
         }
     }
 }
@@ -100,22 +94,21 @@ private fun add(context: Context, day: LocalDate, hour: Int?): Action {
 }
 
 @Composable
-private fun TimelineContent(context: Context, week: Week, picked: LocalDate?) {
+private fun TimelineContent(context: Context, week: Week) {
     val now = week.now
     val today = now.toLocalDate()
-    // Past midnight, the day picked may be one of the seven no more.
-    val day = picked?.takeIf { it in week.days } ?: today
     val look = week.look
     val scale = look.scale
-    val grid = open(context, "nexttodo://calendar/time/$day")
+    val grid = open(context, "nexttodo://calendar/time/$today")
     Card {
-        Header(look, "时间轴", grid, actionRunCallback<AgendaRefreshAction>(), add(context, day, null))
+        Header(look, "时间轴", grid, actionRunCallback<AgendaRefreshAction>(), add(context, today, null))
         if (!week.signedIn) {
             Note("打开 NextTodo 登录", open(context, "nexttodo://home"))
             return@Card
         }
         val gutter = GUTTER * scale
-        Days(week, day, today, scale, { actionRunCallback<PickTimeDayAction>(actionParametersOf(DayKey to it.toString())) }, dots = false, gutter = gutter to grid)
+        // No day is picked: the grid shows all seven, and a widget redrawn opens at its list's top.
+        Days(week, null, today, scale, { open(context, "nexttodo://calendar/time/$it") }, dots = false, gutter = gutter to grid)
         val (allDay, timed) = week.days.map { d -> week.due[d].orEmpty().partition { it.due.time == null } }.unzip()
         // A widget's list opens at its top, and can't be scrolled to now as the app's: from the morning, or
         // earlier for what is due then, to the evening, or later; with the hour now.
@@ -189,13 +182,6 @@ private fun Cell(modifier: GlanceModifier, context: Context, day: LocalDate, hou
             // With no time, a label of a line, as the app's.
             maxLines = if (hour == null) 1 else 2,
         )
-    }
-}
-
-class PickTimeDayAction : ActionCallback {
-    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        updateAppWidgetState(context, glanceId) { it[PICKED] = parameters[DayKey]!! }
-        TimelineWidget().update(context, glanceId)
     }
 }
 

@@ -32,7 +32,7 @@ import cn.juniexd.nexttodo.R
 import org.json.JSONObject
 
 /** How the widgets look, as chosen in the app's settings, the same for all of them
- * (docs/android.md#小组件的设置). A colour is `white`, `black` or `#rrggbb`. */
+ * (docs/android/widgets.md#小组件的设置). A colour is `white`, `black` or `#rrggbb`. */
 data class Look(
     /** `system`, or a colour. */
     val background: String = "system",

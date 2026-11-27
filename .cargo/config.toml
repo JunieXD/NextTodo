@@ -6,4 +6,6 @@ TS_RS_LARGE_INT = "number"
 # SQLite keeps its temporary files in memory: the server's image has no directory it could write
 # them to (FROM scratch, run as 65534), and a large statement, such as a migration rewriting every
 # mutation, then fails with SQLITE_IOERR_GETTEMPPATH. The bundled SQLite does the same on Android.
-LIBSQLITE3_FLAGS = "-DSQLITE_TEMP_STORE=3"
+# No memory statistics, which SQLite recommends: kept, each allocation takes a lock all connections
+# share, and the server's tests, run in parallel, spend most of their time waiting for it.
+LIBSQLITE3_FLAGS = "-DSQLITE_TEMP_STORE=3 -DSQLITE_DEFAULT_MEMSTATUS=0"

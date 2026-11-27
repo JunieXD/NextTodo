@@ -3,8 +3,8 @@
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 
+use super::{numbers, text};
 use crate::common::TestApp;
-use crate::{numbers, text};
 
 #[tokio::test]
 async fn completing_a_task_reports_what_it_unlocks() {

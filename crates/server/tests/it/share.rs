@@ -1,9 +1,7 @@
 //! Shared folders: who sees what, who gets which changes, and what moving in and out does.
 
-mod common;
-
+use crate::common::{TestApp, id};
 use axum::http::StatusCode;
-use common::{TestApp, id};
 use serde_json::{Value, json};
 
 /// Alice, who shares `/装修` (holding `/装修/水电` and the task “量尺寸”) with Bob; Carol, who is

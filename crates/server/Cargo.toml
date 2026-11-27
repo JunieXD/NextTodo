@@ -4,6 +4,10 @@ edition.workspace = true
 version.workspace = true
 publish.workspace = true
 
+# No examples in the docs to run: rustdoc would only take time.
+[lib]
+doctest = false
+
 [features]
 # Local mode's HTTPS port for agents, on the desktop (src/agent_port.rs).
 agent-port = ["dep:hyper-util", "dep:rcgen", "dep:tokio-rustls"]

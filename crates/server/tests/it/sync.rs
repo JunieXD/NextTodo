@@ -1,10 +1,8 @@
-mod common;
-
 use std::net::SocketAddr;
 use std::time::Duration;
 
+use crate::common::{TestApp, id};
 use axum::http::StatusCode;
-use common::{TestApp, id};
 use futures_util::{SinkExt, StreamExt};
 use nexttodo_server::{MUTATION_RETENTION_MS, db};
 use serde_json::{Value, json};

@@ -3,8 +3,8 @@
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 
+use super::{numbers, text};
 use crate::common::TestApp;
-use crate::{numbers, text};
 
 #[tokio::test]
 async fn next_lists_only_the_folders_asked_for() {

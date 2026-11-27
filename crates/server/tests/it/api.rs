@@ -1,8 +1,6 @@
-mod common;
-
+use crate::common::{TestApp, id};
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
-use common::{TestApp, id};
 use nexttodo_server::{MUTATION_RETENTION_MS, auth, db};
 use serde_json::{Value, json};
 use tower::ServiceExt;

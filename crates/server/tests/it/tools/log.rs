@@ -3,8 +3,8 @@
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 
+use super::text;
 use crate::common::{self, TestApp};
-use crate::text;
 
 #[tokio::test]
 async fn the_log_reads_each_batch_with_the_folders_of_its_time() {

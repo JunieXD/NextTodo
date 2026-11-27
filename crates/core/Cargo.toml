@@ -4,6 +4,10 @@ edition.workspace = true
 version.workspace = true
 publish.workspace = true
 
+# No examples in the docs to run: rustdoc would only take time.
+[lib]
+doctest = false
+
 [features]
 # SQLite conversions for the server
 sql = ["dep:rusqlite"]

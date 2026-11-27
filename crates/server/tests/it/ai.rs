@@ -1,14 +1,12 @@
 //! AI organizing, with a stand-in for the model.
 
-mod common;
-
 use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::common::{TestApp, id};
 use axum::http::StatusCode;
-use common::{TestApp, id};
 use nexttodo_core::model::{AiJobId, JobState};
 use nexttodo_server::ai::llm::{Api, Config, Endpoint, Failure, Prompt};
 use nexttodo_server::ai::secret::SecretKey;

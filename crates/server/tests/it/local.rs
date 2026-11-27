@@ -431,9 +431,9 @@ async fn earlier_versions_and_a_servers_database_restore() {
     let older = data_dir().with_extension("db");
     let c = Connection::open(&older).unwrap();
     for sql in [
-        include_str!("../migrations/001_init.sql"),
-        include_str!("../migrations/002_ai.sql"),
-        include_str!("../migrations/003_custom_ecnu.sql"),
+        include_str!("../../migrations/001_init.sql"),
+        include_str!("../../migrations/002_ai.sql"),
+        include_str!("../../migrations/003_custom_ecnu.sql"),
     ] {
         c.execute_batch(sql).unwrap();
     }

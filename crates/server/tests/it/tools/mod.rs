@@ -1,8 +1,5 @@
 //! The agent tools (docs/agent.md) as the API and MCP serve them, a module for each topic.
 
-#[path = "../common/mod.rs"]
-mod common;
-
 mod contract;
 mod folders;
 mod lists;

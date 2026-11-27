@@ -1,8 +1,6 @@
-mod common;
-
+use crate::common::TestApp;
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
-use common::TestApp;
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 

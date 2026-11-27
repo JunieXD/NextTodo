@@ -2,12 +2,10 @@
 //! (apps/web/src/domain/apply-fixtures.test.ts). Names stand for ids: each is given one as it first
 //! comes, and the snapshot is read back in names.
 
-mod common;
-
 use std::collections::{BTreeMap, HashMap};
 
+use crate::common::{TestApp, id};
 use axum::http::StatusCode;
-use common::{TestApp, id};
 use nexttodo_core::model::{AiJobId, JobState};
 use nexttodo_server::mutate::{self, Actor};
 use serde::Deserialize;
@@ -243,7 +241,7 @@ async fn give(w: &mut World, c: &Case, me: &str) {
 
 #[tokio::test]
 async fn changes_go_as_the_fixtures_say() {
-    let cases: Vec<Case> = serde_json::from_str(include_str!("../../../fixtures/apply.json")).unwrap();
+    let cases: Vec<Case> = serde_json::from_str(include_str!("../../../../fixtures/apply.json")).unwrap();
     for c in cases {
         let mut w = World::new().await;
         let me = c.me.clone().unwrap_or_else(|| "alice".into());

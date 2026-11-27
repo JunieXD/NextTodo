@@ -108,7 +108,7 @@ server {
 - 只有 Linux 上带版本号构建（`deploy/build.sh`）的服务端能这样升级；开发版、本机模式和加上这个功能以前的版本没有“升级”按钮，照旧附升级方法的链接。
 - 每个版本解压后约 60 MB，升级期间 `data/versions/` 里最多有两个。
 - 想换回旧的镜像（比如用 `NEXTTODO_IMAGE` 固定一个旧版本）时，先删掉 `data/versions/`，否则启动时又会交给里面更新的版本；数据库已被新版本迁移过的，再用 `data/snapshots/before-<新版本号>.db` 恢复，见[备份和恢复](#备份和恢复)。
-- 测试：`crates/server/tests/upgrade.rs` 用一个照 GHCR 行为的假仓库测下载和退回。换进程（`exec`）和容器的重启策略只能在真实的 Compose 部署上测：用本机的 `registry:2` 放两个版本的镜像，临时把 `upgrade::REGISTRY` 改成它的地址构建，试一次成功的升级和一次起不来的。
+- 测试：`crates/server/tests/it/upgrade.rs` 用一个照 GHCR 行为的假仓库测下载和退回。换进程（`exec`）和容器的重启策略只能在真实的 Compose 部署上测：用本机的 `registry:2` 放两个版本的镜像，临时把 `upgrade::REGISTRY` 改成它的地址构建，试一次成功的升级和一次起不来的。
 
 ## 备份和恢复
 

@@ -1,7 +1,5 @@
-mod common;
-
+use crate::common::{TestApp, id};
 use axum::http::StatusCode;
-use common::{TestApp, id};
 use nexttodo_server::files::Files;
 use nexttodo_server::{AppState, Clock, Db, auth, db};
 use rusqlite::Connection;

@@ -1,14 +1,12 @@
 //! Moving data between local mode and a server account: an account's export, and a backup imported
 //! into one (docs/local.md#搬到服务器和搬回本机).
 
-mod common;
-
 use std::io::Read;
 use std::path::PathBuf;
 
+use crate::common::{Reply, TestApp, id};
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
-use common::{Reply, TestApp, id};
 use rusqlite::Connection;
 use serde_json::{Map, Value, json};
 

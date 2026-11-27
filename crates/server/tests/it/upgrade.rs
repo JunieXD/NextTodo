@@ -2,19 +2,17 @@
 //! a 401, blobs redirected to where no token goes. Unix only: the server in the image is a script.
 #![cfg(unix)]
 
-mod common;
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::common::TestApp;
 use axum::Router;
 use axum::extract::{Path as UrlPath, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::get;
-use common::TestApp;
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use nexttodo_server::upgrade::{self, Upgrade, Version};

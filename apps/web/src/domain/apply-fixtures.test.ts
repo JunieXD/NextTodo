@@ -1,5 +1,5 @@
 // The rules of changes as `fixtures/apply.json` has them; the server is checked against the same
-// cases (crates/server/tests/apply.rs). Names stand for ids, and things are called by their ids.
+// cases (crates/server/tests/it/apply.rs). Names stand for ids, and things are called by their ids.
 
 import { expect, test } from "vitest";
 import type { JobState } from "../api/types/JobState";

@@ -6,8 +6,8 @@ use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
+use super::{numbers, text};
 use crate::common::{self, TestApp};
-use crate::{numbers, text};
 
 #[tokio::test]
 async fn a_read_says_which_change_it_is_as_of() {

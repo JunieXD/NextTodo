@@ -3,8 +3,8 @@
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 
+use super::{numbers, text};
 use crate::common::TestApp;
-use crate::{numbers, text};
 
 #[tokio::test]
 async fn a_plan_builds_folders_tasks_and_dependencies_and_undoes_as_one_batch() {

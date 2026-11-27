@@ -1,25 +1,60 @@
 #!/usr/bin/env bash
 # Runs every check, as before each commit (AGENTS.md#开发效率): the Rust workspace, the TypeScript
-# types made from it, the web app, and the desktop app's shell, a Cargo workspace of its own.
+# types made from it, the web app, and the desktop app's shell, a Cargo workspace of its own. The
+# three don't depend on one another and run at once; the output of those that fail is shown.
 set -euo pipefail
 
 cd "$(dirname "$0")"
-cargo fmt --check
-cargo clippy --locked --all-targets -- -D warnings
-# The types go to a directory of their own, to be compared with the repository's: stale ones and ones
-# left behind by a type removed both show.
-types=$(mktemp -d)
-trap 'rm -rf "$types"' EXIT
-TS_RS_EXPORT_DIR=$types cargo test --locked
-if ! diff -r "$types" apps/web/src/api/types; then
-  echo "apps/web/src/api/types 和 Rust 的类型不一致，删掉它后在 apps/web 运行 pnpm gen，再提交" >&2
-  exit 1
-fi
-(cd apps/web && pnpm check)
-# The shell builds only with the web app and the command line it carries in place.
-[[ -d apps/web/dist ]] || (cd apps/web && pnpm exec vite build)
-[[ -e apps/desktop/src-tauri/binaries/nexttodo-$(rustc --print host-tuple) ]] || apps/desktop/cli.sh
-cd apps/desktop/src-tauri
-cargo fmt --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+rust() {
+  cargo fmt --check
+  cargo clippy --locked --all-targets -- -D warnings
+  # The types go to a directory of their own, to be compared with the repository's: stale ones and
+  # ones left behind by a type removed both show.
+  TS_RS_EXPORT_DIR=$tmp/types cargo test --locked
+  if ! diff -r "$tmp/types" apps/web/src/api/types; then
+    echo "apps/web/src/api/types 和 Rust 的类型不一致，删掉它后在 apps/web 运行 pnpm gen，再提交" >&2
+    return 1
+  fi
+}
+
+web() {
+  cd apps/web
+  pnpm check
+}
+
+desktop() {
+  # The shell builds only with the web app and the command line it carries in place.
+  [[ -d apps/web/dist ]] || (cd apps/web && pnpm exec vite build)
+  [[ -e apps/desktop/src-tauri/binaries/nexttodo-$(rustc --print host-tuple) ]] || apps/desktop/cli.sh
+  cd apps/desktop/src-tauri
+  cargo fmt --check
+  cargo clippy --locked --all-targets -- -D warnings
+  cargo test --locked
+}
+
+# Each check in a process group of its own: interrupted, all three stop with what they started.
+set -m
+checks=(rust web desktop)
+pids=()
+stop() {
+  kill -TERM -- "${pids[@]/#/-}" 2>/dev/null || true
+  wait
+  exit 130
+}
+trap stop INT TERM
+for check in "${checks[@]}"; do
+  "$check" > "$tmp/$check.log" 2>&1 &
+  pids+=($!)
+done
+failed=0
+for i in "${!checks[@]}"; do
+  if ! wait "${pids[$i]}"; then
+    echo "==== ${checks[$i]} 没通过 ====" >&2
+    cat "$tmp/${checks[$i]}.log" >&2
+    failed=1
+  fi
+done
+exit $failed

@@ -1,15 +1,13 @@
 //! Attachments: uploading files, attaching them, who sees them, what they do when tasks go, move and
 //! come back, and clearing away the files no longer used.
 
-mod common;
-
 use std::time::{Duration, SystemTime};
 
+use crate::common::{Reply, TestApp, id};
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use common::{TestApp, id};
 use nexttodo_server::attachments;
 use serde_json::{Value, json};
 
@@ -27,11 +25,11 @@ fn names(snap: &Value) -> Vec<&str> {
 }
 
 /// Submits `ops` as mutation `m`, to undo later.
-async fn mutate_as(t: &TestApp, s: &str, m: &str, ops: Value) -> common::Reply {
+async fn mutate_as(t: &TestApp, s: &str, m: &str, ops: Value) -> Reply {
     t.call("POST", "/mutations", Some(s), Some(json!({ "id": m, "ops": ops }))).await
 }
 
-async fn undo(t: &TestApp, s: &str, m: &str) -> common::Reply {
+async fn undo(t: &TestApp, s: &str, m: &str) -> Reply {
     t.mutate(s, json!([{ "op": "undo", "mutation": m }])).await
 }
 

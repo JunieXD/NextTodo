@@ -3,8 +3,8 @@
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 
+use super::text;
 use crate::common::{self, TestApp};
-use crate::text;
 
 #[tokio::test]
 async fn folders_are_named_by_path() {
